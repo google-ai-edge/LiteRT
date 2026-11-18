@@ -22,8 +22,8 @@
 
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_layout.h"
 #include "litert/c/litert_model_types.h"
-#include "litert/c/litert_tensor_buffer.h"
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -120,11 +120,19 @@ LiteRtExternalLiteRtBufferContextT::CreateBufferForTensor(
 
   size_t tensor_buffer_size = tensor_buffer_requirements->BufferSize();
   auto litert_tensor_type = static_cast<LiteRtRankedTensorType>(tensor_type);
+  const auto& strides = tensor_buffer_requirements->Strides();
+  if (!strides.empty() && strides.size() <= LITERT_TENSOR_MAX_RANK) {
+    litert_tensor_type.layout.has_strides = true;
+    for (size_t i = 0; i < strides.size(); ++i) {
+      litert_tensor_type.layout.strides[i] = strides[i];
+    }
+  }
 
-  LiteRtTensorBufferT* litert_tensor_buffer;
-  LITERT_RETURN_IF_ERROR(LiteRtCreateManagedTensorBuffer(
-      env_, tensor_buffer_type, &litert_tensor_type, tensor_buffer_size,
-      &litert_tensor_buffer));
+  LITERT_ASSIGN_OR_RETURN(
+      auto litert_tensor_buffer,
+      LiteRtTensorBufferT::CreateManagedWithAlignment(
+          env_, tensor_buffer_type, litert_tensor_type, tensor_buffer_size,
+          tensor_buffer_requirements->Alignment()));
 
-  return LiteRtTensorBufferPtr(litert_tensor_buffer);
+  return LiteRtTensorBufferPtr(litert_tensor_buffer.release());
 }

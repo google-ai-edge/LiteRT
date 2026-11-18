@@ -21,6 +21,7 @@
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "ml_drift/cl/buffer.h"  // from @ml_drift
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_expected.h"
@@ -32,23 +33,56 @@
 
 namespace litert::internal {
 
+enum class OpenClHostSyncOp {
+  kToDevice,
+  kPrepareForDeviceWrite,
+  kToHostOutputAsync,
+  kToHostInputAsync,
+  kFinishSyncToHost,
+};
+
 /**
  * The OpenCL memory class that provides GPU memory allocation and two-way sync
  * between the CPU memory and the GPU OpenCL buffer.
  */
 class OpenClMemory {
  public:
+  enum class HostSyncState {
+    kHostMapped,
+    kDeviceSynced,
+  };
+
   OpenClMemory(OpenClMemory&& other)
       : gpu_env_(other.gpu_env_),
         tensor_type_(other.tensor_type_),
         buffer_type_(other.buffer_type_),
         data_(other.data_),
         buffer_(std::move(other.buffer_)),
+        deallocator_(other.deallocator_),
         size_(other.size_),
-        ahwb_(other.ahwb_) {
+        cpu_buffer_size_(other.cpu_buffer_size_),
+        ahwb_(other.ahwb_),
+        lock_state_(other.lock_state_),
+        retained_queue_(other.retained_queue_),
+        cl_context_(other.cl_context_),
+        is_host_backed_(other.is_host_backed_),
+        host_ptr_(other.host_ptr_),
+        host_mapped_ptr_(other.host_mapped_ptr_),
+        host_logical_size_(other.host_logical_size_),
+        host_sync_state_(other.host_sync_state_),
+        pending_host_sync_(other.pending_host_sync_) {
     other.data_ = nullptr;
+    other.deallocator_ = nullptr;
     other.size_ = 0;
+    other.cpu_buffer_size_ = 0;
     other.ahwb_ = nullptr;
+    other.retained_queue_ = nullptr;
+    other.cl_context_ = nullptr;
+    other.is_host_backed_ = false;
+    other.host_ptr_ = nullptr;
+    other.host_mapped_ptr_ = nullptr;
+    other.host_logical_size_ = 0;
+    other.pending_host_sync_ = false;
   }
 
   explicit OpenClMemory(GpuEnvironment* gpu_env,
@@ -79,15 +113,20 @@ class OpenClMemory {
   }
 
   ~OpenClMemory() {
+#if LITERT_HAS_OPENCL_SUPPORT
+    CleanupHostBuffer();
+#endif  // LITERT_HAS_OPENCL_SUPPORT
     if (deallocator_ != nullptr) {
       deallocator_(buffer_.GetMemoryPtr());
     }
     if (data_ != nullptr) {
       litert_aligned_free(data_);
-    };
+    }
   }
 
   cl_mem GetMemoryPtr() { return buffer_.GetMemoryPtr(); }
+  cl_context context() const { return cl_context_; }
+  cl_command_queue queue() const { return retained_queue_; }
   // Allocates a CPU memory and conducts a copy from the OpenCL buffer to the
   // CPU memory.
   template <typename T>
@@ -100,6 +139,11 @@ class OpenClMemory {
   // Clears the OpenCL buffer.
   Expected<void> Clear();
 
+  Expected<void> HostSync(OpenClHostSyncOp op);
+  Expected<void*> HostLock(LiteRtTensorBufferLockMode mode);
+  Expected<void> HostUnlock(LiteRtTensorBufferLockMode mode);
+  Expected<void> HostClearInPlace();
+
   // Returns true if OpenCL is supported.
   // Warning: This is only for TEST.
   static bool IsSupported();
@@ -107,6 +151,9 @@ class OpenClMemory {
                                       const LiteRtRankedTensorType& tensor_type,
                                       LiteRtTensorBufferType buffer_type,
                                       size_t bytes_size);
+  static Expected<OpenClMemory> AllocFromHostBuffer(
+      GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
+      void* host_ptr, size_t logical_size, size_t host_alloc_size);
   static Expected<OpenClMemory> AllocFromAhwbBuffer(
       GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
       AhwbBuffer& ahwb_buffer);
@@ -116,6 +163,29 @@ class OpenClMemory {
   size_t size_bytes() const { return size_; }
 
  private:
+  explicit OpenClMemory(GpuEnvironment* gpu_env,
+                        const LiteRtRankedTensorType& tensor_type,
+                        ::ml_drift::cl::Buffer buffer,
+                        cl_command_queue retained_queue, cl_context cl_context,
+                        void* host_ptr, void* host_mapped_ptr,
+                        size_t host_logical_size)
+      : gpu_env_(gpu_env),
+        tensor_type_(tensor_type),
+        buffer_type_(kLiteRtTensorBufferTypeOpenClBuffer),
+        buffer_(std::move(buffer)),
+        size_(buffer_.GetMemorySizeInBytes()),
+        retained_queue_(retained_queue),
+        cl_context_(cl_context),
+        is_host_backed_(true),
+        host_ptr_(host_ptr),
+        host_mapped_ptr_(host_mapped_ptr),
+        host_logical_size_(host_logical_size),
+        host_sync_state_(HostSyncState::kHostMapped),
+        pending_host_sync_(false) {}
+
+  void CleanupHostBuffer();
+  Expected<void> FinishPendingSyncLocked();
+
   GpuEnvironment* gpu_env_ = nullptr;
   const LiteRtRankedTensorType tensor_type_;
   LiteRtTensorBufferType buffer_type_;
@@ -130,6 +200,15 @@ class OpenClMemory {
   size_t cpu_buffer_size_ = 0;
   AHardwareBuffer* ahwb_ = nullptr;
   LockState lock_state_ = LockState::kUnlocked;
+
+  cl_command_queue retained_queue_ = nullptr;
+  cl_context cl_context_ = nullptr;
+  bool is_host_backed_ = false;
+  void* host_ptr_ = nullptr;
+  void* host_mapped_ptr_ = nullptr;
+  size_t host_logical_size_ = 0;
+  HostSyncState host_sync_state_ = HostSyncState::kHostMapped;
+  bool pending_host_sync_ = false;
 };
 
 }  // namespace litert::internal

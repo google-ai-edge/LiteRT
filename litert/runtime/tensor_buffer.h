@@ -41,7 +41,6 @@
 
 #if LITERT_HAS_OPENCL_SUPPORT
 #include "litert/runtime/open_cl_memory.h"
-#include <CL/cl.h>
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -145,6 +144,7 @@ class LiteRtTensorBufferT {
       size_t buffer_size);
 #endif  // LITERT_HAS_METAL_SUPPORT
 
+  LiteRtEnvironment env() const { return env_; }
   LiteRtRankedTensorType tensor_type() const { return tensor_type_; }
   LiteRtTensorBufferType buffer_type() const { return buffer_type_; }
 
@@ -182,6 +182,10 @@ class LiteRtTensorBufferT {
   litert::Expected<litert::internal::CustomBuffer*> GetCustomBuffer();
 #if LITERT_HAS_OPENCL_SUPPORT
   litert::Expected<LiteRtClMem> GetOpenClMemory();
+  litert::Expected<LiteRtClMem> GetOpenClMemory(LiteRtEnvironment fallback_env);
+  litert::Expected<void> SyncHostMemoryWithOpenCl(
+      litert::internal::OpenClHostSyncOp op);
+  bool IsHostMemoryOpenClCompatible(LiteRtEnvironment target_env);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
   litert::Expected<void*> Lock(LiteRtTensorBufferLockMode mode);
@@ -211,6 +215,7 @@ class LiteRtTensorBufferT {
  private:
   struct HostBuffer {
     void* addr;
+    size_t alloc_size;
     LiteRtHostMemoryDeallocator deallocator;
   };
 
@@ -255,11 +260,16 @@ class LiteRtTensorBufferT {
                       LiteRtTensorBufferType buffer_type, size_t buffer_size,
                       size_t buffer_offset = 0);
 
+  static litert::Expected<Ptr> CreateFromHostMemoryInternal(
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      absl::Span<uint8_t> host_memory, size_t alloc_size,
+      LiteRtHostMemoryDeallocator deallocator);
   static litert::Expected<Ptr> CreateManagedOnHostMemory(
-      const LiteRtRankedTensorType& tensor_type, size_t buffer_size);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      size_t buffer_size);
   static litert::Expected<Ptr> CreateManagedOnHostMemory(
-      const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
-      size_t alignment);
+      LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+      size_t buffer_size, size_t alignment);
 
   static litert::Expected<Ptr> CreateManagedAhwbBuffer(
       LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,

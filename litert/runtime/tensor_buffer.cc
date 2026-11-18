@@ -16,9 +16,23 @@
 
 #include <stdlib.h>
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <utility>
@@ -49,6 +63,10 @@
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/event.h"
 
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "litert/runtime/open_cl_memory.h"
+#include <CL/cl.h>
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #if LITERT_HAS_OPENGL_SUPPORT
 #include "litert/c/litert_gl_types.h"
@@ -86,6 +104,20 @@ void Copy(size_t array_size, const T* array, std::vector<T>& vec) {
 // CFI builds don't like directly passing free() as a function pointer, so wrap
 // in another function.
 void FreeHostMemory(void* ptr) { litert_aligned_free(ptr); }
+
+size_t GetHostPageSize() {
+#if defined(_WIN32)
+  SYSTEM_INFO sys_info;
+  GetSystemInfo(&sys_info);
+  return std::max<size_t>(4096, sys_info.dwPageSize);
+#elif defined(_SC_PAGESIZE)
+  int64_t page_size = sysconf(_SC_PAGESIZE);
+  return page_size > 0 ? std::max<size_t>(4096, static_cast<size_t>(page_size))
+                       : 4096;
+#else
+  return 4096;
+#endif
+}
 
 // Returns the packed byte size of a tensor.
 //
@@ -157,6 +189,9 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
              BufferTypeToString(buffer_type_).data());
 #endif  // __EMSCRIPTEN__
+  // Release any cached backend interop wrappers (e.g., CL_MEM_USE_HOST_PTR
+  // mappings or imported AHWB/GL handles) before freeing the backing memory.
+  memory_backed_buffers_.clear();
   switch (buffer_type()) {
     case kLiteRtTensorBufferTypeUnknown:
       // Nothing to do.
@@ -238,14 +273,16 @@ LiteRtTensorBufferT::~LiteRtTensorBufferT() {
   }
 }
 
-Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
-    const LiteRtRankedTensorType& tensor_type, absl::Span<uint8_t> host_memory,
+Expected<LiteRtTensorBufferT::Ptr>
+LiteRtTensorBufferT::CreateFromHostMemoryInternal(
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    absl::Span<uint8_t> host_memory, size_t alloc_size,
     LiteRtHostMemoryDeallocator deallocator) {
-  Ptr tensor_buffer(new LiteRtTensorBufferT(/*env=*/nullptr, tensor_type,
-                                            kLiteRtTensorBufferTypeHostMemory,
-                                            host_memory.size()));
+  Ptr tensor_buffer(new LiteRtTensorBufferT(
+      env, tensor_type, kLiteRtTensorBufferTypeHostMemory, host_memory.size()));
   tensor_buffer->buffer_ = HostBuffer{
       .addr = host_memory.data(),
+      .alloc_size = alloc_size,
       .deallocator = deallocator,
   };
 
@@ -256,34 +293,66 @@ Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
   return tensor_buffer;
 }
 
+Expected<LiteRtTensorBufferT::Ptr> LiteRtTensorBufferT::CreateFromHostMemory(
+    const LiteRtRankedTensorType& tensor_type, absl::Span<uint8_t> host_memory,
+    LiteRtHostMemoryDeallocator deallocator) {
+  return CreateFromHostMemoryInternal(/*env=*/nullptr, tensor_type, host_memory,
+                                      host_memory.size(), deallocator);
+}
+
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOnHostMemory(
-    const LiteRtRankedTensorType& tensor_type, size_t buffer_size) {
-  return CreateManagedOnHostMemory(tensor_type, buffer_size,
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    size_t buffer_size) {
+  return CreateManagedOnHostMemory(env, tensor_type, buffer_size,
                                    LITERT_HOST_MEMORY_BUFFER_ALIGNMENT);
 }
 
 Expected<LiteRtTensorBufferT::Ptr>
 LiteRtTensorBufferT::CreateManagedOnHostMemory(
-    const LiteRtRankedTensorType& tensor_type, size_t buffer_size,
-    size_t alignment) {
-  void* host_memory_ptr;
-  if (auto rc = posix_memalign(&host_memory_ptr, alignment,
-                               buffer_size + XNN_EXTRA_BYTES);
+    LiteRtEnvironment env, const LiteRtRankedTensorType& tensor_type,
+    size_t buffer_size, size_t alignment) {
+  if (alignment == 0 || (alignment & (alignment - 1)) != 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Host memory alignment must be a non-zero power of two");
+  }
+  const size_t effective_alignment = std::max<size_t>(
+      {alignment, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT, sizeof(void*)});
+  const size_t page_size = GetHostPageSize();
+  size_t alloc_size = 0;
+  if (effective_alignment >= page_size) {
+    if (buffer_size > std::numeric_limits<size_t>::max() - XNN_EXTRA_BYTES -
+                          (effective_alignment - 1)) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Host buffer size overflows aligned allocation");
+    }
+    alloc_size = ((buffer_size + XNN_EXTRA_BYTES + effective_alignment - 1) /
+                  effective_alignment) *
+                 effective_alignment;
+  } else {
+    if (buffer_size > std::numeric_limits<size_t>::max() - XNN_EXTRA_BYTES) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "Host buffer size overflows allocation");
+    }
+    alloc_size = buffer_size + XNN_EXTRA_BYTES;
+  }
 
+  void* host_memory_ptr;
+  if (auto rc =
+          posix_memalign(&host_memory_ptr, effective_alignment, alloc_size);
       rc) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Failed to allocate aligned memory");
   }
-  std::memset(host_memory_ptr, 0, buffer_size + XNN_EXTRA_BYTES);
+  std::memset(host_memory_ptr, 0, alloc_size);
 
   LiteRtHostMemoryDeallocator deallocator = FreeHostMemory;
   LITERT_ASSIGN_OR_RETURN(
       LiteRtTensorBufferT::Ptr tensor_buffer,
-      CreateFromHostMemory(
-          tensor_type,
+      CreateFromHostMemoryInternal(
+          env, tensor_type,
           absl::MakeSpan(static_cast<uint8_t*>(host_memory_ptr), buffer_size),
-          deallocator));
+          alloc_size, deallocator));
   return std::move(tensor_buffer);
 }
 
@@ -706,7 +775,8 @@ LiteRtTensorBufferT::CreateManagedWithAlignment(
     size_t alignment) {
   switch (buffer_type) {
     case kLiteRtTensorBufferTypeHostMemory:
-      return CreateManagedOnHostMemory(tensor_type, buffer_size, alignment);
+      return CreateManagedOnHostMemory(env, tensor_type, buffer_size,
+                                       alignment);
     case kLiteRtTensorBufferTypeAhwb:
 #if LITERT_HAS_AHWB_SUPPORT
       return CreateManagedAhwbBuffer(env, tensor_type, buffer_size);
@@ -985,6 +1055,11 @@ LiteRtTensorBufferT::GetCustomBuffer() {
 
 #if LITERT_HAS_OPENCL_SUPPORT
 Expected<LiteRtClMem> LiteRtTensorBufferT::GetOpenClMemory() {
+  return GetOpenClMemory(/*fallback_env=*/nullptr);
+}
+
+Expected<LiteRtClMem> LiteRtTensorBufferT::GetOpenClMemory(
+    LiteRtEnvironment fallback_env) {
   if (buffer_type_ == kLiteRtTensorBufferTypeOpenClBuffer ||
       buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferFp16 ||
       buffer_type_ == kLiteRtTensorBufferTypeOpenClTexture ||
@@ -994,6 +1069,55 @@ Expected<LiteRtClMem> LiteRtTensorBufferT::GetOpenClMemory() {
       buffer_type_ == kLiteRtTensorBufferTypeOpenClBufferPacked) {
     LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
     return static_cast<LiteRtClMem>(custom_buffer->raw_handle());
+  }
+
+  if (buffer_type_ == kLiteRtTensorBufferTypeHostMemory) {
+    if (env_ != nullptr && fallback_env != nullptr && env_ != fallback_env) {
+      return Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "Host tensor buffer environment does not match OpenCL environment");
+    }
+    LiteRtEnvironment effective_env = env_ != nullptr ? env_ : fallback_env;
+    LITERT_ASSIGN_OR_RETURN(auto gpu_env, GetGpuEnvironment(effective_env));
+    if (gpu_env->GetContext() == nullptr ||
+        gpu_env->GetContext()->context() == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "OpenCL context is not initialized");
+    }
+    if (gpu_env->GetCommandQueue() == nullptr ||
+        gpu_env->GetCommandQueue()->queue() == nullptr) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "OpenCL command queue is not initialized");
+    }
+    cl_context target_context = gpu_env->GetContext()->context();
+    cl_command_queue target_queue = gpu_env->GetCommandQueue()->queue();
+    if (auto it =
+            memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+        it != memory_backed_buffers_.end()) {
+      auto& opencl_mem = std::get<litert::internal::OpenClMemory>(it->second);
+      if (opencl_mem.context() != target_context ||
+          opencl_mem.queue() != target_queue) {
+        return Unexpected(
+            kLiteRtStatusErrorInvalidArgument,
+            "Cached OpenCL host buffer belongs to a different OpenCL context "
+            "or command queue");
+      }
+      return opencl_mem.GetMemoryPtr();
+    }
+    LITERT_ASSIGN_OR_RETURN(auto host_buffer_ptr, GetHostBuffer());
+    const size_t alloc_size = std::get<HostBuffer>(buffer_).alloc_size;
+    LITERT_ASSIGN_OR_RETURN(
+        litert::internal::OpenClMemory cl_buffer_from_host,
+        litert::internal::OpenClMemory::AllocFromHostBuffer(
+            gpu_env, tensor_type_, host_buffer_ptr, buffer_size_, alloc_size));
+    auto [it, inserted] = memory_backed_buffers_.insert(
+        {kLiteRtTensorBufferTypeOpenClBuffer, std::move(cl_buffer_from_host)});
+    LITERT_RETURN_IF_ERROR(
+        inserted == true,
+        Unexpected(
+            kLiteRtStatusErrorRuntimeFailure,
+            "Failed to insert OpenCL buffer into memory backed buffers"));
+    return std::get<litert::internal::OpenClMemory>(it->second).GetMemoryPtr();
   }
 
 #if LITERT_HAS_OPENGL_SUPPORT
@@ -1057,14 +1181,54 @@ Expected<LiteRtClMem> LiteRtTensorBufferT::GetOpenClMemory() {
   return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                     "Cannot get OpenCL memory from this tensor buffer type");
 }
+
+Expected<void> LiteRtTensorBufferT::SyncHostMemoryWithOpenCl(
+    litert::internal::OpenClHostSyncOp op) {
+  if (buffer_type_ != kLiteRtTensorBufferTypeHostMemory) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Tensor buffer is not host memory");
+  }
+  auto it = memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+  if (it == memory_backed_buffers_.end()) {
+    return {};
+  }
+  return std::get<litert::internal::OpenClMemory>(it->second).HostSync(op);
+}
+
+bool LiteRtTensorBufferT::IsHostMemoryOpenClCompatible(
+    LiteRtEnvironment target_env) {
+  if (buffer_type_ != kLiteRtTensorBufferTypeHostMemory) {
+    return false;
+  }
+  if (env_ != nullptr && env_ != target_env) {
+    return false;
+  }
+  auto it = memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+  if (it == memory_backed_buffers_.end()) {
+    return true;
+  }
+  if (target_env == nullptr) {
+    return false;
+  }
+  auto* gpu_env = LiteRtGetGpuEnvironment(target_env);
+  if (gpu_env == nullptr || gpu_env->GetContext() == nullptr ||
+      gpu_env->GetContext()->context() == nullptr) {
+    return true;
+  }
+  if (gpu_env->GetCommandQueue() == nullptr ||
+      gpu_env->GetCommandQueue()->queue() == nullptr) {
+    return false;
+  }
+  const auto& opencl_mem = std::get<litert::internal::OpenClMemory>(it->second);
+  return opencl_mem.context() == gpu_env->GetContext()->context() &&
+         opencl_mem.queue() == gpu_env->GetCommandQueue()->queue();
+}
 #endif  // LITERT_HAS_OPENCL_SUPPORT
 
 Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
   LITERT_RETURN_IF_ERROR(is_locked_ == false,
                          Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                     "Tensor buffer is already locked."));
-  is_locked_ = true;
-  lock_mode_ = mode;
   if (event_ != nullptr) {
     // Only AHWB supports waiting on an input sync fence when locking the
     // buffer. For all other buffer types and non-sync-fence events we wait
@@ -1075,95 +1239,109 @@ Expected<void*> LiteRtTensorBufferT::Lock(LiteRtTensorBufferLockMode mode) {
     }
   }
 
-  switch (buffer_type()) {
-    case kLiteRtTensorBufferTypeHostMemory: {
-      LITERT_ASSIGN_OR_ABORT(auto host_buffer, GetHostBuffer());
-      return host_buffer;
-    }
-    case kLiteRtTensorBufferTypeAhwb: {
+  LITERT_ASSIGN_OR_RETURN(
+      void* locked_addr, ([&]() -> Expected<void*> {
+        switch (buffer_type()) {
+          case kLiteRtTensorBufferTypeHostMemory: {
+#if LITERT_HAS_OPENCL_SUPPORT
+            if (auto it = memory_backed_buffers_.find(
+                    kLiteRtTensorBufferTypeOpenClBuffer);
+                it != memory_backed_buffers_.end()) {
+              return std::get<litert::internal::OpenClMemory>(it->second)
+                  .HostLock(mode);
+            }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+            LITERT_ASSIGN_OR_ABORT(auto host_buffer, GetHostBuffer());
+            return host_buffer;
+          }
+          case kLiteRtTensorBufferTypeAhwb: {
 #if LITERT_HAS_AHWB_SUPPORT
-      LITERT_ASSIGN_OR_ABORT(auto ahwb_buffer, GetAhwbBuffer());
-      return litert::internal::AhwbBuffer::Lock(
-          ahwb_buffer, (event_ != nullptr &&
-                        event_->type == LiteRtEventTypeSyncFenceFd)
-                           ? event_.get()
-                           : nullptr);
+            LITERT_ASSIGN_OR_ABORT(auto ahwb_buffer, GetAhwbBuffer());
+            return litert::internal::AhwbBuffer::Lock(
+                ahwb_buffer, (event_ != nullptr &&
+                              event_->type == LiteRtEventTypeSyncFenceFd)
+                                 ? event_.get()
+                                 : nullptr);
 #else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                         "AHardwareBuffer is not supported");
+            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "AHardwareBuffer is not supported");
 #endif
-    }
-    case kLiteRtTensorBufferTypeIon: {
-      LITERT_ASSIGN_OR_ABORT(auto ion_buffer, GetIonBuffer());
-      return ion_buffer.first;
-    }
-    case kLiteRtTensorBufferTypeDmaBuf: {
-      LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
+          }
+          case kLiteRtTensorBufferTypeIon: {
+            LITERT_ASSIGN_OR_ABORT(auto ion_buffer, GetIonBuffer());
+            return ion_buffer.first;
+          }
+          case kLiteRtTensorBufferTypeDmaBuf: {
+            LITERT_ASSIGN_OR_ABORT(auto dma_buffer, GetDmaBufBuffer());
 #if LITERT_HAS_DMABUF_SUPPORT
-      LITERT_RETURN_IF_ERROR(
-          ::litert::internal::DmaBufBuffer::Lock(dma_buffer.second, mode));
+            LITERT_RETURN_IF_ERROR(::litert::internal::DmaBufBuffer::Lock(
+                dma_buffer.second, mode));
 #endif
-      return dma_buffer.first;
-    }
-    case kLiteRtTensorBufferTypeFastRpc: {
-      LITERT_ASSIGN_OR_ABORT(auto fastrpc_buffer, GetFastRpcBuffer());
-      return fastrpc_buffer.first;
-    }
-    case kLiteRtTensorBufferTypeGlBuffer: {
+            return dma_buffer.first;
+          }
+          case kLiteRtTensorBufferTypeFastRpc: {
+            LITERT_ASSIGN_OR_ABORT(auto fastrpc_buffer, GetFastRpcBuffer());
+            return fastrpc_buffer.first;
+          }
+          case kLiteRtTensorBufferTypeGlBuffer: {
 #if LITERT_HAS_OPENGL_SUPPORT
-      LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
-      LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
-                              gl_buffer->Lock<float>(mode));
-      return host_memory_ptr;
+            LITERT_ASSIGN_OR_RETURN(auto gl_buffer, GetGlBuffer());
+            LITERT_ASSIGN_OR_RETURN(float* const host_memory_ptr,
+                                    gl_buffer->Lock<float>(mode));
+            return host_memory_ptr;
 #else
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "OpenGL buffers are not supported");
+            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "OpenGL buffers are not supported");
 #endif  // LITERT_HAS_OPENGL_SUPPORT
-    }
-    case kLiteRtTensorBufferTypeOpenClBuffer:
-    case kLiteRtTensorBufferTypeOpenClBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClTexture:
-    case kLiteRtTensorBufferTypeOpenClTextureFp16:
-    case kLiteRtTensorBufferTypeOpenClImageBuffer:
-    case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
-    case kLiteRtTensorBufferTypeOpenClBufferPacked:
-    case kLiteRtTensorBufferTypeWebGpuBuffer:
-    case kLiteRtTensorBufferTypeWebGpuBufferFp16:
-    case kLiteRtTensorBufferTypeWebGpuTexture:
-    case kLiteRtTensorBufferTypeWebGpuTextureFp16:
-    case kLiteRtTensorBufferTypeWebGpuImageBuffer:
-    case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
-    case kLiteRtTensorBufferTypeWebGpuBufferPacked:
-    case kLiteRtTensorBufferTypeMetalBuffer:
-    case kLiteRtTensorBufferTypeMetalBufferFp16:
-    case kLiteRtTensorBufferTypeMetalBufferPacked:
-    case kLiteRtTensorBufferTypeMetalTexture:
-    case kLiteRtTensorBufferTypeMetalTextureFp16:
-    case kLiteRtTensorBufferTypeVulkanBuffer:
-    case kLiteRtTensorBufferTypeVulkanBufferFp16:
-    case kLiteRtTensorBufferTypeVulkanTexture:
-    case kLiteRtTensorBufferTypeVulkanTextureFp16:
-    case kLiteRtTensorBufferTypeVulkanImageBuffer:
-    case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
-    case kLiteRtTensorBufferTypeVulkanBufferPacked: {
-      LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
-      LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
-                              custom_buffer->Lock(mode));
-      return host_memory_ptr;
-    }
-    case kLiteRtTensorBufferTypeGlTexture:
-    case kLiteRtTensorBufferTypeUnknown:
-    default: {
-      if (IsUserCustomBuffer(buffer_type())) {
-        LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
-        LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
-                                custom_buffer->Lock(mode));
-        return host_memory_ptr;
-      }
-      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Unexpected tensor buffer type");
-    }
-  }
+          }
+          case kLiteRtTensorBufferTypeOpenClBuffer:
+          case kLiteRtTensorBufferTypeOpenClBufferFp16:
+          case kLiteRtTensorBufferTypeOpenClTexture:
+          case kLiteRtTensorBufferTypeOpenClTextureFp16:
+          case kLiteRtTensorBufferTypeOpenClImageBuffer:
+          case kLiteRtTensorBufferTypeOpenClImageBufferFp16:
+          case kLiteRtTensorBufferTypeOpenClBufferPacked:
+          case kLiteRtTensorBufferTypeWebGpuBuffer:
+          case kLiteRtTensorBufferTypeWebGpuBufferFp16:
+          case kLiteRtTensorBufferTypeWebGpuTexture:
+          case kLiteRtTensorBufferTypeWebGpuTextureFp16:
+          case kLiteRtTensorBufferTypeWebGpuImageBuffer:
+          case kLiteRtTensorBufferTypeWebGpuImageBufferFp16:
+          case kLiteRtTensorBufferTypeWebGpuBufferPacked:
+          case kLiteRtTensorBufferTypeMetalBuffer:
+          case kLiteRtTensorBufferTypeMetalBufferFp16:
+          case kLiteRtTensorBufferTypeMetalBufferPacked:
+          case kLiteRtTensorBufferTypeMetalTexture:
+          case kLiteRtTensorBufferTypeMetalTextureFp16:
+          case kLiteRtTensorBufferTypeVulkanBuffer:
+          case kLiteRtTensorBufferTypeVulkanBufferFp16:
+          case kLiteRtTensorBufferTypeVulkanTexture:
+          case kLiteRtTensorBufferTypeVulkanTextureFp16:
+          case kLiteRtTensorBufferTypeVulkanImageBuffer:
+          case kLiteRtTensorBufferTypeVulkanImageBufferFp16:
+          case kLiteRtTensorBufferTypeVulkanBufferPacked: {
+            LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+            LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
+                                    custom_buffer->Lock(mode));
+            return host_memory_ptr;
+          }
+          case kLiteRtTensorBufferTypeGlTexture:
+          case kLiteRtTensorBufferTypeUnknown:
+          default: {
+            if (IsUserCustomBuffer(buffer_type())) {
+              LITERT_ASSIGN_OR_RETURN(auto custom_buffer, GetCustomBuffer());
+              LITERT_ASSIGN_OR_RETURN(void* const host_memory_ptr,
+                                      custom_buffer->Lock(mode));
+              return host_memory_ptr;
+            }
+            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Unexpected tensor buffer type");
+          }
+        }
+      })());
+  is_locked_ = true;
+  lock_mode_ = mode;
+  return locked_addr;
 }
 
 Expected<void> LiteRtTensorBufferT::Unlock() {
@@ -1227,7 +1405,17 @@ Expected<void> LiteRtTensorBufferT::Unlock() {
       return {};
 #endif
     }
-    case kLiteRtTensorBufferTypeHostMemory:
+    case kLiteRtTensorBufferTypeHostMemory: {
+#if LITERT_HAS_OPENCL_SUPPORT
+      if (auto it =
+              memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+          it != memory_backed_buffers_.end()) {
+        return std::get<litert::internal::OpenClMemory>(it->second)
+            .HostUnlock(lock_mode_);
+      }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+      return {};
+    }
     case kLiteRtTensorBufferTypeIon:
     case kLiteRtTensorBufferTypeFastRpc:
     case kLiteRtTensorBufferTypeGlTexture:
@@ -1275,6 +1463,20 @@ Expected<void> LiteRtTensorBufferT::Clear() {
       return custom_buffer->Clear();
     }
     case kLiteRtTensorBufferTypeHostMemory: {
+#if LITERT_HAS_OPENCL_SUPPORT
+      if (auto it =
+              memory_backed_buffers_.find(kLiteRtTensorBufferTypeOpenClBuffer);
+          it != memory_backed_buffers_.end()) {
+        LITERT_RETURN_IF_ERROR(is_locked_ == false,
+                               Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                                          "Tensor buffer is already locked."));
+        if (event_ != nullptr) {
+          LITERT_RETURN_IF_ERROR(event_->Wait(/*timeout_in_ms=*/-1));
+        }
+        return std::get<litert::internal::OpenClMemory>(it->second)
+            .HostClearInPlace();
+      }
+#endif  // LITERT_HAS_OPENCL_SUPPORT
       LITERT_ASSIGN_OR_RETURN(void* host_mem_addr,
                               Lock(kLiteRtTensorBufferLockModeWrite));
       std::memset(host_mem_addr, 0, packed_buffer_size());

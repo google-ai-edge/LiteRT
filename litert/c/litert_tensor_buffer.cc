@@ -18,6 +18,7 @@
 #include <cstdint>
 
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_tensor_buffer.h"
 #include "litert/c/litert_gl_types.h"
@@ -31,6 +32,10 @@
 #include "litert/runtime/custom_buffer.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
+
+#if LITERT_HAS_OPENCL_SUPPORT
+#include "litert/runtime/open_cl_memory.h"
+#endif  // LITERT_HAS_OPENCL_SUPPORT
 
 #ifdef __cplusplus
 extern "C" {
@@ -214,6 +219,55 @@ LiteRtStatus LiteRtGetTensorBufferOpenClMemory(LiteRtTensorBuffer tensor_buffer,
 
   LITERT_ASSIGN_OR_RETURN(auto cl_mem, tensor_buffer->GetOpenClMemory());
   *cl_mem_addr = cl_mem;
+  return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+}
+
+LiteRtStatus LrtGetTensorBufferOpenClMemoryWithEnv(
+    LiteRtEnvironment env, LiteRtTensorBuffer tensor_buffer,
+    LiteRtClMem* cl_mem_addr) {
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (!tensor_buffer || !cl_mem_addr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(auto cl_mem, tensor_buffer->GetOpenClMemory(env));
+  *cl_mem_addr = cl_mem;
+  return kLiteRtStatusOk;
+#else
+  return kLiteRtStatusErrorUnsupported;
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+}
+
+LiteRtStatus LrtSyncTensorBufferHostMemory(LiteRtTensorBuffer tensor_buffer,
+                                           LrtTensorBufferHostSyncOp op) {
+#if LITERT_HAS_OPENCL_SUPPORT
+  if (!tensor_buffer) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  litert::internal::OpenClHostSyncOp internal_op;
+  switch (op) {
+    case kLrtHostSyncToDevice:
+      internal_op = litert::internal::OpenClHostSyncOp::kToDevice;
+      break;
+    case kLrtHostPrepareForDeviceWrite:
+      internal_op = litert::internal::OpenClHostSyncOp::kPrepareForDeviceWrite;
+      break;
+    case kLrtHostSyncToHostOutputAsync:
+      internal_op = litert::internal::OpenClHostSyncOp::kToHostOutputAsync;
+      break;
+    case kLrtHostSyncToHostInputAsync:
+      internal_op = litert::internal::OpenClHostSyncOp::kToHostInputAsync;
+      break;
+    case kLrtHostFinishSyncToHost:
+      internal_op = litert::internal::OpenClHostSyncOp::kFinishSyncToHost;
+      break;
+    default:
+      return kLiteRtStatusErrorInvalidArgument;
+  }
+  LITERT_RETURN_IF_ERROR(tensor_buffer->SyncHostMemoryWithOpenCl(internal_op));
   return kLiteRtStatusOk;
 #else
   return kLiteRtStatusErrorUnsupported;

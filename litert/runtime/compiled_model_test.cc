@@ -14,6 +14,19 @@
 
 #include "litert/runtime/compiled_model.h"
 
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
+#include <unistd.h>
+#endif
+
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -29,6 +42,7 @@
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/debugging/leak_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -41,6 +55,7 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "litert/c/internal/litert_accelerator_registration.h"
+#include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/internal/litert_tensor_buffer_registry.h"
 #include "litert/c/litert_any.h"
@@ -52,6 +67,7 @@
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_opaque_options.h"
+#include "litert/c/litert_opencl_types.h"
 #include "litert/c/litert_options.h"
 #include "litert/c/litert_profiler.h"
 #include "litert/c/litert_tensor_buffer.h"
@@ -84,6 +100,7 @@
 #include "litert/runtime/open_cl_memory.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
+#include "litert/runtime/tfl_utils.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
@@ -2099,14 +2116,13 @@ TEST(CompiledModelTest, CpuSharedInputBufferRemainsValidDuringRun) {
                               LiteRtEnvironmentT::CreateWithOptions({}));
   LiteRtEnvironmentT* env_ptr = env.release();
 
-  ASSERT_EQ(
-      LiteRtRegisterTensorBufferHandlers(
-          env_ptr, kLiteRtTensorBufferTypeUserCustomBuffer,
-          CreateInvalidatingCustomMemory, DestroyInvalidatingCustomMemory,
-          LockInvalidatingCustomMemory, UnlockInvalidatingCustomMemory,
-          /*clear_func=*/nullptr, /*import_func=*/nullptr,
-          kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
-      kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtRegisterTensorBufferHandlers(
+                env_ptr, kLiteRtTensorBufferTypeUserCustomBuffer,
+                CreateInvalidatingCustomMemory, DestroyInvalidatingCustomMemory,
+                LockInvalidatingCustomMemory, UnlockInvalidatingCustomMemory,
+                /*clear_func=*/nullptr, /*import_func=*/nullptr,
+                kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+            kLiteRtStatusOk);
 
   // Create LiteRtModel and check signatures.
   std::string path = testing::GetTestFilePath(kModelFileName);
@@ -3095,6 +3111,1786 @@ TEST(CompiledModelTest, SelectedSignaturesForwardsExpectedDispatchFunctions) {
     ASSERT_TRUE(capture.delegate_created);
     EXPECT_TRUE(capture.expected_function_names.empty());
   }
+}
+
+// This test verifies that an intentionally unaligned HostMemory buffer is
+// rejected from backend registration when the backend requires 4096B alignment,
+// triggering a fallback to CPU custom allocation and unlocking the buffer
+// appropriately.
+TEST(CompiledModelTest, HostMemoryUnalignedFallsBackToCpuAllocation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+  ASSERT_EQ(
+      LiteRtRegisterTensorBufferHandlers(
+          env_ptr, kLiteRtTensorBufferTypeUserCustomBuffer, CreateCustomMemory,
+          DestroyCustomMemory, LockCustomMemory, UnlockCustomMemory,
+          /*clear_func=*/nullptr, /*import_func=*/nullptr,
+          kLiteRtEnvOptionTagNull, kLiteRtEnvOptionTagNull),
+      kLiteRtStatusOk);
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* output_tensor0 = interp->output_tensor(0);
+  ASSERT_NE(output_tensor0, nullptr);
+
+  // Register buffer requirements on output_tensor0 for HostMemory with 4096
+  // alignment.
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory,
+      kLiteRtTensorBufferTypeUserCustomBuffer};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/2, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      compiled_model->GetBufferContext()->RegisterBufferRequirements(
+          output_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+      kLiteRtStatusOk);
+
+  // Fake delegate to ensure tensor is not in cpu_tensors_
+  TfLiteRegistration delegate_kernel_reg = {};
+  delegate_kernel_reg.builtin_code = kTfLiteBuiltinDelegate;
+  delegate_kernel_reg.custom_name = "FakeDelegate";
+  delegate_kernel_reg.invoke = [](TfLiteContext* context,
+                                  TfLiteNode* node) -> TfLiteStatus {
+    return kTfLiteOk;
+  };
+  TfLiteDelegate delegate = TfLiteDelegateCreate();
+  delegate.data_ = &delegate_kernel_reg;
+  delegate.Prepare = [](TfLiteContext* context,
+                        TfLiteDelegate* delegate) -> TfLiteStatus {
+    TfLiteIntArray* plan = nullptr;
+    if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+      return kTfLiteError;
+    }
+    return context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, *static_cast<TfLiteRegistration*>(delegate->data_), plan,
+        delegate);
+  };
+  ASSERT_EQ(interp->ModifyGraphWithDelegate(&delegate), kTfLiteOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  // Bind a hardware buffer (Custom) first to simulate pre-existing delegate
+  // registration
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> hw_output_buffers,
+      CreateOutputBuffersOfType(env_ptr, *model, signature_key,
+                                kLiteRtTensorBufferTypeUserCustomBuffer,
+                                sizeof(float) * kTestOutputSize));
+
+  bool async = false;
+  LITERT_ASSERT_OK(compiled_model->Run(signature_key, input_buffers,
+                                       hw_output_buffers, async));
+  // Delegate buffer is registered.
+  EXPECT_TRUE(compiled_model->GetBufferContext()
+                  ->GetTensorBuffer(output_tensor0)
+                  .HasValue());
+
+  // Now create an unaligned HostMemory buffer.
+  size_t alloc_size = sizeof(float) * kTestOutputSize + 4096;
+  std::unique_ptr<void, decltype(&std::free)> raw_mem(std::malloc(alloc_size),
+                                                      &std::free);
+  uintptr_t unaligned_addr = reinterpret_cast<uintptr_t>(raw_mem.get()) + 64;
+  if (unaligned_addr % 4096 == 0) {
+    unaligned_addr += 64;
+  }
+  void* unaligned_ptr = reinterpret_cast<void*>(unaligned_addr);
+
+  auto tensor_type_expected = litert::internal::ConvertTensorType(
+      reinterpret_cast<const TfLiteOpaqueTensor*>(output_tensor0));
+  ASSERT_TRUE(tensor_type_expected);
+  auto tensor_type = static_cast<LiteRtRankedTensorType>(*tensor_type_expected);
+
+  LiteRtTensorBuffer unaligned_buffer;
+  ASSERT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                &tensor_type, unaligned_ptr, sizeof(float) * kTestOutputSize,
+                nullptr, &unaligned_buffer),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> unaligned_output_buffers = {unaligned_buffer};
+
+  // Run with unaligned buffer. Should unregister the previous hardware buffer
+  // and fallback to CPU sync.
+  LITERT_ASSERT_OK(compiled_model->Run(signature_key, input_buffers,
+                                       unaligned_output_buffers, async));
+
+  EXPECT_FALSE(compiled_model->GetBufferContext()
+                   ->GetTensorBuffer(output_tensor0)
+                   .HasValue());
+
+  {
+    void* host_mem_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(unaligned_buffer, &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    // output won't have kTestOutputTensor since delegate doesn't do anything,
+    // but it will have whatever CPU sync filled (likely zero or undefined).
+    // Actually we don't care about correctness here, just that it fallback
+    // didn't crash.
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(unaligned_buffer), kLiteRtStatusOk);
+  }
+
+  LiteRtDestroyTensorBuffer(unaligned_buffer);
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  for (auto& buf : hw_output_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// 2. Aligned (4096B) `HostMemory` buffer registers directly (`kTfLiteNonCpu`,
+// zero-copy).
+TEST(CompiledModelTest, HostMemoryAlignedRegistersDirectly) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildMultiSignatureDispatchModel());
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 2);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+
+  TfLiteRegistration dispatch_op_reg{};
+  dispatch_op_reg.builtin_code = kTfLiteBuiltinCustom;
+  dispatch_op_reg.custom_name = internal::kLiteRtDispatchOpCustomName.data();
+  dispatch_op_reg.prepare = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  dispatch_op_reg.invoke = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  jit_compilation_options->custom_tflite_op_registrations.push_back(
+      &dispatch_op_reg);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* output_tensor0 = interp->output_tensor(0);
+  ASSERT_NE(output_tensor0, nullptr);
+
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      compiled_model->GetBufferContext()->RegisterBufferRequirements(
+          output_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+      kLiteRtStatusOk);
+
+  // Fake delegate to ensure tensor is not in cpu_tensors_
+  TfLiteRegistration delegate_kernel_reg = {};
+  delegate_kernel_reg.builtin_code = kTfLiteBuiltinDelegate;
+  delegate_kernel_reg.custom_name = "FakeDelegate";
+  delegate_kernel_reg.invoke = [](TfLiteContext* context,
+                                  TfLiteNode* node) -> TfLiteStatus {
+    return kTfLiteOk;
+  };
+  TfLiteDelegate delegate = TfLiteDelegateCreate();
+  delegate.data_ = &delegate_kernel_reg;
+  delegate.Prepare = [](TfLiteContext* context,
+                        TfLiteDelegate* delegate) -> TfLiteStatus {
+    TfLiteIntArray* plan = nullptr;
+    if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+      return kTfLiteError;
+    }
+    return context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, *static_cast<TfLiteRegistration*>(delegate->data_), plan,
+        delegate);
+  };
+  ASSERT_EQ(interp->ModifyGraphWithDelegate(&delegate), kTfLiteOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  // Create aligned HostMemory buffer.
+  size_t alloc_size = sizeof(float) * kTestOutputSize + 4096;
+  std::unique_ptr<void, decltype(&std::free)> raw_mem(std::malloc(alloc_size),
+                                                      &std::free);
+  uintptr_t aligned_addr = reinterpret_cast<uintptr_t>(raw_mem.get());
+  if (aligned_addr % 4096 != 0) {
+    aligned_addr = (aligned_addr + 4095) & ~4095;
+  }
+  void* aligned_ptr = reinterpret_cast<void*>(aligned_addr);
+
+  auto tensor_type_expected = litert::internal::ConvertTensorType(
+      reinterpret_cast<const TfLiteOpaqueTensor*>(output_tensor0));
+  ASSERT_TRUE(tensor_type_expected);
+  auto tensor_type = static_cast<LiteRtRankedTensorType>(*tensor_type_expected);
+
+  LiteRtTensorBuffer aligned_buffer;
+  ASSERT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                &tensor_type, aligned_ptr, sizeof(float) * kTestOutputSize,
+                nullptr, &aligned_buffer),
+            kLiteRtStatusOk);
+
+  std::vector<LiteRtTensorBuffer> aligned_output_buffers = {aligned_buffer};
+
+  bool async = false;
+  LITERT_ASSERT_OK(compiled_model->Run(signature_key, input_buffers,
+                                       aligned_output_buffers, async));
+
+  // Buffer should be registered in buffer context.
+  EXPECT_TRUE(compiled_model->GetBufferContext()
+                  ->GetTensorBuffer(output_tensor0)
+                  .HasValue());
+  EXPECT_EQ(output_tensor0->allocation_type, kTfLiteNonCpu);
+
+  {
+    void* host_mem_addr = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(aligned_buffer, &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(aligned_buffer), kLiteRtStatusOk);
+  }
+
+  LiteRtDestroyTensorBuffer(aligned_buffer);
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+// 3. Partial delegation (`cpu_tensors_` contains tensor ID, AND
+// `buffer_context_` has `HostMemory` requirements): `HostMemory` user buffer is
+// NOT registered into `buffer_context_`, only locked once (`kTfLiteCustom`).
+TEST(CompiledModelTest, PartialDelegationHostMemoryAvoidsDoubleLock) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 1);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* input_tensor0 = interp->input_tensor(0);
+  ASSERT_NE(input_tensor0, nullptr);
+
+  // Setup partial delegation scenario: CPU requires the tensor.
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirements(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestInput0Size,
+                /*num_strides=*/0, /*strides=*/nullptr, &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(compiled_model->GetBufferContext()->RegisterBufferRequirements(
+                input_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+            kLiteRtStatusOk);
+
+  // Register a fake delegate that just tries to allocate tensor buffer and lock
+  // it to simulate double-lock scenario
+  TfLiteRegistration delegate_kernel_reg = {};
+  delegate_kernel_reg.invoke = [](TfLiteContext* context,
+                                  TfLiteNode* node) -> TfLiteStatus {
+    auto buffer_context = LiteRtExternalLiteRtBufferContextT::GetInstance(
+        reinterpret_cast<TfLiteOpaqueContext*>(context));
+    if (!buffer_context.HasValue()) {
+      return kTfLiteError;
+    }
+    TfLiteTensor* in = &context->tensors[node->inputs->data[0]];
+    auto hw_buf = (*buffer_context)->GetTensorBuffer(in);
+    if (hw_buf.HasValue()) {
+      // It was registered in buffer_context! This would cause double-lock.
+      void* addr = nullptr;
+      if (LiteRtLockTensorBuffer(hw_buf->get(), &addr,
+                                 kLiteRtTensorBufferLockModeRead) !=
+          kLiteRtStatusOk) {
+        return kTfLiteError;  // Fail on double lock
+      }
+      LiteRtUnlockTensorBuffer(hw_buf->get());
+      return kTfLiteError;  // We expect it to NOT be registered!
+    }
+
+    // Success: it wasn't registered in buffer_context_ and is just available in
+    // CPU memory.
+    if (in->allocation_type == kTfLiteCustom && in->data.f != nullptr) {
+      // It is accessible.
+      return kTfLiteOk;
+    }
+    return kTfLiteError;
+  };
+
+  TfLiteDelegate delegate = TfLiteDelegateCreate();
+  delegate.data_ = &delegate_kernel_reg;
+  delegate.Prepare = [](TfLiteContext* context,
+                        TfLiteDelegate* delegate) -> TfLiteStatus {
+    TfLiteIntArray* plan = nullptr;
+    if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+      return kTfLiteError;
+    }
+    return context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, *static_cast<TfLiteRegistration*>(delegate->data_), plan,
+        delegate);
+  };
+  ASSERT_EQ(interp->ModifyGraphWithDelegate(&delegate), kTfLiteOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersOfType(env_ptr, *model, signature_key,
+                               kLiteRtTensorBufferTypeHostMemory,
+                               sizeof(float) * kTestInput0Size));
+
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> output_buffers,
+      CreateOutputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                          *compiled_model));
+
+  bool async = false;
+  auto run_res =
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async);
+  EXPECT_TRUE(run_res.HasValue()) << run_res.Error().Message();
+
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  for (auto& buf : output_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, HostMemoryUndersizedFallsBackToCpuAllocation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildMultiSignatureDispatchModel());
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 2);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorCpu),
+            kLiteRtStatusOk);
+  TfLiteRegistration dispatch_op_reg{};
+  dispatch_op_reg.builtin_code = kTfLiteBuiltinCustom;
+  dispatch_op_reg.custom_name = internal::kLiteRtDispatchOpCustomName.data();
+  dispatch_op_reg.prepare = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  dispatch_op_reg.invoke = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  jit_compilation_options->custom_tflite_op_registrations.push_back(
+      &dispatch_op_reg);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+  LiteRtDestroyOptions(jit_compilation_options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* output_tensor0 = interp->output_tensor(0);
+  ASSERT_NE(output_tensor0, nullptr);
+
+  // Delegate requires 4096 bytes and 4096 alignment (larger than packed
+  // sizeof(float) * kTestOutputSize).
+  LiteRtTensorBufferRequirements requirements;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/4096,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      compiled_model->GetBufferContext()->RegisterBufferRequirements(
+          output_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+      kLiteRtStatusOk);
+
+  TfLiteRegistration delegate_kernel_reg = {};
+  delegate_kernel_reg.builtin_code = kTfLiteBuiltinDelegate;
+  delegate_kernel_reg.custom_name = "FakeDelegate";
+  delegate_kernel_reg.invoke = [](TfLiteContext* context,
+                                  TfLiteNode* node) -> TfLiteStatus {
+    return kTfLiteOk;
+  };
+  TfLiteDelegate delegate = TfLiteDelegateCreate();
+  delegate.data_ = &delegate_kernel_reg;
+  delegate.Prepare = [](TfLiteContext* context,
+                        TfLiteDelegate* delegate) -> TfLiteStatus {
+    TfLiteIntArray* plan = nullptr;
+    if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+      return kTfLiteError;
+    }
+    return context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, *static_cast<TfLiteRegistration*>(delegate->data_), plan,
+        delegate);
+  };
+  ASSERT_EQ(interp->ModifyGraphWithDelegate(&delegate), kTfLiteOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env_ptr, *model, signature_key,
+                                         *compiled_model));
+
+  // Allocate a 4096B-aligned buffer sized only for packed CPU bytes (< 4096).
+  size_t alloc_size = sizeof(float) * kTestOutputSize + 4096;
+  std::unique_ptr<void, decltype(&std::free)> raw_mem(std::malloc(alloc_size),
+                                                      &std::free);
+  uintptr_t aligned_addr =
+      (reinterpret_cast<uintptr_t>(raw_mem.get()) + 4095) & ~uintptr_t{4095};
+  void* aligned_ptr = reinterpret_cast<void*>(aligned_addr);
+
+  auto tensor_type_expected = litert::internal::ConvertTensorType(
+      reinterpret_cast<const TfLiteOpaqueTensor*>(output_tensor0));
+  ASSERT_TRUE(tensor_type_expected);
+  auto tensor_type = static_cast<LiteRtRankedTensorType>(*tensor_type_expected);
+
+  LiteRtTensorBuffer small_aligned_buffer;
+  ASSERT_EQ(LiteRtCreateTensorBufferFromHostMemory(
+                &tensor_type, aligned_ptr, sizeof(float) * kTestOutputSize,
+                nullptr, &small_aligned_buffer),
+            kLiteRtStatusOk);
+  std::vector<LiteRtTensorBuffer> output_buffers = {small_aligned_buffer};
+
+  bool async = false;
+  LITERT_ASSERT_OK(
+      compiled_model->Run(signature_key, input_buffers, output_buffers, async));
+
+  // Undersized HostMemory must not be registered zero-copy with the backend.
+  EXPECT_FALSE(compiled_model->GetBufferContext()
+                   ->GetTensorBuffer(output_tensor0)
+                   .HasValue());
+  EXPECT_EQ(output_tensor0->allocation_type, kTfLiteCustom);
+
+  LiteRtDestroyTensorBuffer(small_aligned_buffer);
+  for (auto& buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+TEST(CompiledModelTest, RuntimeContextVersion14AndAbiHasApi) {
+  const LiteRtRuntimeContext* ctx = LrtGetRuntimeContext();
+  ASSERT_NE(ctx, nullptr);
+  EXPECT_EQ(ctx->abi_header.struct_size, sizeof(LiteRtRuntimeContext));
+  EXPECT_EQ(ctx->abi_header.major_version, 1);
+  EXPECT_GE(ctx->abi_header.minor_version, 4);
+#if LITERT_HAS_OPENCL_SUPPORT
+  EXPECT_TRUE(LITERT_ABI_HAS_API(ctx, /*req_major=*/1,
+                                 get_tensor_buffer_opencl_memory_with_env));
+  EXPECT_TRUE(
+      LITERT_ABI_HAS_API(ctx, /*req_major=*/1, sync_tensor_buffer_host_memory));
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
+  // Truncate to v1.3 struct size to verify old runtime context detection.
+  LiteRtRuntimeContext truncated_v13 = *ctx;
+  truncated_v13.abi_header.minor_version = 3;
+  truncated_v13.abi_header.struct_size =
+      offsetof(LiteRtRuntimeContext, get_tensor_buffer_opencl_memory_with_env);
+  EXPECT_TRUE(
+      LITERT_ABI_HAS_API(&truncated_v13, /*req_major=*/1,
+                         create_tensor_buffer_requirements_with_alignment));
+  EXPECT_FALSE(LITERT_ABI_HAS_API(&truncated_v13, /*req_major=*/1,
+                                  get_tensor_buffer_opencl_memory_with_env));
+  EXPECT_FALSE(LITERT_ABI_HAS_API(&truncated_v13, /*req_major=*/1,
+                                  sync_tensor_buffer_host_memory));
+
+  const LiteRtRuntimeContext* null_ctx = nullptr;
+  EXPECT_FALSE(LITERT_ABI_HAS_API(null_ctx, /*req_major=*/1,
+                                  get_tensor_buffer_opencl_memory_with_env));
+  EXPECT_FALSE(LITERT_ABI_HAS_API(null_ctx, /*req_major=*/1,
+                                  sync_tensor_buffer_host_memory));
+}
+
+size_t GetTestHostPageSize() {
+#if defined(_WIN32)
+  SYSTEM_INFO sys_info;
+  GetSystemInfo(&sys_info);
+  return std::max<size_t>(4096, sys_info.dwPageSize);
+#elif defined(_SC_PAGESIZE)
+  int64_t page_size = sysconf(_SC_PAGESIZE);
+  return page_size > 0 ? std::max<size_t>(4096, static_cast<size_t>(page_size))
+                       : 4096;
+#else
+  return 4096;
+#endif
+}
+
+TEST(CompiledModelTest, OpenClHostBufferFallbackEnvAndContextValidation) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#elif !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL is not supported in this build.";
+#else
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#endif
+  if (!litert::internal::OpenClMemory::IsSupported() ||
+      !ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform.";
+  }
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ml_drift::cl::Environment cl_env1;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env1));
+  ml_drift::cl::Environment cl_env2;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env2));
+
+  auto create_gpu_env = [](ml_drift::cl::Environment& cl_env,
+                           LiteRtEnvironment* out_env) {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtAny context_id,
+        litert::ToLiteRtAny(litert::LiteRtVariant(
+            reinterpret_cast<int64_t>(cl_env.context().context()))));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtAny queue_id,
+        litert::ToLiteRtAny(litert::LiteRtVariant(
+            reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+    const std::array<LiteRtEnvOption, 2> options = {
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                        .value = context_id},
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                        .value = queue_id},
+    };
+    ASSERT_EQ(LiteRtCreateEnvironment(options.size(), options.data(), out_env),
+              kLiteRtStatusOk);
+  };
+
+  LiteRtEnvironment env1 = nullptr;
+  LiteRtEnvironment env2 = nullptr;
+  create_gpu_env(cl_env1, &env1);
+  create_gpu_env(cl_env2, &env2);
+
+  const size_t page_size = GetTestHostPageSize();
+  constexpr size_t kNumFloats = 4;
+  constexpr size_t kBufferBytes = kNumFloats * sizeof(float);
+  void* raw_mem = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_mem, page_size, page_size * 2), 0);
+  std::memset(raw_mem, 0, page_size * 2);
+
+  const LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {static_cast<int32_t>(kNumFloats)}},
+  };
+
+  // Reject unaligned pointer (page_aligned + 64).
+  uint8_t* unaligned_ptr = static_cast<uint8_t*>(raw_mem) + 64;
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto unaligned_buf,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          tensor_type, absl::MakeSpan(unaligned_ptr, kBufferBytes)));
+  LiteRtClMem cl_mem = nullptr;
+  EXPECT_NE(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, unaligned_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+  EXPECT_EQ(unaligned_buf->env(), nullptr);
+
+  // External 5-arg HostMemory starts with env_ == nullptr and keeps env_
+  // immutable even after fallback_env caching.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto ext_buf,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          tensor_type,
+          absl::MakeSpan(static_cast<uint8_t*>(raw_mem), kBufferBytes)));
+  EXPECT_EQ(ext_buf->env(), nullptr);
+  EXPECT_NE(LiteRtGetTensorBufferOpenClMemory(ext_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, ext_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+  ASSERT_NE(cl_mem, nullptr);
+  EXPECT_EQ(ext_buf->env(), nullptr);
+
+  LiteRtClMem cached_cl_mem = nullptr;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, ext_buf.get(), &cached_cl_mem),
+            kLiteRtStatusOk);
+  EXPECT_EQ(cached_cl_mem, cl_mem);
+
+  // Different OpenCL context must be rejected on cached external HostMemory.
+  LiteRtClMem wrong_ctx_mem = nullptr;
+  EXPECT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env2, ext_buf.get(), &wrong_ctx_mem),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Managed HostMemory retains env1 and rejects fallback/mismatched env2.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto managed_buf,
+                              LiteRtTensorBufferT::CreateManagedWithAlignment(
+                                  env1, kLiteRtTensorBufferTypeHostMemory,
+                                  tensor_type, kBufferBytes, page_size));
+  EXPECT_EQ(managed_buf->env(), env1);
+  LiteRtClMem managed_cl_mem = nullptr;
+  EXPECT_EQ(
+      LiteRtGetTensorBufferOpenClMemory(managed_buf.get(), &managed_cl_mem),
+      kLiteRtStatusOk);
+  EXPECT_NE(managed_cl_mem, nullptr);
+  EXPECT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env2, managed_buf.get(), &wrong_ctx_mem),
+            kLiteRtStatusErrorInvalidArgument);
+
+  managed_buf.reset();
+  ext_buf.reset();
+  unaligned_buf.reset();
+  litert_aligned_free(raw_mem);
+  LiteRtDestroyEnvironment(env2);
+  LiteRtDestroyEnvironment(env1);
+#endif
+}
+
+TEST(CompiledModelTest, OpenClHostBufferSyncLockUnlockClearAndMoveCtor) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#elif !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL is not supported in this build.";
+#else
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#endif
+  if (!litert::internal::OpenClMemory::IsSupported() ||
+      !ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform.";
+  }
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ml_drift::cl::Environment cl_env;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.context().context()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny queue_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+  const std::array<LiteRtEnvOption, 2> options = {
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                      .value = context_id},
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                      .value = queue_id},
+  };
+  LiteRtEnvironment env = nullptr;
+  ASSERT_EQ(LiteRtCreateEnvironment(options.size(), options.data(), &env),
+            kLiteRtStatusOk);
+
+  const size_t page_size = GetTestHostPageSize();
+  constexpr size_t kNumFloats = 4;
+  constexpr size_t kBufferBytes = kNumFloats * sizeof(float);
+  void* raw_mem = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_mem, page_size, page_size), 0);
+  float* host_floats = static_cast<float*>(raw_mem);
+  for (size_t i = 0; i < kNumFloats; ++i) {
+    host_floats[i] = static_cast<float>(i + 1);
+  }
+
+  const LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {static_cast<int32_t>(kNumFloats)}},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto host_buf,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          tensor_type,
+          absl::MakeSpan(static_cast<uint8_t*>(raw_mem), kBufferBytes)));
+
+  LiteRtClMem cl_mem = nullptr;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env, host_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+  ASSERT_NE(cl_mem, nullptr);
+
+  // Sync to device and verify via OpenCL read.
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostSyncToDevice),
+            kLiteRtStatusOk);
+  std::array<float, kNumFloats> cl_readback{};
+  ASSERT_EQ(ml_drift::cl::clEnqueueReadBuffer(
+                cl_env.queue()->queue(), cl_mem, CL_TRUE, 0, kBufferBytes,
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  EXPECT_THAT(cl_readback, ElementsAre(1.0f, 2.0f, 3.0f, 4.0f));
+
+  // Write on GPU side, then async map -> clFinish -> FinishSyncToHost.
+  const std::array<float, kNumFloats> gpu_written = {10.0f, 20.0f, 30.0f,
+                                                     40.0f};
+  ASSERT_EQ(ml_drift::cl::clEnqueueWriteBuffer(
+                cl_env.queue()->queue(), cl_mem, CL_TRUE, 0, kBufferBytes,
+                gpu_written.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostSyncToHostOutputAsync),
+            kLiteRtStatusOk);
+  // Second input-sync call on same buffer (aliasing case) must stay safe.
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostSyncToHostInputAsync),
+            kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clFinish(cl_env.queue()->queue()), CL_SUCCESS);
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostFinishSyncToHost),
+            kLiteRtStatusOk);
+  EXPECT_THAT(absl::MakeSpan(host_floats, kNumFloats),
+              ElementsAre(10.0f, 20.0f, 30.0f, 40.0f));
+
+  // Raw-pointer reuse without Lock/Unlock must propagate to OpenCL.
+  host_floats[0] = 55.0f;
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostSyncToDevice),
+            kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clEnqueueReadBuffer(
+                cl_env.queue()->queue(), cl_mem, CL_TRUE, 0, kBufferBytes,
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  EXPECT_FLOAT_EQ(cl_readback[0], 55.0f);
+
+  // Lock(kWrite) -> write -> Unlock() must flush to device.
+  void* locked_ptr = nullptr;
+  ASSERT_EQ(LiteRtLockTensorBuffer(host_buf.get(), &locked_ptr,
+                                   kLiteRtTensorBufferLockModeWrite),
+            kLiteRtStatusOk);
+  static_cast<float*>(locked_ptr)[1] = 77.0f;
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(host_buf.get()), kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clEnqueueReadBuffer(
+                cl_env.queue()->queue(), cl_mem, CL_TRUE, 0, kBufferBytes,
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  EXPECT_FLOAT_EQ(cl_readback[1], 77.0f);
+
+  // Clear() + raw-pointer write must remain host-mapped and sync to device.
+  ASSERT_EQ(LiteRtClearTensorBuffer(host_buf.get()), kLiteRtStatusOk);
+  EXPECT_FLOAT_EQ(host_floats[1], 0.0f);
+  host_floats[2] = 99.0f;
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                host_buf.get(), kLrtHostSyncToDevice),
+            kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clEnqueueReadBuffer(
+                cl_env.queue()->queue(), cl_mem, CL_TRUE, 0, kBufferBytes,
+                cl_readback.data(), 0, nullptr, nullptr),
+            CL_SUCCESS);
+  EXPECT_THAT(cl_readback, ElementsAre(0.0f, 0.0f, 99.0f, 0.0f));
+
+  // Verify OpenClMemory move constructor cleanly transfers host-backed state.
+  LITERT_ASSERT_OK_AND_ASSIGN(auto gpu_env, env->GetGpuEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      litert::internal::OpenClMemory moved_src,
+      litert::internal::OpenClMemory::AllocFromHostBuffer(
+          gpu_env, tensor_type, raw_mem, kBufferBytes, page_size));
+  litert::internal::OpenClMemory moved_dst(std::move(moved_src));
+  EXPECT_EQ(moved_src.GetMemoryPtr(), nullptr);  // NOLINT(bugprone-use-after-move)
+  EXPECT_NE(moved_dst.GetMemoryPtr(), nullptr);
+  EXPECT_TRUE(
+      moved_dst.HostSync(litert::internal::OpenClHostSyncOp::kToDevice));
+
+  host_buf.reset();
+  litert_aligned_free(raw_mem);
+  LiteRtDestroyEnvironment(env);
+#endif
+}
+
+TEST(CompiledModelTest, OpenClHostBufferDestroyEnvBeforeTensorBufferSafe) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#elif !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL is not supported in this build.";
+#else
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#endif
+  if (!litert::internal::OpenClMemory::IsSupported() ||
+      !ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform.";
+  }
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ml_drift::cl::Environment cl_env;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+  cl_int err = CL_SUCCESS;
+  cl_command_queue queue = ml_drift::cl::clCreateCommandQueue(
+      cl_env.context().context(), cl_env.device().id(), 0, &err);
+  ASSERT_EQ(err, CL_SUCCESS);
+  ASSERT_NE(queue, nullptr);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtAny context_id,
+      litert::ToLiteRtAny(litert::LiteRtVariant(
+          reinterpret_cast<int64_t>(cl_env.context().context()))));
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny queue_id,
+                              litert::ToLiteRtAny(litert::LiteRtVariant(
+                                  reinterpret_cast<int64_t>(queue))));
+  const std::array<LiteRtEnvOption, 2> options = {
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                      .value = context_id},
+      LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                      .value = queue_id},
+  };
+  LiteRtEnvironment env = nullptr;
+  ASSERT_EQ(LiteRtCreateEnvironment(options.size(), options.data(), &env),
+            kLiteRtStatusOk);
+
+  cl_uint ref_before = 0;
+  ASSERT_EQ(ml_drift::cl::clGetCommandQueueInfo(queue, CL_QUEUE_REFERENCE_COUNT,
+                                                sizeof(ref_before), &ref_before,
+                                                nullptr),
+            CL_SUCCESS);
+
+  const size_t page_size = GetTestHostPageSize();
+  constexpr size_t kNumFloats = 4;
+  constexpr size_t kBufferBytes = kNumFloats * sizeof(float);
+  void* raw_mem = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_mem, page_size, page_size), 0);
+  const LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {static_cast<int32_t>(kNumFloats)}},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto host_buf,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          tensor_type,
+          absl::MakeSpan(static_cast<uint8_t*>(raw_mem), kBufferBytes)));
+  LiteRtClMem cl_mem = nullptr;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env, host_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+
+  cl_uint ref_with_host_buf = 0;
+  ASSERT_EQ(ml_drift::cl::clGetCommandQueueInfo(queue, CL_QUEUE_REFERENCE_COUNT,
+                                                sizeof(ref_with_host_buf),
+                                                &ref_with_host_buf, nullptr),
+            CL_SUCCESS);
+  EXPECT_GT(ref_with_host_buf, ref_before);
+
+  // Destroy LiteRtEnvironment BEFORE destroying TensorBuffer; OpenClMemory must
+  // safely finish/unmap using its retained command queue.
+  LiteRtDestroyEnvironment(env);
+  host_buf.reset();
+
+  cl_uint ref_after_destroy = 0;
+  ASSERT_EQ(ml_drift::cl::clGetCommandQueueInfo(queue, CL_QUEUE_REFERENCE_COUNT,
+                                                sizeof(ref_after_destroy),
+                                                &ref_after_destroy, nullptr),
+            CL_SUCCESS);
+  EXPECT_EQ(ref_after_destroy, 1u);
+
+  ASSERT_EQ(ml_drift::cl::clReleaseCommandQueue(queue), CL_SUCCESS);
+  litert_aligned_free(raw_mem);
+#endif
+}
+
+TEST(CompiledModelTest, ExternalLiteRtBufferContextCreateBufferUsesAlignment) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env_ptr = env.release();
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model = nullptr;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions options = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, options));
+  LiteRtDestroyOptions(options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* output_tensor0 = interp->output_tensor(0);
+  ASSERT_NE(output_tensor0, nullptr);
+
+  constexpr size_t kRequiredAlignment = 4096;
+  LiteRtTensorBufferRequirements requirements = nullptr;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, kRequiredAlignment,
+                &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      compiled_model->GetBufferContext()->RegisterBufferRequirements(
+          output_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+      kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtTensorBufferPtr created_buffer,
+      compiled_model->GetBufferContext()->CreateBufferForTensor(
+          output_tensor0));
+  ASSERT_NE(created_buffer, nullptr);
+  EXPECT_EQ(created_buffer->buffer_type(), kLiteRtTensorBufferTypeHostMemory);
+  EXPECT_EQ(created_buffer->env(), env_ptr);
+  LITERT_ASSERT_OK_AND_ASSIGN(void* host_ptr, created_buffer->GetHostBuffer());
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(host_ptr) % kRequiredAlignment, 0u);
+
+  created_buffer.reset();
+  compiled_model.reset();
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+TEST(CompiledModelTest, HostMemoryCrossEnvManagedBufferFallsBackToCpuCopy) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env1,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env2,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* env1_ptr = env1.release();
+  LiteRtEnvironmentT* env2_ptr = env2.release();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildMultiSignatureDispatchModel());
+  LiteRtModel model = nullptr;
+  ASSERT_EQ(LiteRtCreateModelFromBuffer(env2_ptr, model_buffer.data(),
+                                        model_buffer.size(), &model),
+            kLiteRtStatusOk);
+  absl::Span<LiteRtSignature> signatures = model->Signatures();
+  ASSERT_EQ(signatures.size(), 2);
+  absl::string_view signature_key = signatures[0]->Key();
+
+  LiteRtOptions options = nullptr;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu),
+      kLiteRtStatusOk);
+  TfLiteRegistration dispatch_op_reg{};
+  dispatch_op_reg.builtin_code = kTfLiteBuiltinCustom;
+  dispatch_op_reg.custom_name = internal::kLiteRtDispatchOpCustomName.data();
+  dispatch_op_reg.prepare = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  dispatch_op_reg.invoke = [](TfLiteContext*, TfLiteNode*) {
+    return kTfLiteOk;
+  };
+  options->custom_tflite_op_registrations.push_back(&dispatch_op_reg);
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env2_ptr, model, options));
+  LiteRtDestroyOptions(options);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                              GetInterpreter(compiled_model.get()));
+  auto* output_tensor0 = interp->output_tensor(0);
+  ASSERT_NE(output_tensor0, nullptr);
+
+  LiteRtTensorBufferRequirements requirements = nullptr;
+  LiteRtTensorBufferType supported_types[] = {
+      kLiteRtTensorBufferTypeHostMemory};
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &requirements),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      compiled_model->GetBufferContext()->RegisterBufferRequirements(
+          output_tensor0, LiteRtTensorBufferRequirementsPtr(requirements)),
+      kLiteRtStatusOk);
+
+  TfLiteRegistration delegate_kernel_reg = {};
+  delegate_kernel_reg.builtin_code = kTfLiteBuiltinDelegate;
+  delegate_kernel_reg.custom_name = "FakeDelegate";
+  delegate_kernel_reg.invoke = [](TfLiteContext* context,
+                                  TfLiteNode* node) -> TfLiteStatus {
+    return kTfLiteOk;
+  };
+  TfLiteDelegate delegate = TfLiteDelegateCreate();
+  delegate.data_ = &delegate_kernel_reg;
+  delegate.Prepare = [](TfLiteContext* context,
+                        TfLiteDelegate* delegate) -> TfLiteStatus {
+    TfLiteIntArray* plan = nullptr;
+    if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+      return kTfLiteError;
+    }
+    return context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, *static_cast<TfLiteRegistration*>(delegate->data_), plan,
+        delegate);
+  };
+  ASSERT_EQ(interp->ModifyGraphWithDelegate(&delegate), kTfLiteOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      std::vector<LiteRtTensorBuffer> input_buffers,
+      CreateInputBuffersFromRequirements(env2_ptr, *model, signature_key,
+                                         *compiled_model));
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[0], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size));
+  }
+  {
+    TensorBuffer cpu_buffer =
+        TensorBuffer::WrapCObject(input_buffers[1], OwnHandle::kNo);
+    cpu_buffer.Write<float>(
+        absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size));
+  }
+
+  // Create aligned managed HostMemory buffers bound to env2 (same) and env1
+  // (cross-env).
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtRankedTensorType output_type,
+      litert::internal::ConvertTensorType(
+          reinterpret_cast<const TfLiteOpaqueTensor*>(output_tensor0)));
+
+  LiteRtTensorBufferRequirements same_env_reqs = nullptr;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &same_env_reqs),
+            kLiteRtStatusOk);
+  LiteRtTensorBuffer same_env_output = nullptr;
+  ASSERT_EQ(LiteRtCreateManagedTensorBufferFromRequirements(
+                env2_ptr, &output_type, same_env_reqs, &same_env_output),
+            kLiteRtStatusOk);
+  LiteRtDestroyTensorBufferRequirements(same_env_reqs);
+
+  bool async = false;
+  std::vector<LiteRtTensorBuffer> same_env_outputs = {same_env_output};
+  LITERT_ASSERT_OK(compiled_model->Run(signature_key, input_buffers,
+                                       same_env_outputs, async));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto registered_same,
+      compiled_model->GetBufferContext()->GetTensorBuffer(output_tensor0));
+  EXPECT_EQ(registered_same.get(), same_env_output);
+
+  LiteRtTensorBufferRequirements cross_env_reqs = nullptr;
+  ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                /*num_supported_tensor_buffer_types=*/1, supported_types,
+                /*buffer_size=*/sizeof(float) * kTestOutputSize,
+                /*num_strides=*/0, /*strides=*/nullptr, /*alignment=*/4096,
+                &cross_env_reqs),
+            kLiteRtStatusOk);
+  LiteRtTensorBuffer cross_env_output = nullptr;
+  ASSERT_EQ(LiteRtCreateManagedTensorBufferFromRequirements(
+                env1_ptr, &output_type, cross_env_reqs, &cross_env_output),
+            kLiteRtStatusOk);
+  LiteRtDestroyTensorBufferRequirements(cross_env_reqs);
+
+  std::vector<LiteRtTensorBuffer> cross_env_outputs = {cross_env_output};
+  LITERT_ASSERT_OK(compiled_model->Run(signature_key, input_buffers,
+                                       cross_env_outputs, async));
+  // Because cross_env_output belongs to env1, CompiledModel must fall back and
+  // NOT register cross_env_output directly into env2's backend buffer context.
+  EXPECT_FALSE(compiled_model->GetBufferContext()
+                   ->GetTensorBuffer(output_tensor0)
+                   .HasValue());
+
+  for (auto buf : input_buffers) {
+    LiteRtDestroyTensorBuffer(buf);
+  }
+  LiteRtDestroyTensorBuffer(same_env_output);
+  LiteRtDestroyTensorBuffer(cross_env_output);
+  compiled_model.reset();
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env2_ptr);
+  LiteRtDestroyEnvironment(env1_ptr);
+}
+
+TEST(CompiledModelTest, OpenClHostBufferSameContextDifferentQueueRejected) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#elif !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL is not supported in this build.";
+#else
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#endif
+  if (!litert::internal::OpenClMemory::IsSupported() ||
+      !ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform.";
+  }
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ml_drift::cl::Environment cl_env;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env));
+  cl_int err = CL_SUCCESS;
+  cl_command_queue queue2 = ml_drift::cl::clCreateCommandQueue(
+      cl_env.context().context(), cl_env.device().id(), 0, &err);
+  ASSERT_EQ(err, CL_SUCCESS);
+  ASSERT_NE(queue2, nullptr);
+
+  auto create_env = [&](cl_command_queue queue, LiteRtEnvironment* out_env) {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtAny context_id,
+        litert::ToLiteRtAny(litert::LiteRtVariant(
+            reinterpret_cast<int64_t>(cl_env.context().context()))));
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny queue_id,
+                                litert::ToLiteRtAny(litert::LiteRtVariant(
+                                    reinterpret_cast<int64_t>(queue))));
+    const std::array<LiteRtEnvOption, 2> options = {
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                        .value = context_id},
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                        .value = queue_id},
+    };
+    ASSERT_EQ(LiteRtCreateEnvironment(options.size(), options.data(), out_env),
+              kLiteRtStatusOk);
+  };
+
+  LiteRtEnvironment env1 = nullptr;
+  LiteRtEnvironment env2 = nullptr;
+  ASSERT_NO_FATAL_FAILURE(create_env(cl_env.queue()->queue(), &env1));
+  ASSERT_NO_FATAL_FAILURE(create_env(queue2, &env2));
+
+  const size_t page_size = GetTestHostPageSize();
+  constexpr size_t kNumFloats = 4;
+  constexpr size_t kBufferBytes = kNumFloats * sizeof(float);
+  void* raw_mem = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_mem, page_size, page_size), 0);
+  std::memset(raw_mem, 0, page_size);
+  const LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {static_cast<int32_t>(kNumFloats)}},
+  };
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto ext_buf,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          tensor_type,
+          absl::MakeSpan(static_cast<uint8_t*>(raw_mem), kBufferBytes)));
+  LiteRtClMem cl_mem = nullptr;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, ext_buf.get(), &cl_mem),
+            kLiteRtStatusOk);
+  ASSERT_NE(cl_mem, nullptr);
+
+  LiteRtClMem other_queue_mem = nullptr;
+  EXPECT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env2, ext_buf.get(), &other_queue_mem),
+            kLiteRtStatusErrorInvalidArgument);
+
+  ext_buf.reset();
+  litert_aligned_free(raw_mem);
+  LiteRtDestroyEnvironment(env2);
+  LiteRtDestroyEnvironment(env1);
+  ASSERT_EQ(ml_drift::cl::clReleaseCommandQueue(queue2), CL_SUCCESS);
+#endif
+}
+
+TEST(CompiledModelTest,
+     OpenClHostBufferSmallAlignmentAndDestroyWhileDeviceSynced) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env_ptr,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  constexpr size_t kNumFloats = 4;
+  constexpr size_t kBufferBytes = kNumFloats * sizeof(float);
+  const LiteRtRankedTensorType tensor_type = {
+      .element_type = kLiteRtElementTypeFloat32,
+      .layout = {.rank = 1, .dimensions = {static_cast<int32_t>(kNumFloats)}},
+  };
+  // Alignment smaller than LITERT_HOST_MEMORY_BUFFER_ALIGNMENT must clamp up
+  // so the resulting managed HostMemory buffer passes IsValid().
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto small_aligned_buf,
+      LiteRtTensorBufferT::CreateManagedWithAlignment(
+          env_ptr.get(), kLiteRtTensorBufferTypeHostMemory, tensor_type,
+          kBufferBytes, /*alignment=*/16));
+  LITERT_ASSERT_OK_AND_ASSIGN(void* small_ptr,
+                              small_aligned_buf->GetHostBuffer());
+  EXPECT_EQ(reinterpret_cast<uintptr_t>(small_ptr) %
+                LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+            0u);
+  void* locked_small = nullptr;
+  ASSERT_EQ(LiteRtLockTensorBuffer(small_aligned_buf.get(), &locked_small,
+                                   kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  EXPECT_EQ(locked_small, small_ptr);
+  ASSERT_EQ(LiteRtUnlockTensorBuffer(small_aligned_buf.get()), kLiteRtStatusOk);
+  small_aligned_buf.reset();
+
+#if !defined(_WIN32) && LITERT_HAS_OPENCL_SUPPORT && \
+    !defined(MEMORY_SANITIZER) && !defined(THREAD_SANITIZER)
+  if (litert::internal::OpenClMemory::IsSupported() &&
+      ml_drift::cl::LoadOpenCL().ok()) {
+    absl::LeakCheckDisabler disable_leak_check;
+    ml_drift::cl::Environment cl_env;
+    if (ml_drift::cl::CreateEnvironment(&cl_env).ok()) {
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          LiteRtAny context_id,
+          litert::ToLiteRtAny(litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(cl_env.context().context()))));
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          LiteRtAny queue_id,
+          litert::ToLiteRtAny(litert::LiteRtVariant(
+              reinterpret_cast<int64_t>(cl_env.queue()->queue()))));
+      const std::array<LiteRtEnvOption, 2> options = {
+          LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                          .value = context_id},
+          LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                          .value = queue_id},
+      };
+      LiteRtEnvironment ocl_env = nullptr;
+      ASSERT_EQ(
+          LiteRtCreateEnvironment(options.size(), options.data(), &ocl_env),
+          kLiteRtStatusOk);
+
+      const size_t page_size = GetTestHostPageSize();
+      void* raw_mem = nullptr;
+      ASSERT_EQ(::posix_memalign(&raw_mem, page_size, page_size), 0);
+      auto* host_floats = static_cast<float*>(raw_mem);
+      for (size_t i = 0; i < kNumFloats; ++i) {
+        host_floats[i] = static_cast<float>(i + 1);
+      }
+
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          auto host_buf,
+          LiteRtTensorBufferT::CreateFromHostMemory(
+              tensor_type,
+              absl::MakeSpan(static_cast<uint8_t*>(raw_mem), kBufferBytes),
+              /*deallocator=*/litert_aligned_free));
+      LiteRtClMem cl_mem = nullptr;
+      ASSERT_EQ(
+          LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+              ocl_env, host_buf.get(), &cl_mem),
+          kLiteRtStatusOk);
+      // Transition to kDeviceSynced and enqueue an async GPU write before
+      // destroying host_buf immediately; CleanupHostBuffer must finish the
+      // retained queue before HostBuffer's deallocator frees raw_mem.
+      ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                    host_buf.get(), kLrtHostSyncToDevice),
+                kLiteRtStatusOk);
+      const std::array<float, kNumFloats> gpu_payload = {9.0f, 8.0f, 7.0f,
+                                                         6.0f};
+      ASSERT_EQ(ml_drift::cl::clEnqueueWriteBuffer(
+                    cl_env.queue()->queue(), cl_mem, CL_FALSE, 0, kBufferBytes,
+                    gpu_payload.data(), 0, nullptr, nullptr),
+                CL_SUCCESS);
+      host_buf.reset();
+      LiteRtDestroyEnvironment(ocl_env);
+    }
+  }
+#endif
+}
+
+TEST(CompiledModelTest,
+     HostMemoryCrossContextExternalBufferFallsBackToCpuCopy) {
+#if defined(_WIN32)
+  GTEST_SKIP() << "OpenCL buffer coverage is not linked on Windows.";
+#elif !LITERT_HAS_OPENCL_SUPPORT
+  GTEST_SKIP() << "OpenCL is not supported in this build.";
+#else
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN/TSAN.";
+#endif
+  if (!litert::internal::OpenClMemory::IsSupported() ||
+      !ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform.";
+  }
+  absl::LeakCheckDisabler disable_leak_check;
+
+  ml_drift::cl::Environment cl_env1;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env1));
+  ml_drift::cl::Environment cl_env2;
+  LITERT_ASSERT_OK(ml_drift::cl::CreateEnvironment(&cl_env2));
+
+  cl_int err = CL_SUCCESS;
+  cl_command_queue diff_queue_handle = ml_drift::cl::clCreateCommandQueue(
+      cl_env1.context().context(), cl_env1.device().id(), 0, &err);
+  ASSERT_EQ(err, CL_SUCCESS);
+  ASSERT_NE(diff_queue_handle, nullptr);
+  auto cleanup_diff_queue = absl::MakeCleanup([diff_queue_handle]() {
+    if (diff_queue_handle != nullptr) {
+      ml_drift::cl::clReleaseCommandQueue(diff_queue_handle);
+    }
+  });
+
+  auto create_ocl_litert_env = [](cl_context ctx, cl_command_queue queue,
+                                  LiteRtEnvironment* out_env) {
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny context_id,
+                                litert::ToLiteRtAny(litert::LiteRtVariant(
+                                    reinterpret_cast<int64_t>(ctx))));
+    LITERT_ASSERT_OK_AND_ASSIGN(LiteRtAny queue_id,
+                                litert::ToLiteRtAny(litert::LiteRtVariant(
+                                    reinterpret_cast<int64_t>(queue))));
+    LiteRtAny auto_reg_none;
+    auto_reg_none.type = kLiteRtAnyTypeInt;
+    auto_reg_none.int_value = kLiteRtHwAcceleratorNone;
+    const std::array<LiteRtEnvOption, 3> options = {
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClContext,
+                        .value = context_id},
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagOpenClCommandQueue,
+                        .value = queue_id},
+        LiteRtEnvOption{.tag = kLiteRtEnvOptionTagAutoRegisterAccelerators,
+                        .value = auto_reg_none},
+    };
+    ASSERT_EQ(LiteRtCreateEnvironment(options.size(), options.data(), out_env),
+              kLiteRtStatusOk);
+  };
+
+  LiteRtEnvironment env1 = nullptr;
+  LiteRtEnvironment env1_same = nullptr;
+  LiteRtEnvironment env1_diff_queue = nullptr;
+  LiteRtEnvironment env2 = nullptr;
+  create_ocl_litert_env(cl_env1.context().context(), cl_env1.queue()->queue(),
+                        &env1);
+  create_ocl_litert_env(cl_env1.context().context(), cl_env1.queue()->queue(),
+                        &env1_same);
+  create_ocl_litert_env(cl_env1.context().context(), diff_queue_handle,
+                        &env1_diff_queue);
+  create_ocl_litert_env(cl_env2.context().context(), cl_env2.queue()->queue(),
+                        &env2);
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr non_ocl_env_ptr,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironment non_ocl_env = non_ocl_env_ptr.release();
+  auto cleanup_envs = absl::MakeCleanup([&]() {
+    if (non_ocl_env != nullptr) LiteRtDestroyEnvironment(non_ocl_env);
+    if (env2 != nullptr) LiteRtDestroyEnvironment(env2);
+    if (env1_diff_queue != nullptr) LiteRtDestroyEnvironment(env1_diff_queue);
+    if (env1_same != nullptr) LiteRtDestroyEnvironment(env1_same);
+    if (env1 != nullptr) LiteRtDestroyEnvironment(env1);
+  });
+
+  std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel temp_model = nullptr;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env1, path.c_str(), &temp_model),
+            kLiteRtStatusOk);
+  LITERT_ASSERT_OK_AND_ASSIGN(const LiteRtSignatureT& sig,
+                              temp_model->FindSignature(kDefaultSignatureKey));
+  const LiteRtSubgraphT& subgraph = sig.GetSubgraph();
+  const LiteRtRankedTensorType in0_type =
+      subgraph.Inputs()[0]->Type().second.ranked_tensor_type;
+  const LiteRtRankedTensorType out0_type =
+      subgraph.Outputs()[0]->Type().second.ranked_tensor_type;
+  LiteRtDestroyModel(temp_model);
+
+  const size_t page_size = GetTestHostPageSize();
+  constexpr size_t kIn0Bytes = sizeof(float) * kTestInput0Size;
+  constexpr size_t kOut0Bytes = sizeof(float) * kTestOutputSize;
+  void* raw_in0 = nullptr;
+  void* raw_out0 = nullptr;
+  ASSERT_EQ(::posix_memalign(&raw_in0, page_size, page_size), 0);
+  ASSERT_EQ(::posix_memalign(&raw_out0, page_size, page_size), 0);
+  std::memset(raw_in0, 0, page_size);
+  std::memset(raw_out0, 0, page_size);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto ext_in0,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          in0_type, absl::MakeSpan(static_cast<uint8_t*>(raw_in0), kIn0Bytes),
+          /*deallocator=*/litert_aligned_free));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto ext_out0,
+      LiteRtTensorBufferT::CreateFromHostMemory(
+          out0_type,
+          absl::MakeSpan(static_cast<uint8_t*>(raw_out0), kOut0Bytes),
+          /*deallocator=*/litert_aligned_free));
+  ASSERT_EQ(ext_in0->env(), nullptr);
+  ASSERT_EQ(ext_out0->env(), nullptr);
+
+  // Cache OpenClMemory for both unmanaged HostMemory buffers against env1 and
+  // populate ext_in0 on env1's OpenCL queue without reading back to host first.
+  LiteRtClMem in0_cl_mem = nullptr;
+  LiteRtClMem out0_cl_mem = nullptr;
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, ext_in0.get(), &in0_cl_mem),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                env1, ext_out0.get(), &out0_cl_mem),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                ext_in0.get(), kLrtHostSyncToDevice),
+            kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clEnqueueWriteBuffer(
+                cl_env1.queue()->queue(), in0_cl_mem, CL_TRUE, 0, kIn0Bytes,
+                kTestInput0Tensor, 0, nullptr, nullptr),
+            CL_SUCCESS);
+  EXPECT_EQ(ext_in0->env(), nullptr);
+  EXPECT_EQ(ext_out0->env(), nullptr);
+
+  // Compatibility checks: non-OpenCL environments stay compatible (for
+  // cross-accelerator handoff), while nullptr and mismatched OpenCL
+  // contexts/queues are rejected.
+  EXPECT_TRUE(ext_in0->IsHostMemoryOpenClCompatible(env1));
+  EXPECT_TRUE(ext_in0->IsHostMemoryOpenClCompatible(env1_same));
+  EXPECT_TRUE(ext_in0->IsHostMemoryOpenClCompatible(non_ocl_env));
+  EXPECT_FALSE(ext_in0->IsHostMemoryOpenClCompatible(nullptr));
+  EXPECT_FALSE(ext_in0->IsHostMemoryOpenClCompatible(env1_diff_queue));
+  EXPECT_FALSE(ext_in0->IsHostMemoryOpenClCompatible(env2));
+
+  struct FakeOclDelegateCtx {
+    LiteRtEnvironment env;
+    cl_command_queue queue;
+  };
+  static FakeOclDelegateCtx* g_delegate_ctx = nullptr;
+  static TfLiteRegistration kFakeOclKernelReg = []() {
+    TfLiteRegistration reg = {};
+    reg.invoke = [](TfLiteContext* context, TfLiteNode* node) -> TfLiteStatus {
+      if (g_delegate_ctx == nullptr) {
+        return kTfLiteError;
+      }
+      auto buffer_context = LiteRtExternalLiteRtBufferContextT::GetInstance(
+          reinterpret_cast<TfLiteOpaqueContext*>(context));
+      if (!buffer_context.HasValue()) {
+        return kTfLiteError;
+      }
+      TfLiteTensor* in0 = &context->tensors[node->inputs->data[0]];
+      TfLiteTensor* in1 = &context->tensors[node->inputs->data[1]];
+      TfLiteTensor* out = &context->tensors[node->outputs->data[0]];
+
+      std::array<float, kTestInput0Size> in0_vals{};
+      if (auto hw_in0 = (*buffer_context)->GetTensorBuffer(in0);
+          hw_in0.HasValue()) {
+        LiteRtClMem cl_mem = nullptr;
+        if (LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                g_delegate_ctx->env, hw_in0->get(), &cl_mem) !=
+            kLiteRtStatusOk) {
+          return kTfLiteError;
+        }
+        if (LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                hw_in0->get(), kLrtHostSyncToDevice) != kLiteRtStatusOk) {
+          return kTfLiteError;
+        }
+        if (ml_drift::cl::clEnqueueReadBuffer(
+                g_delegate_ctx->queue, cl_mem, CL_TRUE, 0,
+                sizeof(float) * kTestInput0Size, in0_vals.data(), 0, nullptr,
+                nullptr) != CL_SUCCESS) {
+          return kTfLiteError;
+        }
+      } else if ((in0->allocation_type == kTfLiteCustom ||
+                  in0->allocation_type == kTfLiteArenaRw) &&
+                 in0->data.f != nullptr) {
+        std::memcpy(in0_vals.data(), in0->data.f,
+                    sizeof(float) * kTestInput0Size);
+      } else {
+        return kTfLiteError;
+      }
+
+      if (in1->data.f == nullptr) {
+        return kTfLiteError;
+      }
+      std::array<float, kTestOutputSize> out_vals{};
+      for (size_t i = 0; i < kTestOutputSize; ++i) {
+        out_vals[i] = in0_vals[i] + in1->data.f[i];
+      }
+
+      if (auto hw_out = (*buffer_context)->GetTensorBuffer(out);
+          hw_out.HasValue()) {
+        LiteRtClMem cl_mem = nullptr;
+        if (LrtGetRuntimeContext()->get_tensor_buffer_opencl_memory_with_env(
+                g_delegate_ctx->env, hw_out->get(), &cl_mem) !=
+            kLiteRtStatusOk) {
+          return kTfLiteError;
+        }
+        if (LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                hw_out->get(), kLrtHostSyncToDevice) != kLiteRtStatusOk) {
+          return kTfLiteError;
+        }
+        if (ml_drift::cl::clEnqueueWriteBuffer(
+                g_delegate_ctx->queue, cl_mem, CL_TRUE, 0,
+                sizeof(float) * kTestOutputSize, out_vals.data(), 0, nullptr,
+                nullptr) != CL_SUCCESS) {
+          return kTfLiteError;
+        }
+        return kTfLiteOk;
+      }
+      if ((out->allocation_type == kTfLiteCustom ||
+           out->allocation_type == kTfLiteArenaRw) &&
+          out->data.f != nullptr) {
+        std::memcpy(out->data.f, out_vals.data(),
+                    sizeof(float) * kTestOutputSize);
+        return kTfLiteOk;
+      }
+      return kTfLiteError;
+    };
+    return reg;
+  }();
+
+  auto register_fake_ocl_gpu_accel = [](LiteRtEnvironment target_env) {
+    LiteRtAccelerator accelerator = nullptr;
+    ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+    ASSERT_EQ(
+        LiteRtSetAcceleratorGetName(
+            accelerator,
+            [](LiteRtAcceleratorConst, const char** name) -> LiteRtStatus {
+              *name = "FakeOclGpuAccelerator";
+              return kLiteRtStatusOk;
+            }),
+        kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetAcceleratorGetVersion(
+                  accelerator,
+                  [](LiteRtAcceleratorConst,
+                     LiteRtApiVersion* version) -> LiteRtStatus {
+                    *version = {1, 0, 0};
+                    return kLiteRtStatusOk;
+                  }),
+              kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetAcceleratorGetHardwareSupport(
+                  accelerator,
+                  [](LiteRtAcceleratorConst,
+                     LiteRtHwAcceleratorSet* hardware) -> LiteRtStatus {
+                    *hardware = kLiteRtHwAcceleratorGpu;
+                    return kLiteRtStatusOk;
+                  }),
+              kLiteRtStatusOk);
+    ASSERT_EQ(
+        LiteRtSetDelegateFunction(
+            accelerator,
+            [](LiteRtRuntimeContext* runtime_context, LiteRtEnvironment,
+               LiteRtAcceleratorConst, LiteRtOptions,
+               LiteRtDelegateWrapper* wrapper) -> LiteRtStatus {
+              auto* d = new TfLiteDelegate(TfLiteDelegateCreate());
+              d->data_ = &kFakeOclKernelReg;
+              d->Prepare = [](TfLiteContext* context,
+                              TfLiteDelegate* del) -> TfLiteStatus {
+                TfLiteIntArray* plan = nullptr;
+                if (context->GetExecutionPlan(context, &plan) != kTfLiteOk) {
+                  return kTfLiteError;
+                }
+                return context->ReplaceNodeSubsetsWithDelegateKernels(
+                    context, *static_cast<TfLiteRegistration*>(del->data_),
+                    plan, del);
+              };
+              return runtime_context->wrap_delegate(
+                  reinterpret_cast<TfLiteOpaqueDelegate*>(d),
+                  [](TfLiteOpaqueDelegate* opaque) {
+                    delete reinterpret_cast<TfLiteDelegate*>(opaque);
+                  },
+                  wrapper);
+            }),
+        kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtRegisterAccelerator(target_env, accelerator,
+                                        /*data=*/nullptr,
+                                        /*ReleaseData=*/nullptr),
+              kLiteRtStatusOk);
+  };
+  register_fake_ocl_gpu_accel(env1_same);
+  register_fake_ocl_gpu_accel(env1_diff_queue);
+  register_fake_ocl_gpu_accel(env2);
+
+  auto run_with_fake_delegate = [&](LiteRtEnvironment target_env,
+                                    cl_command_queue target_queue,
+                                    bool expect_backend_registration) {
+    LiteRtModel model = nullptr;
+    ASSERT_EQ(LiteRtCreateModelFromFile(target_env, path.c_str(), &model),
+              kLiteRtStatusOk);
+    auto cleanup_model =
+        absl::MakeCleanup([model]() { LiteRtDestroyModel(model); });
+
+    LiteRtOptions jit_options = nullptr;
+    ASSERT_EQ(LiteRtCreateOptions(&jit_options), kLiteRtStatusOk);
+    ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_options,
+                                                   kLiteRtHwAcceleratorGpu),
+              kLiteRtStatusOk);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        LiteRtCompiledModelT::Ptr compiled_model,
+        LiteRtCompiledModelT::Create(target_env, model, jit_options));
+    LiteRtDestroyOptions(jit_options);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(auto interp,
+                                GetInterpreter(compiled_model.get()));
+    auto* input_tensor0 = interp->input_tensor(0);
+    auto* output_tensor0 = interp->output_tensor(0);
+    ASSERT_NE(input_tensor0, nullptr);
+    ASSERT_NE(output_tensor0, nullptr);
+
+    FakeOclDelegateCtx ctx{target_env, target_queue};
+    g_delegate_ctx = &ctx;
+    auto reset_ctx = absl::MakeCleanup([]() { g_delegate_ctx = nullptr; });
+
+    auto register_reqs = [&](const TfLiteTensor* tensor, size_t bytes) {
+      LiteRtTensorBufferRequirements reqs = nullptr;
+      LiteRtTensorBufferType types[] = {kLiteRtTensorBufferTypeHostMemory,
+                                        kLiteRtTensorBufferTypeOpenClBuffer};
+      ASSERT_EQ(LiteRtCreateTensorBufferRequirementsWithAlignment(
+                    2, types, bytes, /*num_strides=*/0, /*strides=*/nullptr,
+                    page_size, &reqs),
+                kLiteRtStatusOk);
+      ASSERT_EQ(compiled_model->GetBufferContext()->RegisterBufferRequirements(
+                    tensor, LiteRtTensorBufferRequirementsPtr(reqs)),
+                kLiteRtStatusOk);
+    };
+    register_reqs(input_tensor0, kIn0Bytes);
+    register_reqs(output_tensor0, kOut0Bytes);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        std::vector<LiteRtTensorBuffer> default_inputs,
+        CreateInputBuffersFromRequirements(
+            target_env, *model, kDefaultSignatureKey, *compiled_model));
+    ASSERT_EQ(default_inputs.size(), 2);
+    {
+      TensorBuffer in1_buf =
+          TensorBuffer::WrapCObject(default_inputs[1], OwnHandle::kNo);
+      LITERT_ASSERT_OK(in1_buf.Write<float>(
+          absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+    }
+    LiteRtDestroyTensorBuffer(default_inputs[0]);
+    std::vector<LiteRtTensorBuffer> input_buffers = {ext_in0.get(),
+                                                     default_inputs[1]};
+    std::vector<LiteRtTensorBuffer> output_buffers = {ext_out0.get()};
+
+    // Seed host output before execution to confirm output gets written cleanly.
+    {
+      void* out_ptr = nullptr;
+      ASSERT_EQ(LiteRtLockTensorBuffer(ext_out0.get(), &out_ptr,
+                                       kLiteRtTensorBufferLockModeWrite),
+                kLiteRtStatusOk);
+      std::memset(out_ptr, 0, kOut0Bytes);
+      ASSERT_EQ(LiteRtUnlockTensorBuffer(ext_out0.get()), kLiteRtStatusOk);
+    }
+
+    bool async = false;
+    LITERT_ASSERT_OK(compiled_model->Run(kDefaultSignatureKey, input_buffers,
+                                         output_buffers, async));
+
+    EXPECT_EQ(compiled_model->GetBufferContext()
+                  ->GetTensorBuffer(input_tensor0)
+                  .HasValue(),
+              expect_backend_registration);
+    EXPECT_EQ(compiled_model->GetBufferContext()
+                  ->GetTensorBuffer(output_tensor0)
+                  .HasValue(),
+              expect_backend_registration);
+
+    void* locked_out = nullptr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(ext_out0.get(), &locked_out,
+                                     kLiteRtTensorBufferLockModeRead),
+              kLiteRtStatusOk);
+    EXPECT_THAT(
+        absl::MakeSpan(static_cast<const float*>(locked_out), kTestOutputSize),
+        Pointwise(FloatNear(1e-5), kTestOutputTensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(ext_out0.get()), kLiteRtStatusOk);
+
+    LiteRtDestroyTensorBuffer(default_inputs[1]);
+  };
+
+  // Same OpenCL context & command queue in a distinct LiteRtEnvironment:
+  // registers zero-copy into buffer_context_.
+  run_with_fake_delegate(env1_same, cl_env1.queue()->queue(),
+                         /*expect_backend_registration=*/true);
+
+  // Re-populate OpenCL side on env1 so ext_in0 still carries cached env1 state
+  // before falling back on incompatible contexts/queues.
+  ASSERT_EQ(LrtGetRuntimeContext()->sync_tensor_buffer_host_memory(
+                ext_in0.get(), kLrtHostSyncToDevice),
+            kLiteRtStatusOk);
+  ASSERT_EQ(ml_drift::cl::clEnqueueWriteBuffer(
+                cl_env1.queue()->queue(), in0_cl_mem, CL_TRUE, 0, kIn0Bytes,
+                kTestInput0Tensor, 0, nullptr, nullptr),
+            CL_SUCCESS);
+
+  // Same OpenCL context, different command queue: must reject direct backend
+  // registration and fall back cleanly to CPU copy.
+  run_with_fake_delegate(env1_diff_queue, diff_queue_handle,
+                         /*expect_backend_registration=*/false);
+
+  // Different OpenCL context: must reject direct backend registration and fall
+  // back cleanly to CPU copy.
+  run_with_fake_delegate(env2, cl_env2.queue()->queue(),
+                         /*expect_backend_registration=*/false);
+
+  ext_in0.reset();
+  ext_out0.reset();
+#endif
 }
 
 }  // namespace
