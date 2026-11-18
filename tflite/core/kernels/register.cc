@@ -226,7 +226,7 @@ void BuiltinOpResolver::RegisterBuiltinOps() {
              /* max_version = */ 2);
   AddBuiltin(BuiltinOperator_TRANSPOSE_CONV, Register_TRANSPOSE_CONV(),
              /* min_version = */ 1,
-             /* max_version = */ 5);
+             /* max_version = */ 6);
   AddBuiltin(BuiltinOperator_TILE, Register_TILE(),
              /* min_version = */ 1,
              /* max_version = */ 3);

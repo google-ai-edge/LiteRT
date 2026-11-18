@@ -15,6 +15,7 @@ limitations under the License.
 #include <stddef.h>
 #include <stdint.h>
 
+#include <cmath>
 #include <initializer_list>
 #include <limits>
 #include <map>
@@ -31,12 +32,14 @@ limitations under the License.
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/string_type.h"
+#include "tflite/types/half.h"
 
 namespace tflite {
 
 namespace ops {
 namespace builtin {
 
+TfLiteRegistration* Register_DEQUANTIZE();
 TfLiteRegistration* Register_TRANSPOSECONV_REF();
 TfLiteRegistration* Register_TRANSPOSECONV_GENERIC_OPT();
 
@@ -1560,6 +1563,578 @@ TEST_P(TransposeConvOpTest, SimpleTestHybridInt8MultiChannel) {
            52,   42, 46,   48,   52, 106, 114, 63, 68,   71, 76},
           0.26)));
   EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({1, 5, 5, 2}));
+}
+
+enum class BiasMode {
+  kNoBiasInput = 0,
+  kNullBiasInput = 1,
+  kConstBias = 2,
+  kDynamicBias = 3,
+};
+
+class Float16DequantizeOpModel : public SingleOpModel {
+ public:
+  Float16DequantizeOpModel(const std::vector<int>& shape,
+                           const std::vector<half>& data) {
+    SetBypassDefaultDelegates();
+    input_ = AddConstInput(TensorData{TensorType_FLOAT16, shape}, data);
+    output_ = AddOutput({TensorType_FLOAT32, shape});
+    SetBuiltinOp(BuiltinOperator_DEQUANTIZE, BuiltinOptions_DequantizeOptions,
+                 CreateDequantizeOptions(builder_).Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_DEQUANTIZE, ops::builtin::Register_DEQUANTIZE(),
+        /*version=*/2);
+    BuildInterpreter({GetShape(input_)}, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false, /*allocate_and_delegate=*/true);
+  }
+
+  std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
+
+ private:
+  int input_;
+  int output_;
+};
+
+class Float16WeightsTransposeConvOpModel : public SingleOpModel {
+ public:
+  Float16WeightsTransposeConvOpModel(
+      TfLiteRegistration* registration, const std::vector<int>& output_shape,
+      const std::vector<int>& filter_shape,
+      const std::vector<half>& filter_data, const std::vector<int>& input_shape,
+      Padding padding, int stride_w, int stride_h,
+      ActivationFunctionType fused_activation, TestType output_shape_type,
+      BiasMode bias_mode = BiasMode::kNoBiasInput,
+      const std::vector<float>& bias_data = {}) {
+    SetBypassDefaultDelegates();
+    if (output_shape_type == TestType::kDynamic) {
+      output_shape_ = AddInput({TensorType_INT32, {4}});
+    } else {
+      output_shape_ =
+          AddConstInput(TensorData{TensorType_INT32, {4}}, output_shape);
+    }
+    filter_ = AddConstInput(TensorData{TensorType_FLOAT16, filter_shape},
+                            filter_data);
+    input_ = AddInput({TensorType_FLOAT32, input_shape});
+
+    const int out_channels = filter_shape[0];
+    if (bias_mode == BiasMode::kNullBiasInput) {
+      bias_ = AddNullInput();
+    } else if (bias_mode == BiasMode::kConstBias) {
+      bias_ = AddConstInput(TensorData{TensorType_FLOAT32, {out_channels}},
+                            bias_data);
+    } else if (bias_mode == BiasMode::kDynamicBias) {
+      bias_ = AddInput({TensorType_FLOAT32, {out_channels}});
+    }
+
+    output_ = AddOutput({TensorType_FLOAT32, {}});
+
+    SetBuiltinOp(BuiltinOperator_TRANSPOSE_CONV,
+                 BuiltinOptions_TransposeConvOptions,
+                 CreateTransposeConvOptions(builder_, padding, stride_w,
+                                            stride_h, fused_activation)
+                     .Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_TRANSPOSE_CONV, registration, /*version=*/6);
+
+    std::vector<std::vector<int>> input_shapes = {
+        GetShape(output_shape_), GetShape(filter_), GetShape(input_)};
+    if (bias_mode == BiasMode::kConstBias ||
+        bias_mode == BiasMode::kDynamicBias) {
+      input_shapes.push_back(GetShape(bias_));
+    }
+    BuildInterpreter(input_shapes, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false, /*allocate_and_delegate=*/true);
+
+    if (output_shape_type == TestType::kDynamic) {
+      PopulateTensor<int32_t>(output_shape_, output_shape);
+    }
+    if (bias_mode == BiasMode::kDynamicBias) {
+      PopulateTensor<float>(bias_, bias_data);
+    }
+  }
+
+  void SetOutputShape(const std::vector<int32_t>& output_shape) {
+    PopulateTensor<int32_t>(output_shape_, output_shape);
+  }
+
+  void SetInput(const std::vector<float>& data) {
+    PopulateTensor<float>(input_, data);
+  }
+
+  void ResizeInputAndAllocate(const std::vector<int>& new_input_shape) {
+    ASSERT_EQ(interpreter_->ResizeInputTensor(input_, new_input_shape),
+              kTfLiteOk);
+    ASSERT_EQ(AllocateTensors(), kTfLiteOk);
+  }
+
+  int GetTemporaryCount() const {
+    const auto* node_and_reg = interpreter_->node_and_registration(0);
+    if (node_and_reg == nullptr || node_and_reg->first.temporaries == nullptr) {
+      return 0;
+    }
+    return node_and_reg->first.temporaries->size;
+  }
+
+  std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
+  std::vector<int> GetOutputShape() { return GetTensorShape(output_); }
+
+ private:
+  int output_shape_ = -1;
+  int filter_ = -1;
+  int input_ = -1;
+  int bias_ = -1;
+  int output_ = -1;
+};
+
+std::vector<half> ToHalfVector(std::initializer_list<float> values) {
+  std::vector<half> result;
+  result.reserve(values.size());
+  for (float v : values) {
+    result.push_back(half(v));
+  }
+  return result;
+}
+
+std::vector<float> RunDequantizeAndFloat32TransposeConv(
+    TfLiteRegistration* registration, const std::vector<int>& output_shape,
+    const std::vector<int>& filter_shape, const std::vector<half>& filter_data,
+    const std::vector<int>& input_shape, const std::vector<float>& input_data,
+    Padding padding, int stride_w, int stride_h,
+    ActivationFunctionType fused_activation, TestType output_shape_type,
+    const std::vector<float>& bias_data = {}) {
+  Float16DequantizeOpModel dequant(filter_shape, filter_data);
+  EXPECT_EQ(dequant.Invoke(), kTfLiteOk);
+  const std::vector<float> dequantized_weights = dequant.GetOutput();
+
+  class Float32RefModel : public SingleOpModel {
+   public:
+    Float32RefModel(TfLiteRegistration* registration,
+                    const std::vector<int>& output_shape,
+                    const std::vector<int>& filter_shape,
+                    const std::vector<float>& filter_data,
+                    const std::vector<int>& input_shape, Padding padding,
+                    int stride_w, int stride_h,
+                    ActivationFunctionType fused_activation,
+                    TestType output_shape_type,
+                    const std::vector<float>& bias_data) {
+      SetBypassDefaultDelegates();
+      if (output_shape_type == TestType::kDynamic) {
+        output_shape_ = AddInput({TensorType_INT32, {4}});
+      } else {
+        output_shape_ =
+            AddConstInput(TensorData{TensorType_INT32, {4}}, output_shape);
+      }
+      filter_ = AddConstInput(TensorData{TensorType_FLOAT32, filter_shape},
+                              filter_data);
+      input_ = AddInput({TensorType_FLOAT32, input_shape});
+      if (!bias_data.empty()) {
+        bias_ = AddConstInput(TensorData{TensorType_FLOAT32, {filter_shape[0]}},
+                              bias_data);
+      }
+      output_ = AddOutput({TensorType_FLOAT32, {}});
+      SetBuiltinOp(BuiltinOperator_TRANSPOSE_CONV,
+                   BuiltinOptions_TransposeConvOptions,
+                   CreateTransposeConvOptions(builder_, padding, stride_w,
+                                              stride_h, fused_activation)
+                       .Union());
+      resolver_ = std::make_unique<SingleOpResolver>(
+          BuiltinOperator_TRANSPOSE_CONV, registration, /*version=*/6);
+      std::vector<std::vector<int>> shapes = {
+          GetShape(output_shape_), GetShape(filter_), GetShape(input_)};
+      if (!bias_data.empty()) {
+        shapes.push_back(GetShape(bias_));
+      }
+      BuildInterpreter(shapes, /*num_threads=*/1,
+                       /*allow_fp32_relax_to_fp16=*/false,
+                       /*apply_delegate=*/false,
+                       /*allocate_and_delegate=*/true);
+      if (output_shape_type == TestType::kDynamic) {
+        PopulateTensor<int32_t>(output_shape_, output_shape);
+      }
+    }
+    void SetInput(const std::vector<float>& data) {
+      PopulateTensor<float>(input_, data);
+    }
+    std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
+
+   private:
+    int output_shape_ = -1;
+    int filter_ = -1;
+    int input_ = -1;
+    int bias_ = -1;
+    int output_ = -1;
+  };
+
+  Float32RefModel ref_model(registration, output_shape, filter_shape,
+                            dequantized_weights, input_shape, padding, stride_w,
+                            stride_h, fused_activation, output_shape_type,
+                            bias_data);
+  ref_model.SetInput(input_data);
+  EXPECT_EQ(ref_model.Invoke(), kTfLiteOk);
+  return ref_model.GetOutput();
+}
+
+TEST_P(TransposeConvOpTest, SimpleTestFloat16WeightsAndNoTemporaries) {
+  const std::vector<half> filter_data =
+      ToHalfVector({1, 2, 3, 4, 5, 6, 7, 8, 9});
+  const std::vector<float> input_data = {1, 2,  3,  4,  5,  6,  7,  8,
+                                         9, 10, 11, 12, 13, 14, 15, 16};
+  for (BiasMode bias_mode :
+       {BiasMode::kNoBiasInput, BiasMode::kNullBiasInput}) {
+    Float16WeightsTransposeConvOpModel model(
+        GetRegistration(), {1, 4, 4, 1}, {1, 3, 3, 1}, filter_data,
+        {1, 4, 4, 1}, Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, GetTestType(), bias_mode);
+    EXPECT_EQ(model.GetTemporaryCount(), 0);
+    model.SetInput(input_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+    EXPECT_THAT(
+        model.GetOutput(),
+        Pointwise(FloatingPointEq(), {29, 62, 83, 75, 99, 192, 237, 198, 207,
+                                      372, 417, 330, 263, 446, 485, 365}));
+    EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({1, 4, 4, 1}));
+  }
+}
+
+TEST_P(TransposeConvOpTest, Float16WeightsMultiChannelStridePaddingAndBias) {
+  const std::vector<half> filter_data = ToHalfVector(
+      {1, 3, 5, 7, 9, 11, 13, 15, 17, 2, 4, 6, 8, 10, 12, 14, 16, 18});
+  const std::vector<float> input_data = {1, 2, -3, 4};
+  const std::vector<float> bias_data = {3, 4};
+
+  for (BiasMode bias_mode : {BiasMode::kConstBias, BiasMode::kDynamicBias}) {
+    Float16WeightsTransposeConvOpModel model(
+        GetRegistration(), {1, 5, 5, 2}, {2, 3, 3, 1}, filter_data,
+        {1, 2, 2, 1}, Padding_VALID, /*stride_w=*/2, /*stride_h=*/2,
+        ActivationFunctionType_RELU, GetTestType(), bias_mode, bias_data);
+    EXPECT_EQ(model.GetTemporaryCount(), 0);
+    model.SetInput(input_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+    EXPECT_THAT(model.GetOutput(),
+                Pointwise(FloatingPointEq(),
+                          {4,  6,  6,  8,  10, 14, 9,  12, 13, 16, 10, 12, 12,
+                           14, 28, 32, 21, 24, 25, 28, 13, 12, 9,  8,  35, 40,
+                           45, 52, 57, 64, 0,  0,  0,  0,  0,  0,  39, 44, 47,
+                           52, 0,  0,  0,  0,  4,  6,  63, 68, 71, 76}));
+    EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({1, 5, 5, 2}));
+  }
+}
+
+TEST_P(TransposeConvOpTest, Float16WeightsLargerKernelAndMultiInputChannels) {
+  // 2 output channels, 4x4 kernel, 2 input channels (32 weights).
+  std::vector<half> filter_data;
+  filter_data.reserve(64);
+  for (int i = 1; i <= 64; ++i) {
+    filter_data.push_back(half(static_cast<float>((i % 11) - 5) * 0.5f));
+  }
+  const std::vector<int> output_shape = {1, 6, 6, 2};
+  const std::vector<int> filter_shape = {2, 4, 4, 2};
+  const std::vector<int> input_shape = {1, 3, 3, 2};
+  const std::vector<float> input_data = {
+      0.5f,  -1.0f, 1.5f,  -2.0f,  2.5f, -0.5f,  1.0f, 0.25f, -0.75f,
+      1.25f, -1.5f, 0.75f, -0.25f, 2.0f, -1.25f, 0.5f, 1.75f, -0.5f};
+  const std::vector<float> bias_data = {0.25f, -0.75f};
+
+  for (ActivationFunctionType act :
+       {ActivationFunctionType_NONE, ActivationFunctionType_RELU_N1_TO_1,
+        ActivationFunctionType_RELU6}) {
+    Float16WeightsTransposeConvOpModel model(
+        GetRegistration(), output_shape, filter_shape, filter_data, input_shape,
+        Padding_SAME, /*stride_w=*/2, /*stride_h=*/2, act, GetTestType(),
+        BiasMode::kConstBias, bias_data);
+    EXPECT_EQ(model.GetTemporaryCount(), 0);
+    model.SetInput(input_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+    std::vector<float> expected = RunDequantizeAndFloat32TransposeConv(
+        GetRegistration(), output_shape, filter_shape, filter_data, input_shape,
+        input_data, Padding_SAME, /*stride_w=*/2, /*stride_h=*/2, act,
+        GetTestType(), bias_data);
+    EXPECT_THAT(model.GetOutput(), Pointwise(FloatingPointEq(), expected));
+  }
+}
+
+TEST_P(TransposeConvOpTest, Float16WeightsRepeatedInvocationsAndDynamicResize) {
+  const std::vector<half> filter_data =
+      ToHalfVector({1, 2, 3, 4, 5, 6, 7, 8, 9});
+  Float16WeightsTransposeConvOpModel model(
+      GetRegistration(), {1, 4, 4, 1}, {1, 3, 3, 1}, filter_data, {1, 4, 4, 1},
+      Padding_SAME, /*stride_w=*/1, /*stride_h=*/1, ActivationFunctionType_NONE,
+      GetTestType());
+
+  const std::vector<float> input1 = {1, 2,  3,  4,  5,  6,  7,  8,
+                                     9, 10, 11, 12, 13, 14, 15, 16};
+  const std::vector<float> input2(16, 1.0f);
+
+  model.SetInput(input1);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  const std::vector<float> out1 = model.GetOutput();
+
+  // Second invocation with different input must overwrite (zero) output rather
+  // than accumulating onto out1.
+  model.SetInput(input2);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutput(),
+              Pointwise(FloatingPointEq(), {12, 21, 21, 16, 27, 45, 45, 33, 27,
+                                            45, 45, 33, 24, 39, 39, 28}));
+
+  // Third invocation with input1 again produces identical results to out1.
+  model.SetInput(input1);
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+  EXPECT_THAT(model.GetOutput(), Pointwise(FloatingPointEq(), out1));
+
+  if (GetTestType() == TestType::kDynamic) {
+    model.ResizeInputAndAllocate({1, 2, 2, 1});
+    model.SetOutputShape({1, 2, 2, 1});
+    model.SetInput({1, 2, 3, 4});
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+    EXPECT_THAT(model.GetOutputShape(), ElementsAreArray({1, 2, 2, 1}));
+    EXPECT_THAT(model.GetOutput(),
+                Pointwise(FloatingPointEq(), {23, 33, 53, 63}));
+  }
+}
+
+TEST_P(TransposeConvOpTest,
+       Float16WeightsSpecialValuesAndFp32AccumulationParity) {
+  // Verify exact parity with DEQUANTIZE + FP32 TRANSPOSE_CONV on:
+  // 1) -0.0 (0x8000): scatter adds onto +0.0f initialized output_data -> +0.0f.
+  // 2) Subnormals: smallest subnormal (0x0001 = 2^-24) and largest subnormal
+  //    (0x03ff = 1023 * 2^-24).
+  // 3) Max finite FP16 (65504.0f = 0x7bff): 2 * 65504 = 131008.0f (exceeds FP16
+  //    max without overflowing to Inf because accumulation & output are FP32).
+  // 4) Catastrophic cancellation in FP16: 2048 + 1 - 2048 = 1.0f (in FP16,
+  //    2048 + 1 rounds to 2048, so 2048 + 1 - 2048 would be 0 if accumulated
+  //    in FP16, whereas FP32 accumulation yields 1.0f).
+  const half neg_zero = half::from_bits(0x8000);
+  const half min_subnormal = half::from_bits(0x0001);
+  const half max_subnormal = half::from_bits(0x03ff);
+  const half max_fp16 = half::from_bits(0x7bff);  // 65504.0f
+
+  // Case A: 1x3 filter with overlapping scatter into the middle output element.
+  // Input shape [1, 1, 3, 1] with values [1.0f, 1.0f, 1.0f], filter shape
+  // [1, 1, 3, 1] with weights [-2048.0f, 1.0f, 2048.0f], stride 1, VALID
+  // padding -> output shape [1, 1, 5, 1].
+  // At output x=2: in_x=0 contributes filter[2]=2048, in_x=1 contributes
+  // filter[1]=1 (2048 + 1 = 2049 in FP32), in_x=2 contributes filter[0]=-2048
+  // -> final value at x=2 is 1.0f.
+  {
+    const std::vector<half> cancel_weights = {half(-2048.0f), half(1.0f),
+                                              half(2048.0f)};
+    const std::vector<int> output_shape = {1, 1, 5, 1};
+    const std::vector<int> filter_shape = {1, 1, 3, 1};
+    const std::vector<int> input_shape = {1, 1, 3, 1};
+    const std::vector<float> input_data = {1.0f, 1.0f, 1.0f};
+
+    Float16WeightsTransposeConvOpModel model(
+        GetRegistration(), output_shape, filter_shape, cancel_weights,
+        input_shape, Padding_VALID, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, GetTestType());
+    model.SetInput(input_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+    const std::vector<float> expected = RunDequantizeAndFloat32TransposeConv(
+        GetRegistration(), output_shape, filter_shape, cancel_weights,
+        input_shape, input_data, Padding_VALID, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, GetTestType());
+    EXPECT_THAT(model.GetOutput(), Pointwise(FloatingPointEq(), expected));
+    EXPECT_EQ(model.GetOutput()[2], 1.0f);
+  }
+
+  // Case B: Special FP16 values (-0.0, subnormals, 65504, 2 * 65504 = 131008).
+  // Input shape [1, 1, 2, 1] with values [1.0f, 1.0f], filter shape
+  // [4, 1, 2, 1] (4 output channels), VALID padding, stride 1 -> output shape
+  // [1, 1, 3, 4].
+  // Channel 0: [neg_zero, neg_zero] -> +0.0f
+  // Channel 1: [min_subnormal, min_subnormal] -> center has 2 * 2^-24 = 2^-23
+  // Channel 2: [max_subnormal, min_subnormal] -> center has 1024 * 2^-24 =
+  //            2^-14.
+  // Channel 3: [max_fp16, max_fp16] -> center has 65504 + 65504 = 131008.0f
+  {
+    const std::vector<half> special_weights = {
+        neg_zero,      neg_zero,       // out_channel 0
+        min_subnormal, min_subnormal,  // out_channel 1
+        max_subnormal, min_subnormal,  // out_channel 2
+        max_fp16,      max_fp16,       // out_channel 3
+    };
+    const std::vector<int> output_shape = {1, 1, 3, 4};
+    const std::vector<int> filter_shape = {4, 1, 2, 1};
+    const std::vector<int> input_shape = {1, 1, 2, 1};
+    const std::vector<float> input_data = {1.0f, 1.0f};
+
+    Float16WeightsTransposeConvOpModel model(
+        GetRegistration(), output_shape, filter_shape, special_weights,
+        input_shape, Padding_VALID, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, GetTestType());
+    model.SetInput(input_data);
+    ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+    const std::vector<float> actual = model.GetOutput();
+    const std::vector<float> expected = RunDequantizeAndFloat32TransposeConv(
+        GetRegistration(), output_shape, filter_shape, special_weights,
+        input_shape, input_data, Padding_VALID, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, GetTestType());
+    EXPECT_THAT(actual, Pointwise(FloatingPointEq(), expected));
+
+    // Center spatial position x=1 (indices 4..7):
+    EXPECT_EQ(actual[4], 0.0f);
+    EXPECT_FALSE(std::signbit(actual[4]));
+    EXPECT_EQ(actual[5], std::ldexp(1.0f, -23));
+    EXPECT_EQ(actual[6], std::ldexp(1.0f, -14));
+    EXPECT_EQ(actual[7], 131008.0f);
+  }
+}
+
+TEST(TransposeConvFloat16ValidationTest, RejectsDynamicFloat16Weights) {
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_TRANSPOSECONV_REF(),
+        ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT()}) {
+    PrepareOnlyTransposeConvOpModel<half> m(
+        registration, {1, 4, 4, 1}, {TensorType_FLOAT16, {1, 3, 3, 1}},
+        {TensorType_FLOAT32, {1, 4, 4, 1}}, {TensorType_FLOAT32, {}},
+        Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE, /*version=*/6);
+    EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+  }
+}
+
+class SparseFloat16WeightsTransposeConvOpModel : public SingleOpModel {
+ public:
+  explicit SparseFloat16WeightsTransposeConvOpModel(
+      TfLiteRegistration* registration) {
+    SetBypassDefaultDelegates();
+    output_shape_ =
+        AddConstInput(TensorData{TensorType_INT32, {4}}, {1, 2, 2, 1});
+    TensorData sparse_filter{TensorType_FLOAT16,
+                             {1, 2, 2, 1},
+                             0.0f,
+                             0.0f,
+                             0.0f,
+                             0,
+                             false,
+                             {},
+                             {},
+                             0,
+                             {0, 1, 2, 3},
+                             {kTfLiteDimDense, kTfLiteDimDense, kTfLiteDimDense,
+                              kTfLiteDimSparseCSR}};
+    filter_ =
+        AddConstSparseInput<float>(sparse_filter, {1.0f, 0.0f, 2.0f, 3.0f});
+    input_ = AddInput({TensorType_FLOAT32, {1, 2, 2, 1}});
+    output_ = AddOutput({TensorType_FLOAT32, {}});
+
+    SetBuiltinOp(
+        BuiltinOperator_TRANSPOSE_CONV, BuiltinOptions_TransposeConvOptions,
+        CreateTransposeConvOptions(builder_, Padding_SAME, /*stride_w=*/1,
+                                   /*stride_h=*/1, ActivationFunctionType_NONE)
+            .Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_TRANSPOSE_CONV, registration, /*version=*/6);
+    BuildInterpreter(
+        {GetShape(output_shape_), GetShape(filter_), GetShape(input_)},
+        /*num_threads=*/1, /*allow_fp32_relax_to_fp16=*/false,
+        /*apply_delegate=*/false, /*allocate_and_delegate=*/false);
+  }
+
+ private:
+  int output_shape_;
+  int filter_;
+  int input_;
+  int output_;
+};
+
+TEST(TransposeConvFloat16ValidationTest, RejectsSparseFloat16Weights) {
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_TRANSPOSECONV_REF(),
+        ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT()}) {
+    SparseFloat16WeightsTransposeConvOpModel m(registration);
+    EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+  }
+}
+
+class CustomTypesTransposeConvOpModel : public SingleOpModel {
+ public:
+  CustomTypesTransposeConvOpModel(TfLiteRegistration* registration,
+                                  TensorType filter_type, TensorType input_type,
+                                  TensorType output_type,
+                                  std::optional<TensorType> bias_type) {
+    SetBypassDefaultDelegates();
+    output_shape_ =
+        AddConstInput(TensorData{TensorType_INT32, {4}}, {1, 2, 2, 1});
+    if (filter_type == TensorType_FLOAT16) {
+      filter_ = AddConstInput(TensorData{TensorType_FLOAT16, {1, 2, 2, 1}},
+                              {half(1.0f), half(2.0f), half(3.0f), half(4.0f)});
+    } else {
+      filter_ = AddConstInput(TensorData{TensorType_FLOAT32, {1, 2, 2, 1}},
+                              {1.0f, 2.0f, 3.0f, 4.0f});
+    }
+    input_ = AddInput({input_type, {1, 2, 2, 1}});
+    if (bias_type.has_value()) {
+      bias_ = AddInput({*bias_type, {1}});
+    }
+    output_ = AddOutput({output_type, {}});
+
+    SetBuiltinOp(
+        BuiltinOperator_TRANSPOSE_CONV, BuiltinOptions_TransposeConvOptions,
+        CreateTransposeConvOptions(builder_, Padding_SAME, /*stride_w=*/1,
+                                   /*stride_h=*/1, ActivationFunctionType_NONE)
+            .Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_TRANSPOSE_CONV, registration, /*version=*/6);
+    std::vector<std::vector<int>> shapes = {
+        GetShape(output_shape_), GetShape(filter_), GetShape(input_)};
+    if (bias_type.has_value()) {
+      shapes.push_back(GetShape(bias_));
+    }
+    BuildInterpreter(shapes, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false, /*allocate_and_delegate=*/false);
+  }
+
+ private:
+  int output_shape_ = -1;
+  int filter_ = -1;
+  int input_ = -1;
+  int bias_ = -1;
+  int output_ = -1;
+};
+
+TEST(TransposeConvFloat16ValidationTest, RejectsMismatchedTypes) {
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_TRANSPOSECONV_REF(),
+        ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT()}) {
+    // Rejects FP16 input with FP16 weights and FP32 output.
+    {
+      CustomTypesTransposeConvOpModel m(registration, TensorType_FLOAT16,
+                                        TensorType_FLOAT16, TensorType_FLOAT32,
+                                        std::nullopt);
+      EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+    }
+    // Rejects FP16 input with FP16 weights and FP16 output.
+    {
+      CustomTypesTransposeConvOpModel m(registration, TensorType_FLOAT16,
+                                        TensorType_FLOAT16, TensorType_FLOAT16,
+                                        std::nullopt);
+      EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+    }
+    // Rejects FP32 input with FP16 weights and FP16 output.
+    {
+      CustomTypesTransposeConvOpModel m(registration, TensorType_FLOAT16,
+                                        TensorType_FLOAT32, TensorType_FLOAT16,
+                                        std::nullopt);
+      EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+    }
+    // Rejects FP32 input with FP16 weights, FP32 output, and FP16 bias.
+    {
+      CustomTypesTransposeConvOpModel m(registration, TensorType_FLOAT16,
+                                        TensorType_FLOAT32, TensorType_FLOAT32,
+                                        TensorType_FLOAT16);
+      EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+    }
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(
