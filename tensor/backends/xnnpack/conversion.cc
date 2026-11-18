@@ -31,6 +31,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/conversion.h"
 #include "tensor/backends/common_nnpack/graph.h"
+#include "tensor/backends/xnnpack/dequantize.h"
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/backends/xnnpack/utils.h"
 #include "tensor/datatypes.h"
@@ -201,12 +202,6 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           external_id, value.flags, &value.id))
           << "Could not define a new quantized tensor value.";
     } else {
-      if (info.type == Type::kI4 && pcq.HasNonZeroZeroPoints()) {
-        return absl::UnimplementedError(absl::StrCat(
-            info.name,
-            ": INT4 weights with non-zero zero points are not supported on "
-            "XNNPACK."));
-      }
       if (pcq.HasNonZeroZeroPoints()) {
         // XNNPACK's channelwise quantized values have no zero points, so only
         // constant weights can be run, by dequantizing them here.
@@ -218,7 +213,7 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
         }
         LRT_TENSOR_ASSIGN_OR_RETURN(
             std::vector<float> f32_data,
-            DequantizeInt8ConstantTensor(
+            DequantizeConstantTensor(
                 info, absl::MakeSpan(value.data.data(), value.data.size())));
         graph_->dequantized_buffers().push_back(std::move(f32_data));
         data_ptr = graph_->dequantized_buffers().back().data();

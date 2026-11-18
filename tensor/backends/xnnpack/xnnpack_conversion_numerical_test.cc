@@ -106,8 +106,6 @@ struct XnnpackTraits {
   static constexpr absl::string_view kDisabledTests[] = {
       // Fully connected ops reject per-tensor int8 weights.
       "FullyConnectedPerTensorAndAsymmetricOp",
-      // Asymmetric int4 weights fail to dequantize.
-      "TransposedQuantizedWeightsIntoAddOp",
   };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();
