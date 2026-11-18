@@ -135,6 +135,9 @@ struct LrtQualcommOptionsT {
   std::optional<std::uint32_t> lpai_core_selection;
   std::optional<std::string> qnn_lib_dir;
   std::optional<std::string> dsp_skel_dir;
+  std::optional<std::vector<std::string>> desired_input_color_encodings;
+  // Cache of C-string pointers for GetDesiredInputColorEncodings.
+  mutable std::vector<const char*> desired_input_color_encodings_ptrs_;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -373,6 +376,14 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dsp_skel_dir") {
           status = LrtQualcommOptionsSetDspSkelDir(parsed_options,
                                                    std::string(value).c_str());
+        } else if (key == "desired_input_color_encoding") {
+          auto parts = litert::internal::ParseTomlStringArray(value);
+          if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
+          std::vector<const char*> ptrs;
+          ptrs.reserve(parts->size());
+          for (const auto& p : *parts) ptrs.push_back(p.c_str());
+          status = LrtQualcommOptionsSetDesiredInputColorEncodings(
+              parsed_options, ptrs.data(), ptrs.size());
         }
 
         return status;
@@ -601,6 +612,13 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_skel_dir.has_value()) {
     LITERT_RETURN_IF_ERROR(
         encoder.EncodeString("dsp_skel_dir", *options->dsp_skel_dir));
+  }
+  if (options->desired_input_color_encodings.has_value()) {
+    std::vector<std::string> entries(
+        options->desired_input_color_encodings->begin(),
+        options->desired_input_color_encodings->end());
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeStringArray("desired_input_color_encoding", entries));
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
@@ -1686,5 +1704,38 @@ LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
   *dsp_skel_dir =
       options->dsp_skel_dir.has_value() ? options->dsp_skel_dir->c_str() : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetDesiredInputColorEncodings(
+    LrtQualcommOptions options, const char** entries, size_t count) {
+  if (options == nullptr || (entries == nullptr && count > 0)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->desired_input_color_encodings.emplace();
+  options->desired_input_color_encodings->reserve(count);
+  for (size_t i = 0; i < count; ++i) {
+    options->desired_input_color_encodings->emplace_back(entries[i]);
+  }
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetDesiredInputColorEncodings(
+    LrtQualcommOptions options, const char*** entries, size_t* count) {
+  if (options == nullptr || entries == nullptr || count == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!options->desired_input_color_encodings.has_value() ||
+      options->desired_input_color_encodings->empty()) {
+    *entries = nullptr;
+    *count = 0;
+    return kLiteRtStatusOk;
+  }
+  options->desired_input_color_encodings_ptrs_.clear();
+  for (const auto& s : *options->desired_input_color_encodings) {
+    options->desired_input_color_encodings_ptrs_.push_back(s.c_str());
+  }
+  *entries = options->desired_input_color_encodings_ptrs_.data();
+  *count = options->desired_input_color_encodings_ptrs_.size();
   return kLiteRtStatusOk;
 }

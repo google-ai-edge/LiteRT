@@ -69,6 +69,20 @@ cc_library(
 )
 
 cc_library(
+    name = "color_transform_op_builder",
+    srcs = ["color_transform_op_builder.cc"],
+    hdrs = ["color_transform_op_builder.h"],
+    deps = [
+        ":op_builder",
+        "//litert/vendors/qualcomm/core:common",
+        "//litert/vendors/qualcomm/core:op_code",
+        "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
+        "//litert/vendors/qualcomm/core/wrappers:tensor_wrapper",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "detection_postprocess_op_builder",
     srcs = ["detection_postprocess_op_builder.cc"],
     hdrs = ["detection_postprocess_op_builder.h"],

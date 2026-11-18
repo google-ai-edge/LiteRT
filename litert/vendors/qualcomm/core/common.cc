@@ -784,6 +784,16 @@ void Options::SetDspSkelDir(absl::string_view dsp_skel_dir) {
 
 absl::string_view Options::GetDspSkelDir() const { return dsp_skel_dir_; }
 
+void Options::SetDesiredInputColorEncodings(
+    const std::vector<DesiredInputColorEncodingEntry>& entries) {
+  desired_input_color_encodings_ = entries;
+}
+
+std::vector<DesiredInputColorEncodingEntry>
+Options::GetDesiredInputColorEncodings() const {
+  return desired_input_color_encodings_;
+}
+
 std::string Options::Dump() const {
   // Grouped by category; append a field() line to the right section to add one.
   std::string out =

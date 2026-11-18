@@ -92,6 +92,11 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_qnn_lib_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dsp_skel_dir);
 
+// Comma-separated list of "tensor_name:encoding_in:encoding_out" entries.
+// Example: "data:nv21:bgr" or "img:rgba:rgb,mask:nv12:rgb"
+ABSL_DECLARE_FLAG(std::vector<std::string>,
+                  qualcomm_desired_input_color_encoding);
+
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_device_id);
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_context_init_acceleration);

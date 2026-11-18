@@ -186,6 +186,24 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetLpaiCoreSelection(qualcomm_options.GetLpaiCoreSelection());
   qnn_options.SetQnnLibDir(qualcomm_options.GetQnnLibDir());
   qnn_options.SetDspSkelDir(qualcomm_options.GetDspSkelDir());
+  {
+    std::vector<::qnn::DesiredInputColorEncodingEntry> entries;
+    for (const auto& s : qualcomm_options.GetDesiredInputColorEncodings()) {
+      // Expected format: "tensor_name:encoding_in:encoding_out"
+      const auto sep1 = s.find(':');
+      const auto sep2 = s.find(':', sep1 + 1);
+      if (sep1 == std::string::npos || sep2 == std::string::npos) {
+        LITERT_LOG(LITERT_WARNING,
+                   "Skipping malformed desired_input_color_encoding entry: %s "
+                   "(expected tensor_name:encoding_in:encoding_out)",
+                   s.c_str());
+        continue;
+      }
+      entries.push_back({s.substr(0, sep1), s.substr(sep1 + 1, sep2 - sep1 - 1),
+                         s.substr(sep2 + 1)});
+    }
+    qnn_options.SetDesiredInputColorEncodings(entries);
+  }
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
