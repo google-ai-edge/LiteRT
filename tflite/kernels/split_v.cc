@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include <stdint.h>
 
+#include <limits>
 #include <vector>
 
 #include "tflite/core/c/builtin_op_data.h"
@@ -65,15 +66,21 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
                                  const TfLiteTensor* input,
                                  const TfLiteTensor* size_splits,
                                  const TfLiteTensor* axis) {
-  int axis_value = GetTensorData<int>(axis)[0];
+  const int* axis_data = GetTensorData<int>(axis);
+  TF_LITE_ENSURE(context, axis_data != nullptr);
+  int axis_value = axis_data[0];
   if (axis_value < 0) {
     axis_value += NumDimensions(input);
   }
 
   std::vector<int64_t> size_splits_vector;
   if (size_splits->type == kTfLiteInt32) {
+    TF_LITE_ENSURE(context, GetTensorData<int32_t>(size_splits) != nullptr ||
+                                NumElements(size_splits) == 0);
     GetSizeSplitsVector<int32_t>(size_splits, &size_splits_vector);
   } else if (size_splits->type == kTfLiteInt64) {
+    TF_LITE_ENSURE(context, GetTensorData<int64_t>(size_splits) != nullptr ||
+                                NumElements(size_splits) == 0);
     GetSizeSplitsVector<int64_t>(size_splits, &size_splits_vector);
   } else {
     TF_LITE_KERNEL_LOG(context, "size_splits only support type int32|int64.");
@@ -93,6 +100,13 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
         return kTfLiteError;
       }
     } else {
+      TF_LITE_ENSURE_MSG(context, size_splits_vector.at(i) >= 0,
+                         "The size_splits must be non-negative.");
+      TF_LITE_ENSURE_MSG(
+          context,
+          size_splits_vector.at(i) <=
+              std::numeric_limits<int64_t>::max() - size_splits_sum,
+          "The sum of size_splits overflowed.");
       size_splits_sum += size_splits_vector.at(i);
     }
   }
@@ -119,10 +133,10 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
   }
 
   for (int i = 0; i < NumOutputs(node); ++i) {
-    TfLiteIntArray* output_dims = TfLiteIntArrayCopy(input->dims);
-    output_dims->data[axis_value] = size_splits_vector.at(i);
     TfLiteTensor* output;
     TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
+    TfLiteIntArray* output_dims = TfLiteIntArrayCopy(input->dims);
+    output_dims->data[axis_value] = static_cast<int>(size_splits_vector.at(i));
     TF_LITE_ENSURE_STATUS(context->ResizeTensor(context, output, output_dims));
   }
 
@@ -134,9 +148,14 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   OpContext op_context(context, node);
 
-  TF_LITE_ENSURE_EQ(context, NumOutputs(node), op_context.params->num_splits);
-
   TF_LITE_ENSURE(context, op_context.input != nullptr);
+  TF_LITE_ENSURE(context, op_context.size_splits != nullptr);
+  TF_LITE_ENSURE(context, op_context.axis != nullptr);
+  TF_LITE_ENSURE(context, op_context.params->num_splits > 0);
+  TF_LITE_ENSURE_EQ(context, NumOutputs(node), op_context.params->num_splits);
+  TF_LITE_ENSURE_TYPES_EQ(context, op_context.axis->type, kTfLiteInt32);
+  TF_LITE_ENSURE_EQ(context, NumElements(op_context.axis), 1);
+
   auto input_type = op_context.input->type;
   bool is_supported_type =
       input_type == kTfLiteFloat32 || input_type == kTfLiteUInt8 ||
@@ -180,7 +199,9 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
                                      op_context.size_splits, op_context.axis));
   }
 
-  int axis_value = GetTensorData<int>(op_context.axis)[0];
+  const int* axis_data = GetTensorData<int>(op_context.axis);
+  TF_LITE_ENSURE(context, axis_data != nullptr);
+  int axis_value = axis_data[0];
   if (axis_value < 0) {
     axis_value += NumDimensions(op_context.input);
   }

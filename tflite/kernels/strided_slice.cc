@@ -71,19 +71,20 @@ struct StridedSliceContext {
   int input_dims;
 };
 
-reference_ops::DynamicStridedSliceParams BuildStridedSliceParams(
-    StridedSliceContext* op_context, bool start_and_end_indices) {
-  reference_ops::DynamicStridedSliceParams op_params;
-
+TfLiteStatus BuildStridedSliceParams(
+    TfLiteContext* context, StridedSliceContext* op_context,
+    bool start_and_end_indices,
+    reference_ops::DynamicStridedSliceParams* op_params) {
   // The ellipsis_mask and new_axis_mask in op_params are not used. Those masks
   // are processed here to update begin_mask, end_mask and the index range.
-  op_params.begin_mask = 0;
-  op_params.end_mask = 0;
-  op_params.shrink_axis_mask = 0;
-  op_params.offset = op_context->params->offset;
+  op_params->begin_mask = 0;
+  op_params->end_mask = 0;
+  op_params->shrink_axis_mask = 0;
+  op_params->offset = op_context->params->offset;
 
   // Count indexes where the new_axis_mask is set but the ellipsis_mask is not.
   const int begin_count = GetTensorShape(op_context->begin).Dims(0);
+  TF_LITE_ENSURE(context, begin_count >= 0 && begin_count <= 32);
   int num_add_axis = 0;
   for (int i = 0; i < begin_count; ++i) {
     if (!((uint32_t{1} << i) & op_context->params->ellipsis_mask) &&
@@ -94,9 +95,12 @@ reference_ops::DynamicStridedSliceParams BuildStridedSliceParams(
 
   // Calculate the dims of input after adding new axises.
   const int effective_dims = op_context->input_dims + num_add_axis;
-  op_params.start_indices.assign(effective_dims, 0);
-  op_params.stop_indices.assign(effective_dims, 0);
-  op_params.strides.assign(effective_dims, 1);
+  TF_LITE_ENSURE_MSG(
+      context, effective_dims >= 0 && effective_dims <= 32,
+      "StridedSlice op only supports up to 32 effective dimensions.");
+  op_params->start_indices.assign(effective_dims, 0);
+  op_params->stop_indices.assign(effective_dims, 0);
+  op_params->strides.assign(effective_dims, 1);
 
   // If begin, end and strides are not fully provided, it means Ellipsis should
   // be expanded to multiple dimensions (Ex: for spec [Ellipsis, 2] on a 3D
@@ -139,49 +143,62 @@ reference_ops::DynamicStridedSliceParams BuildStridedSliceParams(
   for (int i = 0; i < effective_dims; ++i) {
     if ((uint32_t{1} << i) & effective_ellipsis_mask) {
       // If ellipsis_mask, set the begin_mask and end_mask at that index.
+      TF_LITE_ENSURE(context, i >= added_axises &&
+                                  i - added_axises < op_context->input_dims);
+      const int dim_size = input_shape.Dims(i - added_axises);
       added_ellipsis = std::max(0, i - ellipsis_start_idx);
-      op_params.begin_mask |= (uint32_t{1} << i);
-      op_params.end_mask |= (uint32_t{1} << i);
-      op_params.strides[i] = 1;
-      op_context->effective_input_shape.SetDim(
-          i, input_shape.Dims(i - added_axises));
+      op_params->begin_mask |= (uint32_t{1} << i);
+      op_params->end_mask |= (uint32_t{1} << i);
+      op_params->stop_indices[i] = dim_size;
+      op_params->strides[i] = 1;
+      op_context->effective_input_shape.SetDim(i, dim_size);
     } else if ((uint32_t{1} << i) & effective_new_axis_mask) {
       // If new_axis_mask is set, it is equivalent to adding a new dim of 1 to
       // input tensor. Store added shape to effective_input_shape.
-      op_params.start_indices[i] = 0;
-      op_params.stop_indices[i] = 1;
-      op_params.strides[i] = 1;
+      op_params->start_indices[i] = 0;
+      op_params->stop_indices[i] = 1;
+      op_params->strides[i] = 1;
       op_context->effective_input_shape.SetDim(i, 1);
       added_axises++;
     } else if (i >= begin_count + expanded_ellipsis) {
-      op_params.start_indices[i] = 0;
-      op_params.stop_indices[i] = 0;
-      op_params.strides[i] = 1;
-      op_params.begin_mask |= (uint32_t{1} << i);
-      op_params.end_mask |= (uint32_t{1} << i);
-      op_context->effective_input_shape.SetDim(
-          i, input_shape.Dims(i - added_axises));
+      TF_LITE_ENSURE(context, i >= added_axises &&
+                                  i - added_axises < op_context->input_dims);
+      const int dim_size = input_shape.Dims(i - added_axises);
+      op_params->start_indices[i] = 0;
+      op_params->stop_indices[i] = dim_size;
+      op_params->strides[i] = 1;
+      op_params->begin_mask |= (uint32_t{1} << i);
+      op_params->end_mask |= (uint32_t{1} << i);
+      op_context->effective_input_shape.SetDim(i, dim_size);
     } else {
       const int orig_idx = i - added_ellipsis;
+      TF_LITE_ENSURE(context, orig_idx >= 0 && orig_idx < begin_count);
+      TF_LITE_ENSURE(context, i >= added_axises &&
+                                  i - added_axises < op_context->input_dims);
       if (start_and_end_indices) {
-        op_params.start_indices[i] = begin_data[orig_idx];
-        op_params.stop_indices[i] = end_data[orig_idx];
+        TF_LITE_ENSURE(context, begin_data != nullptr && end_data != nullptr);
+        op_params->start_indices[i] = begin_data[orig_idx];
+        op_params->stop_indices[i] = end_data[orig_idx];
+      } else if (op_params->offset) {
+        TF_LITE_ENSURE(context, end_data != nullptr);
+        op_params->stop_indices[i] = end_data[orig_idx];
       }
-      op_params.strides[i] = strides_data[orig_idx];
+      TF_LITE_ENSURE(context, strides_data != nullptr);
+      op_params->strides[i] = strides_data[orig_idx];
       if (op_context->params->begin_mask & (uint32_t{1} << orig_idx)) {
-        op_params.begin_mask |= (uint32_t{1} << i);
+        op_params->begin_mask |= (uint32_t{1} << i);
       }
       if (op_context->params->end_mask & (uint32_t{1} << orig_idx)) {
-        op_params.end_mask |= (uint32_t{1} << i);
+        op_params->end_mask |= (uint32_t{1} << i);
       }
       if (op_context->params->shrink_axis_mask & (uint32_t{1} << orig_idx)) {
-        op_params.shrink_axis_mask |= (uint32_t{1} << i);
+        op_params->shrink_axis_mask |= (uint32_t{1} << i);
       }
       op_context->effective_input_shape.SetDim(
           i, input_shape.Dims(i - added_axises));
     }
   }
-  return op_params;
+  return kTfLiteOk;
 }
 
 // Processes the indexing tensors (begin, end and strides) to resize the
@@ -190,11 +207,12 @@ reference_ops::DynamicStridedSliceParams BuildStridedSliceParams(
 TfLiteStatus ResizeOutputTensor(TfLiteContext* context,
                                 StridedSliceContext* op_context) {
   std::vector<int> output_shape_vector;
-  reference_ops::DynamicStridedSliceParams op_params =
-      BuildStridedSliceParams(op_context, !op_context->params->offset);
+  reference_ops::DynamicStridedSliceParams op_params;
+  TF_LITE_ENSURE_OK(
+      context, BuildStridedSliceParams(context, op_context,
+                                       !op_context->params->offset, &op_params));
   const RuntimeShape effective_input_shape = op_context->effective_input_shape;
 
-  const int32_t* end_data = GetTensorData<int32_t>(op_context->end);
   for (int idx = effective_input_shape.DimensionsCount() - 1; idx >= 0; --idx) {
     int32_t stride = op_params.strides[idx];
     TF_LITE_ENSURE_MSG(context, stride != 0, "stride value has to be non-zero");
@@ -204,7 +222,7 @@ TfLiteStatus ResizeOutputTensor(TfLiteContext* context,
         reference_ops::AxisMask(op_params.shrink_axis_mask, idx);
     if (shrink_axis) continue;
     if (op_params.offset) {
-      dim_shape = end_data[idx];
+      dim_shape = op_params.stop_indices[idx];
     } else {
       int32_t begin =
           reference_ops::StartForAxis(op_params, effective_input_shape, idx);
@@ -255,8 +273,9 @@ TfLiteStatus EvalImpl(TfLiteContext* context, TfLiteNode* node) {
   if (IsDynamicTensor(op_context.output)) {
     TF_LITE_ENSURE_OK(context, ResizeOutputTensor(context, &op_context));
   }
-  reference_ops::DynamicStridedSliceParams op_params =
-      BuildStridedSliceParams(&op_context, true);
+  reference_ops::DynamicStridedSliceParams op_params;
+  TF_LITE_ENSURE_OK(
+      context, BuildStridedSliceParams(context, &op_context, true, &op_params));
 
   if (op_context.input->type == kTfLiteString) {
     reference_ops::StridedSlice<string>(
@@ -311,6 +330,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_EQ(context, NumDimensions(op_context.strides), 1);
   TF_LITE_ENSURE_EQ(context, NumElements(op_context.begin),
                     NumElements(op_context.end));
+  TF_LITE_ENSURE_EQ(context, NumElements(op_context.begin),
+                    NumElements(op_context.strides));
   TF_LITE_ENSURE_EQ(context, op_context.input->type, op_context.output->type);
 
   // Only INT32 begin/end/strides are supported
@@ -318,16 +339,27 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TF_LITE_ENSURE_TYPES_EQ(context, op_context.begin->type, kTfLiteInt32);
   TF_LITE_ENSURE_TYPES_EQ(context, op_context.end->type, kTfLiteInt32);
   TF_LITE_ENSURE_TYPES_EQ(context, op_context.strides->type, kTfLiteInt32);
-  TF_LITE_ENSURE_MSG(context, NumElements(op_context.begin) <= 31,
+  const int64_t begin_count = NumElements(op_context.begin);
+  TF_LITE_ENSURE_MSG(context, begin_count <= 31,
                      "StridedSlice op only supports up to 31 indices.");
+  int num_add_axis = 0;
+  for (int i = 0; i < static_cast<int>(begin_count); ++i) {
+    if (!((uint32_t{1} << i) & op_context.params->ellipsis_mask) &&
+        ((uint32_t{1} << i) & op_context.params->new_axis_mask)) {
+      num_add_axis++;
+    }
+  }
+  TF_LITE_ENSURE_MSG(
+      context, op_context.input_dims + num_add_axis <= 31,
+      "StridedSlice op only supports up to 31 effective dimensions.");
 
   // Postpone allocation of output if any of the indexing tensors is not
   // constant
   bool offset = op_context.params->offset;
-  bool output_shape_known = IsConstantOrPersistentTensor(op_context.strides);
+  bool output_shape_known = IsConstantOrPersistentTensor(op_context.strides) &&
+                            IsConstantOrPersistentTensor(op_context.end);
   output_shape_known &=
-      offset || (IsConstantOrPersistentTensor(op_context.begin) &&
-                 IsConstantOrPersistentTensor(op_context.end));
+      offset || IsConstantOrPersistentTensor(op_context.begin);
   if (!output_shape_known) {
     SetTensorToDynamic(op_context.output);
     return kTfLiteOk;

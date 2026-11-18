@@ -390,5 +390,25 @@ TEST(ScatterNdOpTest, OOBWrites) {
   ASSERT_EQ(m.Invoke(), kTfLiteError);
 }
 
+TEST(ScatterNdOpTest, RejectsOuterDimsExceedingUpdatesRankAndNegativeShape) {
+  {
+    ScatterNdOpModel m({TensorType_INT32, {1, 1, 1, 1, 1, 1, 2}},
+                       {TensorType_INT32, {1, 1, 1, 1, 1}},
+                       {TensorType_INT32, {2}});
+    m.SetIndices<int32_t>({0, 0});
+    m.SetUpdates<int32_t>({1});
+    m.SetShape<int32_t>({2, 2});
+    EXPECT_EQ(m.Invoke(), kTfLiteError);
+  }
+  {
+    ScatterNdOpModel m({TensorType_INT32, {2, 1}}, {TensorType_INT32, {2, 3}},
+                       {TensorType_INT32, {2}});
+    m.SetIndices<int32_t>({0, 1});
+    m.SetUpdates<int32_t>({1, 2, 3, 4, 5, 6});
+    m.SetShape<int32_t>({-4, 3});
+    EXPECT_EQ(m.Invoke(), kTfLiteError);
+  }
+}
+
 }  // namespace
 }  // namespace tflite

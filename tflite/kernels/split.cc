@@ -51,7 +51,9 @@ TfLiteStatus UseDynamicOutputTensors(TfLiteContext* context, TfLiteNode* node) {
 TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
                                  const TfLiteTensor* axis,
                                  const TfLiteTensor* input, int num_splits) {
-  int axis_value = GetTensorData<int>(axis)[0];
+  const int* axis_data = GetTensorData<int>(axis);
+  TF_LITE_ENSURE(context, axis_data != nullptr);
+  int axis_value = axis_data[0];
   if (axis_value < 0) {
     axis_value += NumDimensions(input);
   }
@@ -61,16 +63,16 @@ TfLiteStatus ResizeOutputTensors(TfLiteContext* context, TfLiteNode* node,
   TF_LITE_ENSURE(context, axis_value <= INT16_MAX);
 
   const int input_size = SizeOfDimension(input, axis_value);
-  TF_LITE_ENSURE(context, num_splits != 0);
+  TF_LITE_ENSURE(context, num_splits > 0);
   TF_LITE_ENSURE_MSG(context, input_size % num_splits == 0,
                      "Not an even split");
   const int slice_size = input_size / num_splits;
 
   for (int i = 0; i < NumOutputs(node); ++i) {
-    TfLiteIntArray* output_dims = TfLiteIntArrayCopy(input->dims);
-    output_dims->data[axis_value] = slice_size;
     TfLiteTensor* output;
     TF_LITE_ENSURE_OK(context, GetOutputSafe(context, node, i, &output));
+    TfLiteIntArray* output_dims = TfLiteIntArrayCopy(input->dims);
+    output_dims->data[axis_value] = slice_size;
     TF_LITE_ENSURE_STATUS(context->ResizeTensor(context, output, output_dims));
   }
 
@@ -82,7 +84,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
 
   OpContext op_context(context, node);
 
+  TF_LITE_ENSURE(context, op_context.axis != nullptr);
+  TF_LITE_ENSURE(context, op_context.input != nullptr);
+  TF_LITE_ENSURE(context, op_context.params->num_splits > 0);
   TF_LITE_ENSURE_EQ(context, NumOutputs(node), op_context.params->num_splits);
+  TF_LITE_ENSURE_TYPES_EQ(context, op_context.axis->type, kTfLiteInt32);
+  TF_LITE_ENSURE_EQ(context, NumElements(op_context.axis), 1);
 
   auto input_type = op_context.input->type;
   bool is_supported_type =
@@ -115,14 +122,16 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
 
   // When the 'axis' tensor is non-const we can't resize output tensors in
   // Prepare(), and we have to do it now.
-  if (!IsConstantTensor(op_context.axis)) {
+  if (!IsConstantOrPersistentTensor(op_context.axis)) {
     TF_LITE_ENSURE_OK(
         context,
         ResizeOutputTensors(context, node, op_context.axis, op_context.input,
                             op_context.params->num_splits));
   }
 
-  int axis_value = GetTensorData<int>(op_context.axis)[0];
+  const int* axis_data = GetTensorData<int>(op_context.axis);
+  TF_LITE_ENSURE(context, axis_data != nullptr);
+  int axis_value = axis_data[0];
   if (axis_value < 0) {
     axis_value += NumDimensions(op_context.input);
   }

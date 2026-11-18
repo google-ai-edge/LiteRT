@@ -63,12 +63,15 @@ class SelectOpModel : public BaseSelectOpModel {
  public:
   SelectOpModel(std::initializer_list<int> input1_shape,
                 std::initializer_list<int> input2_shape,
-                std::initializer_list<int> input3_shape, TensorType input_type)
+                std::initializer_list<int> input3_shape, TensorType input_type,
+                bool allocate_and_delegate = true)
       : BaseSelectOpModel(input1_shape, input2_shape, input3_shape,
                           input_type) {
     SetBuiltinOp(BuiltinOperator_SELECT, BuiltinOptions_SelectOptions,
                  CreateSelectOptions(builder_).Union());
-    BuildInterpreter({input1_shape, input2_shape, input3_shape});
+    BuildInterpreter({input1_shape, input2_shape, input3_shape},
+                     /*num_threads=*/-1, /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, allocate_and_delegate);
   }
 };
 
@@ -521,6 +524,12 @@ TEST(SelectOpTest, MixedFlatSizeOneInputsWithScalarInputYTensor) {
 
   EXPECT_THAT(model.GetOutput<int32_t>(), ElementsAre(5));
   EXPECT_EQ(model.GetOutputShape().size(), 0);
+}
+
+TEST(SelectOpTest, RejectsRankOneConditionWithScalarX) {
+  SelectOpModel model({2}, {}, {}, TensorType_INT32,
+                      /*allocate_and_delegate=*/false);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
 }
 
 }  // namespace
