@@ -79,9 +79,12 @@ struct FlashDecodeTuning {
 // The defaults were measured on Adreno 830 (work-group reduction kernel): with
 // Qwen3 0.6B (8 K/V heads, 1280 cache entries), 5 splits of 256 keys read the
 // KV cache at 58 GB/s, compared with 43 GB/s for one work group per K/V head.
-// On Adreno (OpenCL) at most 2 query heads share a work group: with 4 heads the
-// compiler limits the kernel to fewer work items than it is launched with
-// (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
+// On Adreno (OpenCL) at most 2 query heads share a work group and each work
+// item scores at most 2 keys per chunk: with more heads or keys the compiler
+// limits the kernel to fewer work items than it is launched with. Low-end
+// (1-CU, e.g. Adreno 610) and older Adreno (3xx-5xx) OpenCL GPUs further lower
+// this to 128 work items, 1 query head per work group, and 1 key per work item
+// per chunk (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
 //
 // On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant. At
 // short contexts it processes at most 4 query heads per work group with 4 SIMD

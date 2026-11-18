@@ -1246,14 +1246,23 @@ TEST_P(SdpaTransposedKernelExecuteTest,
 
 // Single-token decode with a pruned BOOL causal mask (`MaskMode::kNone`,
 // `attr.is_causal = true`) for the head dims whose BOOL mask the parsers prune
-// (head_dim / 4 dividing 256), using a partially filled cache.
+// (`UsesFusedSdpaKernel`), using a partially filled cache.
 TEST_P(SdpaTransposedKernelExecuteTest,
        SingleTokenDecodeImplicitCausalPrunedMaskHeadDims) {
   if (!SupportsFusedSdpaKernels(exec_env->GetGpuInfo())) {
     GTEST_SKIP() << "BOOL causal mask pruning only applies to the fused "
                     "SDPA kernels.";
   }
+  int tested_head_dims = 0;
   for (int head_dim : {4, 64, 128, 256, 512, 1024}) {
+    if (!UsesFusedSdpaKernel(exec_env->GetGpuInfo(),
+                             ::ml_drift::BHWC(1, 8, 1, head_dim),
+                             ::ml_drift::BHWC(1, 2, 64, head_dim),
+                             /*is_prefill=*/false,
+                             /*from_cache_update=*/true)) {
+      continue;
+    }
+    ++tested_head_dims;
     auto status = RunSdpaTransposedTest(
         *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
         /*H=*/head_dim, MaskMode::kNone, /*KV=*/2, /*q_start=*/49,
@@ -1262,6 +1271,7 @@ TEST_P(SdpaTransposedKernelExecuteTest,
     EXPECT_TRUE(status.ok())
         << "head_dim=" << head_dim << ": " << status.message();
   }
+  EXPECT_GT(tested_head_dims, 0);
 }
 
 // Grouped-query attention on plain K/V tensors, which always takes the

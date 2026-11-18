@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
 
+#include <string>
 #include <utility>
 
 #include "testing/base/public/gunit.h"
@@ -88,6 +89,80 @@ TEST(SdpaTransposedSupportTest, AdrenoOpenClScoresAtMostTwoKeysPerWorkItem) {
         << "cache_size=" << cache_size;
     EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape))
         << "cache_size=" << cache_size;
+  }
+}
+
+::ml_drift::GpuInfo AdrenoOpenClGpuInfo(const std::string& description) {
+  ::ml_drift::GpuInfo gpu_info =
+      OpenClGpuInfo(::ml_drift::GpuVendor::kQualcomm);
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      description, ::ml_drift::GpuApi::kOpenCl, &gpu_info);
+  return gpu_info;
+}
+
+TEST(SdpaTransposedSupportTest, LowEndAndOlderAdrenoOpenClUsesSmallerKernel) {
+  // Low-end (1-CU, e.g. Adreno 610/702) and older (3xx-5xx) Adreno OpenCL GPUs
+  // compile the 256-thread 2-head kernel below 256 work items (160 on Adreno
+  // 610 for Qwen3-0.6B, b/578633071).
+  for (const std::string& description : {
+           "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 610",
+           "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 702",
+           "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 512",
+           "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 430",
+       }) {
+    const ::ml_drift::GpuInfo gpu_info = AdrenoOpenClGpuInfo(description);
+    const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
+    EXPECT_EQ(tuning.threads, 128) << description;
+    EXPECT_EQ(tuning.max_heads_per_work_group, 1) << description;
+    EXPECT_EQ(tuning.max_keys_per_thread, 1) << description;
+    EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/1), 1)
+        << description;
+
+    // Qwen3-0.6B decode (16 Q / 8 KV heads, head_dim=128, cache=2048).
+    const ::ml_drift::BHWC qwen_q(1, 16, 1, 128);
+    const ::ml_drift::BHWC qwen_k(1, 8, 2048, 128);
+    const FlashDecodeConfig qwen_config =
+        GetFlashDecodeConfig(gpu_info, qwen_q, qwen_k);
+    EXPECT_EQ(qwen_config.tuning.threads, 128) << description;
+    EXPECT_EQ(qwen_config.heads, 1) << description;
+    EXPECT_EQ(qwen_config.splits, 3) << description;
+    EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, qwen_q, qwen_k))
+        << description;
+
+    // Larger head dims up to 512 (128 slices) still divide 128 threads.
+    for (const int head_dim : {256, 512}) {
+      const ::ml_drift::BHWC q_shape = QueryShape(head_dim);
+      const ::ml_drift::BHWC k_shape =
+          CacheShape(/*cache_size=*/4096, head_dim);
+      const FlashDecodeConfig config =
+          GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
+      EXPECT_EQ(config.tuning.threads, 128)
+          << description << " head_dim=" << head_dim;
+      EXPECT_EQ(config.heads, 1) << description << " head_dim=" << head_dim;
+      EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape))
+          << description << " head_dim=" << head_dim;
+    }
+  }
+
+  // Respect an even lower device max work-group size.
+  ::ml_drift::GpuInfo clamped = AdrenoOpenClGpuInfo(
+      "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 610");
+  clamped.opencl_info.max_work_group_total_size = 64;
+  EXPECT_EQ(GetFlashDecodeTuning(clamped).threads, 64);
+}
+
+TEST(SdpaTransposedSupportTest, MultiCuAdrenoOpenClKeepsDefaultAdrenoTuning) {
+  for (const std::string& description : {
+           "QUALCOMM Adreno(TM) QUALCOMM OpenCL C 2.0 Adreno(TM) 640",
+           "QUALCOMM Adreno(TM) 710 QUALCOMM OpenCL C 3.0 Adreno(TM) 710",
+           "QUALCOMM Adreno(TM) 750 QUALCOMM OpenCL C 3.0 Adreno(TM) 750",
+           "QUALCOMM Adreno(TM) 830 QUALCOMM OpenCL C 3.0 Adreno(TM) 830",
+       }) {
+    const ::ml_drift::GpuInfo gpu_info = AdrenoOpenClGpuInfo(description);
+    const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
+    EXPECT_EQ(tuning.threads, 256) << description;
+    EXPECT_EQ(tuning.max_heads_per_work_group, 2) << description;
+    EXPECT_EQ(tuning.max_keys_per_thread, 2) << description;
   }
 }
 
