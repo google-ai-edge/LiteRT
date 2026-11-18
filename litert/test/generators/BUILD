@@ -24,6 +24,7 @@ package(
 
 # Imperitive logic for generating test graphs in memory.
 
+# Common dependencies for test graph generators.
 cc_library(
     name = "common",
     testonly = True,
