@@ -168,6 +168,20 @@ class TeacherForcedTest(unittest.TestCase):
     with self.assertRaises(ValueError):
       teacher_forced.pad_to_shape(bytes(3), (1, 1, 1, 2), 8)
 
+  def test_find_signature(self):
+    definitions = []
+    for key in (b"prefill", b"decode"):
+      definition = mock.Mock()
+      definition.SignatureKey.return_value = key
+      definitions.append(definition)
+    model = mock.Mock()
+    model.SignatureDefsLength.return_value = len(definitions)
+    model.SignatureDefs.side_effect = definitions.__getitem__
+    self.assertIs(
+        teacher_forced.find_signature(model, "decode"), definitions[1]
+    )
+    self.assertIsNone(teacher_forced.find_signature(model, "verify"))
+
   def test_replay_of_recorded_steps(self):
     with tempfile.TemporaryDirectory() as tmp:
       dump = Path(tmp) / "io"

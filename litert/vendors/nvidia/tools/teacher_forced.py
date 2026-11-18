@@ -66,12 +66,24 @@ No GPU and no LiteRT are needed: numpy only.
 
 import argparse
 import json
+import mmap
 from pathlib import Path
 import re
 import struct
 import sys
 
 import numpy as np
+
+# Optional packages: only --tokenizer needs sentencepiece and only
+# replay-manifest needs tflite. Every other command runs with numpy alone.
+try:
+  import sentencepiece  # pylint: disable=g-import-not-at-top
+except ImportError:
+  sentencepiece = None
+try:
+  import tflite  # pylint: disable=g-import-not-at-top
+except ImportError:
+  tflite = None
 
 _DTYPES = {
     "F32": np.float32,
@@ -85,7 +97,7 @@ _DTYPES = {
 
 
 def read_safetensors(path):
-  """The tensors of a safetensors file: {name: array}."""
+  """Reads the tensors of a safetensors file into {name: array}."""
   with open(path, "rb") as f:
     size = struct.unpack("<Q", f.read(8))[0]
     header = json.loads(f.read(size))
@@ -108,15 +120,13 @@ def _single(path):
 
 
 def target_tokens(tokenizer_path, target_path):
-  """The target's tokens as LiteRT-LM's scoring encodes them (no BOS)."""
-  import sentencepiece  # pylint: disable=g-import-not-at-top
-
+  """Tokenizes the target as LiteRT-LM's scoring does (no BOS)."""
   processor = sentencepiece.SentencePieceProcessor(model_file=tokenizer_path)
   return processor.encode(Path(target_path).read_text())
 
 
 def collect(capture_dir, out_prefix, scored=None):
-  """One run's decode steps from the debugger's captures."""
+  """Collects one run's decode steps from the debugger's captures."""
   sessions = [p for p in Path(capture_dir).iterdir() if p.is_dir()]
   if len(sessions) != 1:
     raise ValueError(f"{capture_dir}: {len(sessions)} sessions, one expected")
@@ -157,7 +167,7 @@ def collect(capture_dir, out_prefix, scored=None):
 
 
 def collect_dispatch(dump_dir, out_prefix, scored=None, vocab=262144):
-  """One run's decode steps from the NVIDIA dispatch's output dumps."""
+  """Collects one run's decode steps from the NVIDIA dispatch's output dumps."""
   entries = [json.loads(line) for line in open(Path(dump_dir) / "index.jsonl")]
   entries = sorted(
       (e for e in entries if e["dims"] and e["dims"][-1] == vocab),
@@ -209,34 +219,38 @@ _TFLITE_BITS = {
 }
 
 
-def signature_inputs(model_path, signature):
-  """{tensor index: (name, shape, bits)} of a signature's inputs."""
-  import mmap  # pylint: disable=g-import-not-at-top
-  import tflite  # pylint: disable=g-import-not-at-top
+def find_signature(model, signature):
+  """Returns the SignatureDef of MODEL whose key is SIGNATURE, or None."""
+  for i in range(model.SignatureDefsLength()):
+    definition = model.SignatureDefs(i)
+    if definition.SignatureKey().decode() == signature:
+      return definition
+  return None
 
+
+def signature_inputs(model_path, signature):
+  """Returns {tensor index: (name, shape, bits)} of a signature's inputs."""
   with open(model_path, "rb") as f:
     buffer = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
   model = tflite.Model.GetRootAsModel(buffer, 0)
-  for i in range(model.SignatureDefsLength()):
-    definition = model.SignatureDefs(i)
-    if definition.SignatureKey().decode() != signature:
-      continue
-    subgraph = model.Subgraphs(definition.SubgraphIndex())
-    inputs = {}
-    for j in range(definition.InputsLength()):
-      index = definition.Inputs(j).TensorIndex()
-      tensor = subgraph.Tensors(index)
-      inputs[index] = (
-          definition.Inputs(j).Name().decode(),
-          tuple(int(d) for d in tensor.ShapeAsNumpy()),
-          _TFLITE_BITS[tensor.Type()],
-      )
-    return inputs
-  raise ValueError(f"{model_path}: no signature {signature}")
+  definition = find_signature(model, signature)
+  if definition is None:
+    raise ValueError(f"{model_path}: no signature {signature}")
+  subgraph = model.Subgraphs(definition.SubgraphIndex())
+  inputs = {}
+  for j in range(definition.InputsLength()):
+    index = definition.Inputs(j).TensorIndex()
+    tensor = subgraph.Tensors(index)
+    inputs[index] = (
+        definition.Inputs(j).Name().decode(),
+        tuple(int(d) for d in tensor.ShapeAsNumpy()),
+        _TFLITE_BITS[tensor.Type()],
+    )
+  return inputs
 
 
 def dispatch_input_tensors(log_path, function):
-  """The tensor index of each input of FUNCTION, in the dispatch's order."""
+  """Reads FUNCTION's input tensor indices from the log, in dispatch order."""
   tensors = []
   with open(log_path, errors="replace") as log:
     for line in log:
@@ -252,9 +266,16 @@ def dispatch_input_tensors(log_path, function):
 
 
 def pad_to_shape(raw, shape, bits):
-  """A tensor recorded with a shorter sequence axis (the longest one), padded
+  """Pads a tensor recorded with a shorter sequence axis with zeros to SHAPE.
 
-  with zeros to SHAPE: (bytes, recorded length).
+  Args:
+    raw: The recorded tensor's bytes.
+    shape: The tensor's shape in the model. Its longest axis is the sequence
+      axis.
+    bits: The bits per element.
+
+  Returns:
+    The padded bytes and the recorded length of the sequence axis.
   """
   axis = int(np.argmax(shape))
   others = int(np.prod(shape)) // shape[axis]
@@ -291,7 +312,7 @@ def replay_manifest(
     signature="decode",
     only=(),
 ):
-  """cpu_replay's manifest for every recorded step of FUNCTION (or ONLY)."""
+  """Writes cpu_replay's manifest for FUNCTION's recorded steps (or ONLY)."""
   inputs = signature_inputs(model_path, signature)
   tensors = dispatch_input_tensors(log_path, function)
   if sorted(tensors) != sorted(inputs):
@@ -331,7 +352,7 @@ def replay_manifest(
 
 
 def collect_replay(out_dir, out_prefix, scored=None):
-  """cpu_replay's logits of the manifest's steps, with their positions."""
+  """Collects cpu_replay's logits and positions of the manifest's steps."""
   rows = []
   records = []
   for line in (Path(out_dir) / "manifest.txt").read_text().splitlines():
@@ -364,10 +385,17 @@ def _log_softmax(logits):
 
 
 def compare_steps(ref, test, scored, positions):
-  """Per-step statistics of TEST against REF ([steps, vocab] logits each).
+  """Computes per-step statistics of TEST against REF.
 
-  scored[i] is the token step i is scored on (the one fed to the next step),
-  or None.
+  Args:
+    ref: The reference's logits, [steps, vocab].
+    test: The test's logits, [steps, vocab].
+    scored: scored[i] is the token step i is scored on (the one fed to the next
+      step), or None.
+    positions: positions[i] is the position of step i, or None.
+
+  Returns:
+    One dict of statistics per step.
   """
   if ref.shape != test.shape:
     raise ValueError(f"shapes differ: {ref.shape} and {test.shape}")
@@ -422,7 +450,7 @@ def _quantiles(values):
 
 
 def summarize(rows, bins, position_edges, out=sys.stdout):
-  """The tables of a comparison over all rows."""
+  """Prints the tables of a comparison over all rows."""
   rows = list(rows)
   print(
       f"steps: {len(rows)}, top-1 agreement"
@@ -541,6 +569,9 @@ def compare(pairs, json_path=None, bins=(), position_edges=()):
 
 
 def main(argv):
+  # The flags are parsed with argparse on purpose. The tool has no build rule
+  # and runs by path with a python3 that has numpy, so it does not depend on
+  # absl-py, and argparse provides its subcommands.
   parser = argparse.ArgumentParser(description=__doc__.split("\n")[0])
   sub = parser.add_subparsers(dest="command", required=True)
   c = sub.add_parser("collect")
