@@ -139,8 +139,9 @@ bool SupportsWaveMatrixPrefill(const ::ml_drift::GpuInfo& gpu_info);
 // - Metal on Apple GPUs: the wave-matrix MMA prefill kernel and the wave-SIMD
 //   or work-group Flash-Decode kernel.
 // - OpenCL and WebGPU: the work-group kernel, for decode and, since it handles
-//   one query token per work group, also for prefill whose score tensor would
-//   be too large (`UsesWorkGroupFlashPrefill`).
+//   one query token per work group, also for prefill whose score tensor (or,
+//   with `PrefersChunkedDecomposedPrefill`, score chunk) would be too large
+//   (`UsesWorkGroupFlashPrefill`).
 // Shape-specific conditions are checked separately (`UsesFusedSdpaKernel`).
 bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 
@@ -157,6 +158,23 @@ bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 // on the GEMM and moves a 32K cache of 16 or more query heads (>= 1 GiB, which
 // exceeds the maximum buffer allocation on Adreno) to the Flash kernel.
 inline constexpr uint64_t kMaxDecomposedSdpaScoreBytes = 768ull << 20;
+
+// Whether multi-token prefill without the wave-matrix MMA kernel runs the
+// decomposed graph on score chunks, as Metal does where the MMA kernel does not
+// apply, instead of switching to the work-group Flash kernel above
+// `kMaxDecomposedSdpaScoreBytes`: WebGPU on Apple GPUs.
+//
+// Measured on M5 Max (WebGPU) with Gemma 4 26B-A4B, whose 5 global attention
+// layers have 16 query heads sharing 2 K/V heads of head dim 512, warm prefill
+// of a full context:
+//   32K (31,744 tokens): 965 tok/s on the work-group kernel, 1,300 chunked.
+//   64K (63,488 tokens): 568 tok/s on the work-group kernel, 1,038 chunked.
+// The chunks keep one chunk-sized score buffer live (128 MiB at 32K and 256 MiB
+// at 64K for that model). Score tensors between
+// `kMaxDecomposedSdpaScoreChunkBytes` and `kMaxDecomposedSdpaScoreBytes`, which
+// other WebGPU devices keep on one GEMM, are split as well.
+// TODO(b/553029558): Measure other WebGPU and OpenCL devices.
+bool PrefersChunkedDecomposedPrefill(const ::ml_drift::GpuInfo& gpu_info);
 
 // Bytes of the score tensor of the decomposed graph for query `q_shape`
 // [b, heads, tokens, head_dim] and K cache `k_shape`
@@ -183,8 +201,9 @@ inline constexpr uint64_t kMaxDecomposedSdpaScoreChunkBytes = 128ull << 20;
 // prefill (`UsesWorkGroupFlashPrefill`). They only split larger scores, which
 // reach the decomposed graph when the Flash kernel does not apply (e.g. INT8 or
 // plain K/V tensors), so their budget is the larger of `max_score_bytes` and
-// `max_chunk_bytes`. Other backends split above `max_chunk_bytes`. On OpenCL,
-// the budget is at most the maximum buffer allocation of the device.
+// `max_chunk_bytes`. Other backends, and those that prefer chunked prefill
+// (`PrefersChunkedDecomposedPrefill`), split above `max_chunk_bytes`. On
+// OpenCL, the budget is at most the maximum buffer allocation of the device.
 uint64_t DecomposedSdpaScoreChunkBudget(
     const ::ml_drift::GpuInfo& gpu_info,
     uint64_t max_score_bytes = kMaxDecomposedSdpaScoreBytes,
@@ -216,8 +235,14 @@ int NumDecomposedSdpaScoreChunks(const ::ml_drift::BHWC& q_shape,
 // Whether multi-token prefill (`q_shape.w > 1`) on a backend without the
 // wave-matrix MMA kernel runs on the work-group Flash kernel: when the score
 // tensor of the decomposed graph exceeds `max_score_bytes` or, on OpenCL, the
-// maximum buffer allocation of the device. Tests lower `max_score_bytes` to run
-// small prefill shapes on the work-group kernel.
+// maximum buffer allocation of the device. On backends that prefer chunked
+// prefill (`PrefersChunkedDecomposedPrefill`), the largest score chunk of
+// F16 scores under `kMaxDecomposedSdpaScoreChunkBytes` is compared instead of
+// the whole score tensor, so the work-group kernel only takes shapes whose
+// chunks stay too large (e.g. plain multi-head attention with a long cache).
+// This assumes a mask shared by the query heads: with a mask per query head,
+// the decomposed graph keeps a single chunk. Tests lower `max_score_bytes` to
+// run small prefill shapes on the work-group kernel.
 bool UsesWorkGroupFlashPrefill(
     const ::ml_drift::GpuInfo& gpu_info, const ::ml_drift::BHWC& q_shape,
     const ::ml_drift::BHWC& k_shape,
