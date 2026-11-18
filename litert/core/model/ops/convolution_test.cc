@@ -26,6 +26,7 @@
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/schema/schema_generated.h"
@@ -988,6 +989,303 @@ TEST(ConvolutionOpTest,
       InferConv3DTranspose(op, absl::MakeSpan(tconv3d_inputs), output_shapes),
       kLiteRtStatusOk);
   EXPECT_THAT(output_shapes[0], ElementsAre(1, -1, -1, -1, 2));
+}
+
+TEST(ConvolutionOpTest, ReferenceTransposeConvFloatAppliesBiasAndRelu6) {
+  const float input[] = {2.0f};
+  const float filter[] = {-2.0f, 1.0f, 3.0f, 5.0f};
+  const float bias[] = {1.0f};
+  std::vector<float> out(4, 0.0f);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = 1,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ(
+      ReferenceTransposeConv(input, filter, bias, absl::MakeSpan(out), params,
+                             tflite::ActivationFunctionType_RELU6),
+      kLiteRtStatusOk);
+
+  // Pre-activation: [-3, 3, 7, 11] -> RELU6: [0, 3, 6, 6].
+  EXPECT_THAT(out, ElementsAre(0.0f, 3.0f, 6.0f, 6.0f));
+}
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvFloatWithoutBiasScalesFilterByInput) {
+  const float input[] = {2.0f};
+  const float filter[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> out(4, -5.0f);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = 1,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ(
+      ReferenceTransposeConv(input, filter, /*bias=*/{}, absl::MakeSpan(out),
+                             params, tflite::ActivationFunctionType_NONE),
+      kLiteRtStatusOk);
+
+  EXPECT_THAT(out, ElementsAre(2.0f, 4.0f, 6.0f, 8.0f));
+}
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvFloatAccumulatesOverlapsAndClipsPadding) {
+  // ox = ix + fx - pad_l (pad_l=1):
+  // ix=0 (2.0): fx=0 -> ox=-1 (clipped), fx=1 -> ox=0 (+= 2*5 = 10).
+  // ix=1 (3.0): fx=0 -> ox=0 (+= 3*10 = 30 -> 40), fx=1 -> ox=1 (+= 3*5 = 15).
+  const float input[] = {2.0f, 3.0f};
+  const float filter[] = {10.0f, 5.0f};
+  std::vector<float> out(2, -1.0f);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 2,
+      .in_c = 1,
+      .out_h = 1,
+      .out_w = 2,
+      .out_c = 1,
+      .filter_h = 1,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 1,
+  };
+
+  EXPECT_EQ(
+      ReferenceTransposeConv(input, filter, /*bias=*/{}, absl::MakeSpan(out),
+                             params, tflite::ActivationFunctionType_NONE),
+      kLiteRtStatusOk);
+
+  EXPECT_THAT(out, ElementsAre(40.0f, 15.0f));
+}
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvFloatMultiChannelStrideAddsPerChannelBias) {
+  const float input[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  // Filter layout [out_c=2, fh=1, fw=2, in_c=2].
+  const float filter[] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+  const float bias[] = {0.5f, -0.5f};
+  std::vector<float> out(8, 0.0f);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 2,
+      .in_c = 2,
+      .out_h = 1,
+      .out_w = 4,
+      .out_c = 2,
+      .filter_h = 1,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 2,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ(ReferenceTransposeConv(input, filter, bias, absl::MakeSpan(out),
+                                   params, tflite::ActivationFunctionType_NONE),
+            kLiteRtStatusOk);
+
+  EXPECT_THAT(
+      out, ElementsAre(5.5f, 16.5f, 11.5f, 22.5f, 11.5f, 38.5f, 25.5f, 52.5f));
+}
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvQuantizedAppliesZeroPointReluAndRequantizes) {
+  // input_q = 15, zp = 5 -> (15 - 5) = 10; scale = 0.5 -> real 5.0
+  // filter_q = {-3, 2, 1, 4}, weight_scale = 0.25 -> effective_scale = 0.125
+  // acc = {-30, 20, 10, 40}, bias = {2} -> {-28, 22, 12, 42}
+  // real = {-3.5, 2.75, 1.5, 5.25}; RELU -> {0.0, 2.75, 1.5, 5.25}
+  // output_scale = 0.5, output_zp = -10 -> round(real/0.5) - 10
+  const int8_t input[] = {15};
+  const int8_t filter[] = {-3, 2, 1, 4};
+  const int32_t bias[] = {2};
+  std::vector<int8_t> out(4, 0);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = 1,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ((ReferenceTransposeConvQuantized<int8_t, int8_t, int32_t>(
+                input, filter, bias, absl::MakeSpan(out), params,
+                tflite::ActivationFunctionType_RELU,
+                AffineQuantSpec{/*scale=*/0.5f, /*zero_point=*/5},
+                /*weight_scale=*/0.25f,
+                AffineQuantSpec{/*scale=*/0.5f, /*zero_point=*/-10})),
+            kLiteRtStatusOk);
+
+  EXPECT_THAT(out, ElementsAre(-10, -4, -7, 1));
+}
+
+struct TransposeConvInvalidDimsCase {
+  std::string test_name;
+  int32_t batch = 1;
+  int32_t out_c = 1;
+};
+
+using ReferenceTransposeConvInvalidDimsTest =
+    ::testing::TestWithParam<TransposeConvInvalidDimsCase>;
+
+TEST_P(ReferenceTransposeConvInvalidDimsTest,
+       LeavesOutputUntouchedOnInvalidArgs) {
+  const auto& tc = GetParam();
+  const float input[] = {2.0f};
+  const float filter[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> out(4, -7.0f);
+  const TransposeConvParams params{
+      .batch = tc.batch,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = tc.out_c,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ(
+      ReferenceTransposeConv(input, filter, /*bias=*/{}, absl::MakeSpan(out),
+                             params, tflite::ActivationFunctionType_NONE),
+      kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f, -7.0f, -7.0f));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReferenceTransposeConvInvalidDimsTests,
+    ReferenceTransposeConvInvalidDimsTest,
+    ::testing::Values(TransposeConvInvalidDimsCase{.test_name = "ZeroBatch",
+                                                   .batch = 0},
+                      TransposeConvInvalidDimsCase{
+                          .test_name = "ZeroOutputChannels", .out_c = 0}),
+    [](const ::testing::TestParamInfo<TransposeConvInvalidDimsCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvUndersizedSpansLeaveOutputUntouched) {
+  const float input[] = {2.0f};
+  const float filter[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  std::vector<float> out(4, -7.0f);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = 1,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ(ReferenceTransposeConv(/*input=*/{}, filter, /*bias=*/{},
+                                   absl::MakeSpan(out), params,
+                                   tflite::ActivationFunctionType_NONE),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ReferenceTransposeConv(input, absl::MakeConstSpan(filter).first(2),
+                                   /*bias=*/{}, absl::MakeSpan(out), params,
+                                   tflite::ActivationFunctionType_NONE),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ReferenceTransposeConv(input, filter, /*bias=*/{},
+                                   absl::MakeSpan(out).first(3), params,
+                                   tflite::ActivationFunctionType_NONE),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f, -7.0f, -7.0f));
+}
+
+TEST(ConvolutionOpTest,
+     ReferenceTransposeConvQuantizedZeroOutChannelsLeavesOutputUntouched) {
+  const int8_t input[] = {10};
+  const int8_t filter[] = {1, 2, 3, 4};
+  std::vector<int8_t> out(4, -9);
+  const TransposeConvParams params{
+      .batch = 1,
+      .in_h = 1,
+      .in_w = 1,
+      .in_c = 1,
+      .out_h = 2,
+      .out_w = 2,
+      .out_c = 0,
+      .filter_h = 2,
+      .filter_w = 2,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+
+  EXPECT_EQ((ReferenceTransposeConvQuantized<int8_t, int8_t, int32_t>(
+                input, filter, /*bias=*/{}, absl::MakeSpan(out), params,
+                tflite::ActivationFunctionType_NONE, AffineQuantSpec{0.5f, 0},
+                /*weight_scale=*/0.5f, AffineQuantSpec{0.5f, 0})),
+            kLiteRtStatusErrorInvalidArgument);
+
+  EXPECT_THAT(out, ElementsAre(-9, -9, -9, -9));
+}
+
+TEST(ConvolutionOpTest, PrepareTransposeConvGeometryRejectsOverflow) {
+  const TransposeConvParams overflow_params{
+      .batch = 1 << 30,
+      .in_h = 1 << 30,
+      .in_w = 4,
+      .in_c = 1,
+      .out_h = 1,
+      .out_w = 1,
+      .out_c = 1,
+      .filter_h = 1,
+      .filter_w = 1,
+      .stride_h = 1,
+      .stride_w = 1,
+      .pad_t = 0,
+      .pad_l = 0,
+  };
+  EXPECT_FALSE(PrepareTransposeConvGeometry(overflow_params, sizeof(float),
+                                            sizeof(float), sizeof(float))
+                   .HasValue());
 }
 
 }  // namespace

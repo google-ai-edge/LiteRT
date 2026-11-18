@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_CONVOLUTION_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_CONVOLUTION_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -25,9 +26,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/op_shape_inference_utils.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -666,6 +670,206 @@ inline void ReferenceDepthwiseConv2D(
       }
     }
   }
+}
+
+// Caller-supplied NHWC spatial parameters for 2D transposed convolution.
+// Filter tensor layout is `[out_c, filter_h, filter_w, in_c]`.
+struct TransposeConvParams {
+  int32_t batch = 0;
+  int32_t in_h = 0;
+  int32_t in_w = 0;
+  int32_t in_c = 0;
+  int32_t out_h = 0;
+  int32_t out_w = 0;
+  int32_t out_c = 0;
+  int32_t filter_h = 0;
+  int32_t filter_w = 0;
+  int32_t stride_h = 0;
+  int32_t stride_w = 0;
+  int32_t pad_t = 0;
+  int32_t pad_l = 0;
+};
+
+// Validated spatial geometry and checked tensor element counts for 2D
+// transposed convolution.
+struct TransposeConvGeometry {
+  TransposeConvParams params;
+  size_t input_num_elements = 0;
+  size_t filter_num_elements = 0;
+  size_t output_num_elements = 0;
+};
+
+// Validates strictly positive dimensions/strides and checked element/byte
+// counts for input, filter, output, and optional accumulator buffers.
+inline Expected<TransposeConvGeometry> PrepareTransposeConvGeometry(
+    const TransposeConvParams& params, size_t input_elem_size,
+    size_t filter_elem_size, size_t output_elem_size,
+    size_t acc_elem_size = 0) {
+  if (params.batch <= 0 || params.in_h <= 0 || params.in_w <= 0 ||
+      params.in_c <= 0 || params.out_h <= 0 || params.out_w <= 0 ||
+      params.out_c <= 0 || params.filter_h <= 0 || params.filter_w <= 0 ||
+      params.stride_h <= 0 || params.stride_w <= 0) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "TransposeConv requires positive dimensions and strides");
+  }
+  const int32_t in_dims[4] = {params.batch, params.in_h, params.in_w,
+                              params.in_c};
+  const int32_t filter_dims[4] = {params.out_c, params.filter_h,
+                                  params.filter_w, params.in_c};
+  const int32_t out_dims[4] = {params.batch, params.out_h, params.out_w,
+                               params.out_c};
+  auto in_layout = PrepareContiguousLayout(in_dims, input_elem_size);
+  if (!in_layout) {
+    return in_layout.Error();
+  }
+  auto filter_layout = PrepareContiguousLayout(filter_dims, filter_elem_size);
+  if (!filter_layout) {
+    return filter_layout.Error();
+  }
+  auto out_layout = PrepareContiguousLayout(out_dims, output_elem_size);
+  if (!out_layout) {
+    return out_layout.Error();
+  }
+  if (acc_elem_size > 0) {
+    auto acc_bytes = CheckedByteCount(out_layout->num_elements, acc_elem_size);
+    if (!acc_bytes) {
+      return acc_bytes.Error();
+    }
+  }
+  return TransposeConvGeometry{
+      .params = params,
+      .input_num_elements = in_layout->num_elements,
+      .filter_num_elements = filter_layout->num_elements,
+      .output_num_elements = out_layout->num_elements,
+  };
+}
+
+// Accumulates NHWC 2D transposed convolution into `acc` using pre-validated
+// `geom`. `acc` must not alias `input` or `filter`.
+template <typename InputT, typename FilterT, typename AccT>
+inline LiteRtStatus AccumulateTransposeConv(absl::Span<const InputT> input,
+                                            absl::Span<const FilterT> filter,
+                                            absl::Span<AccT> acc,
+                                            const TransposeConvGeometry& geom,
+                                            AccT input_zero_point = AccT{0}) {
+  if (!ValidateBufferCapacity(input, geom.input_num_elements) ||
+      !ValidateBufferCapacity(filter, geom.filter_num_elements) ||
+      !ValidateBufferCapacity(acc, geom.output_num_elements)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const TransposeConvParams& p = geom.params;
+  std::fill_n(acc.data(), geom.output_num_elements, AccT{0});
+  for (int32_t b = 0; b < p.batch; ++b) {
+    for (int32_t ih = 0; ih < p.in_h; ++ih) {
+      for (int32_t iw = 0; iw < p.in_w; ++iw) {
+        for (int32_t ic = 0; ic < p.in_c; ++ic) {
+          const AccT in_val =
+              static_cast<AccT>(
+                  input[((static_cast<size_t>(b) * p.in_h + ih) * p.in_w + iw) *
+                            p.in_c +
+                        ic]) -
+              input_zero_point;
+          for (int32_t kh = 0; kh < p.filter_h; ++kh) {
+            const int32_t oh = ih * p.stride_h + kh - p.pad_t;
+            if (oh < 0 || oh >= p.out_h) continue;
+            for (int32_t kw = 0; kw < p.filter_w; ++kw) {
+              const int32_t ow = iw * p.stride_w + kw - p.pad_l;
+              if (ow < 0 || ow >= p.out_w) continue;
+              for (int32_t oc = 0; oc < p.out_c; ++oc) {
+                const AccT w = static_cast<AccT>(
+                    filter[((static_cast<size_t>(oc) * p.filter_h + kh) *
+                                p.filter_w +
+                            kw) *
+                               p.in_c +
+                           ic]);
+                acc[((static_cast<size_t>(b) * p.out_h + oh) * p.out_w + ow) *
+                        p.out_c +
+                    oc] += in_val * w;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
+// Reference float NHWC 2D transposed convolution with optional per-channel bias
+// and fused activation (`NONE`, `RELU`, `RELU6`, `RELU_N1_TO_1`). `output` must
+// not alias `input` or `filter`.
+inline LiteRtStatus ReferenceTransposeConv(absl::Span<const float> input,
+                                           absl::Span<const float> filter,
+                                           absl::Span<const float> bias,
+                                           absl::Span<float> output,
+                                           const TransposeConvParams& params,
+                                           tflite::ActivationFunctionType faf) {
+  auto geom = PrepareTransposeConvGeometry(params, sizeof(float), sizeof(float),
+                                           sizeof(float));
+  if (!geom) {
+    return geom.Error().Status();
+  }
+  if (!bias.empty() &&
+      !ValidateBufferCapacity(bias, static_cast<size_t>(params.out_c))) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (LiteRtStatus status = AccumulateTransposeConv<float, float, float>(
+          input, filter, output, *geom);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  const size_t total = geom->output_num_elements;
+  if (!bias.empty()) {
+    const size_t out_c = static_cast<size_t>(params.out_c);
+    for (size_t i = 0; i < total; ++i) {
+      output[i] += bias[i % out_c];
+    }
+  }
+  ApplyActivation(output.data(), total, faf);
+  return kLiteRtStatusOk;
+}
+
+// Reference quantized NHWC 2D transposed convolution with symmetric weights
+// (`weight_zero_point == 0`), exact `int64_t` accumulation, optional `BiasT`
+// per-channel bias, `double` effective-scale rescaling, fused activation, and
+// saturating requantization to `T`. `output` must not alias `input` or
+// `filter`.
+template <typename T, typename FilterT, typename BiasT>
+inline LiteRtStatus ReferenceTransposeConvQuantized(
+    absl::Span<const T> input, absl::Span<const FilterT> filter,
+    absl::Span<const BiasT> bias, absl::Span<T> output,
+    const TransposeConvParams& params, tflite::ActivationFunctionType faf,
+    const AffineQuantSpec& input_quant, float weight_scale,
+    const AffineQuantSpec& output_quant) {
+  auto geom = PrepareTransposeConvGeometry(params, sizeof(T), sizeof(FilterT),
+                                           sizeof(T), sizeof(int64_t));
+  if (!geom) {
+    return geom.Error().Status();
+  }
+  if (!ValidateBufferCapacity(output, geom->output_num_elements) ||
+      (!bias.empty() &&
+       !ValidateBufferCapacity(bias, static_cast<size_t>(params.out_c)))) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const size_t total = geom->output_num_elements;
+  std::vector<int64_t> acc(total, 0);
+  if (LiteRtStatus status = AccumulateTransposeConv<T, FilterT, int64_t>(
+          input, filter, absl::MakeSpan(acc), *geom, input_quant.zero_point);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  const double effective_scale = static_cast<double>(input_quant.scale) *
+                                 static_cast<double>(weight_scale);
+  const size_t out_c = static_cast<size_t>(params.out_c);
+  for (size_t i = 0; i < total; ++i) {
+    const int64_t with_bias =
+        acc[i] +
+        (!bias.empty() ? static_cast<int64_t>(bias[i % out_c]) : int64_t{0});
+    double real_val = static_cast<double>(with_bias) * effective_scale;
+    ApplyActivation(&real_val, 1, faf);
+    output[i] = QuantizeValueFromDouble<T>(real_val, output_quant);
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace litert::internal

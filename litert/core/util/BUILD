@@ -118,6 +118,32 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "tensor_layout_util",
+    hdrs = ["tensor_layout_util.h"],
+    visibility = [
+        "//litert:litert_public",
+    ],
+    deps = [
+        ":tensor_type_util",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "tensor_layout_util_test",
+    srcs = ["tensor_layout_util_test.cc"],
+    deps = [
+        ":tensor_layout_util",
+        "//litert/c:litert_common",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 config_setting(
     name = "litert_perfetto_enabled",
     values = {

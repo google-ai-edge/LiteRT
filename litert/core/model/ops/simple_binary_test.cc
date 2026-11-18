@@ -15,6 +15,9 @@
 #include "litert/core/model/ops/simple_binary.h"
 
 #include <cstdint>
+#include <functional>
+#include <limits>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -22,13 +25,18 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
+#include "litert/test/matchers.h"
 #include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::litert::IsError;
+using ::testing::litert::IsOk;
 
 TEST(SimpleBinaryOpTest, EqualBroadcast) {
   LiteRtOpT op;
@@ -230,6 +238,512 @@ TEST(SimpleBinaryOpTest, EqualInvalidInputsFailure) {
 
   EXPECT_EQ(InferEqual(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(SimpleBinaryOpTest, ReferencePreluFloatAppliesPerChannelAlphaToNegatives) {
+  const int32_t in_dims[] = {2, 2};
+  const int32_t alpha_dims[] = {1, 2};
+  const std::vector<float> in = {-2.0f, -4.0f, 3.0f, -8.0f};
+  const std::vector<float> alpha = {0.5f, 0.25f};
+  std::vector<float> out(4, 0.0f);
+
+  EXPECT_THAT(
+      ReferencePrelu<float>(ConstTensorView<float>{in, in_dims},
+                            ConstTensorView<float>{alpha, alpha_dims},
+                            TensorView<float>{absl::MakeSpan(out), in_dims}),
+      IsOk());
+
+  EXPECT_THAT(out, ElementsAre(-1.0f, -1.0f, 3.0f, -2.0f));
+}
+
+TEST(SimpleBinaryOpTest,
+     ReferencePreluQuantizedInt8ScalesNegativesAndRequantizes) {
+  // input {-4, 4} (scale=0.5, zp=0 -> -2.0, 2.0),
+  // alpha {2} (scale=0.25, zp=0 -> 0.5), output (scale=0.5, zp=1).
+  // y = {-1.0, 2.0} -> q = {-2 + 1 = -1, 4 + 1 = 5}.
+  const int32_t in_dims[] = {2};
+  const int32_t alpha_dims[] = {1};
+  const std::vector<int8_t> in = {-4, 4};
+  const std::vector<int8_t> alpha = {2};
+  std::vector<int8_t> out(2, 0);
+
+  EXPECT_THAT(ReferencePrelu<int8_t>(
+                  ConstTensorView<int8_t>{in, in_dims},
+                  ConstTensorView<int8_t>{alpha, alpha_dims},
+                  TensorView<int8_t>{absl::MakeSpan(out), in_dims},
+                  AffineQuantSpec{0.5f, 0}, AffineQuantSpec{0.25f, 0},
+                  AffineQuantSpec{0.5f, 1}),
+              IsOk());
+
+  EXPECT_THAT(out, ElementsAre(-1, 5));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddNFloatSumsThreeInputsElementwise) {
+  const std::vector<float> a = {1.0f, -2.0f};
+  const std::vector<float> b = {0.5f, 3.0f};
+  const std::vector<float> c = {-0.5f, -1.0f};
+  const float* ptrs[] = {a.data(), b.data(), c.data()};
+  std::vector<float> out(2, 0.0f);
+
+  ReferenceAddN<float>(ptrs, out.data(), out.size());
+
+  EXPECT_THAT(out, ElementsAre(1.0f, 0.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddNQuantizedInt8SumsAndRequantizes) {
+  const std::vector<int8_t> a = {-2, 4};
+  const std::vector<int8_t> b = {-2, 2};
+  const int8_t* ptrs[] = {a.data(), b.data()};
+  std::vector<int8_t> out(2, 0);
+
+  ReferenceAddN<int8_t>(ptrs, out.data(), out.size(), AffineQuantSpec{0.5f, 0},
+                        AffineQuantSpec{1.0f, 0});
+
+  EXPECT_THAT(out, ElementsAre(-2, 3));
+}
+
+TEST(SimpleBinaryOpTest,
+     ReferenceFloorDivFloatFloorsTowardNegativeInfinityAcrossSigns) {
+  const std::vector<float> a = {-7.0f, 7.0f, -7.0f, 7.0f};
+  const std::vector<float> b = {3.0f, -3.0f, -3.0f, 3.0f};
+  const int32_t dims[] = {4};
+  std::vector<float> out(4, 0.0f);
+
+  ReferenceFloorDiv(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(-3.0f, -3.0f, 2.0f, 2.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceFloorModFloatMatchesDivisorSignAcrossSigns) {
+  const std::vector<float> a = {-7.0f, 7.0f, -7.0f, 7.0f};
+  const std::vector<float> b = {3.0f, -3.0f, -3.0f, 3.0f};
+  const int32_t dims[] = {4};
+  std::vector<float> out(4, 0.0f);
+
+  ReferenceFloorMod(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(2.0f, -2.0f, -1.0f, 1.0f));
+}
+
+struct Int32BinaryScalarCase {
+  std::string test_name;
+  int32_t a;
+  int32_t b;
+  int32_t expected;
+};
+
+using ReferenceFloorDivInt32Test =
+    ::testing::TestWithParam<Int32BinaryScalarCase>;
+
+TEST_P(ReferenceFloorDivInt32Test, ComputesFlooredQuotientSafely) {
+  const auto& tc = GetParam();
+  const int32_t dims[] = {1};
+  int32_t out = -99;
+
+  EXPECT_THAT(ReferenceFloorDiv(&tc.a, dims, 1, &tc.b, dims, 1, &out, dims, 1),
+              IsOk());
+  EXPECT_EQ(out, tc.expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReferenceFloorDivInt32Tests, ReferenceFloorDivInt32Test,
+    ::testing::Values(
+        Int32BinaryScalarCase{"PositiveDividendPositiveDivisor", 7, 3, 2},
+        Int32BinaryScalarCase{"NegativeDividendNegativeDivisor", -7, -3, 2},
+        Int32BinaryScalarCase{"NegativeDividendPositiveDivisor", -7, 3, -3},
+        Int32BinaryScalarCase{"PositiveDividendNegativeDivisor", 7, -3, -3},
+        Int32BinaryScalarCase{"ExactNegativeDivision", -6, 3, -2},
+        Int32BinaryScalarCase{"ExactNegativeDivisor", 6, -3, -2},
+        Int32BinaryScalarCase{"Int32MinDivNegOneSaturates",
+                              std::numeric_limits<int32_t>::min(), -1,
+                              std::numeric_limits<int32_t>::max()},
+        Int32BinaryScalarCase{"DivisorInt32MinAvoidsOverflow", 7,
+                              std::numeric_limits<int32_t>::min(), -1}),
+    [](const ::testing::TestParamInfo<Int32BinaryScalarCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(SimpleBinaryOpTest, ReferenceFloorDivInt32ZeroDivisorReturnsError) {
+  const int32_t a[] = {5, 6};
+  const int32_t b[] = {1, 0};
+  const int32_t dims[] = {2};
+  int32_t out[] = {-99, -99};
+
+  EXPECT_THAT(ReferenceFloorDiv(a, dims, 1, b, dims, 1, out, dims, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-99, -99));
+}
+
+using ReferenceFloorModInt32Test =
+    ::testing::TestWithParam<Int32BinaryScalarCase>;
+
+TEST_P(ReferenceFloorModInt32Test, ComputesFlooredRemainderSafely) {
+  const auto& tc = GetParam();
+  const int32_t dims[] = {1};
+  int32_t out = -99;
+
+  EXPECT_THAT(ReferenceFloorMod(&tc.a, dims, 1, &tc.b, dims, 1, &out, dims, 1),
+              IsOk());
+  EXPECT_EQ(out, tc.expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReferenceFloorModInt32Tests, ReferenceFloorModInt32Test,
+    ::testing::Values(
+        Int32BinaryScalarCase{"PositiveDividendPositiveDivisor", 7, 3, 1},
+        Int32BinaryScalarCase{"NegativeDividendNegativeDivisor", -7, -3, -1},
+        Int32BinaryScalarCase{"NegativeDividendPositiveDivisor", -7, 3, 2},
+        Int32BinaryScalarCase{"PositiveDividendNegativeDivisor", 7, -3, -2},
+        Int32BinaryScalarCase{"ExactNegativeDivision", -6, 3, 0},
+        Int32BinaryScalarCase{"ExactNegativeDivisor", 6, -3, 0},
+        Int32BinaryScalarCase{"Int32MinModNegOneReturnsZero",
+                              std::numeric_limits<int32_t>::min(), -1, 0},
+        Int32BinaryScalarCase{"DivisorInt32MinAvoidsOverflow", 7,
+                              std::numeric_limits<int32_t>::min(),
+                              std::numeric_limits<int32_t>::min() + 7}),
+    [](const ::testing::TestParamInfo<Int32BinaryScalarCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(SimpleBinaryOpTest, ReferenceFloorModInt32ZeroDivisorReturnsError) {
+  const int32_t a[] = {5, 6};
+  const int32_t b[] = {2, 0};
+  const int32_t dims[] = {2};
+  int32_t out[] = {-99, -99};
+
+  EXPECT_THAT(ReferenceFloorMod(a, dims, 1, b, dims, 1, out, dims, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-99, -99));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceLogicalAndComputesTruthTable) {
+  const bool a[] = {false, false, true, true};
+  const bool b[] = {false, true, false, true};
+  const int32_t dims[] = {4};
+  bool out[4] = {};
+
+  ReferenceLogicalAnd(a, dims, 1, b, dims, 1, out, dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(false, false, false, true));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceLogicalOrComputesTruthTable) {
+  const bool a[] = {false, false, true, true};
+  const bool b[] = {false, true, false, true};
+  const int32_t dims[] = {4};
+  bool out[4] = {};
+
+  ReferenceLogicalOr(a, dims, 1, b, dims, 1, out, dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(false, true, true, true));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceBitwiseXorBroadcastsScalarOperand) {
+  const std::vector<int32_t> a = {0b1010, 0b1100, 0b0011};
+  const std::vector<int32_t> b = {0b0110};
+  const int32_t a_dims[] = {3};
+  const int32_t b_dims[] = {1};
+  std::vector<int32_t> out(3, 0);
+
+  ReferenceBitwiseXor(a.data(), a_dims, 1, b.data(), b_dims, 1, out.data(),
+                      a_dims, 1);
+
+  EXPECT_THAT(out, ElementsAre(0b1100, 0b1010, 0b0101));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceRightShiftSignedPreservesSignBit) {
+  const std::vector<int32_t> a = {16, -16};
+  const std::vector<int32_t> b = {2, 2};
+  const int32_t dims[] = {2};
+  std::vector<int32_t> out(2, -9);
+
+  ReferenceRightShift(a.data(), dims, 1, b.data(), dims, 1, out.data(), dims,
+                      1);
+
+  EXPECT_THAT(out, ElementsAre(4, -4));
+}
+
+TEST(SimpleBinaryOpTest,
+     ReferenceRightShiftSignedClampsOutOfRangeShiftCountsLikeTflite) {
+  // Matches TFLite right_shift.cc clamping shift counts to [0, 31]:
+  //   8 >> -1  -> 8 >> 0  = 8
+  //  -8 >> 32  -> -8 >> 31 = -1
+  //   8 >> 32  -> 8 >> 31  = 0
+  const std::vector<int32_t> a = {8, -8, 8};
+  const std::vector<int32_t> b = {-1, 32, 32};
+  const int32_t dims[] = {3};
+  std::vector<int32_t> out(3, -9);
+
+  EXPECT_THAT(ReferenceRightShift(a.data(), dims, 1, b.data(), dims, 1,
+                                  out.data(), dims, 1),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(8, -1, 0));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceRightShiftUnsignedShiftsLogically) {
+  const std::vector<uint8_t> a = {0x80, 0x20};
+  const std::vector<uint8_t> b = {2, 1};
+  const int32_t dims[] = {2};
+  std::vector<uint8_t> out(2, 99);
+
+  EXPECT_THAT(ReferenceRightShift(a.data(), dims, 1, b.data(), dims, 1,
+                                  out.data(), dims, 1),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(0x20, 0x10));
+}
+
+TEST(SimpleBinaryOpTest,
+     ReferenceRightShiftUnsignedClampsShiftCountAtBitWidth) {
+  // Clamping uint8 shift count 8 to 7 shifts MSB 0x80 into bit 0 (1), while
+  // 0x40 >> 7 yields 0.
+  const std::vector<uint8_t> a = {0x80, 0x40};
+  const std::vector<uint8_t> b = {8, 8};
+  const int32_t dims[] = {2};
+  std::vector<uint8_t> out(2, 99);
+
+  EXPECT_THAT(ReferenceRightShift(a.data(), dims, 1, b.data(), dims, 1,
+                                  out.data(), dims, 1),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(1, 0));
+}
+
+struct EmptyBinaryCase {
+  std::string test_name;
+  std::vector<int32_t> a_dims;
+  std::vector<int32_t> b_dims;
+  std::vector<int32_t> out_dims;
+  tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE;
+};
+
+using ReferenceBinaryEmptyTest = ::testing::TestWithParam<EmptyBinaryCase>;
+
+TEST_P(ReferenceBinaryEmptyTest, EmptyShapesWithNullBuffersSucceed) {
+  const auto& tc = GetParam();
+
+  EXPECT_THAT(
+      ReferenceAdd(/*a_data=*/nullptr, tc.a_dims.data(),
+                   static_cast<int>(tc.a_dims.size()), /*b_data=*/nullptr,
+                   tc.b_dims.data(), static_cast<int>(tc.b_dims.size()),
+                   /*output_data=*/nullptr, tc.out_dims.data(),
+                   static_cast<int>(tc.out_dims.size()), tc.faf),
+      IsOk());
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReferenceBinaryEmptyTests, ReferenceBinaryEmptyTest,
+    ::testing::Values(
+        EmptyBinaryCase{.test_name = "BothEmpty1DWithRelu",
+                        .a_dims = {0},
+                        .b_dims = {0},
+                        .out_dims = {0},
+                        .faf = tflite::ActivationFunctionType_RELU},
+        EmptyBinaryCase{.test_name = "EmptyAndSingleton1D",
+                        .a_dims = {0},
+                        .b_dims = {1},
+                        .out_dims = {0}},
+        EmptyBinaryCase{.test_name = "EmptyBroadcast2D",
+                        .a_dims = {2, 0},
+                        .b_dims = {1, 0},
+                        .out_dims = {2, 0}}),
+    [](const ::testing::TestParamInfo<EmptyBinaryCase>& info) {
+      return info.param.test_name;
+    });
+
+TEST(SimpleBinaryOpTest, ReferenceBinaryGenericRejectsIncompatibleOutputShape) {
+  const float a[] = {1.0f, 2.0f};
+  const float b[] = {3.0f, 4.0f};
+  float out[2] = {-7.0f, -7.0f};
+  const int32_t a_dims[] = {2};
+  const int32_t b_dims[] = {3};
+
+  EXPECT_THAT(ReferenceAdd(a, a_dims, 1, b, b_dims, 1, out, a_dims, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceBinaryGenericSupportsHighRankAboveEight) {
+  const int32_t dims[9] = {1, 1, 1, 1, 1, 1, 1, 1, 2};
+  const float a[2] = {1.0f, 2.0f};
+  const float b[2] = {10.0f, 20.0f};
+  float out[2] = {0.0f, 0.0f};
+
+  EXPECT_THAT(ReferenceAdd(a, dims, 9, b, dims, 9, out, dims, 9), IsOk());
+  EXPECT_THAT(out, ElementsAre(11.0f, 22.0f));
+}
+
+TEST(SimpleBinaryOpTest,
+     ReferenceBinaryGenericAsymmetricSubPreservesOperandOrder) {
+  // [2,1,4] - [1,3,1] -> [2,3,4].
+  const int32_t a_dims[] = {2, 1, 4};
+  const int32_t b_dims[] = {1, 3, 1};
+  const int32_t out_dims[] = {2, 3, 4};
+  const float a[] = {10, 20, 30, 40, 100, 200, 300, 400};
+  const float b[] = {1, 2, 3};
+  std::vector<float> out(24, 0.0f);
+
+  EXPECT_THAT(ReferenceSub(a, a_dims, 3, b, b_dims, 3, out.data(), out_dims, 3),
+              IsOk());
+  EXPECT_THAT(out,
+              ElementsAre(9, 19, 29, 39, 8, 18, 28, 38, 7, 17, 27, 37, 99, 199,
+                          299, 399, 98, 198, 298, 398, 97, 197, 297, 397));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceBinaryGenericEmptyNeverInvokesCallback) {
+  const int32_t a_dims[] = {2, 0};
+  const int32_t b_dims[] = {1, 1};
+  const int32_t out_dims[] = {2, 0};
+  const float b_val[] = {1.0f};
+  int call_count = 0;
+
+  EXPECT_THAT((ReferenceBinaryGeneric<float, float, float>(
+                  ConstTensorView<float>{absl::Span<const float>(), a_dims},
+                  ConstTensorView<float>{b_val, b_dims},
+                  TensorView<float>{absl::Span<float>(), out_dims},
+                  [&](float x, float y) {
+                    ++call_count;
+                    return x + y;
+                  })),
+              IsOk());
+  EXPECT_EQ(call_count, 0);
+}
+
+TEST(SimpleBinaryOpTest, ReferenceBinaryGenericRejectsOverExpandedOutput) {
+  const int32_t one[] = {1};
+  const int32_t target[] = {2, 3};
+  const float a[] = {1.0f};
+  const float b[] = {2.0f};
+  std::vector<float> out(6, -3.0f);
+
+  EXPECT_THAT(ReferenceAdd(a, one, 1, b, one, 1, out.data(), target, 2),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-3.0f, -3.0f, -3.0f, -3.0f, -3.0f, -3.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceBinaryGenericRejectsUndersizedSpans) {
+  const int32_t dims[] = {2, 2};
+  const float a[] = {1.0f, 2.0f, 3.0f, 4.0f};
+  const float b[] = {5.0f, 6.0f, 7.0f, 8.0f};
+  float out[] = {-1.0f, -1.0f, -1.0f, -1.0f};
+
+  EXPECT_THAT((ReferenceBinaryGeneric<float, float, float>(
+                  ConstTensorView<float>{absl::MakeConstSpan(a).first(3), dims},
+                  ConstTensorView<float>{b, dims}, TensorView<float>{out, dims},
+                  std::plus<float>())),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      (ReferenceBinaryGeneric<float, float, float>(
+          ConstTensorView<float>{a, dims}, ConstTensorView<float>{b, dims},
+          TensorView<float>{absl::MakeSpan(out).first(3), dims},
+          std::plus<float>())),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-1.0f, -1.0f, -1.0f, -1.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferencePreluMiddleAxisBroadcastAppliesPerSlice) {
+  // Input [2, 3, 2] with alpha [1, 3, 1]: each alpha covers 2 elements across
+  // the innermost axis and repeats across batch.
+  const int32_t in_dims[] = {2, 3, 2};
+  const int32_t alpha_dims[] = {1, 3, 1};
+  const std::vector<float> in = {-2, 3, -4, -6, 5, -8, -10, 1, -12, 2, -14, 4};
+  const std::vector<float> alpha = {0.5f, 0.25f, 0.125f};
+  std::vector<float> out(12, 0.0f);
+
+  EXPECT_THAT(
+      ReferencePrelu<float>(ConstTensorView<float>{in, in_dims},
+                            ConstTensorView<float>{alpha, alpha_dims},
+                            TensorView<float>{absl::MakeSpan(out), in_dims}),
+      IsOk());
+  EXPECT_THAT(out, ElementsAre(-1.0f, 3.0f, -1.0f, -1.5f, 5.0f, -1.0f, -5.0f,
+                               1.0f, -3.0f, 2.0f, -1.75f, 4.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferencePreluScalarAlphaAndQuantizedInt8) {
+  const int32_t in_dims[] = {2, 2};
+  const std::vector<int8_t> in = {-20, 0, 20, -10};
+  const std::vector<int8_t> alpha = {10};  // 10 * 0.05 = 0.5
+  std::vector<int8_t> out(4, 0);
+
+  EXPECT_THAT(ReferencePrelu<int8_t>(
+                  ConstTensorView<int8_t>{in, in_dims},
+                  ConstTensorView<int8_t>{alpha, {}},
+                  TensorView<int8_t>{absl::MakeSpan(out), in_dims},
+                  AffineQuantSpec{0.1f, 0}, AffineQuantSpec{0.05f, 0},
+                  AffineQuantSpec{0.1f, 0}),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(-10, 0, 20, -5));
+}
+
+TEST(SimpleBinaryOpTest, ReferencePreluEmptyOutputAllowsEmptySpans) {
+  const int32_t in_dims[] = {0, 3};
+  const int32_t alpha_dims[] = {1, 3};
+  const std::vector<float> alpha = {0.5f, 0.25f, 0.125f};
+
+  EXPECT_THAT(ReferencePrelu<float>(
+                  ConstTensorView<float>{absl::Span<const float>(), in_dims},
+                  ConstTensorView<float>{alpha, alpha_dims},
+                  TensorView<float>{absl::Span<float>(), in_dims}),
+              IsOk());
+}
+
+TEST(SimpleBinaryOpTest, ReferencePreluRejectsMismatchedOutputOrBadAlpha) {
+  const int32_t in_dims[] = {1, 3};
+  const int32_t alpha_dims[] = {2, 3};
+  const int32_t bad_alpha_dims[] = {1, 2};
+  const std::vector<float> in = {-1.0f, 2.0f, -3.0f};
+  const std::vector<float> alpha = {0.5f, 0.5f, 0.5f, 0.5f, 0.5f, 0.5f};
+  std::vector<float> out(6, -7.0f);
+
+  // TFLite PReLU requires output shape to match input shape (alpha broadcasts
+  // into input, not vice versa).
+  EXPECT_THAT(
+      ReferencePrelu<float>(ConstTensorView<float>{in, in_dims},
+                            ConstTensorView<float>{alpha, alpha_dims},
+                            TensorView<float>{absl::MakeSpan(out), alpha_dims}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  // Incompatible alpha shape is rejected.
+  EXPECT_THAT(ReferencePrelu<float>(
+                  ConstTensorView<float>{in, in_dims},
+                  ConstTensorView<float>{absl::MakeConstSpan(alpha).first(2),
+                                         bad_alpha_dims},
+                  TensorView<float>{absl::MakeSpan(out).first(3), in_dims}),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  // Undersized input buffer is rejected.
+  EXPECT_THAT(
+      ReferencePrelu<float>(
+          ConstTensorView<float>{absl::MakeConstSpan(in).first(2), in_dims},
+          ConstTensorView<float>{absl::MakeConstSpan(alpha).first(3), in_dims},
+          TensorView<float>{absl::MakeSpan(out).first(3), in_dims}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f, -7.0f, -7.0f, -7.0f, -7.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddNNullInputElementLeavesOutputUntouched) {
+  const std::vector<float> in = {1.0f, 2.0f};
+  const std::vector<const float*> ptrs = {in.data(), nullptr};
+  std::vector<float> out = {-7.0f, -7.0f};
+
+  EXPECT_THAT(ReferenceAddN<float>(ptrs, out.data(), /*num_elements=*/2),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddNZeroElementsLeavesOutputUntouched) {
+  const std::vector<float> in = {1.0f, 2.0f};
+  const std::vector<const float*> ptrs = {in.data(), in.data()};
+  std::vector<float> out = {-7.0f, -7.0f};
+
+  EXPECT_THAT(ReferenceAddN<float>(ptrs, out.data(), /*num_elements=*/0),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(-7.0f, -7.0f));
+}
+
+TEST(SimpleBinaryOpTest, ReferenceAddNNullOutputReturnsInvalidArgument) {
+  const std::vector<float> in = {1.0f, 2.0f};
+  const std::vector<const float*> ptrs = {in.data(), in.data()};
+
+  EXPECT_THAT(
+      ReferenceAddN<float>(ptrs, /*output_data=*/nullptr, /*num_elements=*/2),
+      IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 }  // namespace

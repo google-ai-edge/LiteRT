@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_BROADCAST_TO_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_BROADCAST_TO_H_
 
+#include <algorithm>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -27,6 +29,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 
 namespace litert::internal {
 
@@ -105,6 +108,68 @@ inline LiteRtStatus InferBroadcastTo(const LiteRtOpT& op,
   }
 
   return kLiteRtStatusErrorShapeInferenceFailed;
+}
+
+// Broadcasts `input` into the caller-requested `output.dims` shape under
+// trailing-dimension NumPy broadcasting (`BroadcastOutputMode::kTargetShape`).
+// Validates concrete shapes, checked element/byte counts, and buffer
+// capacities before reading any input; valid empty outputs return
+// `kLiteRtStatusOk` without dereferencing data pointers. `output.data` must
+// not alias `input.data`.
+template <typename T>
+inline LiteRtStatus ReferenceBroadcastTo(ConstTensorView<T> input,
+                                         TensorView<T> output) {
+  auto plan =
+      PrepareBroadcastPlan<1>({input.dims}, {sizeof(T)}, output.dims, sizeof(T),
+                              BroadcastOutputMode::kTargetShape);
+  if (!plan) {
+    return plan.Error().Status();
+  }
+  if (!ValidateBufferCapacity(input.data, plan->input_num_elements[0]) ||
+      !ValidateBufferCapacity(output.data, plan->output_num_elements)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (const auto& span : plan->Spans()) {
+    const T* in_ptr = input.data.data() + span.input_offsets[0];
+    T* out_ptr = output.data.data() + span.output_offset;
+    if (span.input_steps[0] == 1) {
+      std::copy_n(in_ptr, span.count, out_ptr);
+    } else {
+      std::fill_n(out_ptr, span.count, *in_ptr);
+    }
+  }
+  return kLiteRtStatusOk;
+}
+
+template <typename T>
+inline LiteRtStatus ReferenceBroadcastTo(const T* input_data,
+                                         const int32_t* input_dims,
+                                         int input_rank,
+                                         const int32_t* output_dims,
+                                         int output_rank, T* output_data) {
+  auto in_dims = MakeDimsSpan(input_dims, input_rank);
+  auto out_dims = MakeDimsSpan(output_dims, output_rank);
+  if (!in_dims || !out_dims) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto plan =
+      PrepareBroadcastPlan<1>({*in_dims}, {sizeof(T)}, *out_dims, sizeof(T),
+                              BroadcastOutputMode::kTargetShape);
+  if (!plan) {
+    return plan.Error().Status();
+  }
+  if (plan->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (input_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return ReferenceBroadcastTo<T>(
+      ConstTensorView<T>{
+          absl::MakeConstSpan(input_data, plan->input_num_elements[0]),
+          *in_dims},
+      TensorView<T>{absl::MakeSpan(output_data, plan->output_num_elements),
+                    *out_dims});
 }
 
 }  // namespace litert::internal
