@@ -806,6 +806,7 @@ BUILTIN_KERNEL_DEPS = [
     "//tflite/kernels/internal:tensor",
     "//tflite/kernels/internal:tensor_utils",
     "//tflite/kernels/internal:types",
+    "//tflite/types:half",
 ] + select({
     ":tflite_with_ruy_explicit_true": [],
     # Eigen multi-therading optimizations are only used when ruy is disabled.
@@ -844,7 +845,6 @@ cc_library(
         "@ruy//ruy/profiler:instrumentation",
         "//tflite/c:c_api_types",
         "//tflite/c:common",
-        "//tflite/types:half",
         "//tflite:array",
         "//tflite:builtin_ops",
         "//tflite:cc_api_stable",
@@ -1578,6 +1578,7 @@ cc_test(
         "//tflite/c:common",
         "//tflite/core:framework_stable",
         "//tflite/schema:schema_fbs",
+        "//tflite/types:half",
         "@com_google_absl//absl/memory",
         "@com_google_googletest//:gtest",
     ],
