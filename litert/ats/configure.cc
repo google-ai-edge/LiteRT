@@ -42,6 +42,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_arm_vulkan_ml_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/cc/options/litert_mediatek_options.h"
 #include "litert/cc/options/litert_qualcomm_options.h"
@@ -49,6 +50,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/filesystem.h"
 #include "litert/core/model/model_load.h"
+#include "litert/tools/flags/vendors/arm_vulkan_ml_flags.h"
 #include "litert/tools/flags/vendors/mediatek_flags.h"
 #include "litert/tools/flags/vendors/qualcomm_flags.h"
 #include "litert/tools/flags/vendors/samsung_flags.h"
@@ -172,6 +174,7 @@ namespace litert::testing {
 
 namespace {
 
+using ::litert::arm_vulkan_ml::UpdateArmVulkanMLOptionsFromFlags;
 using litert::samsung::UpdateSamsungOptionsFromFlags;
 using mediatek::UpdateMediatekOptionsFromFlags;
 using qualcomm::UpdateQualcommOptionsFromFlags;
@@ -251,13 +254,17 @@ Expected<Options> ParseOptions(ExecutionBackend backend) {
         auto& samsung_opts,
         options.GetOptions<litert::samsung::SamsungOptions>());
     LITERT_RETURN_IF_ERROR(UpdateSamsungOptionsFromFlags(samsung_opts));
+    LITERT_ASSIGN_OR_RETURN(
+        auto& arm_vulkan_ml_opts,
+        options.GetOptions<litert::arm_vulkan_ml::ArmVulkanMLOptions>());
+    LITERT_RETURN_IF_ERROR(
+        UpdateArmVulkanMLOptionsFromFlags(arm_vulkan_ml_opts));
     options.SetHardwareAccelerators(HwAccelerators::kNpu);
   } else if (backend == ExecutionBackend::kCpu) {
     options.SetHardwareAccelerators(HwAccelerators::kCpu);
     LITERT_ASSIGN_OR_RETURN(auto& cpu_opts, options.GetCpuOptions());
-    LITERT_RETURN_IF_ERROR(
-        cpu_opts.SetHintFullyDelegatedToSingleDelegate(
-            absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
+    LITERT_RETURN_IF_ERROR(cpu_opts.SetHintFullyDelegatedToSingleDelegate(
+        absl::GetFlag(FLAGS_cpu_hint_fully_delegated)));
     LITERT_RETURN_IF_ERROR(
         cpu_opts.SetEnableYNNPack(absl::GetFlag(FLAGS_enable_ynnpack)));
     LITERT_ASSIGN_OR_RETURN(auto kernel_mode, ParseCpuKernelMode());
