@@ -17,15 +17,17 @@
 
 #include <Python.h>
 
+#include <optional>
 #include <string>
 
 namespace litert::environment_wrapper {
 
 // Creates a Python capsule that owns a LiteRT Environment.
-PyObject* CreateEnvironment(const char* runtime_path,
-                            const char* compiler_plugin_path,
-                            const char* dispatch_library_path,
-                            const char* compiler_cache_dir = nullptr);
+// `min_logger_severity` is a LiteRtLogSeverity value.
+PyObject* CreateEnvironment(
+    const char* runtime_path, const char* compiler_plugin_path,
+    const char* dispatch_library_path, const char* compiler_cache_dir = nullptr,
+    std::optional<int> min_logger_severity = std::nullopt);
 
 // Reports an error by setting a Python exception.
 PyObject* ReportError(const std::string& msg);

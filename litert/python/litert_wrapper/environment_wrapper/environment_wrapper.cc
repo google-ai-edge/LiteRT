@@ -14,6 +14,8 @@
 
 #include "litert/python/litert_wrapper/environment_wrapper/environment_wrapper.h"
 
+#include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -33,7 +35,8 @@ PyObject* ReportError(const std::string& msg) {
 PyObject* CreateEnvironment(const char* runtime_path,
                             const char* compiler_plugin_path,
                             const char* dispatch_library_path,
-                            const char* compiler_cache_dir) {
+                            const char* compiler_cache_dir,
+                            std::optional<int> min_logger_severity) {
   std::vector<litert::EnvironmentOptions::Option> options;
   std::string runtime_path_str = runtime_path != nullptr ? runtime_path : "";
   if (!runtime_path_str.empty()) {
@@ -54,6 +57,11 @@ PyObject* CreateEnvironment(const char* runtime_path,
     options.push_back(litert::EnvironmentOptions::Option{
         litert::EnvironmentOptions::Tag::kCompilerCacheDir,
         std::string(compiler_cache_dir)});
+  }
+  if (min_logger_severity.has_value()) {
+    options.push_back(litert::EnvironmentOptions::Option{
+        litert::EnvironmentOptions::Tag::kMinLoggerSeverity,
+        static_cast<int64_t>(*min_logger_severity)});
   }
 
   auto env_or = litert::Environment::Create(
