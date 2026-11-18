@@ -100,7 +100,7 @@ absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model) {
     const int32_t resolved_code =
         dep_code > builtin_code ? dep_code : builtin_code;
     if (builtin_code < 0 || resolved_code < 0 ||
-        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeMaxValue) ||
         (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
                              code->deprecated_builtin_code())) {
       return absl::InvalidArgumentError(absl::StrFormat(
