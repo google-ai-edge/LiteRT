@@ -249,6 +249,55 @@ TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
               Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
+// copybara:uncomment_begin(google internal)
+// TEST(CompiledModelTest, CpuSignatureSelectionDelegatesTransitiveCallees) {
+//   // nested_composite.tflite: subgraph 0 holds a composite whose decomposition
+//   // (subgraph 1) holds another composite whose decomposition (subgraph 2) is a
+//   // single ADD. Subgraph 2 is only reachable through both composites.
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+//   const std::string model_path =
+//       testing::GetTestFilePath("nested_composite.tflite");
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto model,
+//                               Model::CreateFromFile(env, model_path));
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto signature, model.GetSignature(0));
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+//   options.SetHardwareAccelerators(HwAccelerators::kCpu);
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto& runtime_options,
+//                               options.GetRuntimeOptions());
+//   const StringView selected[] = {signature.Key()};
+//   LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
+//   LITERT_ASSERT_OK_AND_ASSIGN(
+//       auto compiled, CompiledModelTestPeer::Create(env, model.Get(), options));
+//   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+//                               GetInterpreter(compiled.Get()));
+//   ASSERT_EQ(interpreter->subgraphs_size(), 3);
+// 
+//   // Selecting the signature must also delegate the decomposition it can run.
+//   const tflite::Subgraph& innermost = *interpreter->subgraph(2);
+//   ASSERT_FALSE(innermost.execution_plan().empty());
+//   EXPECT_TRUE(innermost.IsFullyDelegated());
+// }
+// 
+// TEST(CompiledModelTest, CpuDefaultPrunesUnreachableSubgraphs) {
+//   // multi_subgraph.tflite has 3 subgraphs: subgraph 0 is the entry point for
+//   // the only declared signature ("main"), while subgraphs 1 and 2 are dead/
+//   // unreachable helper functions not referenced by any signature or
+//   // control-flow op. Even without SetSelectedSignatures, default compilation
+//   // should only delegate reachable subgraphs.
+//   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+//   LITERT_ASSERT_OK_AND_ASSIGN(
+//       auto compiled, CompiledModel::Create(
+//                          env, testing::GetTestFilePath("multi_subgraph.tflite"),
+//                          HwAccelerators::kCpu));
+//   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
+//                               GetInterpreter(compiled.Get()));
+//   ASSERT_EQ(interpreter->subgraphs_size(), 3);
+//   EXPECT_TRUE(interpreter->subgraph(0)->IsFullyDelegated());
+//   EXPECT_FALSE(interpreter->subgraph(1)->IsFullyDelegated());
+//   EXPECT_FALSE(interpreter->subgraph(2)->IsFullyDelegated());
+// }
+// copybara:uncomment_end
+
 TEST(CompiledModelTest, Basic) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
