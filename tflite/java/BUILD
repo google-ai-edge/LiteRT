@@ -21,6 +21,7 @@ load("@build_bazel_rules_android//android:rules.bzl", "android_library")
 load("@org_tensorflow//tensorflow/java:build_defs.bzl", "JAVACOPTS")
 load("@rules_java//java:defs.bzl", "java_library", "java_test")
 load("//tflite:build_def.bzl", "tflite_cc_library_with_c_headers_test", "tflite_jni_linkopts", "tflite_linkopts_no_undefined")
+load("//tflite:special_rules.bzl", "tflite_android_jni_library")
 load("//tflite/core/shims:cc_library_with_tflite.bzl", "android_library_with_tflite", "cc_library_with_tflite", "java_library_with_tflite", "java_test_with_tflite", "jni_binary_with_tflite")
 load("//tflite/delegates/flex:build_def.bzl", "tflite_flex_android_library")
 load("//tflite/java:aar_with_jni.bzl", "aar_with_jni", "aar_without_jni")
@@ -1021,6 +1022,7 @@ alias(
 
 cc_library_with_tflite(
     name = "tensorflowlite_native",
+    android_jni_library = tflite_android_jni_library(),
     tflite_jni_binaries = ["libtensorflowlite_jni.so"],
 )
 
