@@ -375,6 +375,7 @@ TEST_F(LiteRtOpSelectorIrTest,
       .kv_cache_batch_size = 2,
       .cache_size = 16,
       .head_size = 16,
+      .kv_cache_dtype = DataType::kInt4,
       .scale_k = 0.25f,
       .scale_v = 0.5f,
   };

@@ -1532,6 +1532,7 @@ absl::Status RunSdpaTransposedInt8KvTest(
   cache_attr.kv_cache_batch_size = KV;
   cache_attr.cache_size = S;
   cache_attr.head_size = H;
+  cache_attr.kv_cache_dtype = ::ml_drift::DataType::kInt8;
   cache_attr.scale_k = kScaleK;
   cache_attr.scale_v = kScaleV;
   ::ml_drift::ir::IrOp cache_ir_op(::ml_drift::ir::IrOpId{0});

@@ -227,6 +227,61 @@ INSTANTIATE_TEST_SUITE_P(
       return TfLiteTypeGetName(info.param);
     });
 
+class Int4QuantizationTest : public testing::Test {};
+
+TEST_F(Int4QuantizationTest, SupportsPerTensorQuantizedInt4) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, kDefaultInputDims, /*scale_size=*/1);
+  const int b = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, kDefaultOutputDims, /*scale_size=*/1);
+  context_builder.SetOp(kTfLiteBuiltinReshape, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(Int4QuantizationTest, RejectsUnquantizedInt4) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteInt4, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kTfLiteInt4, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinReshape, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(Int4QuantizationTest, RejectsPerChannelQuantizedInt4) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, kDefaultInputDims, /*scale_size=*/2);
+  const int b = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, kDefaultOutputDims, /*scale_size=*/2);
+  context_builder.SetOp(kTfLiteBuiltinReshape, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(Int4QuantizationTest, RejectsMismatchedInt4InputOutput) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, kDefaultInputDims, /*scale_size=*/1);
+  const int b = context_builder.AddTensor(kTfLiteFloat32, kDefaultOutputDims);
+  context_builder.SetOp(kTfLiteBuiltinReshape, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 // Test that we can reject all constant inputs
 class ConstantTestSuite : public testing::Test {};
 TEST_F(ConstantTestSuite, RejectsConstantInput) {

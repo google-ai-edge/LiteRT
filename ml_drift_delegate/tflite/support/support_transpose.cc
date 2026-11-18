@@ -25,6 +25,31 @@
 #include "tflite/kernels/kernel_util.h"
 
 namespace litert::ml_drift::ir {
+namespace {
+
+bool CheckInt4Quantization(const TfLiteTensor& tensor, const char* tensor_name,
+                           std::string& error) {
+  if (tensor.type != kTfLiteInt4) {
+    return true;
+  }
+  if (tensor.quantization.type != kTfLiteAffineQuantization ||
+      tensor.quantization.params == nullptr) {
+    error =
+        absl::StrCat(tensor_name, " INT4 tensor requires affine quantization");
+    return false;
+  }
+  const auto* quant =
+      static_cast<const TfLiteAffineQuantization*>(tensor.quantization.params);
+  if (quant->scale == nullptr || quant->scale->size != 1 ||
+      quant->zero_point == nullptr || quant->zero_point->size != 1) {
+    error = absl::StrCat(tensor_name,
+                         " INT4 tensor requires per-tensor quantization");
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
 
 bool IsTransposeSupported(const TfLiteContext* absl_nonnull context,
                           const TfLiteNode* absl_nonnull node,
@@ -55,12 +80,26 @@ bool IsTransposeSupported(const TfLiteContext* absl_nonnull context,
 
   const std::vector<TfLiteType> supported_dtypes_vec = {
       kTfLiteFloat32, kTfLiteFloat16, kTfLiteInt32, kTfLiteUInt32, kTfLiteInt16,
-      kTfLiteUInt16,  kTfLiteInt8,    kTfLiteUInt8, kTfLiteBool};
+      kTfLiteUInt16,  kTfLiteInt8,    kTfLiteUInt8, kTfLiteBool,
+      kTfLiteInt4};
   absl::flat_hash_set<TfLiteType> supported_dtypes(supported_dtypes_vec.begin(),
                                                    supported_dtypes_vec.end());
   if (!CheckTensorDtype(input_tensor, supported_dtypes, "inputs[0]", *error)) {
     return false;
   }
+  const int output_id = outputs->data[0];
+  const TfLiteTensor& output_tensor = context->tensors[output_id];
+  if (!CheckTensorDtype(output_tensor, supported_dtypes, "outputs[0]",
+                        *error)) {
+    return false;
+  }
+  if ((input_tensor.type == kTfLiteInt4) !=
+      (output_tensor.type == kTfLiteInt4)) {
+    *error = "Mismatched INT4 input and output types";
+    return false;
+  }
+  if (!CheckInt4Quantization(input_tensor, "inputs[0]", *error)) return false;
+  if (!CheckInt4Quantization(output_tensor, "outputs[0]", *error)) return false;
 
   const int perm_id = inputs->data[1];
   const TfLiteTensor& perm_tensor = context->tensors[perm_id];

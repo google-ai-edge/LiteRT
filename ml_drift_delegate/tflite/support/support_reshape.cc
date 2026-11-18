@@ -27,6 +27,32 @@ namespace litert::ml_drift::ir {
 
 constexpr int kMaxDims = 5;
 
+namespace {
+
+bool CheckInt4Quantization(const TfLiteTensor& tensor, const char* tensor_name,
+                           std::string& error) {
+  if (tensor.type != kTfLiteInt4) {
+    return true;
+  }
+  if (tensor.quantization.type != kTfLiteAffineQuantization ||
+      tensor.quantization.params == nullptr) {
+    error =
+        absl::StrCat(tensor_name, " INT4 tensor requires affine quantization");
+    return false;
+  }
+  const auto* quant =
+      static_cast<const TfLiteAffineQuantization*>(tensor.quantization.params);
+  if (quant->scale == nullptr || quant->scale->size != 1 ||
+      quant->zero_point == nullptr || quant->zero_point->size != 1) {
+    error = absl::StrCat(tensor_name,
+                         " INT4 tensor requires per-tensor quantization");
+    return false;
+  }
+  return true;
+}
+
+}  // namespace
+
 bool IsReshapeSupported(const TfLiteContext* absl_nonnull context,
                         const TfLiteNode* absl_nonnull node,
                         const TfLiteRegistration* absl_nonnull registration,
@@ -67,6 +93,7 @@ bool IsReshapeSupported(const TfLiteContext* absl_nonnull context,
       kTfLiteBool,
       kTfLiteFloat16,
       kTfLiteFloat32,
+      kTfLiteInt4,
       kTfLiteInt8,
       kTfLiteInt16,
       kTfLiteInt32,
@@ -84,6 +111,12 @@ bool IsReshapeSupported(const TfLiteContext* absl_nonnull context,
   if (!CheckTensorDtype(output, supported_dtypes, "outputs[0]", *error)) {
     return false;
   }
+  if ((input.type == kTfLiteInt4) != (output.type == kTfLiteInt4)) {
+    *error = "Mismatched INT4 input and output types";
+    return false;
+  }
+  if (!CheckInt4Quantization(input, "inputs[0]", *error)) return false;
+  if (!CheckInt4Quantization(output, "outputs[0]", *error)) return false;
   // Check const inputs.
   if (!CheckNotConstant(input, "inputs[0]", *error)) {
     return false;
