@@ -28,6 +28,10 @@
 #include <utility>
 #include <vector>
 
+#if !defined(_WIN32)
+#include <signal.h>
+#endif
+
 #include <gtest/gtest.h>
 #include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -93,16 +97,57 @@ ScopedCerrBuf::~ScopedCerrBuf() { std::cerr.rdbuf(prev_); }
 
 InterruptedMainResult RunMainInterruptedBySignal(
     absl::Span<const std::string> args, int sig, int target_newline) {
+#if defined(_WIN32)
   const auto saved_int = std::signal(SIGINT, NoOpSignal);
   const auto saved_term = std::signal(SIGTERM, NoOpSignal);
+  EXPECT_NE(saved_int, SIG_ERR);
+  EXPECT_NE(saved_term, SIG_ERR);
+#else
+  struct sigaction noop_act = {};
+  const int mask_rc = sigemptyset(&noop_act.sa_mask);
+  EXPECT_EQ(mask_rc, 0);
+  noop_act.sa_handler = NoOpSignal;
+  noop_act.sa_flags = SA_RESTART;
+  struct sigaction saved_int = {};
+  struct sigaction saved_term = {};
+  const int save_int_rc =
+      mask_rc == 0 ? sigaction(SIGINT, &noop_act, &saved_int) : -1;
+  const int save_term_rc =
+      mask_rc == 0 ? sigaction(SIGTERM, &noop_act, &saved_term) : -1;
+  EXPECT_EQ(save_int_rc, 0);
+  EXPECT_EQ(save_term_rc, 0);
+#endif
   SignalOnNewlineBuf buf(sig, target_newline);
   InterruptedMainResult out;
   {
     ScopedCerrBuf redirect(&buf);
     out.exit_code = CallMain(args);
   }
-  out.sigint_restored = std::signal(SIGINT, saved_int) == NoOpSignal;
-  out.sigterm_restored = std::signal(SIGTERM, saved_term) == NoOpSignal;
+#if defined(_WIN32)
+  if (saved_int != SIG_ERR) {
+    out.sigint_restored = std::signal(SIGINT, saved_int) == NoOpSignal;
+  }
+  if (saved_term != SIG_ERR) {
+    out.sigterm_restored = std::signal(SIGTERM, saved_term) == NoOpSignal;
+  }
+#else
+  if (save_int_rc == 0) {
+    struct sigaction restored_int = {};
+    const int restore_int_rc = sigaction(SIGINT, &saved_int, &restored_int);
+    EXPECT_EQ(restore_int_rc, 0);
+    out.sigint_restored = restore_int_rc == 0 &&
+                          (restored_int.sa_flags & SA_SIGINFO) == 0 &&
+                          restored_int.sa_handler == NoOpSignal;
+  }
+  if (save_term_rc == 0) {
+    struct sigaction restored_term = {};
+    const int restore_term_rc = sigaction(SIGTERM, &saved_term, &restored_term);
+    EXPECT_EQ(restore_term_rc, 0);
+    out.sigterm_restored = restore_term_rc == 0 &&
+                           (restored_term.sa_flags & SA_SIGINFO) == 0 &&
+                           restored_term.sa_handler == NoOpSignal;
+  }
+#endif
   out.stderr_text = buf.text();
   return out;
 }

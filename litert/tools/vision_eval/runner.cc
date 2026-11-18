@@ -47,6 +47,12 @@
 #include <mach-o/dyld.h>
 #endif
 
+#if !defined(_WIN32)
+#include <signal.h>
+
+#include <cerrno>
+#endif
+
 #if !defined(_WIN32) && !defined(__linux__)
 #include <cstdlib>
 #endif
@@ -77,6 +83,99 @@ namespace litert::vision {
 namespace {
 volatile std::sig_atomic_t interrupted = 0;
 void Interrupt(int) { interrupted = 1; }
+
+class ScopedInterruptHandlers {
+ public:
+  ScopedInterruptHandlers() {
+    interrupted = 0;
+#if defined(_WIN32)
+    previous_int_ = InstallHandler(SIGINT, "SIGINT");
+    previous_term_ = InstallHandler(SIGTERM, "SIGTERM");
+#else
+    has_previous_int_ = InstallHandler(SIGINT, "SIGINT", previous_int_);
+    has_previous_term_ = InstallHandler(SIGTERM, "SIGTERM", previous_term_);
+#endif
+  }
+
+  ScopedInterruptHandlers(const ScopedInterruptHandlers&) = delete;
+  ScopedInterruptHandlers& operator=(const ScopedInterruptHandlers&) = delete;
+
+  ~ScopedInterruptHandlers() {
+#if defined(_WIN32)
+    if (previous_int_ != SIG_ERR) {
+      RestoreHandler(SIGINT, "SIGINT", previous_int_);
+    }
+    if (previous_term_ != SIG_ERR) {
+      RestoreHandler(SIGTERM, "SIGTERM", previous_term_);
+    }
+#else
+    if (has_previous_int_) {
+      RestoreHandler(SIGINT, "SIGINT", previous_int_);
+    }
+    if (has_previous_term_) {
+      RestoreHandler(SIGTERM, "SIGTERM", previous_term_);
+    }
+#endif
+    interrupted = 0;
+  }
+
+ private:
+#if defined(_WIN32)
+  using SignalHandler = decltype(std::signal(SIGINT, Interrupt));
+
+  static SignalHandler InstallHandler(int sig, const char* name) {
+    const SignalHandler previous = std::signal(sig, Interrupt);
+    if (previous == SIG_ERR) {
+      std::cerr << "Warning: failed to install " << name << " handler\n";
+    }
+    return previous;
+  }
+
+  static void RestoreHandler(int sig, const char* name,
+                             SignalHandler previous) {
+    if (std::signal(sig, previous) == SIG_ERR) {
+      std::cerr << "Warning: failed to restore " << name << " handler\n";
+    }
+  }
+
+  SignalHandler previous_int_ = SIG_ERR;
+  SignalHandler previous_term_ = SIG_ERR;
+#else
+  static bool InstallHandler(int sig, const char* name,
+                             struct sigaction& previous) {
+    struct sigaction act = {};
+    if (sigemptyset(&act.sa_mask) != 0) {
+      std::cerr << "Warning: failed to initialize " << name << " signal mask: "
+                << std::error_code(errno, std::generic_category()).message()
+                << '\n';
+      return false;
+    }
+    act.sa_handler = Interrupt;
+    act.sa_flags = SA_RESTART;
+    if (sigaction(sig, &act, &previous) != 0) {
+      std::cerr << "Warning: failed to install " << name << " handler: "
+                << std::error_code(errno, std::generic_category()).message()
+                << '\n';
+      return false;
+    }
+    return true;
+  }
+
+  static void RestoreHandler(int sig, const char* name,
+                             const struct sigaction& previous) {
+    if (sigaction(sig, &previous, nullptr) != 0) {
+      std::cerr << "Warning: failed to restore " << name << " handler: "
+                << std::error_code(errno, std::generic_category()).message()
+                << '\n';
+    }
+  }
+
+  struct sigaction previous_int_ = {};
+  struct sigaction previous_term_ = {};
+  bool has_previous_int_ = false;
+  bool has_previous_term_ = false;
+#endif
+};
 
 bool ProtoEquals(const google::protobuf::Message& lhs, const google::protobuf::Message& rhs) {
   std::string lhs_text;
@@ -1029,12 +1128,11 @@ int Main(int argc, char** argv) {
     executable = internal::ResolveArgv0Path(argv[0], path_env ? path_env : "");
   }
 #endif
-  const auto previous_int = std::signal(SIGINT, Interrupt);
-  const auto previous_term = std::signal(SIGTERM, Interrupt);
   RunSummary summary;
-  const auto status = Evaluate(*config, executable, summary);
-  std::signal(SIGINT, previous_int);
-  std::signal(SIGTERM, previous_term);
+  const Expected<void> status = [&]() {
+    ScopedInterruptHandlers handlers;
+    return Evaluate(*config, executable, summary);
+  }();
   if (!status) {
     std::cerr << status.Error().Message() << '\n';
     return 1;
