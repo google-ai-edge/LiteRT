@@ -180,9 +180,10 @@ bool InMemoryFileDescriptorAvailable();
 // Note: if `fd` is valid, then `path` is ignored.
 bool IsFileEmpty(const char* path, const FileDescriptor& fd);
 
-// Creates a new file descriptor that isn't backed by a file system. The file
+// Creates a new file descriptor that has no name in the file system. The file
 // will be automatically cleaned up when the last file descriptor pointing to it
-// is closed.
+// is closed. This is a memfd on Linux and Android, and an unlinked temporary
+// file on Apple platforms.
 FileDescriptor CreateInMemoryFileDescriptor(const char* path);
 
 }  // namespace xnnpack

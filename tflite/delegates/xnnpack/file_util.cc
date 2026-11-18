@@ -26,8 +26,9 @@ limitations under the License.
 #define XNN_LSEEK lseek
 #endif  // defined(_WIN32)
 
-// We currently use the memfd_create system call to create in-memory files which
-// is only supported on Linux and Android.
+// We use the memfd_create system call to create in-memory files on Linux and
+// Android. Apple platforms have no memfd_create; there we use a temporary file
+// that is unlinked right after it is created (see CreateInMemoryFileDescriptor).
 #if defined(__linux__) || defined(__ANDROID__)
 #ifndef TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
 // Some systems have syscall.h but don't define the SYS_memfd_create macro. We
@@ -37,13 +38,20 @@ limitations under the License.
 #define TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED 1
 #endif  // SYS_memfd_create
 #endif  // TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
+#elif defined(__APPLE__)
+#ifndef TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
+#define TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED 1
+#define TFLITE_XNNPACK_IN_MEMORY_FILE_UNLINKED_TMPFILE 1
+#endif  // TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
 #endif  // defined(__linux__) || defined(__ANDROID__)
 
 #include <sys/stat.h>
 
 #include <cerrno>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <string>
 
 #include "tflite/delegates/xnnpack/macros.h"
 
@@ -139,8 +147,37 @@ bool FileDescriptorView::Truncate(size_t size) const {
   return ftruncate(fd_, size) == 0;
 }
 
+#if TFLITE_XNNPACK_IN_MEMORY_FILE_UNLINKED_TMPFILE
+namespace {
+
+// Creates a temporary file in $TMPDIR (the app's own tmp directory on iOS) and
+// unlinks it, so that, like a memfd, it has no name in the file system and is
+// released when its last file descriptor is closed.
+int CreateUnlinkedTemporaryFile() {
+  const char* dir = getenv("TMPDIR");
+  std::string path = dir && *dir ? dir : "/tmp";
+  if (path.back() != '/') {
+    path += '/';
+  }
+  path += "xnnpack_weight_cache.XXXXXX";
+  const int fd = mkstemp(path.data());
+  if (fd != -1) {
+    unlink(path.c_str());
+  }
+  return fd;
+}
+
+}  // namespace
+#endif  // TFLITE_XNNPACK_IN_MEMORY_FILE_UNLINKED_TMPFILE
+
 bool InMemoryFileDescriptorAvailable() {
-#if TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
+#if TFLITE_XNNPACK_IN_MEMORY_FILE_UNLINKED_TMPFILE
+  const int test_fd = CreateUnlinkedTemporaryFile();
+  if (test_fd != -1) {
+    close(test_fd);
+    return true;
+  }
+#elif TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
   // Test if the syscall memfd_create is available.
   const int test_fd = syscall(SYS_memfd_create, "test fd", 0);
   if (test_fd != -1) {
@@ -152,7 +189,9 @@ bool InMemoryFileDescriptorAvailable() {
 }
 
 FileDescriptor CreateInMemoryFileDescriptor(const char* path) {
-#ifdef TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
+#if TFLITE_XNNPACK_IN_MEMORY_FILE_UNLINKED_TMPFILE
+  return FileDescriptor(CreateUnlinkedTemporaryFile());
+#elif TFLITE_XNNPACK_IN_MEMORY_FILE_ENABLED
   return FileDescriptor(syscall(
       SYS_memfd_create, path ? path : "XNNPack in-memory weight cache", 0));
 #else
