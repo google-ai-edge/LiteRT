@@ -633,22 +633,26 @@ class _ProfilerBasedCalibrator(Calibrator):
     del model_recipe_manager  # Unused.
     del pbar  # Can't do per-op progress bar in this mode.
 
-    signature_defs = self._tfl_interpreter._get_full_signature_list()  # pylint: disable=protected-access
-    if signature_key is None:
-      if not signature_defs:
-        raise ValueError(
-            "No signature key provided and no signature list found."
-        )
-      # Using the default signature.
-      signature_key = next(iter(signature_defs))
-
     cpp_interpreter = self._tfl_interpreter._interpreter  # pylint: disable=protected-access
-    subgraph_index = cpp_interpreter.GetSubgraphIndexFromSignature(
-        signature_key
-    )
-    signature_def = signature_defs[signature_key]
-    inputs = signature_def["inputs"]
-    outputs = signature_def["outputs"]
+    if tfl_interpreter_utils.is_signatureless_default(
+        self._tfl_interpreter, signature_key
+    ):
+      subgraph_index = 0
+      inputs, outputs = tfl_interpreter_utils.get_signatureless_tensor_indices(
+          self._tfl_interpreter
+      )
+    else:
+      signature_defs = self._tfl_interpreter._get_full_signature_list()  # pylint: disable=protected-access
+      if signature_key is None:
+        # Using the default signature.
+        signature_key = next(iter(signature_defs))
+
+      subgraph_index = cpp_interpreter.GetSubgraphIndexFromSignature(
+          signature_key
+      )
+      signature_def = signature_defs[signature_key]
+      inputs = signature_def["inputs"]
+      outputs = signature_def["outputs"]
 
     # Resize and allocate input tensors.
     for input_name, value in data.items():

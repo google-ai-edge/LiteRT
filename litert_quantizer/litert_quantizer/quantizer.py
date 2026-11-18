@@ -382,7 +382,10 @@ class Quantizer:
     """Calibrates the float model (required by static range quantization).
 
     Args:
-      calibration_data: Calibration data for a model signature.
+      calibration_data: Calibration data for a model signature. For a model
+        without signatures, use `serving_default` as the signature key, and key
+        each sample by input tensor name (the `:0` suffix is optional), e.g.
+        `{'serving_default': [{'input_tensor_name': x}]}`.
       previous_calibration_result: Previous calibration result to be loaded. The
         calibration process will be resumed from the previous result.
       num_threads: Number of threads to use for calibration.
@@ -427,10 +430,13 @@ class Quantizer:
     empty_qsvs = [key for key, value in calibration_result.items() if not value]
 
     # Go over every signature and check if empty entry tensor belongs to it.
+    # Models without signatures run subgraph 0 under the default key.
     tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
         self._float_model_buffer  # pyrefly: ignore[bad-argument-type]
     )
-    for signature_key in tfl_interpreter.get_signature_list():
+    for signature_key in tfl_interpreter.get_signature_list() or [
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY
+    ]:
       subgraph_idx = tfl_interpreter_utils.get_signature_main_subgraph_index(
           tfl_interpreter, signature_key
       )

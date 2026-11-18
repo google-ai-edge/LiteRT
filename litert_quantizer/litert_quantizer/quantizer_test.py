@@ -910,6 +910,123 @@ class CalibrationModesParityTest(parameterized.TestCase):
             f'Output mismatch for {sig_key}:{output_name}',
         )
 
+  @parameterized.parameters(
+      _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      _CalibrationMode.CALIBRATION_PROFILER_BASED,
+  )
+  def test_signatureless_model_matches_signature_model(self, mode):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    signatureless_model = test_utils.read_model_without_signatures(model_path)
+    samples = [
+        _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+        for _ in range(4)
+    ]
+
+    def calibrate_and_quantize(float_model, input_name):
+      qt = quantizer.Quantizer(float_model)
+      qt.add_static_config(
+          regex='.*',
+          operation_name=_TFLOpName.ALL_SUPPORTED,
+          activation_num_bits=8,
+          weight_num_bits=8,
+      )
+      calib_result = qt.calibrate(
+          {
+              tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                  {input_name: x} for x in samples
+              ]
+          },
+          mode=mode,
+      )
+      return qt.quantize(calib_result).quantized_model
+
+    expected_model = calibrate_and_quantize(model_path, 'input_1')
+    # Without signatures, inputs are keyed by tensor name.
+    actual_model = calibrate_and_quantize(
+        signatureless_model, 'serving_default_input_1'
+    )
+
+    actual_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+        actual_model
+    )
+    self.assertEmpty(actual_interpreter.get_signature_list())
+    expected_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        tfl_interpreter_utils.create_tfl_interpreter(expected_model),
+        {'input_1': samples[0]},
+    )
+    actual_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        actual_interpreter, {'serving_default_input_1': samples[0]}
+    )
+    self.assertEqual(list(actual_output), ['StatefulPartitionedCall:0'])
+    np.testing.assert_array_equal(
+        actual_output['StatefulPartitionedCall:0'],
+        next(iter(expected_output.values())),
+    )
+
+  def test_quantize_signatureless_model_raises_on_missing_qsv(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    qt = quantizer.Quantizer(
+        test_utils.read_model_without_signatures(model_path)
+    )
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+    )
+    calib_result = qt.calibrate({
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [{
+            'serving_default_input_1': (
+                _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+            )
+        }]
+    })
+    self.assertIn('StatefulPartitionedCall:0', calib_result)
+    calib_result['StatefulPartitionedCall:0'] = {}
+
+    with self.assertRaisesRegex(
+        ValueError, 'Missing QSVs .* StatefulPartitionedCall:0'
+    ):
+      qt.quantize(calib_result)
+
+  def test_validate_signatureless_model_with_random_data(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    qt = quantizer.Quantizer(
+        test_utils.read_model_without_signatures(model_path)
+    )
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+    )
+    calib_result = qt.calibrate({
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [{
+            'serving_default_input_1': (
+                _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+            )
+        }]
+    })
+    qt.quantize(calib_result)
+
+    validation_result = qt.validate()
+
+    self.assertEqual(
+        validation_result.available_signature_keys(),
+        [tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY],
+    )
+    signature_result = validation_result.get_signature_comparison_result(
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY
+    )
+    self.assertIn('serving_default_input_1:0', signature_result.input_tensors)
+    self.assertIn('StatefulPartitionedCall:0', signature_result.output_tensors)
+
 
 if __name__ == '__main__':
   absltest.main()

@@ -685,6 +685,54 @@ class CalibrationModesComparisonTest(parameterized.TestCase):
         interpreter_profiler.get_calibration_results(),
     )
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="preserve_all_tensors",
+          mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      ),
+      dict(
+          testcase_name="profiler_based",
+          mode=_CalibrationMode.CALIBRATION_PROFILER_BASED,
+      ),
+  )
+  def test_signatureless_model_matches_signature_model(self, mode):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / "tests/models/single_fc.tflite"
+    )
+    signatureless_model = test_utils.read_model_without_signatures(model_path)
+    self.assertEmpty(
+        tfl_interpreter_utils.create_tfl_interpreter(
+            signatureless_model
+        ).get_signature_list()
+    )
+    input_data = np.random.rand(1, 8).astype(np.float32)
+
+    calib_sig = calibrator.Calibrator(model_path, mode=mode)
+    calib_sig.calibrate(
+        {
+            tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                {"input_1": input_data}
+            ]
+        },
+        self._recipe_manager,
+    )
+    calib_nosig = calibrator.Calibrator(signatureless_model, mode=mode)
+    # Without signatures, inputs are keyed by tensor name (":0" optional).
+    calib_nosig.calibrate(
+        {
+            tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                {"serving_default_input_1": input_data}
+            ]
+        },
+        self._recipe_manager,
+        cache_output=True,
+    )
+
+    self._compare_qsvs(calib_sig.get_model_qsvs(), calib_nosig.get_model_qsvs())
+    cached_output = calib_nosig.get_cached_output()
+    self.assertLen(cached_output, 1)
+    self.assertEqual(list(cached_output[0]), ["StatefulPartitionedCall:0"])
+
 
 class CalibrationInterpreterInferenceModeTest(absltest.TestCase):
 

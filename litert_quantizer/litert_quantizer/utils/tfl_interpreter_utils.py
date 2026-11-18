@@ -98,13 +98,121 @@ def has_quantization_params(tensor_detail: dict[str, Any]) -> bool:
   return bool(len(quant_params["scales"]))
 
 
+def is_signatureless_default(
+    tflite_interpreter: tfl.Interpreter,
+    signature_key: str | None,
+) -> bool:
+  """Checks whether to run a signatureless model by tensor names.
+
+  Signatureless models are run through subgraph 0 with inputs and outputs keyed
+  by tensor name when `signature_key` is None or `DEFAULT_SIGNATURE_KEY`.
+
+  Args:
+    tflite_interpreter: The TFLite interpreter.
+    signature_key: The requested signature key.
+
+  Returns:
+    True if the model has no signatures and `signature_key` is None or
+    `DEFAULT_SIGNATURE_KEY`.
+  """
+  return not tflite_interpreter.get_signature_list() and signature_key in (
+      None,
+      DEFAULT_SIGNATURE_KEY,
+  )
+
+
+def get_signatureless_tensor_indices(
+    tflite_interpreter: tfl.Interpreter,
+) -> tuple[dict[str, int], dict[str, int]]:
+  """Gets the input and output tensor indices of a signatureless model.
+
+  Signatureless models run subgraph 0. Inputs are keyed by tensor name, and
+  also by the tensor name without a trailing `:0` unless another input already
+  has that exact name. Outputs are keyed by tensor name.
+
+  Args:
+    tflite_interpreter: The TFLite interpreter.
+
+  Returns:
+    A tuple of (input name to tensor index, output name to tensor index) maps
+    for subgraph 0.
+  """
+  input_details = tflite_interpreter.get_input_details()
+  inputs = {d["name"]: d["index"] for d in input_details}
+  for d in input_details:
+    inputs.setdefault(d["name"].removesuffix(":0"), d["index"])
+  outputs = {
+      d["name"]: d["index"] for d in tflite_interpreter.get_output_details()
+  }
+  return inputs, outputs
+
+
+def _invoke_signatureless_interpreter(
+    tflite_interpreter: tfl.Interpreter,
+    input_data: dict[str, Any],
+    quantize_input: bool,
+) -> dict[str, np.ndarray]:
+  """Invokes subgraph 0 of a signatureless model with inputs keyed by name.
+
+  Args:
+    tflite_interpreter: A TFLite interpreter for a model without signatures.
+    input_data: The input data keyed by input tensor name (`:0` optional).
+    quantize_input: Whether to quantize the input data.
+
+  Returns:
+    The output data keyed by output tensor name.
+  """
+  input_indices, _ = get_signatureless_tensor_indices(tflite_interpreter)
+  data_by_index = {}
+  for name, value in input_data.items():
+    if name not in input_indices:
+      raise ValueError(
+          f"Input '{name}' not found in the model inputs: {list(input_indices)}"
+      )
+    data_by_index[input_indices[name]] = value
+
+  input_details = tflite_interpreter.get_input_details()
+  missing_inputs = [
+      d["name"] for d in input_details if d["index"] not in data_by_index
+  ]
+  if missing_inputs:
+    raise ValueError(f"Missing data for model inputs: {missing_inputs}")
+
+  # Resize inputs whose shapes differ from the data, as `SignatureRunner` does.
+  needs_allocation = False
+  for d in input_details:
+    data_shape = np.shape(data_by_index[d["index"]])
+    if tuple(d["shape"]) != data_shape:
+      tflite_interpreter.resize_tensor_input(
+          d["index"], data_shape, strict=False
+      )
+      needs_allocation = True
+  if needs_allocation:
+    tflite_interpreter.allocate_tensors()
+
+  invoke_interpreter_once(
+      tflite_interpreter,
+      [data_by_index[d["index"]] for d in input_details],
+      quantize_input=quantize_input,
+  )
+  return {
+      d["name"]: get_tensor_data(tflite_interpreter, d, dequantize=False)
+      for d in tflite_interpreter.get_output_details()
+  }
+
+
 def invoke_interpreter_signature(
     tflite_interpreter: tfl.Interpreter,
     signature_input_data: dict[str, Any],
     signature_key: Optional[str] = None,
     quantize_input: bool = True,
 ) -> dict[str, np.ndarray]:
-  """Invokes the TFLite interpreter through signature runner.
+  """Invokes the TFLite interpreter for a signature.
+
+  If the model has no signatures and `signature_key` is None or
+  `DEFAULT_SIGNATURE_KEY`, subgraph 0 runs with inputs keyed by tensor name
+  (the `:0` suffix is optional) and outputs keyed by tensor name. Otherwise,
+  the model runs through the signature runner of `signature_key`.
 
   Args:
     tflite_interpreter: A TFLite interpreter.
@@ -115,6 +223,11 @@ def invoke_interpreter_signature(
   Returns:
     The output data of the signature.
   """
+  if is_signatureless_default(tflite_interpreter, signature_key):
+    return _invoke_signatureless_interpreter(
+        tflite_interpreter, signature_input_data, quantize_input
+    )
+
   # Make a copy to avoid in-place modification.
   signature_input = signature_input_data.copy()
   signature_runner = tflite_interpreter.get_signature_runner(signature_key)
@@ -265,6 +378,9 @@ def get_input_tensor_names(
 ) -> list[str]:
   """Gets input tensor names from a TFLite model for a signature.
 
+  If the model has no signatures and `signature_name` is None or
+  `DEFAULT_SIGNATURE_KEY`, returns the input tensor names of subgraph 0.
+
   Args:
     tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     signature_name: The signature name that the input tensors belong to.
@@ -274,6 +390,8 @@ def get_input_tensor_names(
   """
 
   tfl_interpreter = create_tfl_interpreter(tflite_model, allocate_tensors=False)
+  if is_signatureless_default(tfl_interpreter, signature_name):
+    return [d["name"] for d in tfl_interpreter.get_input_details()]
   signature_runner = tfl_interpreter.get_signature_runner(signature_name)
   input_tensor_names = []
   for _, input_detail in signature_runner.get_input_details().items():
@@ -287,6 +405,9 @@ def get_output_tensor_names(
 ) -> list[str]:
   """Gets output tensor names from a TFLite model for a signature.
 
+  If the model has no signatures and `signature_name` is None or
+  `DEFAULT_SIGNATURE_KEY`, returns the output tensor names of subgraph 0.
+
   Args:
     tflite_model: Model file path (`str` or `pathlib.Path`) or bytes.
     signature_name: The signature name that the output tensors belong to.
@@ -295,6 +416,8 @@ def get_output_tensor_names(
     A list of output tensor names.
   """
   tfl_interpreter = create_tfl_interpreter(tflite_model, allocate_tensors=False)
+  if is_signatureless_default(tfl_interpreter, signature_name):
+    return [d["name"] for d in tfl_interpreter.get_output_details()]
   signature_runner = tfl_interpreter.get_signature_runner(signature_name)
   output_tensor_names = []
   for _, output_detail in signature_runner.get_output_details().items():
@@ -344,6 +467,9 @@ def get_signature_main_subgraph_index(
 ) -> int:
   """Gets the main subgraph index of a signature.
 
+  If the model has no signatures and `signature_key` is None or
+  `DEFAULT_SIGNATURE_KEY`, returns 0.
+
   Args:
     tflite_interpreter: A TFLite interpreter.
     signature_key: The signature key.
@@ -351,6 +477,8 @@ def get_signature_main_subgraph_index(
   Returns:
     The main subgraph index of the signature.
   """
+  if is_signatureless_default(tflite_interpreter, signature_key):
+    return 0
   signature_runner = tflite_interpreter.get_signature_runner(signature_key)
   return signature_runner._subgraph_index  # pylint:disable=protected-access
 
@@ -461,6 +589,10 @@ def create_random_normal_input_data(
 ) -> dict[str, list[dict[str, Any]]]:
   """Creates a random normal dataset for a signature runner.
 
+  If the model has no signatures, the dataset is keyed by
+  `DEFAULT_SIGNATURE_KEY`, and each sample is keyed by the input tensor names of
+  subgraph 0.
+
   Args:
     tflite_model: TFLite model path (`str` or `pathlib.Path`) or bytes.
     num_samples: Number of input samples to be generated.
@@ -474,6 +606,16 @@ def create_random_normal_input_data(
   """
   tfl_interpreter = create_tfl_interpreter(tflite_model)
   signature_defs = tfl_interpreter.get_signature_list()
+  if not signature_defs:
+    input_details = {d["name"]: d for d in tfl_interpreter.get_input_details()}
+    return {
+        DEFAULT_SIGNATURE_KEY: create_random_dataset(
+            input_details,
+            num_samples,
+            random_seed,
+            min_max_range,
+        )
+    }
   signature_keys = list(signature_defs.keys())
   test_data = {}
   for signature_key in signature_keys:
