@@ -71,10 +71,13 @@ bool QnnModel::ValidateOpConfig() {
                      });
 }
 
-bool QnnModel::Finalize() {
+bool QnnModel::Finalize(const QnnGraph_Config_t** graph_configs) {
+  if (graph_configs == nullptr) {
+    graph_configs = DefaultGraphConfigs().data();
+  }
   absl::flat_hash_set<const ::qnn::TensorWrapper*> created_tensors;
   QNN_RETURN_STATUS_IF_NOT_OK(api_->graphCreate(
-      context_handle_, "test", DefaultGraphConfigs().data(), &graph_handle_));
+      context_handle_, "test", graph_configs, &graph_handle_));
   for (auto& op_wrapper : op_wrappers_) {
     for (const auto& tensor_wrapper_ref : op_wrapper.GetAllTensors()) {
       if (!created_tensors.count(&(tensor_wrapper_ref.get()))) {
