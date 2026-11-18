@@ -860,13 +860,24 @@ Expected<PartitionResult> PartitionModel(
 
   // Add collect all the subgraphs to be compiled. These are the bodies of
   // outlined partitions or npu_calls.
+  //
+  // Yank moves the subgraphs in ascending index order, so in the new model the
+  // npu_call bodies (subgraphs of the input model) come first, by index, and
+  // the outlined partitions (appended to the model) follow. Dispatch op i must
+  // be the op whose body is subgraph i of the new model, so the npu_call
+  // dispatch ops are ordered by body index and put before the outlined ones.
+  std::sort(
+      npu_calls.begin(), npu_calls.end(),
+      [](const auto& a, const auto& b) { return a.subgraph < b.subgraph; });
+  std::vector<LiteRtOp> npu_dispatch_ops;
   std::vector<size_t> decomps_to_compile;
   for (auto& npu_call : npu_calls) {
-    auto* op = npu_call.op;
-    MakeDispatchOp(*op);
-    dispatch_ops.push_back(op);
+    MakeDispatchOp(*npu_call.op);
+    npu_dispatch_ops.push_back(npu_call.op);
     decomps_to_compile.push_back(npu_call.subgraph);
   }
+  dispatch_ops.insert(dispatch_ops.begin(), npu_dispatch_ops.begin(),
+                      npu_dispatch_ops.end());
   for (auto i = input_num_sgs; i < model.NumSubgraphs(); ++i) {
     // Outlined subgraphs are pushed to the back of the model.
     decomps_to_compile.push_back(i);
@@ -918,6 +929,14 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
 
   CompiledResult& stored_result = *compiled_result;
   bool has_jit_handles = false;
+
+  // Dispatch op i takes call i, so the counts must match.
+  if (auto num_calls = stored_result.NumCalls();
+      num_calls.HasValue() && *num_calls != dispatch_ops.size()) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrCat("Plugin emitted ", *num_calls, " calls for ",
+                              dispatch_ops.size(), " dispatch ops"));
+  }
 
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
@@ -1104,11 +1123,17 @@ Expected<bool> ApplyCompilerOptionsInputShapes(
   return true;
 }
 
+// Applies `compiler_plugin` to `model`. If it fails, `*model_modified` (if
+// given) tells whether `model` may already have been changed: transformation,
+// partitioning and compilation modify it in place and are not undone.
 Expected<void> ApplySinglePlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
-    ApplyPluginsResult& result) {
+    ApplyPluginsResult& result, bool* model_modified = nullptr) {
+  if (model_modified != nullptr) {
+    *model_modified = false;
+  }
   if (auto sdk_version = compiler_plugin.SdkVersion(); sdk_version.HasValue()) {
     if (!sdk_version->empty()) {
       LITERT_LOG(LITERT_INFO, "Applying plugin with SDK version: %s",
@@ -1132,6 +1157,11 @@ Expected<void> ApplySinglePlugin(
   if (!compatibility) {
     LITERT_LOG(LITERT_ERROR, "%s", compatibility.Error().Message().c_str());
     return compatibility.Error();
+  }
+
+  // From here on, a failure may leave `model` partially modified.
+  if (model_modified != nullptr) {
+    *model_modified = true;
   }
 
   // Compiler Plugin: Transformation, apply transformations to model.
@@ -1264,11 +1294,20 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result);
+      bool model_modified = false;
+      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result,
+                                      &model_modified);
 
       if (!status) {
         error_messages.push_back(
             absl::StrCat(plugin_name, " ", status.Error().Message()));
+        if (model_modified) {
+          // The model may be half partitioned (e.g. dispatch ops without
+          // byte code). Applying further plugins to it is pointless; the
+          // caller must not use it.
+          result.model_invalidated = true;
+          break;
+        }
         continue;
       }
 

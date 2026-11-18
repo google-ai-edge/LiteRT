@@ -92,12 +92,14 @@
 #include "litert/core/error_reporter.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_call_graph.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "tflite/model_builder.h"
 #if !defined(LITERT_DISABLE_NPU)
 #include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
 #include "litert/core/cache/compilation_cache.h"
+#include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
 #endif  // !defined(LITERT_DISABLE_NPU)
 #include "litert/core/options.h"
@@ -170,12 +172,12 @@ std::optional<std::string> ExtractDirectory(absl::string_view path) {
 }
 
 // Returns the function names of the dispatch ops in the active subgraphs.
-// Note: `active_subgraph_indices` currently only includes the root subgraphs
-// for the selected signatures (see `InitializeActiveSubgraphs`). Until
-// transitive callee discovery is implemented, any `DISPATCH_OP` inside a
-// child subgraph invoked via control flow ops (e.g., `IF`/`WHILE`/`CALL_ONCE`)
-// will not be collected here and will rely on the vendor dispatch fallback
-// for unreported functions.
+// The active subgraphs are the subgraphs of the selected signatures and every
+// subgraph they reference, e.g. `IF`/`WHILE`/`CALL_ONCE` bodies (see
+// `InitializeActiveSubgraphs`). If the subgraph call graph is unavailable they
+// are the signatures' own subgraphs only; a `DISPATCH_OP` in any other
+// subgraph then relies on the vendor dispatch fallback for unreported
+// functions.
 std::vector<std::string> GetExpectedDispatchFunctionNames(
     const tflite::Interpreter& interp,
     absl::Span<const int> active_subgraph_indices) {
@@ -1117,6 +1119,13 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     model_directory_.reset();
   }
 
+  // Recorded before any plugin runs: when the compiled model is initialized
+  // directly from the model's original FlatBuffer below, this graph matches
+  // it even if a failed plugin left `model` modified. The other
+  // initialization paths record the graph of the model they serialize or
+  // load.
+  RecordSubgraphCallGraph(model);
+
   // A compiler plugin is applied only if its supported hardware overlaps the
   // requested accelerators (see LiteRtGetCompilerPluginSupportedHardware): NPU
   // for all plugins, and GPU for some (e.g. NVIDIA). A CPU-only request can
@@ -1592,16 +1601,54 @@ Expected<void> LiteRtCompiledModelT::InitializeActiveSubgraphs(
     root_subgraph_indices.insert(subgraph_index);
   }
 
-  // The active set is intentionally equal to the deduplicated root set in the
-  // initial implementation. Transitive callee discovery is a follow-up.
-  active_subgraph_indices_.reserve(root_subgraph_indices.size());
-  for (int subgraph_index = 0; subgraph_index < interp_->subgraphs_size();
-       ++subgraph_index) {
-    if (root_subgraph_indices.contains(subgraph_index)) {
-      active_subgraph_indices_.push_back(subgraph_index);
+  // Subgraphs referenced by the roots (control-flow branches, region bodies,
+  // composite decompositions) run as part of them and need the same delegates,
+  // e.g. a dispatch op in a WHILE body.
+  active_subgraph_indices_ = ActiveSubgraphIndices(
+      fb_call_graph_, root_subgraph_indices, interp_->subgraphs_size());
+  return {};
+}
+
+std::vector<int> LiteRtCompiledModelT::ActiveSubgraphIndices(
+    const std::optional<litert::internal::SubgraphCallGraph>& call_graph,
+    const absl::flat_hash_set<int>& roots, int num_subgraphs) {
+  absl::flat_hash_set<int> active = roots;
+  if (call_graph.has_value() &&
+      call_graph->callees.size() == static_cast<size_t>(num_subgraphs)) {
+    const std::vector<int32_t> root_indices(roots.begin(), roots.end());
+    for (const int32_t index :
+         litert::internal::SubgraphClosure(*call_graph, root_indices)) {
+      active.insert(index);
+    }
+  } else if (!call_graph.has_value()) {
+    LITERT_LOG(LITERT_WARNING,
+               "Subgraph call graph unavailable; only the selected signatures' "
+               "own subgraphs are active.");
+  } else {
+    LITERT_LOG(LITERT_WARNING,
+               "Subgraph call graph has %zu subgraphs but the interpreter has "
+               "%d; only the selected signatures' own subgraphs are active.",
+               call_graph->callees.size(), num_subgraphs);
+  }
+  std::vector<int> indices;
+  indices.reserve(active.size());
+  for (int index = 0; index < num_subgraphs; ++index) {
+    if (active.contains(index)) {
+      indices.push_back(index);
     }
   }
-  return {};
+  return indices;
+}
+
+void LiteRtCompiledModelT::RecordSubgraphCallGraph(const LiteRtModelT& model) {
+  auto graph = litert::internal::BuildSubgraphCallGraph(model);
+  if (!graph) {
+    LITERT_LOG(LITERT_WARNING, "Failed to build subgraph call graph: %s",
+               graph.Error().Message().c_str());
+    fb_call_graph_.reset();
+    return;
+  }
+  fb_call_graph_ = std::move(*graph);
 }
 
 Expected<void> LiteRtCompiledModelT::ValidateSignatureIsActive(
@@ -1965,6 +2012,8 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
     LiteRtOptionsT& options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Conversion");
   bool need_reserialization = false;
+  // Whether `model` was pruned to `options.selected_signature_keys`.
+  bool pruned_to_signatures = false;
   compilation_cache_ = MaybeCreateCompilationCache(env);
   std::optional<litert::internal::CompilationCache::CacheKey> cache_key =
       std::nullopt;
@@ -1990,9 +2039,10 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
       // Even if a plugin selects no operations, the pruned graph must be
       // reserialized instead of falling back to the original FlatBuffer.
       need_reserialization = true;
+      pruned_to_signatures = true;
     } else if (pruned.Error().Status() == kLiteRtStatusErrorUnsupported) {
-      // Pruning validates references before mutation. For control flow it
-      // cannot remap, keep compiling the original graph as before.
+      // Pruning validates references before mutating. If they are invalid or
+      // cyclic, compile the unpruned graph.
       LITERT_LOG(LITERT_WARNING, "Skipping signature pruning: %s",
                  pruned.Error().Message().c_str());
     } else {
@@ -2044,6 +2094,34 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
         LITERT_LOG(LITERT_ERROR, "Plugin errs: %s",
                    jit_result->error_message.c_str());
       }
+      if (jit_result->model_invalidated) {
+        // A plugin failed half way through and left `model` modified (e.g.
+        // with dispatch ops that have no byte code). Neither it nor any
+        // compiled result can be used; start again from the original
+        // FlatBuffer, without compiler plugins.
+        LITERT_LOG(LITERT_ERROR,
+                   "A compiler plugin failed after modifying the model; the "
+                   "remaining plugins were skipped and the original model is "
+                   "used without compiler plugins.");
+#if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+        if (jit_weight_loader_owned != nullptr) {
+          for (const auto buf_id : jit_bound_buffer_ids) {
+            (void)model.Buffers()->SetNonOwnedBuffer(
+                buf_id, litert::BufferRef<uint8_t>());
+          }
+        }
+#endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
+        maybe_compiled_plugins_ = std::move(maybe_compiled_plugins.Value());
+        if (!pruned_to_signatures) {
+          // InitializeModel() builds the compiled model directly from the
+          // original FlatBuffer, with the call graph recorded before any
+          // plugin ran.
+          return false;
+        }
+        LITERT_RETURN_IF_ERROR(InitializeFromPrunedOriginalModel(
+            model, options.selected_signature_keys));
+        return true;
+      }
       apply_plugins_result_ = std::move(*jit_result);
     }
     // Store the compiler plugins to a member variable to postpone its
@@ -2063,6 +2141,9 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   }
   LITERT_LOG(LITERT_INFO, "JIT compilation changed model, reserializing...");
 
+  // Serialization keeps subgraph order, so the graph of `model` (before it is
+  // consumed below) describes the reserialized flatbuffer.
+  RecordSubgraphCallGraph(model);
   LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(model)));
 
   bool has_jit_handles = apply_plugins_result_.has_value() &&
@@ -2077,14 +2158,7 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
         serialized, cache_key.value(), model_name));
   }
 
-  model_buf_ = std::move(serialized);
-  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
-      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
-      error_reporter_.get());
-  if (fb_model_ == nullptr) {
-    return Unexpected(kLiteRtStatusErrorFileIO,
-                      "Failed to build flatbuffer from buffer");
-  }
+  LITERT_RETURN_IF_ERROR(SetSerializedModel(std::move(serialized)));
 #if !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
   if (options.weight_loader != nullptr &&
       !jit_prepared_ext_buffer_ids.empty()) {
@@ -2110,9 +2184,48 @@ Expected<bool> LiteRtCompiledModelT::ApplyPluginsWithCaching(
   LITERT_LOG(LITERT_DEBUG,
              "Plugins applied, flatbuffer model initialized from  JIT compiled "
              "model.");
+  return true;
+}
+
+Expected<void> LiteRtCompiledModelT::SetSerializedModel(
+    litert::OwningBufferRef<uint8_t> serialized) {
+  model_buf_ = std::move(serialized);
+  fb_model_ = tflite::FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(model_buf_.Data()), model_buf_.Size(),
+      error_reporter_.get());
+  if (fb_model_ == nullptr) {
+    return Unexpected(kLiteRtStatusErrorFileIO,
+                      "Failed to build flatbuffer from buffer");
+  }
   SetModelSourceInfoFromAllocation(fb_model_->allocation(), fb_model_fd_,
                                    fb_model_file_offset_, fb_model_size_);
-  return true;
+  return {};
+}
+
+Expected<void> LiteRtCompiledModelT::InitializeFromPrunedOriginalModel(
+    LiteRtModelT& model,
+    const std::vector<std::string>& selected_signature_keys) {
+  // The caller-visible model was pruned to the selected signatures, so the
+  // compiled model must be too: reload the original FlatBuffer, which the
+  // plugins never modify, and prune and serialize the fresh copy.
+  // InitializeModel() replaced the magic numbers in that FlatBuffer in place,
+  // so the fresh copy already has the target numbers.
+  const auto& tfl_wrapper = litert::internal::GetTflFlatbuffer(model);
+  const auto original = tfl_wrapper.Buf();
+  if (original.Data() == nullptr) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "The original FlatBuffer of the model is not available");
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto fresh,
+      litert::internal::LoadModelFromBuffer(
+          litert::BufferRef<uint8_t>(original.Data(), original.Size())));
+  std::vector<absl::string_view> retained(selected_signature_keys.begin(),
+                                          selected_signature_keys.end());
+  LITERT_RETURN_IF_ERROR(PruneModelToSignatures(*fresh, retained));
+  RecordSubgraphCallGraph(*fresh);
+  LITERT_ASSIGN_OR_RETURN(auto serialized, SerializeModel(std::move(*fresh)));
+  return SetSerializedModel(std::move(serialized));
 }
 
 bool LiteRtCompiledModelT::TryLoadingFromCache(
@@ -2151,6 +2264,7 @@ bool LiteRtCompiledModelT::TryLoadingFromCache(
   SetModelSourceInfoFromAllocation(
       tfl_wrapper_from_cached_model.FlatbufferModel().allocation(),
       fb_model_fd_, fb_model_file_offset_, fb_model_size_);
+  RecordSubgraphCallGraph(*cached_model.value());
   cached_model_ = std::move(cached_model.value());
   return true;
 }
@@ -2339,10 +2453,29 @@ tflite::SignatureRunner* LiteRtCompiledModelT::GetSignatureRunner(
   return runner;
 }
 
+Expected<void> LiteRtCompiledModelT::ReleaseBackendSharedHostBuffers(
+    const absl::flat_hash_set<LiteRtTensorBuffer>& backend_shared_host_buffers,
+    absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers) {
+  for (LiteRtTensorBuffer buffer : backend_shared_host_buffers) {
+    auto it = locked_buffers.find(buffer);
+    if (it == locked_buffers.end()) {
+      continue;
+    }
+    if (auto status = LiteRtUnlockTensorBuffer(buffer);
+        status != kLiteRtStatusOk) {
+      return Unexpected(status,
+                        "Failed to unlock a host buffer shared with a backend");
+    }
+    locked_buffers.erase(it);
+  }
+  return {};
+}
+
 Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     tflite::SignatureRunner* runner, TfLiteTensor* tensor, int tensor_index,
     const char* tensor_name, LiteRtTensorBufferT* buffer, bool is_input,
     absl::flat_hash_map<LiteRtTensorBuffer, void*>& locked_buffers,
+    absl::flat_hash_set<LiteRtTensorBuffer>& backend_shared_host_buffers,
     std::vector<ConstantOutputInfo>& constant_outputs,
     std::vector<PendingCopy>& pending_string_output_copies) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Registration");
@@ -2427,9 +2560,12 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         user_registered_buffers_.insert(tensor_id);
 
         // A host buffer shared with CPU nodes needs a CPU allocation even
-        // when it is also registered with an accelerator backend.
+        // when it is also registered with an accelerator backend. The CPU
+        // lock taken below is released before Invoke(), because the backend
+        // locks the same buffer while it runs.
         if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
             cpu_tensors_.contains(tensor_id)) {
+          backend_shared_host_buffers.insert(buffer);
           break;
         }
 
@@ -2742,6 +2878,9 @@ Expected<void> LiteRtCompiledModelT::Run(
   // to LiteRT TensorBuffers after execution, since TFLite does not support
   // custom allocations (zero-copy) for dynamic string tensors.
   std::vector<PendingCopy> pending_string_output_copies;
+  // Host buffers registered with an accelerator backend and also used by CPU
+  // ops. Their CPU locks are released before Invoke().
+  absl::flat_hash_set<LiteRtTensorBuffer> backend_shared_host_buffers;
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
     for (const auto& [locked_buffer, _] : locked_buffers) {
       if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
@@ -2776,7 +2915,8 @@ Expected<void> LiteRtCompiledModelT::Run(
 
     auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
                               input_buffer, /*is_input=*/true, locked_buffers,
-                              constant_outputs, pending_string_output_copies);
+                              backend_shared_host_buffers, constant_outputs,
+                              pending_string_output_copies);
 
     if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
@@ -2802,7 +2942,8 @@ Expected<void> LiteRtCompiledModelT::Run(
     auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
                               tensor_index, tensor_name, output_buffers[i],
                               /*is_input=*/false, locked_buffers,
-                              constant_outputs, pending_string_output_copies);
+                              backend_shared_host_buffers, constant_outputs,
+                              pending_string_output_copies);
 
     if (!res) {
       return Unexpected(
@@ -2811,6 +2952,8 @@ Expected<void> LiteRtCompiledModelT::Run(
                        res.Error().Message()));
     }
   }
+  LITERT_RETURN_IF_ERROR(ReleaseBackendSharedHostBuffers(
+      backend_shared_host_buffers, locked_buffers));
   if (profiler_ && profiler_->IsProfiling() &&
       event_handle != std::numeric_limits<uint64_t>::max()) {
     profiler_->SetCurrentEventSource(LITERT);

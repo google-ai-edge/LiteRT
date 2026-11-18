@@ -583,6 +583,75 @@ TEST(OutlinePartitionTest, SlicesBlockWiseQuantizedOp) {
   EXPECT_TRUE(serialized.HasValue());
 }
 
+TEST(OutlinePartitionTest, RejectsEdgelessOpWithoutMutatingSubgraph) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  auto& call_once = main_sg.EmplaceOp();
+  call_once.SetOpCode(kLiteRtOpCodeTflCallOnce);
+
+  std::vector<LiteRtOp> partition = {&call_once};
+  auto& slice_sg = model.EmplaceSubgraph();
+
+  auto status = OutlinePartition(main_sg, &slice_sg, partition);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  ASSERT_EQ(main_sg.Ops().size(), 1);
+  EXPECT_EQ(main_sg.Ops().front(), &call_once);
+  EXPECT_EQ(call_once.OpCode(), kLiteRtOpCodeTflCallOnce);
+  EXPECT_TRUE(slice_sg.Ops().empty());
+  EXPECT_TRUE(slice_sg.Tensors().empty());
+}
+
+TEST(OutlinePartitionTest,
+     RejectsPartitionWithOnlyInternalEdgesWithoutMutating) {
+  LiteRtModelT model;
+  auto& main_sg = model.EmplaceSubgraph();
+  const auto type = MakeRankedTensorType(kLiteRtElementTypeFloat32, {2});
+
+  auto& cst = main_sg.EmplaceTensor();
+  cst.SetType(type);
+  OwningBufferRef<uint8_t> cst_data(sizeof(float) * 2);
+  SetWeightsFromOwnedBuffer(cst.Weights(), std::move(cst_data));
+
+  auto& mid = main_sg.EmplaceTensor();
+  mid.SetType(type);
+  auto& dead_out = main_sg.EmplaceTensor();
+  dead_out.SetType(type);
+
+  auto& op1 = main_sg.EmplaceOp();
+  op1.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&cst, op1);
+  AttachInput(&cst, op1);
+  AttachOutput(&mid, op1);
+
+  auto& op2 = main_sg.EmplaceOp();
+  op2.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&mid, op2);
+  AttachInput(&mid, op2);
+  AttachOutput(&dead_out, op2);
+
+  std::vector<LiteRtOp> partition = {&op1, &op2};
+  auto& slice_sg = model.EmplaceSubgraph();
+
+  auto status = OutlinePartition(main_sg, &slice_sg, partition);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  ASSERT_EQ(main_sg.Ops().size(), 2);
+  EXPECT_EQ(main_sg.Ops()[0], &op1);
+  EXPECT_EQ(main_sg.Ops()[1], &op2);
+  EXPECT_EQ(op1.OpCode(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(op2.OpCode(), kLiteRtOpCodeTflMul);
+  EXPECT_EQ(mid.DefiningOp(), &op1);
+  EXPECT_EQ(mid.NumUses(), 2);
+  EXPECT_EQ(dead_out.DefiningOp(), &op2);
+  EXPECT_TRUE(slice_sg.Ops().empty());
+  EXPECT_TRUE(slice_sg.Tensors().empty());
+  EXPECT_TRUE(slice_sg.Inputs().empty());
+  EXPECT_TRUE(slice_sg.Outputs().empty());
+}
+
 TEST_P(PartitionTest, PartitionWithIndex) {
   auto model = litert::testing::LoadTestFileModel("simple_multi_op.tflite");
   auto subgraph = model.MainSubgraph();
@@ -664,6 +733,17 @@ TEST(TestCompositeInlining, RemapsSignatureOutputAliases) {
   EXPECT_EQ(*named_output, graph.Outputs().front());
   EXPECT_EQ(original->GetInputTensor(0), input);
   EXPECT_EQ(alias.GetInputTensor(0), input);
+}
+
+TEST(TestCompositeInlining, OpOutsideTheModelIsRejected) {
+  LiteRtModelT model;
+  auto& decomposition = model.EmplaceSubgraph();
+  LiteRtOpT op;
+
+  auto status = InlineSubgraph(model, op, &decomposition);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(TestCompositeInlining, inlineSimpleComposite) {
