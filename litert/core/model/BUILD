@@ -490,6 +490,26 @@ cc_library(
 )
 
 cc_library(
+    name = "ops_reference_numeric_utils",
+    hdrs = ["ops/reference_numeric_utils.h"],
+    deps = [
+        "//litert/core/util:tensor_type_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_reference_numeric_utils_test",
+    srcs = ["ops/reference_numeric_utils_test.cc"],
+    deps = [
+        ":ops_reference_numeric_utils",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "shape_inference_types",
     hdrs = ["shape_inference_types.h"],
     deps = [
@@ -507,11 +527,12 @@ cc_library(
     hdrs = ["ops/simple_binary.h"],
     deps = [
         ":model",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/core/util:tensor_layout_util",
         "//tflite/converter/schema:schema_fbs",
-        "//tflite/kernels/internal:types",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -521,9 +542,11 @@ cc_library(
     hdrs = ["ops/simple_unary.h"],
     deps = [
         ":model",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/core/util:tensor_layout_util",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -536,6 +559,7 @@ cc_library(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/core/util:tensor_layout_util",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -560,9 +584,12 @@ cc_library(
     deps = [
         ":model",
         ":op_shape_inference_utils",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/core/util:tensor_layout_util",
         "//tflite/schema:schema_fbs",
         "@SafeInt",
         "@com_google_absl//absl/types:span",
@@ -678,9 +705,9 @@ cc_library(
     hdrs = ["ops/select.h"],
     deps = [
         ":model",
-        ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/core/util:tensor_layout_util",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -1029,6 +1056,8 @@ cc_test(
         ":ops_select",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/core/util:tensor_layout_util",
+        "//litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -1155,6 +1184,7 @@ cc_test(
     deps = [
         ":model",
         ":ops_convolution",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
@@ -1204,6 +1234,8 @@ cc_test(
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
+        "//litert/core/util:tensor_layout_util",
+        "//litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
@@ -1214,9 +1246,12 @@ cc_test(
     srcs = ["ops/simple_binary_test.cc"],
     deps = [
         ":model",
+        ":ops_reference_numeric_utils",
         ":ops_simple_binary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/core/util:tensor_layout_util",
+        "//litert/test:matchers",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
@@ -1228,9 +1263,11 @@ cc_test(
     srcs = ["ops/simple_unary_test.cc"],
     deps = [
         ":model",
+        ":ops_reference_numeric_utils",
         ":ops_simple_unary",
         ":shape_inference_types",
         "//litert/c:litert_common",
+        "//litert/test:matchers",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
