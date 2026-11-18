@@ -15,6 +15,7 @@ limitations under the License.
 #include "tensor/backends/tflite/arithmetic_tflite.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <string>
 #include <utility>
 #include <vector>
@@ -23,6 +24,7 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
@@ -126,6 +128,64 @@ absl::StatusOr<tflite::TensorType> ToTfLiteArgMaxOutputTensorType(Type type) {
           "Unsupported output type for ArgMax. Only kI32 and kI64 are "
           "supported by TFLite.");
   }
+}
+
+// Returns an error if `tensor` is quantized blockwise.
+absl::Status CheckIsNotBlockwise(const Tensor& tensor,
+                                 absl::string_view op_name) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const TensorInformation& info, GetInfo(tensor));
+  if (info.quantization != nullptr &&
+      info.quantization->As<const BlockwiseQuantization>().ok()) {
+    return absl::UnimplementedError(absl::StrFormat(
+        "TFLite %s doesn't support blockwise quantization.", op_name));
+  }
+  return absl::OkStatus();
+}
+
+// Returns the zero points of `quantization`.
+absl::Span<const int64_t> GetZeroPoints(const Quantization& quantization) {
+  if (auto per_channel = quantization.As<const PerChannelAffineQuantization>();
+      per_channel.ok()) {
+    return per_channel->zero_points;
+  }
+  if (auto blockwise = quantization.As<const BlockwiseQuantization>();
+      blockwise.ok()) {
+    return blockwise->zero_points;
+  }
+  return {};
+}
+
+// Returns an error if the weights of the fully connected or batch matmul `op`
+// have a non-zero zero point.
+//
+// Warning: This function is there to catch TFLite failure to signal unhandled
+// non-symetric zero points in certain ops.
+absl::Status RejectUnhandledZeroPoints(const Operation& op) {
+  if (op.inputs.size() < 2) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const TensorInformation& input,
+                              GetInfo(op.inputs[0]));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const TensorInformation& weights,
+                              GetInfo(op.inputs[1]));
+  if (weights.quantization == nullptr) {
+    return absl::OkStatus();
+  }
+  const bool hybrid_int8 =
+      input.type == Type::kFP32 && weights.type == Type::kI8;
+  const bool blockwise =
+      weights.quantization->As<const BlockwiseQuantization>().ok();
+  if (!hybrid_int8 && !blockwise) {
+    return absl::OkStatus();
+  }
+  for (const int64_t zero_point : GetZeroPoints(*weights.quantization)) {
+    if (zero_point != 0) {
+      return absl::UnimplementedError(absl::StrFormat(
+          "TFLite %s doesn't support weights with non-zero zero points.",
+          op.GetName()));
+    }
+  }
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -529,6 +589,10 @@ OpMixin<BatchMatMulOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const BatchMatMulOperation& data,
                               op.As<BatchMatMulOperation>());
+  for (const Tensor& input : op.inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CheckIsNotBlockwise(input, "BatchMatMul"));
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(RejectUnhandledZeroPoints(op));
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_BATCH_MATMUL,
                            tflite::BatchMatMulOptionsT{
                                .adj_x = data.adj_x,
@@ -541,6 +605,7 @@ OpMixin<FullyConnectedOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const FullyConnectedOperation& data,
                               op.As<FullyConnectedOperation>());
+  LRT_TENSOR_RETURN_IF_ERROR(RejectUnhandledZeroPoints(op));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto tflite_activation,
                               ToTflite(data.activation));
   auto weights_format = tflite::FullyConnectedOptionsWeightsFormat_DEFAULT;
@@ -836,6 +901,9 @@ OpMixin<QuantizeOperation, TfLiteMixinTag>::ToTfLite(
 absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<DequantizeOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
+  for (const Tensor& input : op.inputs) {
+    LRT_TENSOR_RETURN_IF_ERROR(CheckIsNotBlockwise(input, "Dequantize"));
+  }
   return TfLiteOpBuildInfo(::tflite::BuiltinOperator_DEQUANTIZE);
 }
 
