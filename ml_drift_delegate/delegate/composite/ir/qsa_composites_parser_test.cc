@@ -13,9 +13,11 @@
 // limitations under the License.
 
 #include <any>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -123,42 +125,6 @@ void PopulateDefaultSparseSdpaBuilder(SingleOpInterpreterBuilder* builder,
   builder->SetParameters(params);
 }
 
-void PopulateDefaultQsaIndexerBuilder(
-    SingleOpInterpreterBuilder* builder,
-    const std::vector<int>& start_pos_shape = {1},
-    bool const_ring_k = false,
-    TfLiteType norm_dtype = kTfLiteFloat32,
-    int norm_byte_elems = 16) {
-  const int S = 1, H_idx = 4, D_idx = 16, R = 4, max_blocks = 8, cache_len = 32;
-  const int rotary_dim = 8, block_topk = 2;
-  builder->AddInput(kTfLiteFloat32, {1, S, H_idx, D_idx});
-  builder->AddInput(kTfLiteFloat32, {1, S, D_idx});
-  if (const_ring_k) {
-    builder->AddConstInput(kTfLiteFloat32, {1, R, D_idx},
-                           MakeConstFloatBytes(R * D_idx, 0.0f));
-  } else {
-    builder->AddInput(kTfLiteFloat32, {1, R, D_idx});
-  }
-  builder->AddInput(kTfLiteFloat32, {1, max_blocks, D_idx});
-  if (norm_dtype == kTfLiteInt8) {
-    builder->AddConstInput(kTfLiteInt8, {D_idx},
-                           std::vector<uint8_t>(D_idx, 1));
-  } else {
-    builder->AddConstInput(norm_dtype, {D_idx},
-                           MakeConstFloatBytes(norm_byte_elems, 1.0f));
-  }
-  builder->AddConstInput(kTfLiteFloat32, {1, max_blocks, rotary_dim},
-                         MakeConstFloatBytes(max_blocks * rotary_dim, 1.0f));
-  builder->AddConstInput(kTfLiteFloat32, {1, max_blocks, rotary_dim},
-                         MakeConstFloatBytes(max_blocks * rotary_dim, 0.0f));
-  builder->AddInput(kTfLiteInt32, start_pos_shape);
-  builder->AddInput(kTfLiteBool, {1, 1, S, cache_len});
-  builder->AddOutput(kTfLiteInt32, {1, S, block_topk});
-  builder->AddOutput(kTfLiteFloat32, {1, R, D_idx});
-  builder->AddOutput(kTfLiteFloat32, {1, max_blocks, D_idx});
-  builder->SetParameters(CreateQsaIndexerUpdateParams(R, block_topk));
-}
-
 class ConvertQsaCompositesTest : public ::testing::Test {
  protected:
   void SetUp() override {
@@ -174,6 +140,52 @@ class ConvertQsaCompositesTest : public ::testing::Test {
 
   void TearDown() override { DeleteStubDelegate(delegate_); }
 
+  // `SingleOpInterpreterBuilder::AddConstInput` stores a non-owning pointer to
+  // the buffer, so constant data must outlive the built interpreter.
+  const std::vector<uint8_t>& ConstFloatBytes(int count, float val = 1.0f) {
+    return const_buffers_.emplace_back(MakeConstFloatBytes(count, val));
+  }
+
+  const std::vector<uint8_t>& ConstFillBytes(size_t count, uint8_t val) {
+    return const_buffers_.emplace_back(count, val);
+  }
+
+  void PopulateDefaultQsaIndexerBuilder(
+      SingleOpInterpreterBuilder* builder,
+      const std::vector<int>& start_pos_shape = {1},
+      bool const_ring_k = false,
+      TfLiteType norm_dtype = kTfLiteFloat32,
+      int norm_byte_elems = 16) {
+    const int S = 1, H_idx = 4, D_idx = 16, R = 4, max_blocks = 8,
+              cache_len = 32;
+    const int rotary_dim = 8, block_topk = 2;
+    builder->AddInput(kTfLiteFloat32, {1, S, H_idx, D_idx});
+    builder->AddInput(kTfLiteFloat32, {1, S, D_idx});
+    if (const_ring_k) {
+      builder->AddConstInput(kTfLiteFloat32, {1, R, D_idx},
+                             ConstFloatBytes(R * D_idx, 0.0f));
+    } else {
+      builder->AddInput(kTfLiteFloat32, {1, R, D_idx});
+    }
+    builder->AddInput(kTfLiteFloat32, {1, max_blocks, D_idx});
+    if (norm_dtype == kTfLiteInt8) {
+      builder->AddConstInput(kTfLiteInt8, {D_idx}, ConstFillBytes(D_idx, 1));
+    } else {
+      builder->AddConstInput(norm_dtype, {D_idx},
+                             ConstFloatBytes(norm_byte_elems, 1.0f));
+    }
+    builder->AddConstInput(kTfLiteFloat32, {1, max_blocks, rotary_dim},
+                           ConstFloatBytes(max_blocks * rotary_dim, 1.0f));
+    builder->AddConstInput(kTfLiteFloat32, {1, max_blocks, rotary_dim},
+                           ConstFloatBytes(max_blocks * rotary_dim, 0.0f));
+    builder->AddInput(kTfLiteInt32, start_pos_shape);
+    builder->AddInput(kTfLiteBool, {1, 1, S, cache_len});
+    builder->AddOutput(kTfLiteInt32, {1, S, block_topk});
+    builder->AddOutput(kTfLiteFloat32, {1, R, D_idx});
+    builder->AddOutput(kTfLiteFloat32, {1, max_blocks, D_idx});
+    builder->SetParameters(CreateQsaIndexerUpdateParams(R, block_topk));
+  }
+
   void ExpectRejected(std::unique_ptr<::tflite::Interpreter> interpreter) {
     ASSERT_NE(interpreter, nullptr);
     ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
@@ -182,6 +194,9 @@ class ConvertQsaCompositesTest : public ::testing::Test {
   }
 
   TfLiteDelegate* delegate_;
+  // A deque guarantees that appending new buffers never invalidates pointers
+  // already handed to `SingleOpInterpreterBuilder::AddConstInput`.
+  std::deque<std::vector<uint8_t>> const_buffers_;
 };
 
 TEST_F(ConvertQsaCompositesTest,
@@ -373,8 +388,7 @@ TEST_F(ConvertQsaCompositesTest, SparseSdpaTransposedAcceptsConstantBoolMask) {
   builder.AddInput(kTfLiteFloat32, {1, 2, 32, 16});
   builder.AddInput(kTfLiteFloat32, {1, 2, 16, 32});
   builder.AddInput(kTfLiteInt32, {1, 1, 2});
-  builder.AddConstInput(kTfLiteBool, {1, 1, 1, 32},
-                        std::vector<uint8_t>(32, 1));
+  builder.AddConstInput(kTfLiteBool, {1, 1, 1, 32}, ConstFillBytes(32, 1));
   builder.AddOutput(kTfLiteFloat32, {1, 1, 4, 16});
   builder.SetParameters(CreateSparseSdpaTransposedParams(4, 2));
   std::unique_ptr<::tflite::Interpreter> interpreter = builder.Build();
@@ -404,7 +418,7 @@ TEST_F(ConvertQsaCompositesTest, RejectsConstantOnQsaIndexerRuntimeInput) {
 TEST_F(ConvertQsaCompositesTest, RejectsConstantOnSparseSdpaRuntimeInput) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddConstInput(kTfLiteFloat32, {1, 4, 1, 16},
-                        MakeConstFloatBytes(4 * 16, 0.1f));
+                        ConstFloatBytes(4 * 16, 0.1f));
   builder.AddInput(kTfLiteFloat32, {1, 2, 32, 16});
   builder.AddInput(kTfLiteFloat32, {1, 2, 16, 32});
   builder.AddInput(kTfLiteInt32, {1, 1, 2});
