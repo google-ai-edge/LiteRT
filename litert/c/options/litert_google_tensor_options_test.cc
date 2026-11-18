@@ -443,6 +443,17 @@ TEST(LrtGoogleTensorOptionsTest, PerformanceMode) {
   LrtDestroyGoogleTensorOptions(options);
 }
 
+TEST(LrtGoogleTensorOptionsTest, OutOfRangePerformanceModeTomlIsRejected) {
+  for (const char* toml :
+       {"performance_mode = -1\n", "performance_mode = 6\n"}) {
+    LrtGoogleTensorOptions options = nullptr;
+    EXPECT_EQ(LrtCreateGoogleTensorOptionsFromToml(toml, &options),
+              kLiteRtStatusErrorInvalidArgument)
+        << toml;
+    EXPECT_EQ(options, nullptr);
+  }
+}
+
 TEST(LrtGoogleTensorOptionsTest, Coherency) {
   LrtGoogleTensorOptions options;
   LITERT_ASSERT_OK(LrtCreateGoogleTensorOptions(&options));

@@ -23,8 +23,6 @@
 #include <string>
 #include <utility>
 
-#include "litert/c/options/litert_google_tensor_options.h"
-
 #if __ANDROID__
 #include <android/hardware_buffer.h>
 #endif  // __ANDROID__
@@ -41,7 +39,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
-#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
 #include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
@@ -53,94 +50,6 @@
 namespace gt = litert::google_tensor;
 
 namespace {
-std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>
-ParseGoogleTensorOptions(const LiteRtRuntimeContext* runtime_context,
-                         LiteRtOptions options) {
-  if (options == nullptr) return std::nullopt;
-  LiteRtOpaqueOptions opaque_opts = nullptr;
-  runtime_context->get_opaque_options(options, &opaque_opts);
-  if (opaque_opts == nullptr) return std::nullopt;
-
-  void* payload = nullptr;
-  if (runtime_context->find_opaque_options_data(
-          opaque_opts, LrtGoogleTensorOptionsGetIdentifier(), &payload) !=
-      kLiteRtStatusOk) {
-    return std::nullopt;
-  }
-
-  // We assume the payload is a const char* pointing to a TOML string.
-  LrtGoogleTensorOptions google_tensor_options;
-  if (LrtCreateGoogleTensorOptionsFromToml(
-          reinterpret_cast<const char*>(payload), &google_tensor_options) !=
-      kLiteRtStatusOk) {
-    return std::nullopt;
-  }
-  absl::Cleanup google_tensor_options_deleter = [google_tensor_options] {
-    LrtDestroyGoogleTensorOptions(google_tensor_options);
-  };
-  LITERT_LOG(LITERT_INFO, "Found GoogleTensorOptions");
-
-  // Parse the performance mode.
-  LiteRtDispatchDeviceContextT::GoogleTensorOptionsData
-      google_tensor_options_data;
-  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
-  if (LrtGoogleTensorOptionsGetPerformanceMode(
-          google_tensor_options, &performance_mode) == kLiteRtStatusOk) {
-    google_tensor_options_data.performance_mode = performance_mode;
-  }
-
-  // Build up the input and output coherency maps.
-  int num_input_entries = 0;
-  if (LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
-          google_tensor_options, &num_input_entries) == kLiteRtStatusOk) {
-    for (int i = 0; i < num_input_entries; ++i) {
-      const char* signature_name = nullptr;
-      const char* tensor_name = nullptr;
-      bool prefer_coherent = false;
-      if (LrtGoogleTensorOptionsGetInputCoherencyEntry(
-              google_tensor_options, i, &signature_name, &tensor_name,
-              &prefer_coherent) == kLiteRtStatusOk) {
-        if (signature_name == nullptr || tensor_name == nullptr) {
-          LITERT_LOG(LITERT_ERROR,
-                     "Ignored input coherency entry %d. signature_name '%s' or"
-                     " tensor_name '%s' is null",
-                     i, signature_name ? signature_name : "<null>",
-                     tensor_name ? tensor_name : "<null>");
-          continue;
-        }
-        google_tensor_options_data.input_coherency_map[{
-            std::string(signature_name), std::string(tensor_name)}] =
-            prefer_coherent;
-      }
-    }
-  }
-  int num_output_entries = 0;
-  if (LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
-          google_tensor_options, &num_output_entries) == kLiteRtStatusOk) {
-    for (int i = 0; i < num_output_entries; ++i) {
-      const char* signature_name = nullptr;
-      const char* tensor_name = nullptr;
-      bool prefer_coherent = false;
-      if (LrtGoogleTensorOptionsGetOutputCoherencyEntry(
-              google_tensor_options, i, &signature_name, &tensor_name,
-              &prefer_coherent) == kLiteRtStatusOk) {
-        if (signature_name == nullptr || tensor_name == nullptr) {
-          LITERT_LOG(LITERT_ERROR,
-                     "Ignored output coherency entry %d. signature_name '%s' or"
-                     " tensor_name '%s' is null",
-                     i, signature_name ? signature_name : "<null>",
-                     tensor_name ? tensor_name : "<null>");
-          continue;
-        }
-        google_tensor_options_data.output_coherency_map[{
-            std::string(signature_name), std::string(tensor_name)}] =
-            prefer_coherent;
-      }
-    }
-  }
-
-  return google_tensor_options_data;
-}
 bool IsTflite(const void* addr, size_t size) {
   if (size < 8 || addr == nullptr) {
     return false;
@@ -181,25 +90,29 @@ LiteRtStatus LiteRtDispatchDeviceContextT::Create(
 
   // The returned instance must be allocated with `new`, as it will be
   // deallocated via `delete` in `Destroy`.
-  device_context =
+  auto* new_device_context =
       new LiteRtDispatchDeviceContextT(runtime_context, thr_context);
+  absl::Cleanup device_context_cleanup = [new_device_context] {
+    delete new_device_context;
+  };
+
+  std::optional<GoogleTensorOptionsData> google_tensor_options;
+  LITERT_RETURN_IF_ERROR(gt::ParseGoogleTensorOptions(
+      runtime_context, options, google_tensor_options));
+  new_device_context->SetGoogleTensorOptions(std::move(google_tensor_options));
 
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
-  std::optional<LrtGoogleTensorPrivilegedOptionsT> options_data =
-      gt::GetGoogleTensorPrivilegedOptionsData(runtime_context, options);
-  LITERT_RETURN_IF_ERROR(gt::ApplyGoogleTensorPrivilegedOptionsToDeviceContext(
-      device_context, options_data));
-  device_context->SetGoogleTensorPrivilegedOptions(std::move(options_data));
+  LITERT_RETURN_IF_ERROR(gt::ConfigureDeviceContextPrivilegedOptions(
+      runtime_context, options, new_device_context));
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 
-  device_context->SetGoogleTensorOptions(
-      ParseGoogleTensorOptions(runtime_context, options));
-
   if (options != nullptr) {
-    device_context->SetDispatchDelegateVendorOptions(
+    new_device_context->SetDispatchDelegateVendorOptions(
         gt::FindDispatchDelegateVendorOptions(runtime_context, options));
   }
 
+  device_context = new_device_context;
+  std::move(device_context_cleanup).Cancel();
   std::move(thr_context_cleanup).Cancel();
   return kLiteRtStatusOk;
 }

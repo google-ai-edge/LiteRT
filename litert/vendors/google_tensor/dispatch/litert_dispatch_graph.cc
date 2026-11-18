@@ -21,8 +21,10 @@
 
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
@@ -84,26 +86,36 @@ LiteRtStatus LiteRtDispatchGraphT::Create(
 
   // Apply Google Tensor specific options.
   if (const auto& options = device_context->GetGoogleTensorOptions();
-      options.has_value() && options->performance_mode.has_value()) {
-    if (GoogleTensorSouthBoundFeatureSupported(
-            GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
-      // TODO: b/520090381 - Use warning status/log macro on failure when
-      // available.
-      if (graph->AnnotateGraph(
-              kPerformanceModeKey,
-              std::to_string(static_cast<int>(*options->performance_mode))
-                  .c_str()) != kLiteRtStatusOk) {
-        LITERT_LOG(LITERT_WARNING, "Failed to apply edgetpu_performance_mode.");
+      options.has_value()) {
+    if (!graph->TrySetOptionsKind(OptionsKind::kGoogleTensor)) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cannot combine GoogleTensorOptions with conflicting vendor "
+                 "options");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (options->performance_mode.has_value()) {
+      if (GoogleTensorSouthBoundFeatureSupported(
+              GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
+        // TODO: b/520090381 - Use warning status/log macro on failure when
+        // available.
+        if (graph->AnnotateGraph(
+                kPerformanceModeKey,
+                std::to_string(static_cast<int>(*options->performance_mode))
+                    .c_str()) != kLiteRtStatusOk) {
+          LITERT_LOG(LITERT_WARNING,
+                     "Failed to apply edgetpu_performance_mode.");
+        }
+      } else {
+        LITERT_LOG(
+            LITERT_WARNING,
+            "Skipped applying edgetpu_performance_mode (%s) - unsupported "
+            "feature on older southbound runtime version (got: %d.%d, "
+            "requires: >=0.18).",
+            std::to_string(static_cast<int>(*options->performance_mode))
+                .c_str(),
+            GoogleTensorSouthBoundMajorVersion(),
+            GoogleTensorSouthBoundMinorVersion());
       }
-    } else {
-      LITERT_LOG(
-          LITERT_WARNING,
-          "Skipped applying edgetpu_performance_mode (%s) - unsupported "
-          "feature on older southbound runtime version (got: %d.%d, "
-          "requires: >=0.18).",
-          std::to_string(static_cast<int>(*options->performance_mode)).c_str(),
-          GoogleTensorSouthBoundMajorVersion(),
-          GoogleTensorSouthBoundMinorVersion());
     }
   }
 
@@ -278,12 +290,85 @@ LiteRtStatus LiteRtDispatchGraphT::AssignNodeFunction(
   return kLiteRtStatusOk;
 }
 
-LiteRtStatus LiteRtDispatchGraphT::AnnotateGraph(
+LiteRtStatus LiteRtDispatchGraphT::AnnotateGraphInternal(
     const char* absl_nonnull key, const char* absl_nonnull value) {
   GT_LOG_RETURN_IF_SB_ERROR(
       thrGraphAnnotateGraph(thr_graph_, key, value),
       "Failed to annotate SB graph with key '%s' and value '%s'", key, value);
+  applied_annotations_[absl::string_view(key)] = value;
+  return kLiteRtStatusOk;
+}
 
+LiteRtStatus LiteRtDispatchGraphT::AnnotateGraph(
+    const char* absl_nonnull key, const char* absl_nonnull value) {
+  LITERT_RETURN_IF_ERROR(AnnotateGraphInternal(key, value));
+  baseline_annotations_[absl::string_view(key)] = value;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::UpdateAnnotation(
+    const char* absl_nonnull key, absl::string_view target_value) {
+  if (auto it = applied_annotations_.find(key);
+      it != applied_annotations_.end() && it->second == target_value) {
+    return kLiteRtStatusOk;
+  }
+  const std::string value_str(target_value);
+  const LiteRtStatus status = AnnotateGraphInternal(key, value_str.c_str());
+  if (status != kLiteRtStatusOk) {
+    applied_annotations_[absl::string_view(key)].clear();
+  }
+  return status;
+}
+
+LiteRtStatus LiteRtDispatchGraphT::ApplyRunPerformanceMode(
+    std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode) {
+  if (performance_mode.has_value()) {
+    const int mode_val = static_cast<int>(*performance_mode);
+    if (mode_val <
+            static_cast<int>(
+                kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver) ||
+        mode_val >
+            static_cast<int>(kLiteRtGoogleTensorOptionsPerformanceModeBurst)) {
+      LITERT_LOG(LITERT_ERROR, "Invalid GoogleTensor performance_mode: %d",
+                 mode_val);
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!CanUseOptionsKind(OptionsKind::kGoogleTensor)) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cannot apply GoogleTensorOptions to a graph configured with "
+                 "conflicting vendor options");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!GoogleTensorSouthBoundFeatureSupported(
+            GoogleTensorSouthBoundFeature::kPerformanceModeAnnotation)) {
+      LITERT_LOG(
+          LITERT_WARNING,
+          "Skipped applying per-run edgetpu_performance_mode (%d) - "
+          "unsupported feature on older southbound runtime version (got: "
+          "%d.%d, requires: >=0.18).",
+          mode_val, GoogleTensorSouthBoundMajorVersion(),
+          GoogleTensorSouthBoundMinorVersion());
+      return kLiteRtStatusErrorUnsupported;
+    }
+    LITERT_RETURN_IF_ERROR(
+        UpdateAnnotation(kPerformanceModeKey, std::to_string(mode_val)));
+    has_run_override_applied_ = true;
+    return kLiteRtStatusOk;
+  }
+
+  if (!has_run_override_applied_) {
+    return kLiteRtStatusOk;
+  }
+  // Fall back to kBalanced if no baseline was set at graph creation.
+  std::string target_perf_mode = std::to_string(
+      static_cast<int>(kLiteRtGoogleTensorOptionsPerformanceModeBalanced));
+  if (auto it = baseline_annotations_.find(kPerformanceModeKey);
+      it != baseline_annotations_.end()) {
+    target_perf_mode = it->second;
+  }
+  LITERT_RETURN_IF_ERROR(
+      UpdateAnnotation(kPerformanceModeKey, target_perf_mode));
+  has_run_override_applied_ = false;
   return kLiteRtStatusOk;
 }
 

@@ -23,8 +23,14 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/optional_ref.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -33,6 +39,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_test_fixtures.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
+#include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace litert::google_tensor {
@@ -249,6 +256,180 @@ TEST_F(DispatchApiUtilsFixtureTest, AnnotateCoherencyEdgesSuccess) {
 
   LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph));
   LITERT_ASSERT_OK(LiteRtDispatchDeviceContextDestroy(custom_context));
+}
+
+using DispatchApiRunOptionsTest = testing::SimpleModelTest;
+
+LiteRtStatus BuildLiteRtOptionsFromGoogleTensorOptions(
+    LiteRtEnvironment env, GoogleTensorOptions& gt_options,
+    internal::LiteRtOptionsPtr& out_options) {
+  LITERT_ASSIGN_OR_RETURN(auto cc_options, Options::Create());
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      gt_options.GetOpaqueOptionsData(&identifier, &payload, &payload_deleter));
+  LITERT_ASSIGN_OR_RETURN(
+      auto opaque_options,
+      OpaqueOptions::Create(identifier, payload, payload_deleter));
+  LITERT_RETURN_IF_ERROR(
+      cc_options.AddOpaqueOptions(std::move(opaque_options)));
+  auto env_wrap = Environment::WrapCObject(env, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      out_options,
+      internal::LiteRtOptionsPtrBuilder::Build(cc_options,
+                                               env_wrap.GetHolder()));
+  return kLiteRtStatusOk;
+}
+
+TEST_F(DispatchApiRunOptionsTest,
+       PerInvokePerformanceModeLifecycleAndValidation) {
+  std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData> parsed;
+  EXPECT_EQ(ParseGoogleTensorOptions(LrtGetRuntimeContext(),
+                                     /*options=*/nullptr, parsed),
+            kLiteRtStatusOk);
+  EXPECT_FALSE(parsed.has_value());
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compile_gt_opts,
+                              GoogleTensorOptions::Create());
+  compile_gt_opts.SetPerformanceMode(
+      GoogleTensorOptions::PerformanceMode::kPowerSaver);
+  internal::LiteRtOptionsPtr compile_c_opts;
+  LITERT_ASSERT_OK(BuildLiteRtOptionsFromGoogleTensorOptions(
+      env(), compile_gt_opts, compile_c_opts));
+
+  LiteRtDispatchDeviceContext custom_context = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), compile_c_opts.get(), &custom_context));
+
+  LiteRtDispatchInvocationContext icontext = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), custom_context,
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+      &icontext));
+
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "1");
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto burst_gt_opts,
+                              GoogleTensorOptions::Create());
+  burst_gt_opts.SetPerformanceMode(
+      GoogleTensorOptions::PerformanceMode::kBurst);
+  internal::LiteRtOptionsPtr burst_c_opts;
+  LITERT_ASSERT_OK(BuildLiteRtOptionsFromGoogleTensorOptions(
+      env(), burst_gt_opts, burst_c_opts));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(icontext, burst_c_opts.get()));
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "5");
+
+  LiteRtOptions empty_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOptions(&empty_opts));
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(icontext, empty_opts));
+  LiteRtDestroyOptions(empty_opts);
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "1");
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(icontext));
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextDestroy(custom_context));
+
+  // Default graph: reject invalid payloads, override, then reset to kBalanced.
+  LiteRtDispatchInvocationContext default_icontext = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), device_context(),
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+      &default_icontext));
+
+  auto env_wrap = Environment::WrapCObject(env(), OwnHandle::kNo);
+  for (std::string bad_toml :
+       {"performance_mode = invalid_int", "performance_mode = 99"}) {
+    SCOPED_TRACE(bad_toml);
+    LITERT_ASSERT_OK_AND_ASSIGN(auto cc_options, Options::Create());
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto opaque_options,
+        OpaqueOptions::Create(LrtGoogleTensorOptionsGetIdentifier(),
+                              bad_toml.data(), [](void*) {}));
+    LITERT_ASSERT_OK(cc_options.AddOpaqueOptions(std::move(opaque_options)));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto bad_c_opts, internal::LiteRtOptionsPtrBuilder::Build(
+                             cc_options, env_wrap.GetHolder()));
+    EXPECT_EQ(LiteRtDispatchInvocationContextSetOptions(default_icontext,
+                                                        bad_c_opts.get()),
+              kLiteRtStatusErrorInvalidArgument);
+    LiteRtDispatchDeviceContext rejected_context = nullptr;
+    EXPECT_EQ(LiteRtDispatchDeviceContextCreate(
+                  LrtGetRuntimeContext(), bad_c_opts.get(), &rejected_context),
+              kLiteRtStatusErrorInvalidArgument);
+    EXPECT_EQ(rejected_context, nullptr);
+  }
+  EXPECT_EQ(default_icontext->graph()->ApplyRunPerformanceMode(
+                static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(6)),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(default_icontext->graph()->GetAppliedAnnotation(
+                "edgetpu_performance_mode"),
+            std::nullopt);
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextSetOptions(
+      default_icontext, burst_c_opts.get()));
+  EXPECT_EQ(default_icontext->graph()->GetAppliedAnnotation(
+                "edgetpu_performance_mode"),
+            "5");
+
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(default_icontext, nullptr));
+  EXPECT_EQ(default_icontext->graph()->GetAppliedAnnotation(
+                "edgetpu_performance_mode"),
+            "2");
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(default_icontext));
+}
+
+TEST_F(DispatchApiRunOptionsTest,
+       MultiInvocationContextSharedGraphAppliesContextSpecificRunOptions) {
+  LiteRtDispatchInvocationContext icontext_burst = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), device_context(),
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+      &icontext_burst));
+  auto* graph = icontext_burst->graph();
+
+  LiteRtDispatchInvocationContext icontext_saver = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreateFromGraph(
+      device_context(), graph, &icontext_saver));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto burst_gt, GoogleTensorOptions::Create());
+  burst_gt.SetPerformanceMode(GoogleTensorOptions::PerformanceMode::kBurst);
+  internal::LiteRtOptionsPtr burst_c_opts;
+  LITERT_ASSERT_OK(BuildLiteRtOptionsFromGoogleTensorOptions(
+      env(), burst_gt, burst_c_opts));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto saver_gt, GoogleTensorOptions::Create());
+  saver_gt.SetPerformanceMode(
+      GoogleTensorOptions::PerformanceMode::kPowerSaver);
+  internal::LiteRtOptionsPtr saver_c_opts;
+  LITERT_ASSERT_OK(
+      BuildLiteRtOptionsFromGoogleTensorOptions(env(), saver_gt, saver_c_opts));
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextSetOptions(
+      icontext_burst, burst_c_opts.get()));
+  EXPECT_EQ(graph->GetAppliedAnnotation("edgetpu_performance_mode"), "5");
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextSetOptions(
+      icontext_saver, saver_c_opts.get()));
+  EXPECT_EQ(graph->GetAppliedAnnotation("edgetpu_performance_mode"), "1");
+
+  (void)icontext_burst->Invoke();
+  EXPECT_EQ(graph->GetAppliedAnnotation("edgetpu_performance_mode"), "5");
+
+  (void)icontext_saver->Invoke();
+  EXPECT_EQ(graph->GetAppliedAnnotation("edgetpu_performance_mode"), "1");
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(icontext_saver));
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(icontext_burst));
 }
 
 }  // namespace

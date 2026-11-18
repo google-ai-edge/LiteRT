@@ -207,6 +207,11 @@ LiteRtStatus LrtCreateGoogleTensorOptionsFromToml(
         } else if (key == "performance_mode") {
           LITERT_ASSIGN_OR_RETURN(auto val,
                                   litert::internal::ParseTomlInt(value));
+          if (val <
+                  kLiteRtGoogleTensorOptionsPerformanceModeExtremePowerSaver ||
+              val > kLiteRtGoogleTensorOptionsPerformanceModeBurst) {
+            return kLiteRtStatusErrorInvalidArgument;
+          }
           options_ref.performance_mode =
               static_cast<LiteRtGoogleTensorOptionsPerformanceMode>(val);
         } else if (key == "op_filters_proto") {

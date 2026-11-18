@@ -33,8 +33,13 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+#include "litert/c/options/google/litert_google_tensor_privileged_options_type.h"
+#include "litert/vendors/google_tensor/dispatch/google/google_tensor_privileged_options_utils.h"
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_macros.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_utils.h"
@@ -339,7 +344,67 @@ LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtDispatchInvocationContextT::SetRunOptions(
+    LiteRtOptions options) {
+  std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>
+      gt_options;
+  if (options != nullptr) {
+    LITERT_RETURN_IF_ERROR(gt::ParseGoogleTensorOptions(
+        device_context_->runtime_context(), options, gt_options));
+  }
+
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  bool handled_privileged = false;
+  LITERT_RETURN_IF_ERROR(gt::SetGoogleTensorPrivilegedRunOptions(
+      device_context_->runtime_context(), options,
+      /*has_unprivileged_options=*/gt_options.has_value(), graph_,
+      run_privileged_options_, handled_privileged));
+  if (handled_privileged) {
+    run_performance_mode_ = std::nullopt;
+    return kLiteRtStatusOk;
+  }
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+
+  if (gt_options.has_value()) {
+    if (!graph_->CanUseOptionsKind(
+            LiteRtDispatchGraphT::OptionsKind::kGoogleTensor)) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Cannot apply GoogleTensorOptions to a graph configured with "
+                 "conflicting vendor options");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+    if (!gt_options->input_coherency_map.empty() ||
+        !gt_options->output_coherency_map.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "GoogleTensorOptions input/output coherency cannot be changed "
+                 "per invocation and will be ignored");
+    }
+  }
+
+  std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode =
+      gt_options.has_value() ? gt_options->performance_mode : std::nullopt;
+  LITERT_RETURN_IF_ERROR(graph_->ApplyRunPerformanceMode(performance_mode));
+  if (gt_options.has_value()) {
+    graph_->TrySetOptionsKind(LiteRtDispatchGraphT::OptionsKind::kGoogleTensor);
+  }
+  run_performance_mode_ = performance_mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::ApplyRunOptionsToGraph() {
+#if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  if (graph_->options_kind() ==
+      LiteRtDispatchGraphT::OptionsKind::kVendorExtension) {
+    return gt::ApplyGoogleTensorPrivilegedRunOptionsToGraph(
+        graph_, run_privileged_options_);
+  }
+#endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
+  return graph_->ApplyRunPerformanceMode(run_performance_mode_);
+}
+
 LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
+  LITERT_RETURN_IF_ERROR(ApplyRunOptionsToGraph());
+
   GT_LOG_RETURN_IF_SB_ERROR(
       thrInvocationContextPrepareForInvoke(thr_invocation_context_,
                                            /*create_output_sync_fence=*/false),
@@ -428,12 +493,12 @@ LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  LITERT_RETURN_IF_ERROR(ApplyRunOptionsToGraph());
+
   bool use_vendor_preferred_fence = false;
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
-  if (const auto& options = device_context_->GetGoogleTensorPrivilegedOptions();
-      options.has_value()) {
-    use_vendor_preferred_fence = options->use_vendor_preferred_fence;
-  }
+  use_vendor_preferred_fence = gt::ShouldUseVendorPreferredFence(
+      device_context_, run_privileged_options_);
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
   if (use_vendor_preferred_fence) {
     if (!vendor_preferred_fence_supported_) {
