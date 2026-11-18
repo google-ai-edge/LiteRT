@@ -609,12 +609,15 @@ class OpInfo:
     op_name: The name of the op.
     subgraph_op_index: The position of the op in the subgraph.
     op_quant_config: The quantization configuration for the op.
+    stream_weights: Whether to stream/defer weight quantization to minimize
+      memory.
   """
 
   op: OperatorT
   op_name: TFLOperationName
   subgraph_op_index: int  # Position of the op in the subgraph.
   op_quant_config: OpQuantizationConfig
+  stream_weights: bool = False
 
 
 # Data classes used by model modifier.

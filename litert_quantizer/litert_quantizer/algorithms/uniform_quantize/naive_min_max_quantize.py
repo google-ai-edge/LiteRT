@@ -106,6 +106,9 @@ def get_tensor_quant_params(
   if tensor_content is None:
     return quant_params
 
+  if op_info is not None and getattr(op_info, "stream_weights", False):
+    return quant_params
+
   quantized_vars = uniform_quantize_tensor.uniform_quantize(
       tensor_content,
       quant_params,
