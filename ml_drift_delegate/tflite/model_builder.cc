@@ -6057,8 +6057,131 @@ class TopKOperationParser : public TFLiteOperationParser {
   }
 };
 
+absl::Status PreCheckTransposeConvInput(const TfLiteContext* context,
+                                        const TfLiteNode* tflite_node,
+                                        int input_idx,
+                                        const TfLiteTensor* output_tensor) {
+  const TfLiteTensor* input_tensor = nullptr;
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, input_idx, &input_tensor));
+  if (!tflite::IsConstantTensor(input_tensor)) {
+    return PreCheckReadValue(context, tflite_node, input_idx);
+  }
+  ABSL_RETURN_IF_ERROR(
+      PreCheckConstInputForGraph(input_tensor, "TRANSPOSE_CONV"));
+  if (input_tensor->type == kTfLiteInt32 || input_tensor->type == kTfLiteBool) {
+    return absl::UnimplementedError(
+        "TRANSPOSE_CONV: unsupported constant input tensor type.");
+  }
+  if (input_tensor->data.raw_const == nullptr) {
+    return absl::InvalidArgumentError("input constant tensor has no data.");
+  }
+  if (input_tensor->dims->size != 4) {
+    return absl::InvalidArgumentError(
+        "TRANSPOSE_CONV: constant input tensor must be 4D.");
+  }
+  if (input_tensor->type != output_tensor->type &&
+      !(input_tensor->type == kTfLiteFloat16 &&
+        output_tensor->type == kTfLiteFloat32) &&
+      !(input_tensor->quantization.type == kTfLiteAffineQuantization &&
+        output_tensor->type == kTfLiteFloat32)) {
+    return absl::InvalidArgumentError(
+        "Input and output types must match for TransposeConv.");
+  }
+  return absl::OkStatus();
+}
+
+absl::Status PreCheckTransposeConvBias(const TfLiteContext* context,
+                                       const TfLiteNode* tflite_node,
+                                       int bias_idx,
+                                       const TfLiteTensor* output_tensor) {
+  if (tflite_node->inputs->size <= bias_idx ||
+      tflite_node->inputs->data[bias_idx] < 0) {
+    return absl::OkStatus();
+  }
+  const TfLiteTensor* bias_tensor = nullptr;
+  ABSL_RETURN_IF_ERROR(
+      PreGetInputTensor(context, tflite_node, bias_idx, &bias_tensor));
+  if (tflite::IsConstantTensor(bias_tensor)) {
+    ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+        dummy_bias;
+    return PreCheckReadTensor(context, tflite_node, bias_idx, &dummy_bias);
+  }
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, bias_idx));
+  ABSL_RETURN_IF_ERROR(
+      CheckAllDimensions<::ml_drift::Linear>(bias_tensor->dims));
+  if (bias_tensor->type != output_tensor->type) {
+    return absl::InvalidArgumentError(
+        "Runtime bias and output types must match for TransposeConv.");
+  }
+  const ::ml_drift::BHWC output_shape = ExtractTensorShape(output_tensor);
+  const int bias_elements = ::tflite::NumElements(bias_tensor);
+  if (bias_elements != output_shape.c && bias_elements != 1) {
+    return absl::InvalidArgumentError(
+        "Runtime bias size must match output channels or be 1.");
+  }
+  return absl::OkStatus();
+}
+
+const ::ml_drift::Value* AddTransposeConvConstInputIfNeeded(
+    int input_idx, const ModelBuilderOptions& options, ObjectReader* reader) {
+  if (!reader->IsConstantTensor(input_idx)) {
+    return nullptr;
+  }
+  const bool read_float16_as_float32 =
+      !options.enable_reduced_precision &&
+      reader->GetOutputTensor(0)->type == kTfLiteFloat32 &&
+      reader->GetInputTensor(input_idx)->type == kTfLiteFloat16;
+  return read_float16_as_float32
+             ? reader->AddFloat16ConstAsFloat32Input(input_idx, /*layout=*/{})
+             : reader->AddConstInput(input_idx, /*layout=*/{});
+}
+
+::ml_drift::Value* ReadAndReshapeRuntimeBias(int bias_idx,
+                                             ::ml_drift::GraphFloat32* graph,
+                                             ObjectReader* reader) {
+  ::ml_drift::Value* bias = reader->ReadValue(bias_idx);
+  const int bias_channels = bias->tensor.shape.DimensionsProduct();
+  const ::ml_drift::BHWC broadcast_shape(1, 1, 1, bias_channels);
+  if (bias->tensor.shape == broadcast_shape) {
+    return bias;
+  }
+  ::ml_drift::Node* reshape_node = graph->NewNode();
+  reshape_node->operation.type = ToString(::ml_drift::OperationType::kReshape);
+  ::ml_drift::ReshapeAttributes reshape_attr;
+  reshape_attr.new_shape = broadcast_shape;
+  reshape_node->operation.attributes = std::move(reshape_attr);
+  graph->AddConsumer(reshape_node->id, bias->id);
+  ::ml_drift::Value* reshaped_bias = graph->NewValue();
+  reshaped_bias->tensor.type = bias->tensor.type;
+  reshaped_bias->tensor.shape = broadcast_shape;
+  graph->SetProducer(reshape_node->id, reshaped_bias->id);
+  return reshaped_bias;
+}
+
+void EmitRuntimeBiasAdd(::ml_drift::Node* conv_node,
+                        ::ml_drift::Value* reshaped_bias,
+                        ::ml_drift::GraphFloat32* graph, ObjectReader* reader) {
+  ::ml_drift::Value* conv_out = graph->NewValue();
+  conv_out->tensor.shape = ExtractTensorShape(reader->GetOutputTensor(0));
+  conv_out->tensor.type = graph->FindInputs(conv_node->id)[0]->tensor.type;
+  graph->SetProducer(conv_node->id, conv_out->id);
+
+  ::ml_drift::Node* add_node = graph->NewNode();
+  add_node->operation.type = ToString(::ml_drift::OperationType::kAdd);
+  ::ml_drift::ElementwiseAttributes add_attr;
+  add_node->operation.attributes = std::move(add_attr);
+  graph->AddConsumer(add_node->id, conv_out->id);
+  graph->AddConsumer(add_node->id, reshaped_bias->id);
+  reader->AddOutputs(add_node);
+}
+
 class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
  public:
+  explicit TransposeConvBuiltinOperationParser(
+      const ModelBuilderOptions& options)
+      : options_(options) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
@@ -6066,19 +6189,21 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
 
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    TfLiteTensor* output_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &output_tensor));
 
-    const auto* params = static_cast<const TfLiteTransposeConvParams*>(
-        tflite_node->builtin_data);
-    if (!params) {
-      return absl::InvalidArgumentError("Missing TfLiteTransposeConvParams.");
-    }
+    ABSL_RETURN_IF_ERROR(
+        PreCheckTransposeConvInput(context, tflite_node, 2, output_tensor));
 
-    const int runtime_inputs =
-        GetNumberOfRuntimeInputsForNode(context, tflite_node);
-    if (runtime_inputs == 2) {
+    const TfLiteTensor* weights_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &weights_tensor));
+    if (!tflite::IsConstantTensor(weights_tensor)) {
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+      ABSL_RETURN_IF_ERROR(
+          CheckAllDimensions<::ml_drift::OHWI>(weights_tensor->dims));
     } else {
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
           dummy_weights;
@@ -6086,18 +6211,31 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
     }
 
+    ABSL_RETURN_IF_ERROR(
+        PreCheckTransposeConvBias(context, tflite_node, 3, output_tensor));
+
     return absl::OkStatus();
   }
 
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const ::ml_drift::Value* const_input =
+        AddTransposeConvConstInputIfNeeded(2, options_, reader);
+    const bool has_bias = reader->IsNodeInputTensorPresent(3);
+    const bool has_runtime_bias = has_bias && !reader->IsConstantTensor(3);
+    ::ml_drift::Value* reshaped_bias =
+        has_runtime_bias ? ReadAndReshapeRuntimeBias(3, graph, reader)
+                         : nullptr;
+
     auto* node = graph->NewNode();
     node->operation.type =
         ToString(::ml_drift::OperationType::kConvolutionTransposed);
-    ::ml_drift::Value* input = reader->ReadValue(2);
-    graph->AddConsumer(node->id, input->id);
-    reader->AddOutputs(node);
+    if (const_input != nullptr) {
+      graph->AddConsumer(node->id, const_input->id);
+    } else {
+      reader->AddInput(node, 2);
+    }
 
     const auto* params = static_cast<const TfLiteTransposeConvParams*>(
         tflite_node->builtin_data);
@@ -6106,49 +6244,92 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     attr.stride =
         params ? ::ml_drift::HW(params->stride_height, params->stride_width)
                : ::ml_drift::HW(1, 1);
-    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
-    if (runtime_inputs == 2) {
+    if (!reader->IsConstantTensor(1)) {
       reader->AddInput(node, 1);
       auto weights_shape = graph->FindInputs(node->id)[1]->tensor.shape;
       attr.weights.shape = ::ml_drift::OHWI(weights_shape.b, weights_shape.h,
                                             weights_shape.w, weights_shape.c);
-    } else {  // runtime_inputs == 1;
+    } else {
       reader->ReadTensor(1, &attr.weights, ReadTensorFlags::kExtraBytes);
     }
-    if (reader->IsNodeInputTensorPresent(3)) {
+    if (has_bias && !has_runtime_bias) {
       reader->ReadTensor(3, &attr.bias, ReadTensorFlags::kNoExtraBytes);
     }
 
     UpdatePadding(params->padding, graph->FindInputs(node->id)[0]->tensor.shape,
                   &attr);
     node->operation.attributes = std::move(attr);
+
+    if (has_runtime_bias) {
+      EmitRuntimeBiasAdd(node, reshaped_bias, graph, reader);
+    } else {
+      reader->AddOutputs(node);
+    }
   }
+
+ private:
+  ModelBuilderOptions options_;
 };
 
 class TransposeConvCustomOperationParser : public TFLiteOperationParser {
  public:
+  explicit TransposeConvCustomOperationParser(
+      const ModelBuilderOptions& options)
+      : options_(options) {}
+
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+    TfLiteTensor* output_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetOutputTensor(context, tflite_node, 0, &output_tensor));
+
+    ABSL_RETURN_IF_ERROR(
+        PreCheckTransposeConvInput(context, tflite_node, 0, output_tensor));
+
+    const TfLiteTensor* weights_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &weights_tensor));
+    if (!tflite::IsConstantTensor(weights_tensor)) {
+      return absl::InvalidArgumentError("weights must be a constant tensor.");
+    }
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         dummy_weights;
     ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
+
+    ABSL_RETURN_IF_ERROR(
+        PreCheckTransposeConvBias(context, tflite_node, 2, output_tensor));
+
+    if (GetNumberOfRuntimeInputsForNode(context, tflite_node) == 0) {
+      return absl::InvalidArgumentError(
+          "Convolution2DTransposeBias requires at least one runtime input.");
+    }
     return absl::OkStatus();
   }
 
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    const ::ml_drift::Value* const_input =
+        AddTransposeConvConstInputIfNeeded(0, options_, reader);
+    const bool has_bias = reader->IsNodeInputTensorPresent(2);
+    const bool has_runtime_bias = has_bias && !reader->IsConstantTensor(2);
+    ::ml_drift::Value* reshaped_bias =
+        has_runtime_bias ? ReadAndReshapeRuntimeBias(2, graph, reader)
+                         : nullptr;
+
     auto* node = graph->NewNode();
     node->operation.type =
         ToString(::ml_drift::OperationType::kConvolutionTransposed);
-    reader->AddInput(node, 0);
-    reader->AddOutputs(node);
+    if (const_input != nullptr) {
+      graph->AddConsumer(node->id, const_input->id);
+    } else {
+      reader->AddInput(node, 0);
+    }
 
     const auto* params = static_cast<const TfLiteTransposeConvParams*>(
         tflite_node->custom_initial_data);
@@ -6158,14 +6339,23 @@ class TransposeConvCustomOperationParser : public TFLiteOperationParser {
         params ? ::ml_drift::HW(params->stride_height, params->stride_width)
                : ::ml_drift::HW(1, 1);
     reader->ReadTensor(1, &attr.weights, ReadTensorFlags::kExtraBytes);
-    if (reader->IsNodeInputTensorPresent(2)) {
+    if (has_bias && !has_runtime_bias) {
       reader->ReadTensor(2, &attr.bias, ReadTensorFlags::kNoExtraBytes);
     }
 
     UpdatePadding(params ? params->padding : kTfLitePaddingUnknown,
                   graph->FindInputs(node->id)[0]->tensor.shape, &attr);
     node->operation.attributes = std::move(attr);
+
+    if (has_runtime_bias) {
+      EmitRuntimeBiasAdd(node, reshaped_bias, graph, reader);
+    } else {
+      reader->AddOutputs(node);
+    }
   }
+
+ private:
+  ModelBuilderOptions options_;
 };
 
 class TransposeOperationParser : public TFLiteOperationParser {
@@ -7430,7 +7620,7 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
     case kTfLiteBuiltinTranspose:
       return std::make_unique<TransposeOperationParser>();
     case kTfLiteBuiltinTransposeConv:
-      return std::make_unique<TransposeConvBuiltinOperationParser>();
+      return std::make_unique<TransposeConvBuiltinOperationParser>(options);
     case kTfLiteBuiltinUnpack:
       return std::make_unique<UnpackOperationParser>();
     case kTfLiteBuiltinStablehloClamp:
@@ -7458,7 +7648,7 @@ std::unique_ptr<TFLiteOperationParser> NewOperationParser(
         return std::make_unique<RoPEParser>();
       }
       if (custom_name == "Convolution2DTransposeBias") {
-        return std::make_unique<TransposeConvCustomOperationParser>();
+        return std::make_unique<TransposeConvCustomOperationParser>(options);
       }
       if (custom_name == "MaxPoolingWithArgmax2D") {
         return std::make_unique<Pooling2DOperationParser>(
