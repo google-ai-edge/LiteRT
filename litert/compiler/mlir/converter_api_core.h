@@ -60,8 +60,13 @@ struct ConvertToTFLConfig {
   // If false, downcast x64 tensors and inputs to x32.
   bool enable_x64 = true;
 
-  // If true, enable unsafe single batch rank reduction.
-  bool unsafe_single_batch_rank_reduction = false;
+  // If true, run the rank reduction pass (fold unit dims out of rank > 4 ops,
+  // assuming the exported batch size is kept).
+  bool rank_reduction = false;
+
+  // If true, run the GPU compatibility pass (GPU-delegate-specific rewrites
+  // with unbounded materialization; GPU-only).
+  bool unsafe_gpu_compatibility = false;
 
   // If true, enables strict QDQ mode.
   bool strict_qdq_mode = false;
