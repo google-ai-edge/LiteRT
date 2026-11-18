@@ -45,6 +45,7 @@ limitations under the License.
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
+#include "tflite/core/macros.h"
 #include "tflite/experimental/resource/initialization_status.h"
 #include "tflite/experimental/resource/resource_base.h"
 #include "tflite/graph_info.h"
@@ -956,6 +957,9 @@ TfLiteStatus Subgraph::Cancel() {
   return kTfLiteError;
 }
 
+#if TFLITE_HAS_ATTRIBUTE(no_sanitize)
+__attribute__((no_sanitize("cfi", "kcfi")))
+#endif
 bool Subgraph::IsCancelled() {
   return (check_cancelled_func_ != nullptr) &&
          (*check_cancelled_func_)(cancellation_data_);
@@ -1810,8 +1814,7 @@ TfLiteStatus Subgraph::InvokeImpl() {
     // before executing the node.
     MayAllocateOpOutput(&node);
 
-    if (check_cancelled_func_ != nullptr &&
-        check_cancelled_func_(cancellation_data_)) {
+    if (IsCancelled()) {
       ReportError("Client requested cancel during Invoke()");
       return kTfLiteError;
     }
