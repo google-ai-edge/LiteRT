@@ -23,11 +23,15 @@
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
+#include "litert/test/matchers.h"
 
 namespace litert::internal {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::litert::IsError;
+using ::testing::litert::IsOk;
 
 TEST(SelectOpTest, SimpleSelectSameShape) {
   LiteRtOpT op;
@@ -132,8 +136,9 @@ TEST(SelectOpTest, ReferenceSelectSameShape) {
   std::vector<float> out(4);
   int32_t dims[] = {4};
 
-  ReferenceSelect(cond, dims, 1, a.data(), dims, 1, b.data(), dims, 1,
-                  out.data(), dims, 1);
+  EXPECT_THAT(ReferenceSelect(cond, dims, 1, a.data(), dims, 1, b.data(), dims,
+                              1, out.data(), dims, 1),
+              IsOk());
 
   EXPECT_THAT(out, ElementsAre(1.0f, 20.0f, 3.0f, 40.0f));
 }
@@ -147,8 +152,9 @@ TEST(SelectOpTest, ReferenceSelectBroadcastCondition) {
   int32_t data_dims[] = {2, 2};
   int32_t out_dims[] = {2, 2};
 
-  ReferenceSelect(cond, cond_dims, 2, a.data(), data_dims, 2,
-                  b.data(), data_dims, 2, out.data(), out_dims, 2);
+  EXPECT_THAT(ReferenceSelect(cond, cond_dims, 2, a.data(), data_dims, 2,
+                              b.data(), data_dims, 2, out.data(), out_dims, 2),
+              IsOk());
 
   EXPECT_THAT(out, ElementsAre(1.0f, 2.0f, 30.0f, 40.0f));
 }
@@ -164,6 +170,101 @@ TEST(SelectOpTest, RejectsInvalidOutputShapesCount) {
   std::vector<Dims> two_outputs(2);
   EXPECT_EQ(InferSelect(op, absl::MakeSpan(input_shapes), two_outputs),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(SelectOpTest, ReferenceSelectEmptyShapesWithNullBuffersSucceeds) {
+  const int32_t empty_1d[] = {0};
+
+  EXPECT_THAT(ReferenceSelect<float>(/*cond_data=*/nullptr, empty_1d, 1,
+                                     /*a_data=*/nullptr, empty_1d, 1,
+                                     /*b_data=*/nullptr, empty_1d, 1,
+                                     /*output_data=*/nullptr, empty_1d, 1),
+              IsOk());
+}
+
+TEST(SelectOpTest, ReferenceSelectRejectsIncompatibleOutputShape) {
+  const bool cond[] = {true, false};
+  const float a[] = {1.0f, 2.0f};
+  const float b[] = {3.0f, 4.0f};
+  float out[2] = {-5.0f, -5.0f};
+  const int32_t dims2[] = {2};
+  const int32_t dims3[] = {3};
+
+  EXPECT_THAT(ReferenceSelect<float>(cond, dims2, 1, a, dims2, 1, b, dims3, 1,
+                                     out, dims2, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f));
+}
+
+TEST(SelectOpTest, ReferenceSelectSupportsRankAboveEight) {
+  const int32_t dims[9] = {1, 1, 1, 1, 1, 1, 1, 1, 2};
+  const bool cond[2] = {true, false};
+  const float a[2] = {1.0f, 2.0f};
+  const float b[2] = {10.0f, 20.0f};
+  float out[2] = {0.0f, 0.0f};
+
+  EXPECT_THAT(ReferenceSelect<float>(cond, dims, 9, a, dims, 9, b, dims, 9, out,
+                                     dims, 9),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(1.0f, 20.0f));
+}
+
+TEST(SelectOpTest, ReferenceSelectBroadcastsAllThreeOperandsInOnePass) {
+  const int32_t cond_dims[] = {2, 1, 1};
+  const int32_t a_dims[] = {1, 2, 1};
+  const int32_t b_dims[] = {1, 1, 2};
+  const int32_t out_dims[] = {2, 2, 2};
+  const bool cond[] = {true, false};
+  const int32_t a[] = {10, 20};
+  const int32_t b[] = {100, 200};
+  std::vector<int32_t> out(8, -1);
+
+  EXPECT_THAT(ReferenceSelect<int32_t>(
+                  ConstTensorView<bool>{cond, cond_dims},
+                  ConstTensorView<int32_t>{a, a_dims},
+                  ConstTensorView<int32_t>{b, b_dims},
+                  TensorView<int32_t>{absl::MakeSpan(out), out_dims}),
+              IsOk());
+  EXPECT_THAT(out, ElementsAre(10, 10, 20, 20, 100, 200, 100, 200));
+}
+
+TEST(SelectOpTest, ReferenceSelectRejectsOverExpandedOutputAndSmallBuffers) {
+  const int32_t one[] = {1};
+  const int32_t expanded[] = {2, 3};
+  const bool cond[] = {true};
+  const float a[] = {1.0f};
+  const float b[] = {2.0f};
+  std::vector<float> out(6, -5.0f);
+
+  EXPECT_THAT(
+      ReferenceSelect<float>(ConstTensorView<bool>{cond, one},
+                             ConstTensorView<float>{a, one},
+                             ConstTensorView<float>{b, one},
+                             TensorView<float>{absl::MakeSpan(out), expanded}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      ReferenceSelect<float>(ConstTensorView<bool>{cond, one},
+                             ConstTensorView<float>{a, one},
+                             ConstTensorView<float>{b, one},
+                             TensorView<float>{absl::Span<float>(), one}),
+      IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+TEST(SelectOpTest, ReferenceSelectRawPointersRejectInvalidRankAndNullBuffers) {
+  const bool cond[] = {true};
+  const float a[] = {1.0f};
+  const float b[] = {2.0f};
+  float out[] = {-5.0f};
+  const int32_t dims[] = {1};
+
+  EXPECT_THAT(ReferenceSelect<float>(cond, dims, /*cond_rank=*/-1, a, dims, 1,
+                                     b, dims, 1, out, dims, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(ReferenceSelect<float>(/*cond_data=*/nullptr, dims, 1, a, dims, 1,
+                                     b, dims, 1, out, dims, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(out, ElementsAre(-5.0f));
 }
 
 }  // namespace
