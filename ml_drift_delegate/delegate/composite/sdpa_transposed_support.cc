@@ -49,6 +49,13 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
     // dispatch fails with CL_INVALID_WORK_GROUP_SIZE. With 2 heads per work
     // group the limit is 384 work items and decode is as fast (b/578633071).
     tuning.max_heads_per_work_group = 2;
+    // The scores of every key a work item handles per chunk are in registers
+    // too: with 2 heads per work group and 4 keys per work item (a split of
+    // more than 768 keys, e.g. an 8K cache in 10 splits) Adreno 830 limits the
+    // kernel to 192 work items, so tuning finds no work-group size for the
+    // 256-work-item kernel. With at most 2 keys per work item a split takes
+    // more chunks instead.
+    tuning.max_keys_per_thread = 2;
   }
   if (gpu_info.IsApiWebGpu() &&
       gpu_info.webgpu_info.max_compute_workgroup_storage_size > 0) {
@@ -73,8 +80,9 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
   return tuning;
 }
 
-int MaxFlashDecodeKeysPerThread(int heads, int threads) {
-  return std::clamp(2048 / (heads * threads), 1, 4);
+int MaxFlashDecodeKeysPerThread(const FlashDecodeTuning& tuning, int heads) {
+  return std::clamp(2048 / (heads * tuning.threads), 1,
+                    std::max(1, tuning.max_keys_per_thread));
 }
 
 int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
@@ -92,7 +100,7 @@ int FlashDecodeLocalMemoryBytes(const FlashDecodeTuning& tuning, int heads,
                               : threads * 4 * kFloatBytes;
     return q_local + p_local + red_local + acc_local;
   }
-  const int chunk = threads * MaxFlashDecodeKeysPerThread(heads, threads);
+  const int chunk = threads * MaxFlashDecodeKeysPerThread(tuning, heads);
   const int q_local = heads * slices * 4 * kFloatBytes;
   const int p_local = heads * chunk * kFloatBytes;
   const int red_local = heads * threads * kFloatBytes;

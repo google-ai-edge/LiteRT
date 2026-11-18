@@ -39,6 +39,11 @@ struct FlashDecodeTuning {
   // Work items that combine the per-work-item values in the first stage of a
   // work-group reduction. Every work item then does the second stage itself.
   int reduce_threads = 32;
+  // Maximum number of keys scored by each work item per chunk in the portable
+  // work-group reduction kernel. The kernel keeps one score per key and query
+  // head of the work group in registers, so more keys per work item raise its
+  // register use.
+  int max_keys_per_thread = 4;
   // Maximum number of query heads sharing one K/V head to process per work
   // group in the work-group reduction kernel so per-head accumulators stay in
   // registers. Larger GQA groups are partitioned across multiple work groups.
@@ -98,8 +103,8 @@ inline constexpr uint64_t kSimdWorkGroupFullGqaKvBytes = 32ull << 20;
 
 // Keys scored by each work item per chunk of the portable work-group
 // Flash-Decode kernel: at most as many as keep the probabilities of a chunk
-// within 8 KB of local memory.
-int MaxFlashDecodeKeysPerThread(int heads, int threads);
+// within 8 KB of local memory, and at most `tuning.max_keys_per_thread`.
+int MaxFlashDecodeKeysPerThread(const FlashDecodeTuning& tuning, int heads);
 
 // Upper bound of the local memory in bytes used by the work-group Flash-Decode
 // kernel for `heads` query heads per work group and `slices` channel slices

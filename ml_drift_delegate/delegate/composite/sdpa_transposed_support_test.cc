@@ -68,6 +68,39 @@ TEST(SdpaTransposedSupportTest, AdrenoOpenClProcessesAtMostTwoHeadsPerGroup) {
   }
 }
 
+TEST(SdpaTransposedSupportTest, AdrenoOpenClScoresAtMostTwoKeysPerWorkItem) {
+  // With 2 heads per work group and 4 keys per work item the Adreno 830
+  // compiler limits the kernel to 192 work items, fewer than the 256 it is
+  // launched with, so tuning finds no dispatch for 8K+ caches.
+  const ::ml_drift::GpuInfo gpu_info =
+      OpenClGpuInfo(::ml_drift::GpuVendor::kQualcomm);
+  const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
+  EXPECT_EQ(tuning.max_keys_per_thread, 2);
+  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/1), 2);
+  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/2), 2);
+
+  for (const int cache_size : {8192, 16896, 32768}) {
+    const ::ml_drift::BHWC q_shape = QueryShape(/*head_dim=*/256);
+    const ::ml_drift::BHWC k_shape = CacheShape(cache_size, 256);
+    const FlashDecodeConfig config =
+        GetFlashDecodeConfig(gpu_info, q_shape, k_shape);
+    EXPECT_EQ(MaxFlashDecodeKeysPerThread(config.tuning, config.heads), 2)
+        << "cache_size=" << cache_size;
+    EXPECT_TRUE(IsSupportedFlashSdpaShape(gpu_info, q_shape, k_shape))
+        << "cache_size=" << cache_size;
+  }
+}
+
+TEST(SdpaTransposedSupportTest, OtherOpenClGpusScoreUpToFourKeysPerWorkItem) {
+  const ::ml_drift::GpuInfo gpu_info =
+      OpenClGpuInfo(::ml_drift::GpuVendor::kMali);
+  const FlashDecodeTuning tuning = GetFlashDecodeTuning(gpu_info);
+  EXPECT_EQ(tuning.max_keys_per_thread, 4);
+  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/2), 4);
+  // The probabilities of a chunk stay within 8 KB of local memory.
+  EXPECT_EQ(MaxFlashDecodeKeysPerThread(tuning, /*heads=*/4), 2);
+}
+
 TEST(SdpaTransposedSupportTest, OtherOpenClGpusProcessTheWholeGqaGroup) {
   const ::ml_drift::GpuInfo gpu_info =
       OpenClGpuInfo(::ml_drift::GpuVendor::kMali);

@@ -1079,7 +1079,8 @@ std::string GenerateWorkGroupFlashDecodeCode(
   // Keys scored by each work item per chunk: enough for the keys of a split,
   // but at most `MaxFlashDecodeKeysPerThread`, which the local memory budget
   // in `FlashDecodeLocalMemoryBytes` assumes.
-  const int max_keys_per_thread = MaxFlashDecodeKeysPerThread(heads, threads);
+  const int max_keys_per_thread =
+      MaxFlashDecodeKeysPerThread(config.tuning, heads);
   const int split_keys = (cache_size + splits - 1) / splits;
   const int keys_per_thread =
       std::clamp((split_keys + threads - 1) / threads, 1, max_keys_per_thread);
