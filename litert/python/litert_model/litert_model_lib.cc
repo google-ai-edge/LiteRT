@@ -47,6 +47,7 @@
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/core/model/graph_validation.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -63,7 +64,9 @@ using ::litert::internal::GetTflOpCodeInd;
 using ::litert::internal::GetTflOpCodes;
 using ::litert::internal::GetTflOptions;
 using ::litert::internal::GetTflOptions2;
+using ::litert::internal::HasSubgraphRefs;
 using ::litert::internal::kDispatchOpCodeTflInd;
+using ::litert::internal::MarkDead;
 using ::litert::internal::SetTflOpCodeInd;
 using ::litert::internal::SetTflOpCodes;
 using ::litert::internal::SetTflOptions;
@@ -820,12 +823,14 @@ bool EliminateDeadCode(LiteRtModelT& model, LiteRtSubgraphT& subgraph) {
             return output->NumUses() == 0 && !FindOutput(subgraph, *output);
           });
       if (all_unused) {
-        Drop(op);
+        MarkDead(op);
       }
     }
-    // `DCE` deallocates ops without edges; detach their assets first.
+    // `DCE` deallocates ops without edges or subgraph references; detach their
+    // assets first.
     for (LiteRtOp op : subgraph.Ops()) {
-      if (op->Inputs().empty() && op->Outputs().empty()) {
+      if (op->Inputs().empty() && op->Outputs().empty() &&
+          !HasSubgraphRefs(*op)) {
         model.RemoveAssetFromOp(op);
       }
     }
@@ -1253,7 +1258,7 @@ Expected<LiteRtOpT*> OutlineSubgraphToDispatchOp(LiteRtModelT& model,
 
   for (LiteRtOp op : subgraph.Ops()) {
     model.RemoveAssetFromOp(op);
-    Drop(*op);
+    MarkDead(*op);
   }
   LiteRtOpT& dispatch_op = subgraph.EmplaceOp();
   MakeDispatchOp(dispatch_op);

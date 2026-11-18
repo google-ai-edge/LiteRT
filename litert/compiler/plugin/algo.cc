@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
@@ -274,6 +275,39 @@ class GraphSlicer {
   LiteRtOp dispatch_op_ = nullptr;
 };
 
+// True if outlining `partition` from `root` produces at least one dispatch-op
+// input or output edge.
+bool HasBoundaryEdges(const LiteRtSubgraphT& root,
+                      const std::vector<LiteRtOp>& partition) {
+  if (partition.empty()) {
+    return false;
+  }
+  absl::flat_hash_set<const LiteRtOpT*> partition_ops(partition.begin(),
+                                                      partition.end());
+  for (const LiteRtOp op : partition) {
+    for (const LiteRtTensorT* input : op->Inputs()) {
+      if (input != nullptr && !IsConstant(*input) &&
+          (input->DefiningOp() == nullptr ||
+           !partition_ops.contains(input->DefiningOp()))) {
+        return true;
+      }
+    }
+    for (const LiteRtTensorT* output : op->Outputs()) {
+      if (FindOutput(root, *output)) {
+        return true;
+      }
+      if (!IsConstant(*output)) {
+        for (const LiteRtOpT* user : output->Users()) {
+          if (!partition_ops.contains(user)) {
+            return true;
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 //===----------------------------------------------------------------------===//
 // GraphSlicer Implementation
 //===----------------------------------------------------------------------===//
@@ -281,6 +315,14 @@ class GraphSlicer {
 litert::Expected<LiteRtOp> GraphSlicer::SlicePartitionFromGraph(
     LiteRtSubgraphT& root, LiteRtSubgraph slice,
     std::vector<LiteRtOp>& partition) {
+  // Reject partitions that would produce an edgeless dispatch op before
+  // mutating `root` or `slice`: DCE would remove that dispatch op and leave
+  // the caller with a dangling pointer.
+  if (!HasBoundaryEdges(root, partition)) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Partition has no inputs or outputs");
+  }
+
   GraphSlicer slicer(slice);
 
   // Find all inputs used by partition.
@@ -302,7 +344,7 @@ litert::Expected<LiteRtOp> GraphSlicer::SlicePartitionFromGraph(
   }
 
   for (auto* op : partition) {
-    Drop(*op);
+    MarkDead(*op);
   }
 
   // Reuse the storage from the last op in partition.
@@ -313,6 +355,9 @@ litert::Expected<LiteRtOp> GraphSlicer::SlicePartitionFromGraph(
   ABSL_DCHECK(slicer.dispatch_op_->Outputs().empty());
   MakeDispatchOp(*slicer.dispatch_op_);
   slicer.RerouteTensorsThroughCustomOp(root);
+
+  ABSL_DCHECK(!slicer.dispatch_op_->Inputs().empty() ||
+              !slicer.dispatch_op_->Outputs().empty());
 
   DCE(root);
 
@@ -476,12 +521,12 @@ Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
   return GraphSlicer::SlicePartitionFromGraph(root, slice, partition);
 }
 
-Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
-                              LiteRtSubgraph source_subgraph) {
+Expected<void> CheckInlinable(const LiteRtOpT& destination_op,
+                              const LiteRtSubgraphT& source_subgraph) {
   // Check if the input and output tensors of the destination op are the same as
   // the input and output tensors of the source subgraph.
-  if (destination_op.Inputs().size() != source_subgraph->Inputs().size() ||
-      destination_op.Outputs().size() != source_subgraph->Outputs().size()) {
+  if (destination_op.Inputs().size() != source_subgraph.Inputs().size() ||
+      destination_op.Outputs().size() != source_subgraph.Outputs().size()) {
     return Unexpected(
         kLiteRtStatusErrorInvalidArgument,
         "Input/output tensors of destination op and source subgraph "
@@ -533,23 +578,32 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
   };
 
   for (int i = 0; i < destination_op.Inputs().size(); ++i) {
-    LITERT_RETURN_IF_ERROR(verify_tensor_type(
-        *destination_op.Inputs().at(i), *source_subgraph->Inputs().at(i)));
+    LITERT_RETURN_IF_ERROR(verify_tensor_type(*destination_op.Inputs().at(i),
+                                              *source_subgraph.Inputs().at(i)));
   }
   for (int i = 0; i < destination_op.Outputs().size(); ++i) {
     LITERT_RETURN_IF_ERROR(verify_tensor_type(
-        *destination_op.Outputs().at(i), *source_subgraph->Outputs().at(i)));
+        *destination_op.Outputs().at(i), *source_subgraph.Outputs().at(i)));
   }
 
+  return {};
+}
+
+Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
+                              LiteRtSubgraph source_subgraph) {
+  LITERT_RETURN_IF_ERROR(CheckInlinable(destination_op, *source_subgraph));
+
   // Find the main subgraph containing the destination op.
-  LiteRtSubgraphT* main_subgraph;
+  LiteRtSubgraphT* main_subgraph = nullptr;
   for (auto& subgraph : model.Subgraphs()) {
-    for (auto& op : subgraph->Ops()) {
-      if (op == &destination_op) {
-        main_subgraph = subgraph;
-        break;
-      }
+    if (absl::c_linear_search(subgraph->Ops(), &destination_op)) {
+      main_subgraph = subgraph;
+      break;
     }
+  }
+  if (main_subgraph == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Op to inline is not in any subgraph of the model.");
   }
 
   // Maps of cloned tensors and ops in main subgraph.
@@ -673,10 +727,12 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
     original_output->ClearDefiningOp();
   }
 
-  // Clear the input/ouput tensor of the original composite op, so the
-  // composite op will be removed by DCE.
+  // Detach the composite op and clear its decomposition reference so DCE
+  // removes it.
   destination_op.Inputs().clear();
   destination_op.Outputs().clear();
+  ClearTflOptions(destination_op);
+  destination_op.ClearCustomOptions();
 
   // Clean up the subgraph.
   DCE(*main_subgraph);
