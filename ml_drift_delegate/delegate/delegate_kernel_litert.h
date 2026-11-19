@@ -15,6 +15,7 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_KERNEL_LITERT_H_
 
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -48,6 +49,12 @@ class DelegateKernelLiteRt : public DelegateKernel {
   ~DelegateKernelLiteRt() override = default;
 
   absl::Status Dispatch(TfLiteContext* context) override;
+
+  absl::Status GetRequiredTemporaries(
+      TfLiteContext* context, TfLiteNode* node,
+      TfLiteIntArray** temporaries_array_ptr) override;
+  absl::Status DequantizeInputs(TfLiteContext* context) override;
+  absl::Status QuantizeOutputs(TfLiteContext* context) override;
 
   // Creates a new DelegateKernel which will be stored in TfLiteNode::user_data.
   static absl::StatusOr<DelegateKernelLiteRt*> Create(
@@ -131,6 +138,14 @@ class DelegateKernelLiteRt : public DelegateKernel {
     return runtime_context_;
   }
 
+  bool has_host_memory_buffers() const { return has_host_memory_buffers_; }
+
+  // Returns true if the tensor buffer is an AHardwareBuffer.
+  bool IsAhwbTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
+
+  // Returns true if the tensor buffer is a HostMemory buffer.
+  bool IsHostMemoryTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
+
  protected:
   // A virtual function to update the create info with external tensors.
   // In addition to this, it conducts the following tasks:
@@ -171,6 +186,9 @@ class DelegateKernelLiteRt : public DelegateKernel {
     return DelegateKernel::GetStorageType();
   }
 
+  void set_has_ahwb_tensor_buffers(bool has) { has_ahwb_tensor_buffers_ = has; }
+  void set_has_host_memory_buffers(bool has) { has_host_memory_buffers_ = has; }
+
  private:
   const LiteRtRuntimeContext* runtime_context_;
   LiteRtExternalLiteRtBufferContext buffer_context_ = nullptr;
@@ -208,16 +226,29 @@ class DelegateKernelLiteRt : public DelegateKernel {
       LiteRtExternalLiteRtBufferContext buffer_context,
       TfLiteTensor* tflite_tensor);
 
-  // Processes a single tensor, identified by its TfLiteTensor and IrModel
-  // ValueId, storing the resulting descriptor in out_tensor_descriptor. When
+  // Processes a single tensor, identified by its tensor index and ValueId,
+  // storing the resulting descriptor in out_tensor_descriptor. When
   // graph_tensor_ref is non-null (GraphFloat32 path), its canonical BHWC
   // shape/dtype is used to build the tensor descriptor; otherwise (IrModel
   // path) the descriptor is derived from the TfLiteTensor.
   absl::Status ProcessTensor(
-      TfLiteTensor* tflite_tensor, ::ml_drift::ValueId value_id,
+      TfLiteContext* context, int tensor_idx, ::ml_drift::ValueId value_id,
       const TensorProcessingContext& proc_context,
       ::ml_drift::TensorDescriptor& out_tensor_descriptor,
       const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref);
+
+  // Returns true when `fp_tensor_idx` maps to a boundary per-tensor quantized
+  // (u)int8 tensor in non-external OpenCL mode that is dequantized/quantized
+  // directly inside the ML Drift layout converter shader.
+  bool CanUseGpuQuantizedConversion(
+      TfLiteContext* context, int fp_tensor_idx, ::ml_drift::ValueId value_id,
+      float* out_scale = nullptr, int32_t* out_zero_point = nullptr,
+      TfLiteTensor** out_orig_tensor = nullptr) const;
+
+  // Returns the boundary quantized TfLiteTensor when handled directly on GPU,
+  // or `&context->tensors[tensor_idx]` otherwise.
+  TfLiteTensor* ResolveBoundaryTensor(TfLiteContext* context, int tensor_idx,
+                                      ::ml_drift::ValueId value_id) const;
 
   struct BoundGpuTensor {
     GpuMemoryHandle gpu_memory = nullptr;
@@ -236,9 +267,6 @@ class DelegateKernelLiteRt : public DelegateKernel {
   absl::Status MarkToFlushIfGlBuffer(TfLiteTensor* tflite_tensor,
                                      GpuTensorBufferPtr& tensor_buffer,
                                      ::ml_drift::ValueId tensor_id);
-
-  // Returns true if the tensor buffer is an AHardwareBuffer.
-  bool IsAhwbTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
 
   // Tensor descriptors for I/O tensors.
   // The size and order of these vectors should be the same as input_indices_
@@ -263,6 +291,11 @@ class DelegateKernelLiteRt : public DelegateKernel {
   // AHardwareBuffer. Updated by BindExternalTensorBuffers() and used by
   // HandleOutputEvents().
   bool has_ahwb_tensor_buffers_ = false;
+
+  // Whether any input or output tensor of the current Invoke() is bound to a
+  // HostMemory buffer. Updated by BindExternalTensorBuffers() and used by
+  // HandleOutputEvents().
+  bool has_host_memory_buffers_ = false;
 };
 
 }  // namespace litert::ml_drift

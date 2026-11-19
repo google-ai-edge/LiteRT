@@ -19,6 +19,7 @@ limitations under the License.
 #include <sys/stat.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <fstream>
 #include <ios>
@@ -116,6 +117,49 @@ TEST_F(BenchmarkLiteRtModelTest, DefaultParamsExposeXnnpackWeightCacheOptions) {
 
   EXPECT_TRUE(params.HasParam("xnnpack_weight_cache_file_path"));
   EXPECT_EQ(params.Get<std::string>("xnnpack_weight_cache_file_path"), "");
+}
+
+TEST_F(BenchmarkLiteRtModelTest, DefaultParamsExposeHostMemoryBufferOptions) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+
+  EXPECT_TRUE(params.HasParam("simulate_cpu_readback"));
+  EXPECT_FALSE(params.Get<bool>("simulate_cpu_readback"));
+  EXPECT_TRUE(params.HasParam("use_host_memory_buffers"));
+  EXPECT_FALSE(params.Get<bool>("use_host_memory_buffers"));
+  EXPECT_TRUE(params.HasParam("host_memory_buffer_alignment"));
+  EXPECT_EQ(params.Get<int32_t>("host_memory_buffer_alignment"), 0);
+}
+
+TEST_F(BenchmarkLiteRtModelTest, BenchmarkWithHostMemoryBuffersAndCpuReadback) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<int>("num_runs", 1);
+  params.Set<int>("warmup_runs", 0);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+  params.Set<bool>("use_host_memory_buffers", true);
+  params.Set<bool>("simulate_cpu_readback", true);
+  params.Set<int32_t>("host_memory_buffer_alignment", 4096);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+  EXPECT_EQ(benchmark.Run(), kTfLiteOk);
+}
+
+TEST_F(BenchmarkLiteRtModelTest,
+       BenchmarkWithInvalidHostMemoryBufferAlignment) {
+  BenchmarkParams params = BenchmarkLiteRtModel::DefaultParams();
+  params.Set<std::string>("graph", kModelPath);
+  params.Set<std::string>("signature_to_run_for", kSignatureToRunFor);
+  params.Set<bool>("use_cpu", true);
+  params.Set<bool>("use_gpu", false);
+  params.Set<bool>("require_full_delegation", false);
+  params.Set<bool>("use_host_memory_buffers", true);
+  params.Set<int32_t>("host_memory_buffer_alignment", 100);
+
+  BenchmarkLiteRtModel benchmark = BenchmarkLiteRtModel(std::move(params));
+  EXPECT_EQ(benchmark.Init(), kTfLiteError);
 }
 
 TEST_F(BenchmarkLiteRtModelTest, CpuOnlyInitDoesNotProbeGpuAccelerator) {
