@@ -262,14 +262,20 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
 // ConfigSharedWeightFullyConnectedNode. Sets the
 // FULLY_CONNECTED_INT8/INT4/INT2 op name and the matching attributes with the
 // weights shape and scale shape (no data), plus the (possibly empty) embedded
-// `bias`. Returns true if a quantized variant was configured; returns false for
-// other weight types, in which case the caller should fall back to a plain
-// FULLY_CONNECTED op. The weights themselves must be added as a runtime
+// `bias`. `context` must be non-null when `weights_tensor` uses
+// `kTfLiteBlockwiseQuantizationV2` (to resolve the separate scale and
+// zero-point tensors). For 3-D/4-D batched blockwise v2 weights,
+// `oi_transposed` indicates whether the weight tensor is stored in
+// `[H, I, O]` / `[1, H, I, O]` order (`true`) or `[H, O, I]` / `[1, H, O, I]`
+// order (`false`). Returns true if a quantized variant was configured; returns
+// false for other weight types, in which case the caller should fall back to a
+// plain FULLY_CONNECTED op. The weights themselves must be added as a runtime
 // consumer of `fc_op` by the caller.
 bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias,
-    ::ml_drift::ir::IrOp* fc_op);
+    ::ml_drift::ir::IrOp* fc_op, const TfLiteContext* context = nullptr,
+    bool oi_transposed = true);
 
 // Populates `attr` for a native (const) blockwise-quantized int4
 // fully-connected node, mirroring GraphFloat32's native blockwise path (which

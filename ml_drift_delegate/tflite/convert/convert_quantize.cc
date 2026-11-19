@@ -18,8 +18,10 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "tflite/c/common.h"
 
@@ -30,10 +32,35 @@ void ConvertQuantize(
     const TfLiteRegistration& registration,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
+  const ::ml_drift::ir::IrTensorId raw_input_id =
+      tensor_map[node.inputs->data[0]];
+  const ::ml_drift::ir::IrTensorId output_id =
+      tensor_map[node.outputs->data[0]];
+  const ::ml_drift::DataType input_dtype =
+      ir_model.tensor(raw_input_id)->desc.GetDataType();
+  const ::ml_drift::DataType output_dtype =
+      ir_model.tensor(output_id)->desc.GetDataType();
+
+  ::ml_drift::ir::IrTensorId qdq_input_id = raw_input_id;
+  if (input_dtype != output_dtype) {
+    // QUANTIZE is emulated with QuantizeAndDequantize, which keeps the type of
+    // its input. Cast the input (e.g. FLOAT16) to the float version of the
+    // quantized output first.
+    const ::ml_drift::BHWDC input_shape =
+        ir_model.tensor(raw_input_id)->desc.GetBHWDCShape();
+    const ::ml_drift::ir::IrTensor* casted =
+        ir_model.add_tensor(output_dtype, input_shape);
+    ::ml_drift::ir::IrOp* cast_op = ir_model.add_op();
+    cast_op->name = ToString(::ml_drift::OperationType::kCast);
+    ir_model.AddConsumer(raw_input_id, cast_op->id);
+    ir_model.SetProducer(casted->id, cast_op->id);
+    qdq_input_id = casted->id;
+  }
+
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
 
-  ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
+  ir_model.AddConsumer(qdq_input_id, op->id);
 
   const TfLiteTensor* output_tensor = context.tensors + node.outputs->data[0];
 
@@ -46,7 +73,7 @@ void ConvertQuantize(
   attr.scale = params.scale;
   op->attr = std::move(attr);
 
-  ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);
+  ir_model.SetProducer(output_id, op->id);
 }
 
 }  // namespace litert::ml_drift::ir
