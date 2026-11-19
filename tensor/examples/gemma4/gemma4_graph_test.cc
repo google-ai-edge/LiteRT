@@ -252,6 +252,123 @@ TYPED_TEST(Gemma4GraphTest, ModelTest) {
               IsOkAndHolds(Pointwise(FloatNear(1e-4f), expected_data)));
 }
 
+TYPED_TEST(Gemma4GraphTest, LastTokenLogitsOnlyGraphTest) {
+  using Tag = typename TypeParam::Tag;
+  using Runner = typename TypeParam::Runner;
+
+  Config config = Config::E4B();
+  config.num_layers = 2;
+  config.vocab_size = 10;
+  config.embed_dim = 4;
+  config.hidden_dim = 6;
+  config.head_dim = 4;
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+  config.use_post_attn_norm = true;
+  config.use_post_ffw_norm = true;
+  config.final_logit_softcap = 10.0f;
+  // Without KV sharing, so that layer 1 computes its own KV cache.
+  config.frac_shared_layers = 0.0f;
+
+  Gemma4Inputs<Tag> inputs;
+  inputs.embedded_input.Set(
+      {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 2, 4}});
+  inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
+                                     .type = Type::kFP32,
+                                     .shape = {1, 1, 2, 2}});
+  inputs.rope_local_cos.Set(
+      {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  inputs.rope_local_sin.Set(
+      {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 2, 4}});
+  LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(2))
+                                  .Register<Gemma4WeightHooks>();
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Gemma4Outputs<Tag> model_outputs,
+      BuildGemma4Graph(inputs, weights, config,
+                       /*last_token_logits_only=*/true));
+  EXPECT_THAT(model_outputs.logits.GetShape(), ElementsAre(1, 1, 10));
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Runner runner,
+      Runner::Create({model_outputs.logits, model_outputs.key_caches[1],
+                      model_outputs.value_caches[1]}));
+
+  const std::array<float, 8> input_data = {1.0f, 2.0f, 3.0f, 4.0f,
+                                           5.0f, 6.0f, 7.0f, 8.0f};
+  ASSERT_THAT(runner.SetInput(inputs.embedded_input, input_data), IsOk());
+
+  const std::array<float, 4> mask_data = {0.0f, -1e9f, 0.0f, 0.0f};
+  ASSERT_THAT(runner.SetInput(inputs.sliding_attention_mask, mask_data),
+              IsOk());
+
+  const std::array<float, 8> cos_data = {0.8660254f, 0.5f, 0.8660254f, 0.5f,
+                                         0.7071068f, 0.0f, 0.7071068f, 0.0f};
+  ASSERT_THAT(runner.SetInput(inputs.rope_local_cos, cos_data), IsOk());
+
+  const std::array<float, 8> sin_data = {
+      0.5f, 0.8660254f, 0.5f, 0.8660254f, 0.7071068f, 1.0f, 0.7071068f, 1.0f};
+  ASSERT_THAT(runner.SetInput(inputs.rope_local_sin, sin_data), IsOk());
+
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  // Expected values calculated using helpers/reference/gemma4_graph.py. The
+  // logits are the last row of the ones computed for the whole sequence and
+  // the KV caches still hold every position.
+  EXPECT_THAT(
+      runner.template ReadOutputAs<float>(model_outputs.logits),
+      IsOkAndHolds(Pointwise(
+          FloatNear(1e-4f), {0.0665609f, 0.4604717f, 0.8529558f, 1.2428105f,
+                             1.6288655f, 2.0099964f, 2.3851378f, 2.7532935f,
+                             3.1135467f, 3.4650677f})));
+
+  EXPECT_THAT(
+      runner.template ReadOutputAs<float>(model_outputs.key_caches[1]),
+      IsOkAndHolds(Pointwise(FloatNear(1e-4f),
+                             {0.8284871f, 0.0297021f, 0.9149640f, 1.5733924f,
+                              0.2325457f, -0.9136793f, 1.2937277f,
+                              1.1989068f})));
+
+  EXPECT_THAT(
+      runner.template ReadOutputAs<float>(model_outputs.value_caches[1]),
+      IsOkAndHolds(Pointwise(FloatNear(1e-4f),
+                             {0.3781380f, 0.7609723f, 1.1749711f, 1.3774468f,
+                              0.7503678f, 0.9136779f, 1.0792366f,
+                              1.1989050f})));
+}
+
+TYPED_TEST(Gemma4GraphTest, LastTokenLogitsOnlyIsNoOpForOneToken) {
+  using Tag = typename TypeParam::Tag;
+
+  Config config = Config::E4B();
+  config.num_layers = 1;
+  config.vocab_size = 10;
+  config.embed_dim = 4;
+  config.hidden_dim = 6;
+  config.head_dim = 4;
+  config.num_heads = 2;
+  config.num_kv_heads = 1;
+
+  Gemma4Inputs<Tag> inputs;
+  inputs.embedded_input.Set(
+      {.name = "embedded_input", .type = Type::kFP32, .shape = {1, 1, 4}});
+  inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
+                                     .type = Type::kFP32,
+                                     .shape = {1, 1, 1, 1}});
+  inputs.rope_local_cos.Set(
+      {.name = "rope_local_cos", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  inputs.rope_local_sin.Set(
+      {.name = "rope_local_sin", .type = Type::kFP32, .shape = {1, 1, 1, 4}});
+  LazyTensorMapping weights = LazyTensorMapping(CreateGemma4GraphTestWeights(1))
+                                  .Register<Gemma4WeightHooks>();
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      Gemma4Outputs<Tag> model_outputs,
+      BuildGemma4Graph(inputs, weights, config,
+                       /*last_token_logits_only=*/true));
+  EXPECT_THAT(model_outputs.logits.GetShape(), ElementsAre(1, 1, 10));
+}
+
 TYPED_TEST(Gemma4GraphTest, GlobalLayerGraphTest) {
   using Tag = typename TypeParam::Tag;
   using Runner = typename TypeParam::Runner;

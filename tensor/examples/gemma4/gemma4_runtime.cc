@@ -348,12 +348,13 @@ absl::StatusOr<int32_t> ExecutePrefillPass(
                                 runner.ReadOutputAs<float>(outputs.logits));
   }
 
-  absl::Span<const float> prefill_logits(
-      initial_output_locked.begin() + (seq_len - 1) * config.vocab_size,
-      config.vocab_size);
-
-  if (prefill_logits.empty()) {
-    return absl::InternalError("Prefill logits span is empty.");
+  // The prefill graph only computes the logits of the last prompt token.
+  absl::Span<const float> prefill_logits(initial_output_locked.data(),
+                                         initial_output_locked.size());
+  if (prefill_logits.size() != static_cast<size_t>(config.vocab_size)) {
+    return absl::InternalError(absl::StrFormat(
+        "Prefill logits should hold %d values (one token) but hold %zu.",
+        config.vocab_size, prefill_logits.size()));
   }
 
   int32_t current_token =

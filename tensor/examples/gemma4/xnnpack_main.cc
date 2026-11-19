@@ -18,6 +18,7 @@ limitations under the License.
 #include <functional>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <utility>
 
 #include "xnnpack.h"  // from @XNNPACK
@@ -89,8 +90,10 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     }
     LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, weight.GetBuffer());
     auto locked = buffer.Lock();
-    const uint64_t identifier =
-        static_cast<uint64_t>(std::hash<absl::string_view>{}(model_name));
+    // `absl::string_view` isn't always `std::string_view` (e.g. on Android),
+    // and only the latter has a `std::hash` specialization.
+    const uint64_t identifier = static_cast<uint64_t>(
+        std::hash<std::string_view>{}(std::string_view(model_name)));
     if (!weight_cache_->MapBufferIdentifier(locked.data(), locked.size(),
                                             identifier)) {
       return absl::InternalError(
