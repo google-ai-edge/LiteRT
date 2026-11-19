@@ -40,6 +40,7 @@ limitations under the License.
 namespace litert::tensor::examples {
 namespace {
 
+using ::absl_testing::IsOkAndHolds;
 using ::absl_testing::StatusIs;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -260,7 +261,7 @@ TEST(SafetensorLoaderTest, LoadsPackedInt4WeightPerChannel) {
       const PerChannelAffineQuantization& quantization,
       tensor.GetQuantization()->As<const PerChannelAffineQuantization>());
   EXPECT_THAT(quantization.scales, ElementsAre(FloatEq(0.5f), FloatEq(0.25f)));
-  EXPECT_THAT(quantization.zero_points, ElementsAre(0));
+  EXPECT_TRUE(quantization.zero_points.IsSymmetric());
   EXPECT_EQ(quantization.quantized_dimension, 0);
 }
 
@@ -856,9 +857,9 @@ TEST(SafetensorLoaderTest, Loads3DInt2WeightWithFloatZeroPoints) {
   EXPECT_THAT(pcq.scales,
               ElementsAre(FloatEq(0.5f), FloatEq(0.25f), FloatEq(0.125f),
                           FloatEq(1.0f)));
-  EXPECT_TRUE(pcq.zero_points.empty());
-  EXPECT_THAT(pcq.float_zero_points, ElementsAre(FloatEq(-0.5f)));
-  EXPECT_FLOAT_EQ(pcq.ZeroPointAt(0), -0.5f);
+  EXPECT_THAT(pcq.zero_points.Data<float>(),
+              IsOkAndHolds(ElementsAre(FloatEq(-0.5f))));
+  EXPECT_THAT(pcq.zero_points.Scalar<float>(), IsOkAndHolds(FloatEq(-0.5f)));
 
   // The packed bytes are kept as they are: signed 2-bit values from the least
   // significant bits up (0xE4 -> 0, 1, -2, -1; 0x1B -> -1, -2, 1, 0), which

@@ -133,12 +133,10 @@ class YnnpackBuildContext : public NnpackBuildContext {
   // whatever the dimension of the channels.
   static absl::Span<const float> GetScales(const Quantization& quantization);
 
-  // Returns one zero point per scale. Missing zero points mean 0, and a single
-  // zero point applies to every scale.
-  //
-  // Warning: Assumes that `ValidateQuantization()` checked the zero point
-  // count.
-  static std::vector<int32_t> GetZeroPoints(const Quantization& quantization);
+  // Returns one zero point per scale, or an error if the zero points are
+  // invalid or cannot be represented as `int32_t`.
+  static absl::StatusOr<std::vector<int32_t>> GetZeroPoints(
+      const Quantization& quantization);
 
   // Returns whether every zero point of `quantization` is 0.
   static bool IsSymmetric(const Quantization& quantization);

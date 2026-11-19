@@ -3601,8 +3601,9 @@ TYPED_TEST_P(NumericalTestSuite, DequantizeOp) {
       {.type = Type::kI8,
        .shape = {1, 8},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
-           PerChannelAffineQuantization{/*scales=*/{0.5f},
-                                        /*zero_points=*/{3}})});
+           PerChannelAffineQuantization{
+               /*scales=*/{0.5f},
+               /*zero_points=*/ZeroPoints::Int({3})})});
   Tensor<Tag> output = Dequantize(input);
 
   auto status = this->bridge_->BuildGraph({input}, {output});

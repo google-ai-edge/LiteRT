@@ -85,6 +85,7 @@ cc_library(
     srcs = ["dequantize.cc"],
     hdrs = ["dequantize.h"],
     deps = [
+        "//tensor",
         "//tensor:datatypes",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
@@ -101,6 +102,7 @@ cc_test(
     srcs = ["dequantize_test.cc"],
     deps = [
         ":dequantize",
+        "//tensor",
         "//tensor:datatypes",
         "//tensor/internal:graph",
         "@com_google_absl//absl/status",

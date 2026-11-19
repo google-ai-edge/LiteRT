@@ -110,6 +110,7 @@ using litert::tensor::PerChannelAffineQuantization;
 using litert::tensor::TensorHandle;
 using litert::tensor::TfLiteMixinTag;
 using litert::tensor::Type;
+using litert::tensor::ZeroPoints;
 
 emscripten::val GetTensorWebGpuBufferId(const TensorHandle& tensor);
 
@@ -240,8 +241,10 @@ emscripten::val GetTensorWebGpuBufferId(const TensorHandle& tensor) {
 // Helper structure for Quantization mapping
 struct JSQuantizationParams {
   std::vector<float> scales;
+  // Integer zero points, empty if there are none or they are floats.
   std::vector<int> zeroPoints;
-  // Non-integer zero points (e.g. -0.5 for centered INT2), empty if none.
+  // Float zero points (e.g. -0.5 for centered INT2), empty if there are none
+  // or they are integers.
   std::vector<float> floatZeroPoints;
   int quantizedDimension;
 };
@@ -252,13 +255,16 @@ JSQuantizationParams GetQuantizationParams(const TensorHandle& tensor) {
 
   auto affine_or = quant_ptr->As<PerChannelAffineQuantization>();
   if (affine_or.ok()) {
-    std::vector<int> zero_points_i32(affine_or->zero_points.begin(),
-                                     affine_or->zero_points.end());
-    return JSQuantizationParams{
+    JSQuantizationParams params{
         .scales = affine_or->scales,
-        .zeroPoints = zero_points_i32,
-        .floatZeroPoints = affine_or->float_zero_points,
         .quantizedDimension = affine_or->quantized_dimension};
+    if (const auto zps = affine_or->zero_points.Data<int64_t>(); zps.ok()) {
+      params.zeroPoints.assign(zps->begin(), zps->end());
+    } else if (const auto float_zps = affine_or->zero_points.Data<float>();
+               float_zps.ok()) {
+      params.floatZeroPoints = *float_zps;
+    }
+    return params;
   }
   return {};
 }
@@ -998,7 +1004,8 @@ EMSCRIPTEN_BINDINGS(litert_tensor_core) {
             }
 
             auto quant = std::make_shared<PerChannelAffineQuantization>(
-                std::move(scales), std::move(zero_points), quantized_dimension);
+                std::move(scales), ZeroPoints::Int(std::move(zero_points)),
+                quantized_dimension);
             self.SetQuantization(quant);
           }))
       .function("abs", emscripten::optional_override([](TensorHandle& self) {

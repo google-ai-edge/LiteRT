@@ -32,8 +32,7 @@ namespace litert::tensor {
 // - `info.quantization` must be a `PerChannelAffineQuantization` with a single
 //   scale or one scale per index of its quantized dimension.
 // - There may be no zero point, a single zero point shared by all the indices,
-//   or one per index. Float zero points are used instead of the integer ones
-//   when there are any.
+//   or one per index (integer or float).
 //
 // Returns Unimplemented for other tensors.
 absl::StatusOr<std::vector<float>> DequantizeConstantTensor(

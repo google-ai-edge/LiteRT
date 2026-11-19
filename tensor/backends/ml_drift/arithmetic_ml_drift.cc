@@ -29,7 +29,6 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
-#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -171,16 +170,14 @@ absl::StatusOr<std::pair<float, int64_t>> GetPerTensorQuantization(
         absl::StrCat(op_name, " requires quantization parameters."));
   }
   auto pcq = info.quantization->As<const PerChannelAffineQuantization>();
-  if (!pcq.ok() || pcq->scales.size() != 1 || pcq->zero_points.size() > 1) {
+  if (!pcq.ok() || pcq->scales.size() != 1) {
     return absl::UnimplementedError(absl::StrCat(
         op_name, " only supports per-tensor quantization in ML Drift."));
   }
-  if (pcq->HasNonZeroFloatZeroPoints()) {
-    return absl::UnimplementedError(absl::StrCat(
-        op_name, " doesn't support float zero points in ML Drift."));
-  }
-  return std::make_pair(pcq->scales[0],
-                        pcq->zero_points.empty() ? 0 : pcq->zero_points[0]);
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const int64_t zero_point, pcq->zero_points.Scalar<int64_t>(),
+      _ << op_name << " needs a single integer zero point.");
+  return std::make_pair(pcq->scales[0], zero_point);
 }
 
 // Adds an elementwise `op_type` operation of `lhs` and `rhs`, which is
@@ -232,25 +229,20 @@ absl::Status AddDequantization(
     const std::vector<int>& shape,
     const PerChannelAffineQuantization& quantization) {
   const std::vector<float>& scales = quantization.scales;
-  const std::vector<int64_t>& zero_points = quantization.zero_points;
-  if (quantization.HasNonZeroFloatZeroPoints()) {
-    return absl::UnimplementedError(
-        "Dequantize doesn't support float zero points in ML Drift.");
-  }
-  if (scales.empty() ||
-      (zero_points.size() > 1 && zero_points.size() != scales.size())) {
+  if (scales.empty()) {
     return absl::InvalidArgumentError(
-        absl::StrCat("Dequantize expects 0, 1 or ", scales.size(),
-                     " zero points, got ", zero_points.size(), "."));
+        "Dequantize expects at least 1 scale, got 0.");
   }
+  LRT_TENSOR_RETURN_IF_ERROR(
+      quantization.zero_points.Validate<int64_t>(scales.size()));
   if (scales.size() == 1) {
     // A single kernel: out = (in - zero_point) * scale, computed in fp32.
+    LRT_TENSOR_ASSIGN_OR_RETURN(const int64_t zero_point,
+                                quantization.zero_points.Scalar<int64_t>());
     ml_drift::ElementwiseDescriptor op_desc;
     op_desc.args.AddFloat("scale", scales[0], ml_drift::DataType::kFloat32);
-    op_desc.args.AddFloat(
-        "zero_point",
-        static_cast<float>(zero_points.empty() ? 0 : zero_points[0]),
-        ml_drift::DataType::kFloat32);
+    op_desc.args.AddFloat("zero_point", static_cast<float>(zero_point),
+                          ml_drift::DataType::kFloat32);
     op_desc.code = absl::Substitute(
         R"(
 out_value = ucl::Convert<$1>(
@@ -294,15 +286,12 @@ out_value = ucl::Convert<$1>(
   auto centered = values;
 
   // We only subtract zero points if they are non-zero.
-  if (absl::c_any_of(zero_points, [](int64_t zp) { return zp != 0; })) {
+  if (!quantization.zero_points.IsSymmetric()) {
     ml_drift::TensorFloat32 zero_points_tensor;
     zero_points_tensor.shape = params_bhwc;
-    if (zero_points.size() == 1) {
-      zero_points_tensor.data.assign(scales.size(),
-                                     static_cast<float>(zero_points[0]));
-    } else {
-      zero_points_tensor.data.assign(zero_points.begin(), zero_points.end());
-    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        zero_points_tensor.data,
+        quantization.zero_points.CopyAs<float>(scales.size()));
     auto zero_points_handle = ctx.gpu_model_builder->AddConstantTensor(
         zero_points_tensor, kComputeType);
 
@@ -453,18 +442,16 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
 
   const std::vector<float>& raw_scales =
       pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
-  const std::vector<int64_t>& raw_zps =
+  const ZeroPoints& zero_points =
       pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
-  const bool has_non_zero_float_zp = pcq_ptr != nullptr
-                                         ? pcq_ptr->HasNonZeroFloatZeroPoints()
-                                         : bwq_ptr->HasNonZeroFloatZeroPoints();
-  if (has_non_zero_float_zp) {
-    return absl::UnimplementedError(absl::StrCat(
-        "Weights tensor (", out_info.name,
-        ") has float zero points, which ML Drift doesn't support yet."));
-  }
-  const bool has_non_zero_zp = std::any_of(
-      raw_zps.begin(), raw_zps.end(), [](int64_t zp) { return zp != 0; });
+  const size_t expected_zp_count =
+      (pcq_ptr != nullptr && raw_scales.size() == 1)
+          ? static_cast<size_t>(scale_zp_shape.o)
+          : raw_scales.size();
+  LRT_TENSOR_RETURN_IF_ERROR(zero_points.Validate<int64_t>(expected_zp_count),
+                             _ << "Invalid zero points for weights tensor ("
+                               << out_info.name << ")");
+  const bool has_non_zero_zp = !zero_points.IsSymmetric();
 
   std::string scale_key;
   std::string zp_key;
@@ -509,13 +496,6 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     scale_values.data.assign(scale_zp_shape.o, scale_values.data[0]);
   }
 
-  if (!raw_zps.empty() && raw_zps.size() != 1 &&
-      raw_zps.size() != scale_values.data.size()) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Weights tensor (", out_info.name, ") has ", raw_zps.size(),
-        " zero points for ", scale_values.data.size(), " scales."));
-  }
-
   auto scale_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), scale_values, float_type);
   ml_drift::GpuModelBuilder::TensorHandle scale_handle;
@@ -536,11 +516,8 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
   if (has_non_zero_zp) {
     ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> zp_values;
     zp_values.shape = scale_zp_shape;
-    if (raw_zps.size() == 1) {
-      zp_values.data.assign(scale_values.data.size(), raw_zps[0]);
-    } else {
-      zp_values.data.assign(raw_zps.begin(), raw_zps.end());
-    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        zp_values.data, zero_points.CopyAs<float>(scale_values.data.size()));
     auto zero_point_desc = ScaleOrZeroPointToTensorDesc(
         ctx.gpu_model_builder->gpu_info(), zp_values, float_type);
     if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {

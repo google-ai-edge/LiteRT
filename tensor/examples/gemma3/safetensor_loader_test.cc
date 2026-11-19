@@ -190,7 +190,7 @@ TEST(Gemma3SafetensorLoaderTest,
       const PerChannelAffineQuantization& pcq,
       preserved.GetQuantization()->As<PerChannelAffineQuantization>());
   EXPECT_THAT(pcq.scales, ElementsAre(FloatEq(0.5f), FloatEq(0.25f)));
-  EXPECT_THAT(pcq.zero_points, ElementsAre(2, -4));
+  EXPECT_EQ(pcq.zero_points, ZeroPoints::Int({2, -4}));
   EXPECT_EQ(pcq.quantized_dimension, 0);
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(

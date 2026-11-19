@@ -18,7 +18,6 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
-#include <utility>
 #include <variant>
 #include <vector>
 
@@ -29,6 +28,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
@@ -79,35 +79,6 @@ struct DequantizationParams {
   std::variant<PerTensorIndex, PerChannelIndex, BlockwiseIndex> index;
 };
 
-// The zero points of a quantization: its float zero points if it has any, and
-// its integer ones otherwise.
-std::vector<float> GetZeroPoints(absl::Span<const int64_t> zero_points,
-                                 absl::Span<const float> float_zero_points) {
-  if (!float_zero_points.empty()) {
-    return std::vector<float>(float_zero_points.begin(),
-                              float_zero_points.end());
-  }
-  return std::vector<float>(zero_points.begin(), zero_points.end());
-}
-
-// Returns one zero point per scale: `zero_points` may be empty, which means
-// zeros, have a single zero point shared by all the scales, or one per scale.
-absl::StatusOr<std::vector<float>> GetZeroPointPerScale(
-    std::vector<float> zero_points, size_t num_scales) {
-  if (zero_points.empty()) {
-    return std::vector<float>(num_scales, 0.0f);
-  }
-  if (zero_points.size() == 1) {
-    return std::vector<float>(num_scales, zero_points[0]);
-  }
-  if (zero_points.size() != num_scales) {
-    return absl::InvalidArgumentError(
-        absl::StrFormat("Expected 0, 1 or %zu zero points, got %zu", num_scales,
-                        zero_points.size()));
-  }
-  return zero_points;
-}
-
 absl::StatusOr<DequantizationParams> GetDequantizationParams(
     const graph::TensorInformation& info,
     absl::Span<const std::byte> raw_data) {
@@ -130,16 +101,16 @@ absl::StatusOr<DequantizationParams> GetDequantizationParams(
   }
 
   const int rank = static_cast<int>(info.shape.size());
-  std::vector<float> zero_points;
+  const ZeroPoints* zero_points = nullptr;
   if (auto pcq =
           info.quantization->As<const graph::PerChannelAffineQuantization>();
       pcq.ok()) {
     params.scales = pcq->scales;
-    zero_points = GetZeroPoints(pcq->zero_points, pcq->float_zero_points);
+    zero_points = &pcq->zero_points;
     if (params.scales.empty()) {
       return absl::InvalidArgumentError("Missing quantization scales");
     }
-    if (params.scales.size() == 1 && zero_points.size() <= 1) {
+    if (params.scales.size() == 1 && zero_points->size() <= 1) {
       params.index = PerTensorIndex();
     } else {
       const int dim = pcq->quantized_dimension;
@@ -166,7 +137,7 @@ absl::StatusOr<DequantizationParams> GetDequantizationParams(
                  info.quantization->As<const graph::BlockwiseQuantization>();
              bwq.ok()) {
     params.scales = bwq->scales;
-    zero_points = GetZeroPoints(bwq->zero_points, bwq->float_zero_points);
+    zero_points = &bwq->zero_points;
     if (rank != 2) {
       return absl::UnimplementedError(
           "Only rank 2 blockwise quantized tensors can be dequantized");
@@ -199,7 +170,7 @@ absl::StatusOr<DequantizationParams> GetDequantizationParams(
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(
       params.zero_points,
-      GetZeroPointPerScale(std::move(zero_points), params.scales.size()));
+      zero_points->CopyAs<float>(params.scales.size()));
   return params;
 }
 

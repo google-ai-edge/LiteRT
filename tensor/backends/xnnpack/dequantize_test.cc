@@ -29,6 +29,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
+#include "tensor/tensor.h"
 
 namespace litert::tensor {
 namespace {
@@ -47,16 +48,15 @@ absl::StatusOr<std::vector<float>> Dequantize(
                            raw.size() * sizeof(T)));
 }
 
-graph::TensorInformation PerChannelInfo(
-    Type type, graph::Shape shape, std::vector<float> scales,
-    std::vector<int64_t> zero_points, int quantized_dimension = 0,
-    std::vector<float> float_zero_points = {}) {
+graph::TensorInformation PerChannelInfo(Type type, graph::Shape shape,
+                                        std::vector<float> scales,
+                                        ZeroPoints zero_points,
+                                        int quantized_dimension = 0) {
   return graph::TensorInformation{
       .type = type,
       .shape = std::move(shape),
       .quantization = std::make_shared<graph::PerChannelAffineQuantization>(
-          std::move(scales), std::move(zero_points), quantized_dimension,
-          std::move(float_zero_points)),
+          std::move(scales), std::move(zero_points), quantized_dimension),
   };
 }
 
@@ -109,8 +109,8 @@ TEST(XnnpackDequantizeTest, DequantizeConstantTensorPerTensor) {
 TEST(XnnpackDequantizeTest,
      DequantizeConstantTensorSingleScaleAndFloatZeroPoint) {
   const graph::TensorInformation info =
-      PerChannelInfo(Type::kI8, {2, 2}, {0.5f}, {}, /*quantized_dimension=*/0,
-                     /*float_zero_points=*/{1.0f});
+      PerChannelInfo(Type::kI8, {2, 2}, {0.5f}, ZeroPoints::Float({1.0f}),
+                     /*quantized_dimension=*/0);
   EXPECT_THAT(Dequantize(info, std::vector<int8_t>{2, 4, 1, 3}),
               IsOkAndHolds(Pointwise(FloatEq(), {0.5f, 1.5f, 0.0f, 1.0f})));
 }
@@ -127,9 +127,8 @@ TEST(XnnpackDequantizeTest,
 
 TEST(XnnpackDequantizeTest, DequantizeConstantTensorFloatZeroPoints) {
   const graph::TensorInformation info = PerChannelInfo(
-      Type::kI8, {2, 2}, {0.5f, 2.0f}, /*zero_points=*/{3, 3},
-      /*quantized_dimension=*/0, /*float_zero_points=*/{0.5f, -0.5f});
-  // The float zero points are used instead of the integer ones.
+      Type::kI8, {2, 2}, {0.5f, 2.0f}, ZeroPoints::Float({0.5f, -0.5f}),
+      /*quantized_dimension=*/0);
   // Channel 0: (2 - 0.5)*0.5 = 0.75, (4 - 0.5)*0.5 = 1.75
   // Channel 1: (1 + 0.5)*2.0 = 3.0, (3 + 0.5)*2.0 = 7.0
   EXPECT_THAT(Dequantize(info, std::vector<int8_t>{2, 4, 1, 3}),

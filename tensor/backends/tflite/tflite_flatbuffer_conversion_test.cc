@@ -183,11 +183,11 @@ bool HasNonZeroZeroPoints(const graph::TensorInformation& info) {
   if (auto pcq =
           info.quantization->As<const graph::PerChannelAffineQuantization>();
       pcq.ok()) {
-    return pcq->HasNonZeroZeroPoints();
+    return !pcq->zero_points.IsSymmetric();
   }
   if (auto bwq = info.quantization->As<const graph::BlockwiseQuantization>();
       bwq.ok()) {
-    return bwq->HasNonZeroZeroPoints();
+    return !bwq->zero_points.IsSymmetric();
   }
   return false;
 }
@@ -2067,7 +2067,7 @@ TEST(SerializationTest, CanSerializeCast) {
 TEST(SerializationTest, ExpandsSharedZeroPointWithoutMutatingGraph) {
   const std::string path = testing::TempDir() + "/shared_zero_point.tflite";
   auto quantization = std::make_shared<PerChannelAffineQuantization>(
-      std::vector<float>{0.5f, 0.25f}, std::vector<int64_t>{0}, 0);
+      std::vector<float>{0.5f, 0.25f}, ZeroPoints::Int({5}), 0);
   TensorTf input({.name = "input",
                   .type = Type::kI8,
                   .shape = {2, 2},
@@ -2075,7 +2075,7 @@ TEST(SerializationTest, ExpandsSharedZeroPointWithoutMutatingGraph) {
   TensorTf output = Dequantize(input);
 
   ASSERT_THAT(Save({output}, path), IsOk());
-  EXPECT_THAT(quantization->zero_points, ElementsAre(0));
+  EXPECT_EQ(quantization->zero_points, ZeroPoints::Int({5}));
 
   std::unique_ptr<tflite::FlatBufferModel> model =
       tflite::FlatBufferModel::BuildFromFile(path.c_str());
@@ -2086,7 +2086,7 @@ TEST(SerializationTest, ExpandsSharedZeroPointWithoutMutatingGraph) {
             kTfLiteOk);
   ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
 
-  const std::vector<int8_t> codes{2, 4, 8, 12};
+  const std::vector<int8_t> codes{7, 9, 13, 17};
   absl::c_copy(codes, interpreter->typed_input_tensor<int8_t>(0));
   ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
 

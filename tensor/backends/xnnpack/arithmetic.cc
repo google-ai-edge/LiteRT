@@ -92,7 +92,7 @@ bool CanLowerBatchMatMulToFullyConnected(const graph::TensorInformation& rhs,
     return false;
   }
   // Non-zero (integer or float) zero points dequantize the values to floats.
-  return !pcq->HasNonZeroZeroPoints();
+  return pcq->zero_points.IsSymmetric();
 }
 
 absl::StatusOr<BinaryIOIds> PrepareBinaryIO(const Operation& op,
@@ -720,7 +720,7 @@ absl::Status OpMixin<FullyConnectedOperation, XnnpackMixinTag>::ToXnnpack(
             weights_info->quantization->As<PerChannelAffineQuantization>();
         pcq.ok()) {
       weights_are_quantized =
-          weights_info->type == Type::kI2 || !pcq->HasNonZeroZeroPoints();
+          weights_info->type == Type::kI2 || pcq->zero_points.IsSymmetric();
     } else {
       weights_are_quantized = true;
     }
@@ -735,10 +735,11 @@ absl::Status OpMixin<FullyConnectedOperation, XnnpackMixinTag>::ToXnnpack(
       weights_info->type == Type::kI8 && input_info.ok() &&
       input_info->quantization == nullptr) {
     auto pcq = weights_info->quantization->As<PerChannelAffineQuantization>();
-    // Float zero points are dequantized when the weights are defined.
+    // Non-integer float zero points are dequantized when the weights are
+    // defined.
     per_tensor_weights = pcq.ok() && pcq->scales.size() == 1 &&
                          pcq->zero_points.size() <= 1 &&
-                         !pcq->HasNonZeroFloatZeroPoints();
+                         pcq->zero_points.Scalar<int32_t>().ok();
   }
 
   if (weights_are_quantized && input_info.ok() &&

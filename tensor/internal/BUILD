@@ -124,6 +124,7 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:source_location",
+        "@com_google_absl//absl/types:span",
     ],
 )
 
@@ -136,8 +137,11 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:source_location",
+        "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
 )

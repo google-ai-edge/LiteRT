@@ -391,8 +391,9 @@ absl::Status DefineQuantizedFullyConnected(
   // One scale (and zero point) per channel: [1, N]. A per-tensor scale is
   // repeated for every channel.
   std::vector<float> scales(stored_scales.begin(), stored_scales.end());
-  std::vector<int32_t> zero_points =
-      YnnpackBuildContext::GetZeroPoints(quantization);
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      std::vector<int32_t> zero_points,
+      YnnpackBuildContext::GetZeroPoints(quantization));
   if (YnnpackBuildContext::GetQuantizedDimension(quantization) < 0) {
     scales.assign(channels, stored_scales[0]);
     // Copied first: `assign` may free the storage `zero_points[0]` lives in.

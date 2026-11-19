@@ -109,15 +109,12 @@ struct XnnpackTraits {
 INSTANTIATE_TYPED_TEST_SUITE_P(Xnnpack, NumericalTestSuite, XnnpackTraits);
 
 // Runs `FullyConnected` on XNNPACK with `[4, 32]` weights holding `levels`
-// quantized with `scales` and `float_zero_point`, and compares it against a
-// float reference. Runs a `BatchMatMul` with `adj_y` instead if
-// `batch_matmul`. The weights have the integer `zero_points` if there are no
-// float zero points.
+// quantized with `scales` and `zero_points`, and compares it against a float
+// reference. Runs a `BatchMatMul` with `adj_y` instead if `batch_matmul`.
 template <Type kWeightType>
 void ExpectQuantizedFullyConnectedMatchesReference(
     const int8_t (&levels)[4], const std::vector<float>& scales,
-    std::vector<float> float_zero_points, bool batch_matmul = false,
-    std::vector<int64_t> zero_points = {}) {
+    ZeroPoints zero_points, bool batch_matmul = false) {
   using XnnTensor = Tensor<XnnpackMixinTag>;
   constexpr int kBatch = 2;
   constexpr int kInCols = 32;
@@ -140,14 +137,8 @@ void ExpectQuantizedFullyConnectedMatchesReference(
       q_vals[o * kInCols + i] = levels[(o + i) % 4];
     }
   }
-  const float zero_point = [&] {
-    if (!float_zero_points.empty()) {
-      return float_zero_points[0];
-    } else if (!zero_points.empty()) {
-      return static_cast<float>(zero_points[0]);
-    }
-    return 0.0f;
-  }();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const float zero_point,
+                                  zero_points.Scalar<float>());
   auto w_buf = OwningCpuBuffer::Copy<kWeightType>(q_vals);
 
   XnnTensor x(
@@ -159,7 +150,7 @@ void ExpectQuantizedFullyConnectedMatchesReference(
                  .buffer = w_buf,
                  .quantization = std::make_shared<PerChannelAffineQuantization>(
                      scales, std::move(zero_points),
-                     /*quantized_dimension=*/0, std::move(float_zero_points))});
+                     /*quantized_dimension=*/0)});
   XnnTensor y = batch_matmul
                     ? BatchMatMul(x, w, /*adj_x=*/false, /*adj_y=*/true)
                     : FullyConnected(x, w);
@@ -191,22 +182,23 @@ TEST(XnnpackCenteredInt2Test, FullyConnectedWithFloatZeroPoint) {
   // dequantized weight is (q + 0.5f) * scale in {-1.5, -0.5, +0.5, +1.5} * s.
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
       {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
-      /*float_zero_points=*/{-0.5f});
+      /*zero_points=*/ZeroPoints::Float({-0.5f}));
 }
 
 TEST(XnnpackCenteredInt2Test, FullyConnectedWithSingleScale) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
-      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*float_zero_points=*/{-0.5f});
+      {-2, -1, 0, 1}, /*scales=*/{0.25f},
+      /*zero_points=*/ZeroPoints::Float({-0.5f}));
 }
 
 TEST(XnnpackInt2Test, FullyConnectedWithSingleScaleAndNoZeroPoint) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
-      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*float_zero_points=*/{});
+      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*zero_points=*/{});
 }
 
 TEST(XnnpackInt4Test, FullyConnectedWithSingleScale) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
-      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*float_zero_points=*/{});
+      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{});
 }
 
 // The right-hand side is dequantized to floats, so the batch matmul isn't
@@ -214,7 +206,7 @@ TEST(XnnpackInt4Test, FullyConnectedWithSingleScale) {
 TEST(XnnpackInt8Test, BatchMatMulWithFloatZeroPoint) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI8>(
       {-8, -1, 0, 7}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
-      /*float_zero_points=*/{-0.5f}, /*batch_matmul=*/true);
+      /*zero_points=*/ZeroPoints::Float({-0.5f}), /*batch_matmul=*/true);
 }
 
 // XNNPACK's batch matmul doesn't take int2 right-hand sides, but its fully
@@ -222,15 +214,14 @@ TEST(XnnpackInt8Test, BatchMatMulWithFloatZeroPoint) {
 TEST(XnnpackInt2Test, BatchMatMulWithZeroPoint) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
       {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
-      /*float_zero_points=*/{}, /*batch_matmul=*/true,
-      /*zero_points=*/{-1});
+      /*zero_points=*/ZeroPoints::Int({-1}), /*batch_matmul=*/true);
 }
 
 // Int4 values with a single scale are channelwise quantized, which XNNPACK's
 // batch matmul doesn't take but its fully connected operator does.
 TEST(XnnpackInt4Test, BatchMatMulWithSingleScale) {
   ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
-      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*float_zero_points=*/{},
+      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{},
       /*batch_matmul=*/true);
 }
 

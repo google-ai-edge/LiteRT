@@ -266,12 +266,14 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
           "Quantization is not PerChannelAffineQuantization");
     }
     const auto& scales = pc_quant->scales;
-    const auto& zero_points = pc_quant->zero_points;
     int quantized_dimension = pc_quant->quantized_dimension;
 
     if (scales.empty()) {
       return absl::InvalidArgumentError("Quantization scales are empty");
     }
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        const std::vector<int64_t> zero_points,
+        pc_quant->zero_points.CopyAs<int64_t>(scales.size()));
 
     if (type == Type::kI8) {
       const int8_t* quantized_data = reinterpret_cast<const int8_t*>(info.data);
@@ -279,7 +281,7 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
       if (scales.size() == 1) {
         // Per-tensor
         float scale = scales[0];
-        int64_t zp = zero_points.empty() ? 0 : zero_points[0];
+        int64_t zp = zero_points[0];
         for (size_t i = 0; i < num_elements; ++i) {
           dequantized_values[i] =
               static_cast<float>(quantized_data[i] - zp) * scale;
@@ -310,7 +312,7 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
         for (size_t i = 0; i < num_elements; ++i) {
           size_t channel_idx = (i / channel_stride) % num_channels;
           float scale = scales[channel_idx];
-          int64_t zp = zero_points.empty() ? 0 : zero_points[channel_idx];
+          int64_t zp = zero_points[channel_idx];
           dequantized_values[i] =
               static_cast<float>(quantized_data[i] - zp) * scale;
         }
@@ -324,7 +326,7 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
       if (scales.size() == 1) {
         // Per-tensor
         float scale = scales[0];
-        int64_t zp = zero_points.empty() ? 0 : zero_points[0];
+        int64_t zp = zero_points[0];
         for (size_t i = 0; i < num_elements; ++i) {
           size_t byte_idx = i / 2;
           size_t bit_shift = (i % 2) * 4;
@@ -365,7 +367,7 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensor(
           }
           size_t channel_idx = (i / channel_stride) % num_channels;
           float scale = scales[channel_idx];
-          int64_t zp = zero_points.empty() ? 0 : zero_points[channel_idx];
+          int64_t zp = zero_points[channel_idx];
           dequantized_values[i] = static_cast<float>(q - zp) * scale;
         }
       }
@@ -445,12 +447,29 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensorWithSlice(
     if (pc_quant) {
       if (pc_quant->scales.size() > 1) {
         if (pc_quant->quantized_dimension == 0) {
+          if (static_cast<size_t>(end_row) > pc_quant->scales.size()) {
+            return absl::InvalidArgumentError(
+                "Number of scales is smaller than slice end row");
+          }
           std::vector<float> sliced_scales(pc_quant->scales.begin() + start_row,
                                            pc_quant->scales.begin() + end_row);
-          std::vector<int64_t> sliced_zero_points;
-          if (!pc_quant->zero_points.empty()) {
-            sliced_zero_points.assign(pc_quant->zero_points.begin() + start_row,
-                                      pc_quant->zero_points.begin() + end_row);
+          LRT_TENSOR_RETURN_IF_ERROR(pc_quant->zero_points.Validate<int64_t>(
+              pc_quant->scales.size()));
+          ZeroPoints sliced_zero_points;
+          if (!pc_quant->zero_points.IsSymmetric()) {
+            if (pc_quant->zero_points.size() == 1) {
+              LRT_TENSOR_ASSIGN_OR_RETURN(
+                  const int64_t zp, pc_quant->zero_points.Scalar<int64_t>());
+              sliced_zero_points = ZeroPoints::Int({zp});
+            } else {
+              LRT_TENSOR_ASSIGN_OR_RETURN(
+                  const std::vector<int64_t> all_zero_points,
+                  pc_quant->zero_points.CopyAs<int64_t>(
+                      pc_quant->scales.size()));
+              sliced_zero_points = ZeroPoints::From(std::vector<int64_t>(
+                  all_zero_points.begin() + start_row,
+                  all_zero_points.begin() + end_row));
+            }
           }
           quantization = std::make_shared<PerChannelAffineQuantization>(
               std::move(sliced_scales), std::move(sliced_zero_points), 0);
@@ -488,21 +507,26 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensorWithSlice(
           "Quantization is not PerChannelAffineQuantization");
     }
     const auto& scales = pc_quant->scales;
-    const auto& zero_points = pc_quant->zero_points;
-
     if (scales.empty()) {
       return absl::InvalidArgumentError("Quantization scales are empty");
     }
+    if (scales.size() > 1 &&
+        scales.size() != static_cast<size_t>(end_row - start_row)) {
+      return absl::InvalidArgumentError(
+          "Number of scales does not match sliced row count");
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        const std::vector<int64_t> zero_points,
+        pc_quant->zero_points.CopyAs<int64_t>(scales.size()));
 
     if (type == Type::kI8) {
       const int8_t* quantized_data =
           reinterpret_cast<const int8_t*>(info.data) + start_offset_bytes;
       for (size_t i = 0; i < slice_elements; ++i) {
         size_t row_idx = i / row_elements;
-        float scale = scales[scales.size() == 1 ? 0 : row_idx];
-        int64_t zp = zero_points.empty()
-                         ? 0
-                         : zero_points[zero_points.size() == 1 ? 0 : row_idx];
+        size_t param_idx = scales.size() == 1 ? 0 : row_idx;
+        float scale = scales[param_idx];
+        int64_t zp = zero_points[param_idx];
         dequantized_values[i] =
             static_cast<float>(quantized_data[i] - zp) * scale;
       }
@@ -520,10 +544,9 @@ absl::StatusOr<TensorHandle> TfliteLoader::LoadTensorWithSlice(
           q |= 0xF0;  // Sign extend
         }
         size_t row_idx = i / row_elements;
-        float scale = scales[scales.size() == 1 ? 0 : row_idx];
-        int64_t zp = zero_points.empty()
-                         ? 0
-                         : zero_points[zero_points.size() == 1 ? 0 : row_idx];
+        size_t param_idx = scales.size() == 1 ? 0 : row_idx;
+        float scale = scales[param_idx];
+        int64_t zp = zero_points[param_idx];
         dequantized_values[i] = static_cast<float>(q - zp) * scale;
       }
       buffer = OwningCpuBuffer::Copy<Type::kFP32>(dequantized_values);
