@@ -403,14 +403,23 @@ JAVACOPTS = select({
     "//conditions:default": [],
 })
 
+# Shared manifest target so that Bazel deduplicates the manifest when multiple LiteRT API
+# targets are in the same dependency graph.
+android_library(
+    name = "litert_manifest",
+    exports_manifest = 1,
+    manifest = "src/main/AndroidManifest.xml",
+    # Keep this dependency even though it provides manifest entries only.
+    tags = ["keep_dep"],
+    visibility = ["//visibility:private"],
+)
+
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
 # runtime), Compiled Model API only.
 kt_android_library(
     name = "litert_compiled_model_api_no_jni",
     srcs = LITERT_AI_PACK_SRCS,
-    exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends() + [
         "//litert/kotlin/src/tests:__pkg__",
@@ -428,14 +437,14 @@ kt_android_library(
 kt_android_library(
     name = "litert_compiled_model_api_no_jni_no_aipack",
     srcs = LITERT_KOTLIN_SRCS_NO_AIPACK,
-    exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends() + [
         "//litert/kotlin/src/tests:__pkg__",
     ],
-    deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK + [
+        ":litert_manifest",
+    ],
 )
 
 # Android library for the litert package, CompiledModel API only.
@@ -462,12 +471,12 @@ filegroup(
 android_library(
     name = "litert_interpreter_api_no_jni",
     srcs = TFLITE_JAVA_SRCS_API,
-    exports_manifest = 1,
     javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = TFLITE_JAVA_DEPS,
+    deps = TFLITE_JAVA_DEPS + [
+        ":litert_manifest",
+    ],
 )
 
 # Android library for the litert package, with both the CompiledModel API and
@@ -486,29 +495,25 @@ android_library(
 
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
 # runtime), with both the Compiled Model API and also the older TFLite Interpreter API.
-kt_android_library(
+android_library(
     name = "litert_api_no_jni",
-    srcs = LITERT_API_SRCS_ALL,
-    exports_manifest = 1,
-    javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
-    proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS_ALL,
+    exports = [
+        ":litert_compiled_model_api_no_jni",
+        ":litert_interpreter_api_no_jni",
+    ],
 )
 
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
 # runtime), with both the Compiled Model API and also the older TFLite Interpreter API, but
 # without support for Google Play AI Pack.
-kt_android_library(
+android_library(
     name = "litert_api_no_jni_no_aipack",
-    srcs = LITERT_API_SRCS_NO_AIPACK,
-    exports_manifest = 1,
-    javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
-    proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
+    exports = [
+        ":litert_compiled_model_api_no_jni_no_aipack",
+        ":litert_interpreter_api_no_jni",
+    ],
 )
 
 # This library is for building the Maven artifact only.
