@@ -102,6 +102,15 @@ constexpr bool kSupportsErrorReporterApi = true;
 // }
 // copybara:uncomment_end
 
+// A test fixture that creates a default LiteRT Environment.
+// The plan is that in the future this will become the parameterization point
+// for alternate (e.g. Play-services) environments.
+class CompiledModelWithDefaultEnvironmentTest : public ::testing::Test {
+ protected:
+  Expected<Environment> env_ = Environment::Create({});
+  void SetUp() override { LITERT_ASSERT_OK(env_); }
+};
+
 TEST(CompiledModelTest, NpuSignatureSelectionPrunesMetadataOnCacheHit) {
   const std::string cache_dir =
       ::testing::TempDir() + "/signature_selection_cache";
@@ -188,11 +197,11 @@ TEST(CompiledModelTest, NpuSignatureSelectionPrunesMetadataOnCacheHit) {
   EXPECT_FALSE(cache_files.empty());
 }
 
-TEST(CompiledModelTest, CpuHostBufferRemainsMappedWithBackendRequirements) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       CpuHostBufferRemainsMappedWithBackendRequirements) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto compiled,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
   LITERT_ASSERT_OK_AND_ASSIGN(auto interp, GetInterpreter(compiled.Get()));
   LiteRtTensorBufferType host_type = kLiteRtTensorBufferTypeHostMemory;
@@ -221,11 +230,11 @@ TEST(CompiledModelTest, CpuHostBufferRemainsMappedWithBackendRequirements) {
               Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
-TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
-  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       CpuRuntimeSignatureSelectionStillExecutes) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto model,
-      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+      Model::CreateFromFile(*env_, testing::GetTestFilePath(kModelFileName)));
   LITERT_ASSERT_OK_AND_ASSIGN(auto signature, model.GetSignature(0));
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -233,8 +242,8 @@ TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
                               options.GetRuntimeOptions());
   const StringView selected[] = {signature.Key()};
   LITERT_ASSERT_OK(runtime_options.SetSelectedSignatures(selected));
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      auto compiled, CompiledModelTestPeer::Create(env, model.Get(), options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled, CompiledModelTestPeer::Create(
+                                                 *env_, model.Get(), options));
   LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled.CreateInputBuffers());
   LITERT_ASSERT_OK_AND_ASSIGN(auto outputs, compiled.CreateOutputBuffers());
   LITERT_ASSERT_OK(
@@ -249,14 +258,11 @@ TEST(CompiledModelTest, CpuRuntimeSignatureSelectionStillExecutes) {
               Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
-TEST(CompiledModelTest, Basic) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, Basic) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Check fully accelerated.
@@ -358,34 +364,34 @@ TEST(CompiledModelTest, Basic) {
   EXPECT_EQ(*duration_after_failed, -1);
 }
 
-TEST(CompiledModelTest, OwningCreateRejectsNonOwnedModel) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       OwningCreateRejectsNonOwnedModel) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       Model owned_model,
-      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+      Model::CreateFromFile(*env_, testing::GetTestFilePath(kModelFileName)));
   Model non_owned_model = Model::CreateFromNonOwnedHandle(owned_model.Get());
   Options options;
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   auto compiled_model =
-      CompiledModelTestPeer::Create(env, std::move(non_owned_model), options);
+      CompiledModelTestPeer::Create(*env_, std::move(non_owned_model), options);
 
   ASSERT_FALSE(compiled_model.HasValue());
   EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorInvalidArgument);
   EXPECT_TRUE(owned_model);
 }
 
-TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       OwningCreateRunsAfterModelMove) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       Model model,
-      Model::CreateFromFile(env, testing::GetTestFilePath(kModelFileName)));
+      Model::CreateFromFile(*env_, testing::GetTestFilePath(kModelFileName)));
   Options options;
   options.SetHardwareAccelerators(HwAccelerators::kCpu);
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModelTestPeer::Create(env, std::move(model), options));
+      CompiledModelTestPeer::Create(*env_, std::move(model), options));
   EXPECT_FALSE(model);  // NOLINT(bugprone-use-after-move)
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
                               compiled_model.CreateInputBuffers());
@@ -407,11 +413,11 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 }
 
 // copybara:uncomment_begin(google internal)
-// TEST(CompiledModelTest, CreateOutputBuffersDoesNotAllocateKnownOutputLayouts) {
-//   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+// TEST_F(CompiledModelWithDefaultEnvironmentTest,
+//        CreateOutputBuffersDoesNotAllocateKnownOutputLayouts) {
 //   LITERT_ASSERT_OK_AND_ASSIGN(
 //       CompiledModel compiled_model,
-//       CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+//       CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
 //                             HwAccelerators::kCpu));
 //   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
 //                               GetInterpreter(compiled_model.Get()));
@@ -427,12 +433,11 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 //   EXPECT_EQ(after.resource_size, before.resource_size);
 // }
 // 
-// TEST(CompiledModelTest,
-//      CreateOutputBuffersDoesNotAllocateUnknownOutputLayouts) {
-//   LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
+// TEST_F(CompiledModelWithDefaultEnvironmentTest,
+//        CreateOutputBuffersDoesNotAllocateUnknownOutputLayouts) {
 //   LITERT_ASSERT_OK_AND_ASSIGN(
 //       CompiledModel compiled_model,
-//       CompiledModel::Create(env,
+//       CompiledModel::Create(*env_,
 //                             testing::GetTestFilePath(kDynamicModelFileName),
 //                             HwAccelerators::kCpu));
 //   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
@@ -454,13 +459,11 @@ TEST(CompiledModelTest, OwningCreateRunsAfterModelMove) {
 // }
 // copybara:uncomment_end
 
-TEST(CompiledModelTest,
-     ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       ResizeInputTensorReflectsInCreatedInputBufferForSignature) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env,
+      CompiledModel::Create(*env_,
                             testing::GetTestFilePath(kDynamicModelFileName),
                             HwAccelerators::kCpu));
 
@@ -497,14 +500,11 @@ TEST(CompiledModelTest,
   LITERT_ASSERT_OK(compiled_model.Run(input_map, output_map));
 }
 
-TEST(CompiledModelTest, BasicSignatureIndex) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, BasicSignatureIndex) {
   // Create CompiledModel and check signatures.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
@@ -580,14 +580,11 @@ TEST(CompiledModelTest, BasicSignatureIndex) {
   }
 }
 
-TEST(CompiledModelTest, RunWithInputOutputMap) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, RunWithInputOutputMap) {
   // Create CompiledModel and check signatures.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
@@ -668,7 +665,8 @@ TEST(CompiledModelTest, RunWithInputOutputMap) {
   }
 }
 
-TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       RunTwoModelsPipelineWithSharedTensorBuffers) {
   // In this test, we create two CompiledModels and the second model uses the
   // output of the first model as its first input and the second input is shared
   // with the first model.
@@ -691,19 +689,16 @@ TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
   //           v
   //         output2
 
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
   // Create the first CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel model1,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Create the second CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel model2,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Create and fill input and output buffers for the first model.
@@ -779,14 +774,11 @@ TEST(CompiledModelTest, RunTwoModelsPipelineWithSharedTensorBuffers) {
 }
 
 // Tests Compiled Model signature accessors.
-TEST(CompiledModelTest, SignatureAccessors) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, SignatureAccessors) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Check signature keys.
@@ -819,14 +811,12 @@ TEST(CompiledModelTest, SignatureAccessors) {
   EXPECT_THAT(output_names, ElementsAre("tfl.add"));
 }
 
-TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       SignatureAccessorsInvalidContext) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Check GetSignature with invalid index.
@@ -909,14 +899,11 @@ TEST(CompiledModelTest, SignatureAccessorsInvalidContext) {
 
 // Tests Compiled Model async API on CPU. In the CPU case, the async API should
 // always return false.
-TEST(CompiledModelTest, RunAsyncReturnsFalse) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, RunAsyncReturnsFalse) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Create input and output buffers.
@@ -964,12 +951,11 @@ TEST(CompiledModelTest, RunAsyncReturnsFalse) {
   }
 }
 
-TEST(CompiledModelTest, RunWithOptionsAndSchedulingInfoOverloads) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       RunWithOptionsAndSchedulingInfoOverloads) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
@@ -1044,12 +1030,10 @@ TEST(CompiledModelTest, RunWithOptionsAndSchedulingInfoOverloads) {
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
-TEST(CompiledModelTest, DispatchAnnotations) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, DispatchAnnotations) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   LITERT_ASSERT_OK(compiled_model.SetDispatchAnnotation(0, "priority", "high"));
@@ -1090,12 +1074,11 @@ TEST(CompiledModelTest, DispatchAnnotations) {
   LITERT_ASSERT_OK(compiled_model.RemoveDispatchAnnotation("never_existed"));
 }
 
-TEST(CompiledModelTest, DispatchAnnotationsInvalidSignature) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       DispatchAnnotationsInvalidSignature) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   EXPECT_FALSE(
@@ -1115,14 +1098,12 @@ TEST(CompiledModelTest, DispatchAnnotationsInvalidSignature) {
           .HasValue());
 }
 
-TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       ResizeInputTensorWithDynamicModel) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env,
+      CompiledModel::Create(*env_,
                             testing::GetTestFilePath(kDynamicModelFileName),
                             HwAccelerators::kCpu));
 
@@ -1218,11 +1199,11 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer0,
-        TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+        TensorBuffer::CreateManaged(*env_, TensorBufferType::kHostMemory,
                                     new_type0, size0));
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer input_buffer1,
-        TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+        TensorBuffer::CreateManaged(*env_, TensorBufferType::kHostMemory,
                                     new_type1, size1));
     std::vector<TensorBuffer> input_buffers;
     input_buffers.push_back(std::move(input_buffer0));
@@ -1249,7 +1230,7 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
 
     LITERT_ASSERT_OK_AND_ASSIGN(
         TensorBuffer output_buffer,
-        TensorBuffer::CreateManaged(env, TensorBufferType::kHostMemory,
+        TensorBuffer::CreateManaged(*env_, TensorBufferType::kHostMemory,
                                     new_out_type, out_size));
 
     std::vector<TensorBuffer> output_buffers;
@@ -1275,13 +1256,10 @@ TEST(CompiledModelTest, ResizeInputTensorWithDynamicModel) {
   }
 }
 // Test error reporter with BufferErrorReporter mode
-TEST(CompiledModelTest, ErrorReporterBufferMode) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ErrorReporterBufferMode) {
   if constexpr (!kSupportsErrorReporterApi) {
     GTEST_SKIP() << "ReportError is not implemented on Windows.";
   }
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -1295,7 +1273,7 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
   // Create CompiledModel with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             compilation_options));
 
   // Test 1: Basic ReportError functionality
@@ -1341,17 +1319,14 @@ TEST(CompiledModelTest, ErrorReporterBufferMode) {
 }
 
 // Test error reporter with default StderrReporter mode
-TEST(CompiledModelTest, ErrorReporterStderrMode) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ErrorReporterStderrMode) {
   if constexpr (!kSupportsErrorReporterApi) {
     GTEST_SKIP() << "ReportError is not implemented on Windows.";
   }
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
   // Create CompiledModel with default StderrReporter
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // ReportError should work with StderrReporter (prints to stderr)
@@ -1367,13 +1342,10 @@ TEST(CompiledModelTest, ErrorReporterStderrMode) {
 }
 
 // Test error reporter with edge cases
-TEST(CompiledModelTest, ErrorReporterEdgeCases) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ErrorReporterEdgeCases) {
   if constexpr (!kSupportsErrorReporterApi) {
     GTEST_SKIP() << "ReportError is not implemented on Windows.";
   }
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
   // Create compilation options with BufferErrorReporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -1385,7 +1357,7 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             compilation_options));
 
   // Test 1: Empty error message
@@ -1423,13 +1395,10 @@ TEST(CompiledModelTest, ErrorReporterEdgeCases) {
 }
 
 // Test error reporter with None mode (no error reporting)
-TEST(CompiledModelTest, ErrorReporterNoneMode) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ErrorReporterNoneMode) {
   if constexpr (!kSupportsErrorReporterApi) {
     GTEST_SKIP() << "ReportError is not implemented on Windows.";
   }
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
   // Create compilation options with no error reporter
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
@@ -1441,7 +1410,7 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             compilation_options));
 
   // ReportError should work but do nothing
@@ -1458,15 +1427,12 @@ TEST(CompiledModelTest, ErrorReporterNoneMode) {
 }
 
 // Test for constant output tensor support
-TEST(CompiledModelTest, ConstantOutputTensor) {
-  // Environment setup
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ConstantOutputTensor) {
   // Create CompiledModel with constant output tensor.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(
-          env, testing::GetTestFilePath(kConstantOutputTensorModelFileName),
+          *env_, testing::GetTestFilePath(kConstantOutputTensorModelFileName),
           HwAccelerators::kCpu));
 
   EXPECT_EQ(compiled_model.GetNumSignatures(), 1);
@@ -1569,10 +1535,7 @@ TEST(CompiledModelTest, ConstantOutputTensor) {
   }
 }
 
-TEST(CompiledModelTest, ExternalTensorBinding) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, ExternalTensorBinding) {
   // Create weight tensor buffer.
   alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,
                                                                         2.0f};
@@ -1588,7 +1551,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             compilation_options));
 
   // Create and fill input and output buffers.
@@ -1603,7 +1566,7 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer arg0_buffer,
       TensorBuffer::CreateManaged(
-          env, TensorBufferType::kHostMemory,
+          *env_, TensorBufferType::kHostMemory,
           RankedTensorType(ElementType::Float32, Layout(Dimensions({2}))),
           sizeof(kInputTensor)));
   LITERT_ASSERT_OK(
@@ -1623,13 +1586,13 @@ TEST(CompiledModelTest, ExternalTensorBinding) {
   EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kExpectedOutput));
 }
 
-TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       ResizeInputTensorNonStrictAllowsStaticShapes) {
   LITERT_ASSERT_OK_AND_ASSIGN(Options compilation_options, Options::Create());
   compilation_options.SetHardwareAccelerators(HwAccelerators::kCpu);
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             compilation_options));
 
   const std::vector<int> new_dims = {4545};
@@ -1639,13 +1602,13 @@ TEST(CompiledModelTest, ResizeInputTensorNonStrictAllowsStaticShapes) {
       /*input_index=*/size_t(0), absl::MakeConstSpan(new_dims)));
 }
 
-TEST(CompiledModelTest, EmptyInputResizeAndRunTransitions) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       EmptyInputResizeAndRunTransitions) {
   for (bool strict : {true, false}) {
     SCOPED_TRACE(strict);
     LITERT_ASSERT_OK_AND_ASSIGN(
         CompiledModel model,
-        CompiledModel::Create(env,
+        CompiledModel::Create(*env_,
                               testing::GetTestFilePath(kDynamicModelFileName),
                               HwAccelerators::kCpu));
     for (int rows : {0, 3, 0, 1}) {
@@ -1687,11 +1650,11 @@ TEST(CompiledModelTest, EmptyInputResizeAndRunTransitions) {
   }
 }
 
-TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       EmptyInputAutomaticResizeTransitions) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel model,
-      CompiledModel::Create(env,
+      CompiledModel::Create(*env_,
                             testing::GetTestFilePath(kDynamicModelFileName),
                             HwAccelerators::kCpu));
   for (int rows : {0, 3, 0, 1}) {
@@ -1703,7 +1666,7 @@ TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
     for (size_t input = 0; input < 2; ++input) {
       LITERT_ASSERT_OK_AND_ASSIGN(
           auto buffer, TensorBuffer::CreateManaged(
-                           env, TensorBufferType::kHostMemory, type, bytes));
+                           *env_, TensorBufferType::kHostMemory, type, bytes));
       if (rows != 0) {
         const std::vector<float> values(rows * 6, 2.0f);
         LITERT_ASSERT_OK(buffer.Write<float>(values));
@@ -1712,7 +1675,7 @@ TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
     }
     LITERT_ASSERT_OK_AND_ASSIGN(
         auto output, TensorBuffer::CreateManaged(
-                         env, TensorBufferType::kHostMemory, type, bytes));
+                         *env_, TensorBufferType::kHostMemory, type, bytes));
     std::vector<TensorBuffer> outputs;
     outputs.push_back(std::move(output));
     // Run must detect the empty/nonempty input layouts without an explicit
@@ -1730,14 +1693,11 @@ TEST(CompiledModelTest, EmptyInputAutomaticResizeTransitions) {
   }
 }
 
-TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, GetBufferRequirementsDetailed) {
   // Create CompiledModel.
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             HwAccelerators::kCpu));
 
   // Check input buffer requirements.
@@ -1783,15 +1743,13 @@ TEST(CompiledModelTest, GetBufferRequirementsDetailed) {
   EXPECT_EQ(output_strides.size(), 0);
 }
 
-TEST(CompiledModelTest, StringInput) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, StringInput) {
   // Load the gather_string model.
   std::string model_path = testing::GetTestFilePath("gather_string.tflite");
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, model_path, HwAccelerators::kCpu));
+      CompiledModel::Create(*env_, model_path, HwAccelerators::kCpu));
 
   // Check signatures.
   LITERT_ASSERT_OK_AND_ASSIGN(auto input_names,
@@ -1808,7 +1766,7 @@ TEST(CompiledModelTest, StringInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer indices_buffer,
       TensorBuffer::CreateManaged(
-          env,
+          *env_,
           // We're using CPU Accelerator and the model only supports CPU.
           TensorBufferType::kHostMemory,
           RankedTensorType(ElementType::Int64, Layout(Dimensions({3}))),
@@ -1825,7 +1783,7 @@ TEST(CompiledModelTest, StringInput) {
   // Use the new utility to create and populate the input TensorBuffer
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer input_buffer,
-      litert::util::CreateTensorBufferFromStrings(env, input_strings));
+      litert::util::CreateTensorBufferFromStrings(*env_, input_strings));
 
   // Prepare output buffer.
   // We expect 3 strings.
@@ -1836,7 +1794,7 @@ TEST(CompiledModelTest, StringInput) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       TensorBuffer output_buffer,
       TensorBuffer::CreateManaged(
-          env, TensorBufferType::kHostMemory,
+          *env_, TensorBufferType::kHostMemory,
           RankedTensorType(ElementType::TfString,
                            Layout(Dimensions({static_cast<int32_t>(
                                expected_outputs.size())}))),
@@ -1860,13 +1818,11 @@ TEST(CompiledModelTest, StringInput) {
   EXPECT_THAT(actual_outputs, ElementsAreArray(expected_outputs));
 }
 
-TEST(CompiledModelTest, QuantizationAccessors) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, litert::Environment::Create({}));
-
+TEST_F(CompiledModelWithDefaultEnvironmentTest, QuantizationAccessors) {
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
       CompiledModel::Create(
-          env, testing::GetTestFilePath("simple_quantized_ops.tflite"),
+          *env_, testing::GetTestFilePath("simple_quantized_ops.tflite"),
           HwAccelerators::kCpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(QuantizationTypeId input_q_type,
@@ -1908,7 +1864,8 @@ TEST(CompiledModelTest, QuantizationAccessors) {
   EXPECT_EQ(output_q_type_by_name, QuantizationTypeId::PerTensor);
 }
 
-TEST(CompiledModelTest, ModelWithoutNpuOpsSkipsNpuAccelerator) {
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       ModelWithoutNpuOpsSkipsNpuAccelerator) {
   // Test scenario: An environment with auto-registered accelerators (which
   // includes NPU by default) compiles a standard model without NPU ops, while
   // requesting both CPU and NPU hardware accelerators.
@@ -1918,15 +1875,13 @@ TEST(CompiledModelTest, ModelWithoutNpuOpsSkipsNpuAccelerator) {
   // attempt to initialize the Dispatch API (which would fail with "no dispatch
   // library found" errors if NPU libraries are absent), and should execute
   // successfully on CPU.
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
-
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
   LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu |
                                                    HwAccelerators::kNpu));
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
-      CompiledModel::Create(env, testing::GetTestFilePath(kModelFileName),
+      CompiledModel::Create(*env_, testing::GetTestFilePath(kModelFileName),
                             options));
 
   // The model has no NPU ops and runs on CPU, so non-CPU fully accelerated
@@ -1947,9 +1902,8 @@ TEST(CompiledModelTest, ModelWithoutNpuOpsSkipsNpuAccelerator) {
   LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
 }
 
-TEST(CompiledModelTest, CreateWithConstEnvironment) {
-  LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
-  const Environment& const_env = env;
+TEST_F(CompiledModelWithDefaultEnvironmentTest, CreateWithConstEnvironment) {
+  const Environment& const_env = *env_;
 
   LITERT_ASSERT_OK_AND_ASSIGN(
       CompiledModel compiled_model,
