@@ -210,6 +210,33 @@
   XCTAssertEqual(event->IsSignaled(event.get()), 1);
 }
 
+- (void)testCustomEventMetalIsUniqueAndReuse {
+  XCTAssertNotNil(_device, @"Metal device should be initialized in setUp");
+  XCTAssertNotNil(_commandQueue, @"Metal command queue should be initialized in setUp");
+
+  auto* event = new litert::ml_drift::CustomEventMetal(_device);
+  XCTAssertTrue(event->IsUnique());
+  XCTAssertEqual(event->IsSignaled(event), 1);
+
+  event->Retain(event);
+  XCTAssertFalse(event->IsUnique());
+  event->Release(event);
+  XCTAssertTrue(event->IsUnique());
+
+  for (int step = 0; step < 3; ++step) {
+    id<MTLCommandBuffer> commandBuffer = [_commandQueue commandBuffer];
+    event->EncodeSignal(commandBuffer);
+    XCTAssertEqual(event->IsSignaled(event), 0);
+    [commandBuffer commit];
+    [commandBuffer waitUntilCompleted];
+    event->Wait(event, /*timeout_in_ms=*/-1);
+    XCTAssertEqual(event->IsSignaled(event), 1);
+    XCTAssertTrue(event->IsUnique());
+  }
+
+  event->Release(event);
+}
+
 - (void)testLockUnlockMetalMemory {
   if (!_device) return;
 
