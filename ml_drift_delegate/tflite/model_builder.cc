@@ -110,6 +110,40 @@ inline std::string GetTensorDebugString(const TfLiteTensor* tensor) {
   return attr;
 }
 
+// Returns the scale and zero point tensors of `tensor`, a constant with N-D
+// blockwise quantization that IsSupported() validated with
+// GetBlockwiseV2Params().
+BlockwiseV2Params ReadBlockwiseV2Params(const ObjectReader& reader,
+                                        const TfLiteTensor& tensor) {
+  const auto* quant = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+      tensor.quantization.params);
+  BlockwiseV2Params params;
+  params.scale = reader.GetTensor(quant->scale);
+  if (quant->zero_point != kTfLiteOptionalTensor) {
+    params.zero_point = reader.GetTensor(quant->zero_point);
+  }
+  return params;
+}
+
+// Returns float attributes for 2-D FULLY_CONNECTED weights with N-D blockwise
+// quantization, dequantizing them on the host. This is the fallback for
+// weights that can't be consumed in their quantized form.
+::ml_drift::FullyConnectedAttributes GetFullyConnectedBlockwiseV2Attributes(
+    int weights_node_input_index, ObjectReader* reader) {
+  const TfLiteTensor* weights_tensor =
+      reader->GetInputTensor(weights_node_input_index);
+  ::ml_drift::FullyConnectedAttributes attr;
+  attr.weights.id = reader->GetTensorId(weights_node_input_index);
+  attr.weights.shape = ::ml_drift::OHWI(weights_tensor->dims->data[0], 1, 1,
+                                        weights_tensor->dims->data[1]);
+  attr.weights.data.resize(attr.weights.shape.DimensionsProduct() +
+                           XNN_EXTRA_BYTES / sizeof(float));
+  DequantizeBlockwiseV2(*weights_tensor,
+                        ReadBlockwiseV2Params(*reader, *weights_tensor),
+                        attr.weights.data.data());
+  return attr;
+}
+
 // if copy_weights is true, input can be int4 and then it will be unpacked to
 // int8.
 ::ml_drift::FullyConnectedInt8Attributes GetFullyConnectedInt8Attributes(
@@ -356,6 +390,14 @@ void ConfigSharedWeightFullyConnectedNode(
       }
       has_blockwise_zero_point = block_qparams->zero_point >= 0;
     }
+  } else if (weights_tensor->quantization.type ==
+             kTfLiteBlockwiseQuantizationV2) {
+    BlockwiseV2WeightsInfo info;
+    ABSL_QCHECK_OK(GetBlockwiseV2WeightsInfo(
+        *weights_tensor, ReadBlockwiseV2Params(*reader, *weights_tensor),
+        &info));
+    scale_shape = info.scale_shape;
+    has_blockwise_zero_point = info.has_zero_point;
   }
 
   const bool has_quant =
@@ -451,6 +493,27 @@ void ConfigSharedBiasFullyConnectedNode(bool bias_shared,
     bias->tensor.shape = ::ml_drift::BHWC(1, 1, 1, bias->tensor.shape.b);
   }
   graph->AddConsumer(node->id, bias->id);
+}
+
+// Returns `value` converted to `type` by a new Cast node, or `value` itself if
+// it already has that type.
+//
+// QUANTIZE and DEQUANTIZE are emulated with QuantizeAndDequantize, which keeps
+// the type of its input. The float version of a quantized tensor is always
+// FLOAT32, so with FLOAT16 activations the two sides of those ops differ in
+// type and one of them has to be cast explicitly.
+::ml_drift::Value* CastValueTo(::ml_drift::DataType type,
+                               ::ml_drift::GraphFloat32* graph,
+                               ::ml_drift::Value* value) {
+  if (value->tensor.type == type) return value;
+  ::ml_drift::Node* cast_node = graph->NewNode();
+  cast_node->operation.type = ToString(::ml_drift::OperationType::kCast);
+  graph->AddConsumer(cast_node->id, value->id);
+  ::ml_drift::Value* cast_value = graph->NewValue();
+  cast_value->tensor.type = type;
+  cast_value->tensor.shape = value->tensor.shape;
+  graph->SetProducer(cast_node->id, cast_value->id);
+  return cast_value;
 }
 
 bool IsLogicalOpCode(int32_t builtin_code) {
@@ -2160,8 +2223,11 @@ class DequantizeOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
+    // Versions 4 to 6 add per-channel int8 and int4 inputs.
+    // Runtime inputs are emulated with QuantizeAndDequantize on their float
+    // version, which needs per-tensor affine quantization (checked below).
     ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 3}));
+                                         {.max_version = 6}));
     const int runtime_inputs =
         GetNumberOfRuntimeInputsForNode(context, tflite_node);
     if (runtime_inputs == 0) {
@@ -2209,6 +2275,11 @@ class DequantizeOperationParser : public TFLiteOperationParser {
     const TfLiteTensor* input = nullptr;
     ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 0, &input));
 
+    if (input->quantization.params != nullptr &&
+        input->quantization.type != kTfLiteAffineQuantization) {
+      return absl::UnimplementedError(
+          "Dequantize needs an input with affine quantization.");
+    }
     TfLiteAffineQuantization* quantization_data =
         reinterpret_cast<TfLiteAffineQuantization*>(input->quantization.params);
     if (!quantization_data) {
@@ -2280,7 +2351,6 @@ class DequantizeOperationParser : public TFLiteOperationParser {
         ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
     // Non-constant dequantization.
     reader->AddInput(node, 0);
-    reader->AddOutputs(node);
 
     // Quantization attributes should already be present in the input tensor.
     auto input_value = graph->FindInputs(node->id)[0];
@@ -2294,6 +2364,24 @@ class DequantizeOperationParser : public TFLiteOperationParser {
       // This case should be caught by IsSupported.
       ABSL_LOG(FATAL) << "Encountered Dequantize input with no quant params";
     }
+
+    const ::ml_drift::Value* output_value =
+        reader->ReadValueByTensorIdx(tflite_node->outputs->data[0]);
+    if (output_value->tensor.type == input_value->tensor.type) {
+      reader->AddOutputs(node);
+      return;
+    }
+    // The output (e.g. FLOAT16) has another type than the float version of the
+    // quantized input: QuantizeAndDequantize keeps the input type and a Cast
+    // produces the output.
+    ::ml_drift::Value* dequantized_value = graph->NewValue();
+    dequantized_value->tensor.type = input_value->tensor.type;
+    dequantized_value->tensor.shape = output_value->tensor.shape;
+    graph->SetProducer(node->id, dequantized_value->id);
+    ::ml_drift::Node* cast_node = graph->NewNode();
+    cast_node->operation.type = ToString(::ml_drift::OperationType::kCast);
+    graph->AddConsumer(cast_node->id, dequantized_value->id);
+    reader->AddOutputs(cast_node);
   }
 };
 
@@ -3570,7 +3658,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
     ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 14}));
+                                         {.max_version = 17}));
 
     // TODO(b/372428865) : Get tensor sharing information in IsSupported.
     //            To make checkings more completed, sharing information is
@@ -3605,6 +3693,34 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
     } else if (weights_tensor->quantization.type ==
                kTfLiteBlockwiseQuantization) {
       // TODO: who/impjdi - Add meaningful check.
+    } else if (weights_tensor->quantization.type ==
+               kTfLiteBlockwiseQuantizationV2) {
+      // N-D blockwise quantization (FULLY_CONNECTED versions 16 and 17): the
+      // scales and zero points are separate tensors, e.g. centered int2.
+      if (weights_tensor->dims->size != 2) {
+        return absl::UnimplementedError(
+            "Expected 2D weights for N-D blockwise quantization.");
+      }
+      BlockwiseV2Params blockwise_params;
+      ABSL_RETURN_IF_ERROR(
+          GetBlockwiseV2Params(context->tensors, context->tensors_size,
+                               *weights_tensor, &blockwise_params));
+      // Weights that a quantized FullyConnected node can't consume are
+      // dequantized on the host in Parse(), which needs their data.
+      BlockwiseV2WeightsInfo blockwise_info;
+      if (weights_tensor->data.raw_const == nullptr &&
+          !GetBlockwiseV2WeightsInfo(*weights_tensor, blockwise_params,
+                                     &blockwise_info)
+               .ok()) {
+        return absl::UnimplementedError(
+            "N-D blockwise quantized weights without host data can't be "
+            "dequantized on the host.");
+      }
+      if (tflite_node->inputs->size > kInputBiasId &&
+          tflite_node->inputs->data[kInputBiasId] != kTfLiteOptionalTensor) {
+        return absl::UnimplementedError(
+            "Bias is not supported with N-D blockwise quantized weights.");
+      }
     } else {
       ABSL_RETURN_IF_ERROR(
           PreCheckReadValue(context, tflite_node, kInputWeightsId));
@@ -3630,6 +3746,11 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
       return absl::UnimplementedError(
           "Unsupported fully connected weights format.");
     }
+    if (params->quant_spec_size > 0) {
+      // FULLY_CONNECTED version 15: a non-standard quantization contract.
+      return absl::UnimplementedError(
+          "Fully connected with a quantization spec is not supported.");
+    }
     ABSL_RETURN_IF_ERROR(
         PreCheckMaybeFuseActivation(tflite_node, params->activation));
     return absl::OkStatus();
@@ -3638,7 +3759,21 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
   void Parse(const TfLiteNode* tflite_node,
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
-    reader->AllowSharingInput(kInputWeightsId);
+    const TfLiteTensor* weights_tensor =
+        reader->GetInputTensor(kInputWeightsId);
+    const bool blockwise_v2_weights =
+        weights_tensor->quantization.type == kTfLiteBlockwiseQuantizationV2;
+    // N-D blockwise quantized weights are shared in their quantized form.
+    // Weights that a quantized FullyConnected node can't consume are not
+    // allowed for sharing; they are dequantized on the host below instead.
+    BlockwiseV2WeightsInfo blockwise_v2_info;
+    if (!blockwise_v2_weights ||
+        GetBlockwiseV2WeightsInfo(
+            *weights_tensor, ReadBlockwiseV2Params(*reader, *weights_tensor),
+            &blockwise_v2_info)
+            .ok()) {
+      reader->AllowSharingInput(kInputWeightsId);
+    }
     reader->AllowSharingInput(kInputBiasId);
     const auto* params = static_cast<const TfLiteFullyConnectedParams*>(
         tflite_node->builtin_data);
@@ -3648,14 +3783,17 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
     const ObjectReader::ConstantInputSharingInfo bias_share =
         reader->GetSharingInfoByNodeInputIndex(kInputBiasId);
     const TfLiteTensor* src_tensor = reader->GetInputTensor(kInputSrcId);
-    const TfLiteTensor* weights_tensor =
-        reader->GetInputTensor(kInputWeightsId);
+    // Shared quantized weights are consumed by a quantized FullyConnected node,
+    // which gets its scales and zero points from the shared memory manager.
+    const bool shared_quantized_weights =
+        weights_share.IsShared() &&
+        (weights_tensor->quantization.type == kTfLiteAffineQuantization ||
+         weights_tensor->quantization.type == kTfLiteBlockwiseQuantization ||
+         blockwise_v2_weights);
     if (reader->GetNumberOfRuntimeInputs() == 2 || weights_share.IsShared()) {
       ::ml_drift::Node* node = graph->NewNode();
       reader->AddInput(node, 0);
-      if (weights_share.IsShared() &&
-          (weights_tensor->quantization.type == kTfLiteAffineQuantization ||
-           weights_tensor->quantization.type == kTfLiteBlockwiseQuantization)) {
+      if (shared_quantized_weights) {
         ConfigSharedWeightFullyConnectedNode(
             tflite_node->inputs->data[kInputWeightsId], weights_tensor, reader,
             graph, node);
@@ -3692,9 +3830,7 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
       // ReshapeFullyConnectedOutput().
       weights_tensor = reader->GetInputTensor(kInputWeightsId);
 
-      if (weights_share.IsShared() &&
-          (weights_tensor->quantization.type == kTfLiteAffineQuantization ||
-           weights_tensor->quantization.type == kTfLiteBlockwiseQuantization)) {
+      if (shared_quantized_weights) {
         HandleFusedActivation(params->activation, graph, node);
       } else {
         ::ml_drift::FullyConnectedAttributes attr;
@@ -3747,7 +3883,10 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
     reader->AddInput(node, 0);
 
     ::ml_drift::FullyConnectedAttributes attr =
-        GetFullyConnectedAttributes(kInputWeightsId, kInputBiasId, reader);
+        blockwise_v2_weights
+            ? GetFullyConnectedBlockwiseV2Attributes(kInputWeightsId, reader)
+            : GetFullyConnectedAttributes(kInputWeightsId, kInputBiasId,
+                                          reader);
 
     auto input = graph->FindInputs(node->id)[0];
     ::ml_drift::Node* conv = node;
@@ -4775,15 +4914,19 @@ class QuantizeOperationParser : public TFLiteOperationParser {
              const TfLiteRegistration* registration,
              ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
     // 'Quantize' is rewritten as QuantizeAndDequantize since we are dealing
-    // with floating-point versions of the original tensors.
+    // with floating-point versions of the original tensors. The input is cast
+    // to the type of the output first if they differ (e.g. FLOAT16 input).
+    const ::ml_drift::Value* output_value =
+        reader->ReadValueByTensorIdx(tflite_node->outputs->data[0]);
+    const ::ml_drift::Value* input_value =
+        CastValueTo(output_value->tensor.type, graph, reader->ReadValue(0));
     ::ml_drift::Node* node = graph->NewNode();
     node->operation.type =
         ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
-    reader->AddInput(node, 0);
+    graph->AddConsumer(node->id, input_value->id);
     reader->AddOutputs(node);
 
     // Quantization attributes should already be present in the output tensor.
-    auto output_value = graph->FindOutputs(node->id)[0];
     ::ml_drift::QuantizeAndDequantizeAttributes attr;
     attr.min = output_value->quant_params.value().min;
     attr.max = output_value->quant_params.value().max;

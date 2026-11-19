@@ -209,6 +209,12 @@ class ObjectReader {
   void ReadQuantizedValueByTensorIdx(uint32_t tensor_idx,
                                      ::ml_drift::Value** input_int8);
 
+  // Same as above for Int8, Int4 or Int2 quantized weights whose graph value
+  // has `shape` instead of the (O, 1, 1, I) of 2D or 4D FullyConnected weights.
+  void ReadQuantizedValueByTensorIdx(uint32_t tensor_idx,
+                                     const ::ml_drift::BHWC& shape,
+                                     ::ml_drift::Value** input);
+
   int GetNumberOfRuntimeInputs() const;
 
   int GetTensorId(int node_input_index) const;
@@ -270,7 +276,8 @@ class ObjectReader {
   // WARNING: this should not be called is `SharingEnabled()` returns false.
   void SetSharedTensor(::ml_drift::ValueId graph_value_id, int global_id,
                        int tflite_tensor_id, bool dequant_forced,
-                       std::optional<::ml_drift::Layout> layout);
+                       std::optional<::ml_drift::Layout> layout,
+                       bool transpose_batched_weights = true);
 
   inline bool IsNodeInputTensorPresent(int node_input_index) const {
     return node_input_index < node_->inputs->size &&

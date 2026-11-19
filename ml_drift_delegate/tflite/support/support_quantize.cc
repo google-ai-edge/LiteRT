@@ -66,6 +66,10 @@ bool IsQuantizeSupported(const TfLiteContext* absl_nonnull context,
     *error = "Encountered Quantize output with no quant params";
     return false;
   }
+  if (output->quantization.type != kTfLiteAffineQuantization) {
+    *error = "Quantize needs an output with affine quantization.";
+    return false;
+  }
 
   // Per-axis (per-channel) quantized activations are not supported: downstream
   // PopulateQuantParams QCHECK-fails on scale->size > 1. Reject here so the op

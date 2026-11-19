@@ -14,12 +14,14 @@
 
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/types/span.h"  // from @com_google_absl
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "tflite/core/c/common.h"
 #include "tflite/testing/matchers.h"
 
@@ -253,6 +255,102 @@ TEST(ModelBuilderHelperTest, NotBroadcastable3d) {
   //                                       ^^ not broadcastable
   EXPECT_FALSE(IsBroadcastable(dims_3di.array, dims_4d.array));
   EXPECT_FALSE(IsBroadcastable(dims_4d.array, dims_3di.array));
+}
+
+TEST(ModelBuilderHelperTest, BlockwiseV2BatchedWeightsHioAndHoi) {
+  // 2 batches x 3 rows x 4 cols = 24 INT2 values (6 bytes).
+  // Byte 0x4E packs (-2, -1, 0, 1) in 2-bit two's complement (0b10, 0b11, 0b00,
+  // 0b01 from LSB to MSB).
+  int8_t packed_int2[6] = {
+      0x4E, 0x4E, 0x4E, 0x4E, 0x4E, 0x4E,
+  };
+
+  auto make_const_tensor = [](TfLiteType dtype, TfLiteIntArray* dims,
+                              const void* buf, size_t bytes) {
+    TfLiteTensor t{};
+    t.type = dtype;
+    t.dims = dims;
+    t.data.raw_const = static_cast<const char*>(buf);
+    t.bytes = bytes;
+    t.allocation_type = kTfLiteMmapRo;
+    return t;
+  };
+
+  // Case 1: [H=2, I=4, O=3] with block_shape [1, 4, 1], scales [2, 1, 3].
+  float scales_hio[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  float zps_hio[6] = {-0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f};
+  IntArrayWrapper w_dims_hio = {2, 4, 3};
+  IntArrayWrapper s_dims_hio = {2, 1, 3};
+  IntArrayWrapper bshape_hio = {1, 4, 1};
+  TfLiteBlockwiseQuantizationV2 q_hio = {
+      .scale = 1, .zero_point = 2, .block_shape = bshape_hio.array};
+  TfLiteTensor tensors_hio[3] = {
+      make_const_tensor(kTfLiteInt2, w_dims_hio.array, packed_int2,
+                        sizeof(packed_int2)),
+      make_const_tensor(kTfLiteFloat32, s_dims_hio.array, scales_hio,
+                        sizeof(scales_hio)),
+      make_const_tensor(kTfLiteFloat32, s_dims_hio.array, zps_hio,
+                        sizeof(zps_hio)),
+  };
+  tensors_hio[0].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  tensors_hio[0].quantization.params = &q_hio;
+
+  BlockwiseV2Params params_hio;
+  ASSERT_OK(GetBlockwiseV2Params(tensors_hio, 3, tensors_hio[0], &params_hio));
+  BlockwiseV2WeightsInfo info_hio;
+  ASSERT_OK(GetBlockwiseV2WeightsInfo(tensors_hio[0], params_hio, &info_hio,
+                                      /*transpose_batched_weights=*/true));
+  EXPECT_EQ(info_hio.weights_shape, ::ml_drift::OHWI(3, 2, 1, 4));
+  EXPECT_EQ(info_hio.scale_shape, ::ml_drift::OHWI(3, 2, 1, 1));
+  EXPECT_TRUE(info_hio.has_zero_point);
+  EXPECT_TRUE(info_hio.is_hio);
+  EXPECT_THAT(
+      ReadBlockwiseV2WeightsParam(tensors_hio[0], *params_hio.scale, info_hio),
+      ElementsAre(1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f));
+
+  // Case 2: [H=2, O=3, I=4] with block_shape [1, 1, 4], scales [2, 3, 1].
+  float scales_hoi[6] = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  float zps_hoi[6] = {-0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f};
+  IntArrayWrapper w_dims_hoi = {2, 3, 4};
+  IntArrayWrapper s_dims_hoi = {2, 3, 1};
+  IntArrayWrapper bshape_hoi = {1, 1, 4};
+  TfLiteBlockwiseQuantizationV2 q_hoi = {
+      .scale = 1, .zero_point = 2, .block_shape = bshape_hoi.array};
+  TfLiteTensor tensors_hoi[3] = {
+      make_const_tensor(kTfLiteInt2, w_dims_hoi.array, packed_int2,
+                        sizeof(packed_int2)),
+      make_const_tensor(kTfLiteFloat32, s_dims_hoi.array, scales_hoi,
+                        sizeof(scales_hoi)),
+      make_const_tensor(kTfLiteFloat32, s_dims_hoi.array, zps_hoi,
+                        sizeof(zps_hoi)),
+  };
+  tensors_hoi[0].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  tensors_hoi[0].quantization.params = &q_hoi;
+
+  BlockwiseV2Params params_hoi;
+  ASSERT_OK(GetBlockwiseV2Params(tensors_hoi, 3, tensors_hoi[0], &params_hoi));
+  BlockwiseV2WeightsInfo info_hoi;
+  ASSERT_OK(GetBlockwiseV2WeightsInfo(tensors_hoi[0], params_hoi, &info_hoi,
+                                      /*transpose_batched_weights=*/false));
+  EXPECT_EQ(info_hoi.weights_shape, ::ml_drift::OHWI(3, 2, 1, 4));
+  EXPECT_EQ(info_hoi.scale_shape, ::ml_drift::OHWI(3, 2, 1, 1));
+  EXPECT_TRUE(info_hoi.has_zero_point);
+  EXPECT_TRUE(info_hoi.is_hio);
+  EXPECT_FALSE(info_hoi.transpose_batched_weights);
+  EXPECT_THAT(
+      ReadBlockwiseV2WeightsParam(tensors_hoi[0], *params_hoi.scale, info_hoi),
+      ElementsAre(1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f));
+  EXPECT_THAT(ReadBlockwiseV2WeightsParam(tensors_hoi[0],
+                                          *params_hoi.zero_point, info_hoi),
+              ElementsAre(-0.5f, -0.5f, -0.5f, -0.5f, -0.5f, -0.5f));
+
+  float dequant[24];
+  DequantizeBlockwiseV2(tensors_hoi[0], params_hoi, dequant);
+  // Row 0 of batch 0 has scale 1.0f and zp -0.5f: (-1.5, -0.5, 0.5, 1.5).
+  EXPECT_FLOAT_EQ(dequant[0], -1.5f);
+  EXPECT_FLOAT_EQ(dequant[1], -0.5f);
+  EXPECT_FLOAT_EQ(dequant[2], 0.5f);
+  EXPECT_FLOAT_EQ(dequant[3], 1.5f);
 }
 
 }  // namespace

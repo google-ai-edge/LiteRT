@@ -230,6 +230,66 @@ void HandleFusedActivation(TfLiteFusedActivation fused_activation,
 // Checks if the given tensor dimensions are broadcast-compatible.
 bool IsBroadcastable(const TfLiteIntArray* dims1, const TfLiteIntArray* dims2);
 
+// Scale and zero point tensors of a constant tensor with N-D blockwise
+// quantization (kTfLiteBlockwiseQuantizationV2):
+//
+//   real_value = scale[block] * (quantized_value - zero_point[block])
+//
+// The zero points may be fractional (e.g. -0.5 for a centered int2 grid).
+struct BlockwiseV2Params {
+  const TfLiteTensor* scale = nullptr;
+  // Null if the tensor has no zero point tensor, i.e. the zero point is 0.
+  const TfLiteTensor* zero_point = nullptr;
+};
+
+// Looks up and validates the scale and zero point tensors of `tensor`, which
+// must be an INT2, INT4 or INT8 tensor with N-D blockwise quantization, among
+// the `tensors_size` tensors of the subgraph at `tensors`.
+absl::Status GetBlockwiseV2Params(const TfLiteTensor* tensors,
+                                  size_t tensors_size,
+                                  const TfLiteTensor& tensor,
+                                  BlockwiseV2Params* params);
+
+// Dequantizes `tensor` into the NumElements(tensor) floats at `dst`, in the
+// element order of `tensor`.
+void DequantizeBlockwiseV2(const TfLiteTensor& tensor,
+                           const BlockwiseV2Params& params, float* dst);
+
+// How a constant tensor with N-D blockwise quantization is consumed as the
+// weights of a quantized FullyConnected node that reads its scales and zero
+// points from separate tensors.
+struct BlockwiseV2WeightsInfo {
+  // Weights shape as seen by the FullyConnected kernel:
+  //  * 2-D FULLY_CONNECTED weights [O, I] map to (O, 1, 1, I).
+  //  * 3-D or 4-D batched weights [H, I, O] / [1, H, I, O] (when
+  //    `transpose_batched_weights` is true) or [H, O, I] / [1, H, O, I] (when
+  //    false) map to (O, H, 1, I).
+  ::ml_drift::OHWI weights_shape;
+  // Shape of the scales and zero points as seen by the kernel: one value per
+  // output channel, weights batch entry and block of input channels.
+  ::ml_drift::OHWI scale_shape;
+  bool has_zero_point = false;
+  // True for 3-D/4-D batched weights (which have a batch axis H).
+  bool is_hio = false;
+  // True when batched weights are stored in [H, I, O] order rather than
+  // [H, O, I] order.
+  bool transpose_batched_weights = true;
+};
+
+// Fills `info` for the blockwise quantized weights `tensor`. Fails if the
+// weights can't be consumed by a quantized FullyConnected node, e.g. when the
+// blocks along the input channels don't all have the same size.
+absl::Status GetBlockwiseV2WeightsInfo(const TfLiteTensor& tensor,
+                                       const BlockwiseV2Params& params,
+                                       BlockwiseV2WeightsInfo* info,
+                                       bool transpose_batched_weights = true);
+
+// Returns the scales or zero points `param` of the weights `tensor` in the
+// (o, h, 1, block) order of `info.scale_shape`, broadcasting them as needed.
+std::vector<float> ReadBlockwiseV2WeightsParam(
+    const TfLiteTensor& tensor, const TfLiteTensor& param,
+    const BlockwiseV2WeightsInfo& info);
+
 }  // namespace litert::ml_drift
 
 #endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_TFLITE_MODEL_BUILDER_HELPER_H_
