@@ -358,6 +358,22 @@ PYBIND11_MODULE(_pywrap_litert_compiled_model_wrapper, m) {
              }
              return py::reinterpret_steal<py::object>(r);
            })
+      .def("IsNonCpuFullyAccelerated",
+           [](CompiledModelWrapper& self) {
+             PyObject* r = self.IsNonCpuFullyAccelerated();
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::reinterpret_steal<py::object>(r);
+           })
+      .def("GetDelegationMetrics",
+           [](CompiledModelWrapper& self) {
+             PyObject* r = self.GetDelegationMetrics();
+             if (!r) {
+               throw py::error_already_set();
+             }
+             return py::reinterpret_steal<py::object>(r);
+           })
       .def("CreateInputBufferByName",
            [](CompiledModelWrapper& self, const std::string& sig_key,
               const std::string& input_name) {

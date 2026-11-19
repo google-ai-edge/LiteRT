@@ -15,7 +15,7 @@
 """Python wrapper for LiteRT compiled models."""
 
 import os
-from typing import Any, List, Optional, Sequence
+from typing import Any, List, Optional, Sequence, TypedDict
 
 # pylint: disable=g-import-not-at-top
 if not os.path.splitext(__file__)[0].endswith(
@@ -125,6 +125,37 @@ def _compiled_model_kwargs(
   kwargs = model_options._as_flat_kwargs()  # pylint: disable=protected-access
   _apply_qualcomm_sdk_defaults(kwargs)
   return kwargs
+
+
+class AcceleratorDelegationMetrics(TypedDict):
+  """Per-accelerator delegation metrics for a compiled model.
+
+  Attributes:
+    accelerator_name: Name of the registered hardware accelerator.
+    hardware_type: Bitfield of hardware accelerator types supported.
+    delegated_node_count: Number of original model operations delegated to this
+      accelerator.
+    partition_count: Number of contiguous delegated subgraphs created for this
+      accelerator.
+  """
+
+  accelerator_name: str
+  hardware_type: int
+  delegated_node_count: int
+  partition_count: int
+
+
+class DelegationMetrics(TypedDict):
+  """Delegation metrics for a compiled model.
+
+  Attributes:
+    total_node_count: Total number of operations across active subgraphs before
+      delegation.
+    accelerators: Per-accelerator delegation metrics.
+  """
+
+  total_node_count: int
+  accelerators: list[AcceleratorDelegationMetrics]
 
 
 class CompiledModel:
@@ -322,6 +353,20 @@ class CompiledModel:
   def is_fully_accelerated(self) -> bool:
     """Returns whether the compiled model is fully accelerated."""
     return bool(self._model.IsFullyAccelerated())
+
+  def is_non_cpu_fully_accelerated(self) -> bool:
+    """Returns whether the model is 100% delegated to non-CPU hardware."""
+    return bool(self._model.IsNonCpuFullyAccelerated())
+
+  def get_delegation_metrics(self) -> DelegationMetrics:
+    """Returns delegation metrics for the compiled model.
+
+    Returns:
+      DelegationMetrics containing 'total_node_count' and 'accelerators' (a list
+      of AcceleratorDelegationMetrics dictionaries with 'accelerator_name',
+      'hardware_type', 'delegated_node_count', and 'partition_count').
+    """
+    return self._model.GetDelegationMetrics()
 
   def create_input_buffer_by_name(
       self, signature_key: str, input_name: str

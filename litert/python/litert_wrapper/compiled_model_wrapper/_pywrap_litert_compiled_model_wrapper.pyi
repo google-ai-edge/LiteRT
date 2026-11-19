@@ -14,7 +14,24 @@
 
 """Python type stubs for the LiteRT compiled model wrapper."""
 
-from typing import Any, Dict, List
+from typing import Any, Dict, List, TypedDict
+
+
+class AcceleratorDelegationMetrics(TypedDict):
+    """Per-accelerator delegation metrics for a compiled model."""
+
+    accelerator_name: str
+    hardware_type: int
+    delegated_node_count: int
+    partition_count: int
+
+
+class DelegationMetrics(TypedDict):
+    """Delegation metrics for a compiled model."""
+
+    total_node_count: int
+    accelerators: List[AcceleratorDelegationMetrics]
+
 
 class CompiledModelWrapper:
     """Wrapper for a compiled LiteRT model."""
@@ -83,6 +100,14 @@ class CompiledModelWrapper:
 
     def IsFullyAccelerated(self) -> bool:
         """Returns whether the compiled model is fully accelerated."""
+        ...
+
+    def IsNonCpuFullyAccelerated(self) -> bool:
+        """Returns whether the compiled model is fully accelerated on non-CPU hardware."""
+        ...
+
+    def GetDelegationMetrics(self) -> DelegationMetrics:
+        """Returns delegation metrics for the compiled model."""
         ...
 
     def CreateInputBufferByName(self, sig_key: str, in_name: str) -> object:
