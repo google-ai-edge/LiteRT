@@ -21,7 +21,9 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "tensor/backends/xnnpack/arithmetic.h"
 #include "tensor/backends/xnnpack/conversion.h"
+#include "tensor/backends/ynnpack/arithmetic.h"
 #include "tensor/runners/xnnpack/runner.h"
+#include "tensor/runners/ynnpack/runner.h"
 #include "tensor/tensor.h"
 
 namespace litert::tensor::examples::gemma4 {
@@ -49,7 +51,16 @@ struct XnnpackBackend {
   static constexpr char kName[] = "Xnnpack";
 };
 
-using TestBackends = ::testing::Types<XnnpackBackend>;
+struct YnnpackBackend {
+  using Tag = YnnpackMixinTag;
+  using Runner = YnnpackRunner;
+  using Tensor = ::litert::tensor::Tensor<YnnpackMixinTag>;
+  using Operation = YnnpackOperation;
+
+  static constexpr char kName[] = "Ynnpack";
+};
+
+using TestBackends = ::testing::Types<XnnpackBackend, YnnpackBackend>;
 
 // Gives the instantiated tests readable names ("…/Xnnpack" rather than "…/0").
 struct TestBackendNames {

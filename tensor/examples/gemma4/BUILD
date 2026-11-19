@@ -47,7 +47,9 @@ cc_library(
         "//tensor",
         "//tensor/backends/xnnpack:arithmetic",
         "//tensor/backends/xnnpack:conversion",
+        "//tensor/backends/ynnpack:arithmetic",
         "//tensor/runners/xnnpack:runner",
+        "//tensor/runners/ynnpack:runner",
         "@com_google_googletest//:gtest",
     ],
 )
@@ -85,6 +87,7 @@ cc_test(
         "//tensor:datatypes",
         "//tensor/backends/xnnpack:arithmetic",
         "//tensor/examples/ops/transformer:transformer_ops_xnnpack",
+        "//tensor/examples/ops/transformer:transformer_ops_ynnpack",
         "//tensor/examples/utils:tensor_mapping",
         "//tensor/runners/xnnpack:runner",
         "//tensor/utils:matchers",
@@ -191,6 +194,27 @@ cc_binary(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/time",
+        "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_binary(
+    name = "gemma4_ynnpack_main",
+    srcs = ["ynnpack_main.cc"],
+    deps = [
+        ":gemma4_runtime",
+        "//tensor/backends/ynnpack:arithmetic",
+        "//tensor/examples/gemma3:util",
+        "//tensor/examples/ops/transformer:transformer_ops_ynnpack",
+        "//tensor/examples/utils:initialization",
+        "//tensor/examples/utils:perfetto_session",
+        "//tensor/examples/utils:tensor_mapping",
+        "//tensor/runners/ynnpack:runner",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
         "@perfetto//:libperfetto_client_experimental",
     ],
 )
