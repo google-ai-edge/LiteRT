@@ -36,11 +36,16 @@ struct SharedTfliteTensor {
   // The preferred layout of the tensor. This is used to make sure we use Linear
   // layout for shared bias tensors.
   std::optional<::ml_drift::Layout> layout;
+  // For 3-D/4-D batched blockwise weights, true if the tensor is stored in
+  // [H, I, O] (or [1, H, I, O]) order and false if it is stored in [H, O, I]
+  // (or [1, H, O, I]) order.
+  bool transpose_batched_weights = true;
 
   bool operator==(const SharedTfliteTensor& other) const {
     return this->tflite_tensor_id == other.tflite_tensor_id &&
            this->global_id == other.global_id &&
-           this->dequant_forced == other.dequant_forced;
+           this->dequant_forced == other.dequant_forced &&
+           this->transpose_batched_weights == other.transpose_batched_weights;
   }
 };
 

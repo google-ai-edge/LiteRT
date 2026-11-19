@@ -780,8 +780,10 @@ cc_library(
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 
@@ -795,8 +797,10 @@ cc_library(
         "//tflite/c:common",
         "//tflite/kernels:kernel_util",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
     ],
 )
@@ -1600,6 +1604,7 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
     ],
@@ -1615,6 +1620,7 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:operations",
     ],

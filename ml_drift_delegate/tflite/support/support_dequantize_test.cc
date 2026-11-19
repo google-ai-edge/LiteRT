@@ -121,13 +121,29 @@ TEST_P(NumInputOutputTest, Rejects2Outputs) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_P(NumInputOutputTest, SupportsVersionsUpTo6) {
+  const TfLiteBuiltinOperator op = GetParam();
+  for (int version = 1; version <= 6; ++version) {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, version, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0))
+        << "version=" << version;
+  }
+}
+
 TEST_P(NumInputOutputTest, RejectsUnsupportedVersion) {
   const TfLiteBuiltinOperator op = GetParam();
   StubContextBuilder context_builder;
   const int a =
       context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
   const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
-  context_builder.SetOp(op, /*version=*/4, /*params=*/nullptr,
+  context_builder.SetOp(op, /*version=*/7, /*params=*/nullptr,
                         /*inputs=*/{a}, /*outputs=*/{b});
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
@@ -311,6 +327,22 @@ TEST_P(QuantizationParamsTest, RejectsInputWithUnsupportedScaleSize) {
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(QuantizationParamsTest, RejectsNonAffineRuntimeInput) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  TfLiteBlockwiseQuantizationV2 blockwise_params = {};
+  context->tensors[a].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  context->tensors[a].quantization.params = &blockwise_params;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  context->tensors[a].quantization.params = nullptr;
 }
 
 INSTANTIATE_TEST_SUITE_P(

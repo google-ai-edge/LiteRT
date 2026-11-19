@@ -33,7 +33,10 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
                            const TfLiteNode* absl_nonnull node,
                            const TfLiteRegistration* absl_nonnull registration,
                            std::string* absl_nonnull error) {
-  if (registration->version > 3) {
+  // Versions 4 to 6 add per-channel int8 and int4 inputs. Runtime inputs are
+  // emulated with QuantizeAndDequantize on their float version, which needs
+  // per-tensor affine quantization (checked below).
+  if (registration->version > 6) {
     *error = absl::StrCat("Unsupported version: ", registration->version);
     return false;
   }
@@ -97,11 +100,17 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
     return true;
   }
 
+  if (input->quantization.params != nullptr &&
+      input->quantization.type != kTfLiteAffineQuantization) {
+    *error = "Dequantize needs an input with affine quantization.";
+    return false;
+  }
   const TfLiteAffineQuantization* quantization_data =
       reinterpret_cast<const TfLiteAffineQuantization*>(
           input->quantization.params);
   if (quantization_data) {
-    if (quantization_data->scale->size > 1) {
+    if (quantization_data->scale == nullptr ||
+        quantization_data->scale->size > 1) {
       *error = "Unsupported quantization scale size";
       return false;
     }

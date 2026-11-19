@@ -190,5 +190,31 @@ TEST(SupportQuantizeTest, UnsupportedPerAxisScale) {
   EXPECT_EQ(error, "Unsupported quantization scale size");
 }
 
+TEST(SupportQuantizeTest, RejectsNonAffineQuantization) {
+  TfLiteContext context = {};
+  context.tensors_size = 2;
+  TfLiteNode node = {};
+  TfLiteRegistration registration = {};
+  registration.version = 4;
+
+  int inputs[] = {1, 0};
+  int outputs[] = {1, 1};
+  node.inputs = reinterpret_cast<TfLiteIntArray*>(inputs);
+  node.outputs = reinterpret_cast<TfLiteIntArray*>(outputs);
+
+  TfLiteTensor tensors[2] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[1].type = kTfLiteInt4;
+  context.tensors = tensors;
+
+  TfLiteBlockwiseQuantizationV2 quant_params = {};
+  tensors[1].quantization.params = &quant_params;
+  tensors[1].quantization.type = kTfLiteBlockwiseQuantizationV2;
+
+  std::string error;
+  EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+  EXPECT_EQ(error, "Quantize needs an output with affine quantization.");
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir
