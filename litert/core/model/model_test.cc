@@ -17,6 +17,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -28,10 +29,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/build_stamp.h"
 #include "litert/core/model/buffer_manager.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
 #include "tflite/schema/schema_generated.h"
@@ -39,7 +42,9 @@
 namespace litert::internal {
 namespace {
 
+using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
+using ::testing::IsEmpty;
 
 //
 // Model
@@ -669,16 +674,16 @@ TEST(ModelTest, PruneModelToSignaturesRetainsCompositeClosure) {
             1);
 }
 
-TEST(ModelTest, PruneModelToSignaturesRejectsStablehloCase) {
+TEST(ModelTest, PruneModelToSignaturesRetainsStablehloCaseBranches) {
   LiteRtModelT model;
 
   auto& decode = model.EmplaceSubgraph();
+  auto& unused = model.EmplaceSubgraph();
   auto& branch = model.EmplaceSubgraph();
   auto& case_op = decode.EmplaceOp();
-  case_op.SetOpCode(
-      static_cast<LiteRtOpCode>(tflite::BuiltinOperator_STABLEHLO_CASE));
+  case_op.SetOpCode(kLiteRtOpCodeShloCase);
   ::tflite::StablehloCaseOptionsT case_opts;
-  case_opts.branch_subgraph_indices = {1};
+  case_opts.branch_subgraph_indices = {2};
   TflOptions2 options;
   options.type = tflite::BuiltinOptions2_StablehloCaseOptions;
   options.Set(std::move(case_opts));
@@ -688,18 +693,16 @@ TEST(ModelTest, PruneModelToSignaturesRejectsStablehloCase) {
                          std::vector<LiteRtTensor>{},
                          std::vector<std::string>{},
                          std::vector<LiteRtTensor>{}, "decode");
-  model.EmplaceSignature(&branch, std::vector<std::string>{},
-                         std::vector<LiteRtTensor>{},
-                         std::vector<std::string>{},
-                         std::vector<LiteRtTensor>{}, "branch");
+  model.EmplaceSignature(
+      &unused, std::vector<std::string>{}, std::vector<LiteRtTensor>{},
+      std::vector<std::string>{}, std::vector<LiteRtTensor>{}, "unused");
 
   const std::array<absl::string_view, 1> retained = {"decode"};
-  auto status = PruneModelToSignatures(model, retained);
+  LITERT_ASSERT_OK(PruneModelToSignatures(model, retained));
 
-  EXPECT_FALSE(status.HasValue());
-  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorUnsupported);
-  EXPECT_EQ(model.Signatures().size(), 2);
-  EXPECT_EQ(model.Subgraphs().size(), 2);
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&decode, &branch}));
+  ASSERT_EQ(model.Signatures().size(), 1);
+  EXPECT_THAT(SubgraphRefs(case_op), ElementsAre(1));
 }
 
 TEST(ModelTest, PruneModelToSignaturesRejectsMissingSignatureWithoutMutation) {
@@ -717,6 +720,281 @@ TEST(ModelTest, PruneModelToSignaturesRejectsMissingSignatureWithoutMutation) {
   EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorNotFound);
   EXPECT_EQ(model.Subgraphs().size(), 1);
   EXPECT_EQ(model.Signatures().size(), 1);
+}
+
+//
+// Subgraph references across mutations
+//
+
+LiteRtOpT& AddWhile(LiteRtSubgraphT& subgraph, int32_t cond, int32_t body) {
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflWhile);
+  ::tflite::WhileOptionsT while_opts;
+  while_opts.cond_subgraph_index = cond;
+  while_opts.body_subgraph_index = body;
+  TflOptions options;
+  options.type = tflite::BuiltinOptions_WhileOptions;
+  options.Set(std::move(while_opts));
+  SetTflOptions(op, std::move(options));
+  return op;
+}
+
+LiteRtOpT& AddReduceWindow(LiteRtSubgraphT& subgraph, int32_t body) {
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeShloWindow);
+  ::tflite::StablehloReduceWindowOptionsT reduce_opts;
+  reduce_opts.body_subgraph_index = body;
+  TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StablehloReduceWindowOptions;
+  options.Set(std::move(reduce_opts));
+  SetTflOptions2(op, std::move(options));
+  return op;
+}
+
+LiteRtOpT& AddCallOnce(LiteRtSubgraphT& subgraph, int32_t init) {
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflCallOnce);
+  ::tflite::CallOnceOptionsT call_once_opts;
+  call_once_opts.init_subgraph_index = init;
+  TflOptions options;
+  options.type = tflite::BuiltinOptions_CallOnceOptions;
+  options.Set(std::move(call_once_opts));
+  SetTflOptions(op, std::move(options));
+  return op;
+}
+
+LiteRtOpT& AddComposite(LiteRtSubgraphT& subgraph, int32_t decomposition) {
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeShloComposite);
+  ::tflite::StableHLOCompositeOptionsT composite_opts;
+  composite_opts.name = "composite";
+  composite_opts.decomposition_subgraph_index = decomposition;
+  TflOptions2 options;
+  options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
+  options.Set(std::move(composite_opts));
+  SetTflOptions2(op, std::move(options));
+  return op;
+}
+
+void AddSignature(LiteRtModelT& model, LiteRtSubgraphT& subgraph,
+                  std::string key) {
+  model.EmplaceSignature(
+      &subgraph, std::vector<std::string>{}, std::vector<LiteRtTensor>{},
+      std::vector<std::string>{}, std::vector<LiteRtTensor>{}, std::move(key));
+}
+
+TEST(ModelTest, DiscardSubgraphsIgnoresReferencesFromDiscardedSubgraphs) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  auto& dead = model.EmplaceSubgraph();
+  auto& body = model.EmplaceSubgraph();
+  auto& main_op = AddReduceWindow(main, /*body=*/2);
+  AddReduceWindow(dead, /*body=*/2);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto old_to_new, model.DiscardSubgraphs({1}));
+
+  EXPECT_THAT(old_to_new, ElementsAre(0, -1, 1));
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&main, &body}));
+  EXPECT_THAT(SubgraphRefs(main_op), ElementsAre(1));
+}
+
+TEST(ModelTest, DiscardSubgraphsRejectsDanglingReference) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  auto& body = model.EmplaceSubgraph();
+  auto& main_op = AddReduceWindow(main, /*body=*/1);
+
+  auto status = model.DiscardSubgraphs({1});
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorInvalidGraphInvariant);
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&main, &body}));
+  EXPECT_THAT(SubgraphRefs(main_op), ElementsAre(1));
+}
+
+TEST(ModelTest, NumEntrySubgraphsDefaultsToAllSubgraphs) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+  model.EmplaceSubgraph();
+  EXPECT_EQ(model.NumEntrySubgraphs(), 2);
+  model.SetNumEntrySubgraphs(1);
+  EXPECT_EQ(model.NumEntrySubgraphs(), 1);
+  model.SetNumEntrySubgraphs(std::nullopt);
+  EXPECT_EQ(model.NumEntrySubgraphs(), 2);
+}
+
+TEST(ModelTest, PruneModelToSignaturesRetainsRegionClosure) {
+  LiteRtModelT model;
+  auto& decode = model.EmplaceSubgraph();
+  auto& unused = model.EmplaceSubgraph();
+  auto& cond = model.EmplaceSubgraph();
+  auto& body = model.EmplaceSubgraph();
+  auto& combiner = model.EmplaceSubgraph();
+  auto& while_op = AddWhile(decode, /*cond=*/2, /*body=*/3);
+  auto& reduce_op = AddReduceWindow(body, /*body=*/4);
+  AddSignature(model, decode, "decode");
+  AddSignature(model, unused, "unused");
+
+  const std::array<absl::string_view, 1> retained = {"decode"};
+  LITERT_ASSERT_OK(PruneModelToSignatures(model, retained));
+
+  EXPECT_THAT(model.Subgraphs(),
+              ElementsAreArray({&decode, &cond, &body, &combiner}));
+  EXPECT_THAT(SubgraphRefs(while_op), ElementsAre(1, 2));
+  EXPECT_THAT(SubgraphRefs(reduce_op), ElementsAre(3));
+}
+
+TEST(ModelTest, PruneModelToSignaturesAllowsCompositeWithoutDecomposition) {
+  LiteRtModelT model;
+  auto& decode = model.EmplaceSubgraph();
+  auto& unused = model.EmplaceSubgraph();
+  AddComposite(decode, /*decomposition=*/-1);
+  AddSignature(model, decode, "decode");
+  AddSignature(model, unused, "unused");
+
+  const std::array<absl::string_view, 1> retained = {"decode"};
+  LITERT_ASSERT_OK(PruneModelToSignatures(model, retained));
+
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&decode}));
+}
+
+TEST(ModelTest, PruneModelToSignaturesRejectsCycleWithoutMutation) {
+  LiteRtModelT model;
+  auto& decode = model.EmplaceSubgraph();
+  auto& body = model.EmplaceSubgraph();
+  auto& unused = model.EmplaceSubgraph();
+  AddWhile(decode, /*cond=*/1, /*body=*/1);
+  AddWhile(body, /*cond=*/0, /*body=*/0);
+  AddSignature(model, decode, "decode");
+  AddSignature(model, unused, "unused");
+
+  const std::array<absl::string_view, 1> retained = {"decode"};
+  auto status = PruneModelToSignatures(model, retained);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorUnsupported);
+  EXPECT_EQ(model.Subgraphs().size(), 3);
+  EXPECT_EQ(model.Signatures().size(), 2);
+}
+
+TEST(ModelTest, PruneUnreachableSubgraphsRejectsRootNotOwnedByModel) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  auto& orphan = model.EmplaceSubgraph();
+  LiteRtModelT other_model;
+  auto& foreign = other_model.EmplaceSubgraph();
+
+  const std::array<LiteRtSubgraph, 2> roots = {&main, &foreign};
+  auto status = PruneUnreachableSubgraphs(model, roots);
+
+  ASSERT_FALSE(status.HasValue());
+  EXPECT_EQ(status.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(model.Subgraphs(), ElementsAreArray({&main, &orphan}));
+}
+
+TEST(ModelTest, CloneSubgraphCopiesGraphAndSharesWeights) {
+  LiteRtModelT model;
+  auto& src = model.EmplaceSubgraph();
+  src.SetName("src");
+  model.EmplaceSubgraph();
+  auto& input = src.EmplaceTensor();
+  auto& weights = src.EmplaceTensor();
+  auto& output = src.EmplaceTensor();
+  static constexpr absl::string_view kWeights = "WEIGHTS";
+  SetWeightsFromOwnedBuffer(weights.Weights(),
+                            OwningBufferRef<uint8_t>(kWeights));
+  auto& mul = src.EmplaceOp();
+  mul.SetOpCode(kLiteRtOpCodeTflMul);
+  AttachInput(&input, mul);
+  AttachInput(&weights, mul);
+  AttachOutput(&output, mul);
+  auto& while_op = AddWhile(src, /*cond=*/1, /*body=*/1);
+  src.Inputs().push_back(&input);
+  src.Outputs().push_back(&output);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtSubgraph clone,
+                              CloneSubgraph(model, src, "clone"));
+
+  ASSERT_EQ(model.NumSubgraphs(), 3);
+  EXPECT_EQ(model.Subgraphs().back(), clone);
+  EXPECT_EQ(clone->Name(), "clone");
+  ASSERT_EQ(clone->Tensors().size(), 3);
+  ASSERT_EQ(clone->Ops().size(), 2);
+  const auto& clone_mul = clone->Op(0);
+  EXPECT_EQ(clone_mul.OpCode(), kLiteRtOpCodeTflMul);
+  EXPECT_EQ(clone_mul.Inputs()[0], clone->Inputs()[0]);
+  EXPECT_EQ(clone_mul.Outputs()[0], clone->Outputs()[0]);
+  EXPECT_EQ(clone_mul.Outputs()[0]->DefiningOp(), &clone_mul);
+  EXPECT_THAT(clone_mul.Inputs()[0]->Users(), ElementsAre(&clone_mul));
+  EXPECT_NE(clone_mul.Inputs()[0], &input);
+  const auto& clone_weights = clone_mul.Input(1).Weights();
+  EXPECT_EQ(clone_weights.GetBufferId(), weights.Weights().GetBufferId());
+  EXPECT_EQ(clone_weights.Buffer().StrView(), kWeights);
+  EXPECT_THAT(SubgraphRefs(clone->Op(1)), ElementsAre(1, 1));
+  EXPECT_THAT(SubgraphRefs(while_op), ElementsAre(1, 1));
+}
+
+TEST(ModelTest, CloneSubgraphClonesBlockWiseTensorsOnce) {
+  LiteRtModelT model;
+  auto& src = model.EmplaceSubgraph();
+  auto& scales = src.EmplaceTensor();
+  auto& zero_points = src.EmplaceTensor();
+  auto& quantized = src.EmplaceTensor();
+  Quantization quantization;
+  quantization.first = kLiteRtQuantizationBlockWise;
+  quantization.second.block_wise.scales = &scales;
+  quantization.second.block_wise.zero_points = &zero_points;
+  quantized.SetQarams(quantization);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtSubgraph clone,
+                              CloneSubgraph(model, src, "clone"));
+
+  ASSERT_EQ(clone->Tensors().size(), 3);
+  const auto& block_wise = clone->Tensor(2).Qparams().second.block_wise;
+  EXPECT_EQ(block_wise.scales, clone->Tensors()[0]);
+  EXPECT_EQ(block_wise.zero_points, clone->Tensors()[1]);
+}
+
+TEST(ModelTest, DceKeepsOpWithoutEdgesThatReferencesSubgraph) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  model.EmplaceSubgraph();
+  auto& call_once = AddCallOnce(main, /*init=*/1);
+
+  DCE(main);
+
+  EXPECT_THAT(main.Ops(), ElementsAre(&call_once));
+}
+
+TEST(ModelTest, MarkDeadClearsOptionsSoDceRemovesRegionOp) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  model.EmplaceSubgraph();
+  auto& input = main.EmplaceTensor();
+  auto& output = main.EmplaceTensor();
+  auto& while_op = AddWhile(main, /*cond=*/1, /*body=*/1);
+  AttachInput(&input, while_op);
+  AttachOutput(&output, while_op);
+
+  MarkDead(while_op);
+  EXPECT_FALSE(HasSubgraphRefs(while_op));
+  DCE(main);
+
+  EXPECT_THAT(main.Ops(), IsEmpty());
+}
+
+TEST(ModelTest, DropKeepsOptions) {
+  LiteRtModelT model;
+  auto& main = model.EmplaceSubgraph();
+  model.EmplaceSubgraph();
+  auto& input = main.EmplaceTensor();
+  auto& while_op = AddWhile(main, /*cond=*/1, /*body=*/1);
+  AttachInput(&input, while_op);
+
+  Drop(while_op);
+
+  EXPECT_THAT(while_op.Inputs(), IsEmpty());
+  EXPECT_THAT(SubgraphRefs(while_op), ElementsAre(1, 1));
 }
 
 //

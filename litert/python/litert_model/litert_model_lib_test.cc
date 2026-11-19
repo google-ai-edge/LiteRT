@@ -54,6 +54,8 @@ using ::litert::internal::LoadModelFromBuffer;
 using ::litert::internal::LoadModelFromFile;
 using ::litert::internal::SerializeModel;
 using ::litert::internal::SetTflOpCodeInd;
+using ::litert::internal::SetTflOptions;
+using ::litert::internal::TflOptions;
 using ::testing::ElementsAre;
 using ::testing::HasSubstr;
 using ::testing::litert::IsError;
@@ -84,6 +86,27 @@ struct TestGraph {
   LiteRtOpT* add = nullptr;
   LiteRtOpT* relu = nullptr;
 };
+
+// Makes subgraph `region_index` the cond and body of `while_op`.
+void SetWhileRegions(LiteRtOpT& while_op, int32_t region_index) {
+  tflite::WhileOptionsT while_options;
+  while_options.cond_subgraph_index = region_index;
+  while_options.body_subgraph_index = region_index;
+  TflOptions options;
+  options.Set(std::move(while_options));
+  SetTflOptions(while_op, std::move(options));
+}
+
+// Appends a WHILE op from `input` to `output` whose cond and body are subgraph
+// `region_index`.
+LiteRtOpT* AddWhileOp(LiteRtModelT& model, LiteRtSubgraphT& subgraph,
+                      LiteRtTensorT& input, LiteRtTensorT& output,
+                      int32_t region_index) {
+  LiteRtOpT* while_op = Unwrap(AddOp(model, subgraph, kLiteRtOpCodeTflWhile,
+                                     {&input}, {&output}, {}));
+  SetWhileRegions(*while_op, region_index);
+  return while_op;
+}
 
 TestGraph BuildTestGraph() {
   TestGraph graph;
@@ -274,6 +297,19 @@ TEST(EliminateDeadCodeTest, RemovesDeadOpsToFixpoint) {
   LITERT_EXPECT_OK(ValidateModel(*graph.model));
 }
 
+TEST(EliminateDeadCodeTest, RemovesDeadOpThatReferencesSubgraphs) {
+  TestGraph graph = BuildTestGraph();
+  graph.model->EmplaceSubgraph();
+  LiteRtTensorT& unused = NewTensor(*graph.subgraph, "unused");
+  AddWhileOp(*graph.model, *graph.subgraph, *graph.y, unused,
+             /*region_index=*/1);
+  ASSERT_EQ(graph.subgraph->Ops().size(), 3);
+
+  EXPECT_TRUE(EliminateDeadCode(*graph.model, *graph.subgraph));
+  EXPECT_THAT(graph.subgraph->Ops(), ElementsAre(graph.add, graph.relu));
+  EXPECT_EQ(graph.subgraph->Tensors().size(), 4);
+}
+
 TEST(ReplaceAllUsesTest, RemapsOutputsAndSignatures) {
   TestGraph graph = BuildTestGraph();
   LiteRtTensorT& negated = NewTensor(*graph.subgraph, "negated");
@@ -447,6 +483,21 @@ TEST(DispatchTest, OutlineAttachSerializeReload) {
   EXPECT_EQ(build_stamp->soc_model, "TestSocModel");
 }
 
+TEST(DispatchTest, OutlineRemovesOpsThatReferenceSubgraphs) {
+  TestGraph graph = BuildTestGraph();
+  graph.model->EmplaceSubgraph();
+  LiteRtTensorT& unused = NewTensor(*graph.subgraph, "unused");
+  AddWhileOp(*graph.model, *graph.subgraph, *graph.y, unused,
+             /*region_index=*/1);
+  ASSERT_EQ(graph.subgraph->Ops().size(), 3);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtOpT * dispatch,
+      OutlineSubgraphToDispatchOp(*graph.model, *graph.subgraph));
+  EXPECT_THAT(graph.subgraph->Ops(), ElementsAre(dispatch));
+  EXPECT_EQ(Unwrap(PruneUnreachableSubgraphs(*graph.model)), 1);
+}
+
 TEST(DispatchTest, OutlineRejectsSignatureOutOfSyncWithSubgraph) {
   TestGraph graph = BuildTestGraph();
   LITERT_ASSERT_OK(SetSubgraphOutputs(*graph.model, *graph.subgraph,
@@ -562,7 +613,7 @@ TEST(PruneUnreachableSubgraphsTest, PrunesAndRemapsComposites) {
   LITERT_EXPECT_OK(ValidateModel(*model));
 }
 
-TEST(PruneUnreachableSubgraphsTest, SignaturelessAndUnsupportedControlFlow) {
+TEST(PruneUnreachableSubgraphsTest, SignaturelessAndControlFlow) {
   LiteRtModelT empty_model;
   EXPECT_EQ(Unwrap(PruneUnreachableSubgraphs(empty_model)), 0);
 
@@ -578,9 +629,18 @@ TEST(PruneUnreachableSubgraphsTest, SignaturelessAndUnsupportedControlFlow) {
   while_model.EmplaceSubgraph();
   LiteRtTensorT& x = NewTensor(entry, "x");
   LiteRtTensorT& y = NewTensor(entry, "y");
-  ASSERT_TRUE(AddOp(while_model, entry, kLiteRtOpCodeTflWhile, {&x}, {&y}, {}));
+  LiteRtOpT* while_op =
+      AddWhileOp(while_model, entry, x, y, /*region_index=*/1);
+  // Subgraph 1 is referenced by the WHILE op, so it is kept.
   EXPECT_EQ(Unwrap(PruneUnreachableSubgraphs(while_model)), 0);
   EXPECT_EQ(while_model.NumSubgraphs(), 2);
+  EXPECT_TRUE(while_model.Signatures().empty());
+
+  // An out-of-range reference prevents pruning.
+  while_model.EmplaceSubgraph();
+  SetWhileRegions(*while_op, /*region_index=*/5);
+  EXPECT_EQ(Unwrap(PruneUnreachableSubgraphs(while_model)), 0);
+  EXPECT_EQ(while_model.NumSubgraphs(), 3);
   EXPECT_TRUE(while_model.Signatures().empty());
 }
 

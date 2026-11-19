@@ -62,6 +62,7 @@
 #include "litert/core/model/ops/transpose.h"
 #include "litert/core/model/ops/unpack.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/util/flatbuffer_tools.h"
 
 namespace litert::internal {
@@ -365,15 +366,13 @@ void ShapeInferenceEngine::RegisterStandardOps() {
     if (!model_ || !op) {
       return kLiteRtStatusErrorUnsupportedOpShapeInferer;
     }
-    const auto* comp_opts =
-        litert::internal::GetTflOptions2(*op).AsStableHLOCompositeOptions();
-    if (!comp_opts || comp_opts->decomposition_subgraph_index < 0 ||
-        static_cast<size_t>(comp_opts->decomposition_subgraph_index) >=
-            model_->NumSubgraphs()) {
+    const auto decomp_index =
+        litert::internal::CompositeDecompositionIndex(*op);
+    if (!decomp_index.has_value() || *decomp_index < 0 ||
+        static_cast<size_t>(*decomp_index) >= model_->NumSubgraphs()) {
       return kLiteRtStatusErrorUnsupportedOpShapeInferer;
     }
-    LiteRtSubgraphT* decomp_subgraph =
-        model_->Subgraphs()[comp_opts->decomposition_subgraph_index];
+    LiteRtSubgraphT* decomp_subgraph = model_->Subgraphs()[*decomp_index];
     if (ctx.GetNumInputs() != decomp_subgraph->Inputs().size() ||
         ctx.GetNumOutputs() != decomp_subgraph->Outputs().size()) {
       return kLiteRtStatusErrorShapeInferenceFailed;
