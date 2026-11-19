@@ -64,6 +64,7 @@
 #include "ml_drift_delegate/tflite/support/support_rms_norm.h"
 #include "ml_drift_delegate/tflite/support/support_rotary_positional_embedding.h"
 #include "ml_drift_delegate/tflite/support/support_sdpa.h"
+#include "ml_drift_delegate/tflite/support/support_scatter_nd.h"
 #include "ml_drift_delegate/tflite/support/support_select.h"
 #include "ml_drift_delegate/tflite/support/support_slice.h"
 #include "ml_drift_delegate/tflite/support/support_softmax.h"
@@ -297,6 +298,8 @@ bool IsNodeSupported(const TfLiteContext* absl_nonnull context,
       absl::bind_front(IsResize2DSupported, context, node, registration, error);
   auto reverse =
       absl::bind_front(IsReverseSupported, context, node, registration, error);
+  auto scatter_nd = absl::bind_front(IsScatterNdSupported, context, node,
+                                     registration, error);
   auto select =
       absl::bind_front(IsSelectSupported, context, node, registration, error);
   auto slice =
@@ -400,6 +403,7 @@ bool IsNodeSupported(const TfLiteContext* absl_nonnull context,
     case kTfLiteBuiltinRightShift:              return arith2(1);
     case kTfLiteBuiltinRound:                   return arith1(2);
     case kTfLiteBuiltinRsqrt:                   return arith1(2);
+    case kTfLiteBuiltinScatterNd:               return scatter_nd();
     case kTfLiteBuiltinSelect:                  return select();
     case kTfLiteBuiltinSelectV2:                return select();
     case kTfLiteBuiltinSign:                    return arith1(2);
