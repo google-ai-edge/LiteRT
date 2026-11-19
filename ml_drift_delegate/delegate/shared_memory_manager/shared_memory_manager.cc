@@ -39,6 +39,7 @@
 #include <cstdint>
 #include <limits>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -181,6 +182,21 @@ bool IsMoeExpertsBlockScales(const GraphAdapter& graph_adapter,
                              uint32_t value_id, const TfLiteTensor& tensor) {
   return (tensor.type == kTfLiteFloat32 || tensor.type == kTfLiteFloat16) &&
          IsMoeExpertsWeights(graph_adapter, value_id);
+}
+
+// Returns true if `tensor` holds N-D blockwise quantized batched weights
+// ([H, I, O], [H, O, I], [1, H, I, O], or [1, H, O, I]) that the quantized
+// FullyConnected op `consumer_op_type` consumes as (O, H, 1, I), unlike 2-D
+// FULLY_CONNECTED weights ([O, I]). Other ops keep their weights in their own
+// layout: the 4-D weights of moe_experts can have the same quantization type.
+bool IsBlockwiseV2BatchedWeights(const TfLiteTensor& tensor,
+                                 const std::string& consumer_op_type) {
+  return tensor.quantization.type ==
+             TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2 &&
+         tensor.dims != nullptr && tensor.dims->size != 2 &&
+         (consumer_op_type == ToString(OperationType::kFullyConnectedInt8) ||
+          consumer_op_type == ToString(OperationType::kFullyConnectedInt4) ||
+          consumer_op_type == ToString(OperationType::kFullyConnectedInt2));
 }
 
 }  // namespace
@@ -978,10 +994,204 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   return absl::OkStatus();
 }
 
+absl::Status SharedMemoryManager::CreateBlockwiseV2BatchedWeightsTensor(
+    const ValueId& shared_tensor_id, const uint32_t global_tensor_id,
+    const TfLiteTensor& tflite_tensor, const OHWI& shape, bool oi_transposed,
+    SharedConstTensor& shared_tensor) {
+  // If the tensor was serialized previously, restore from it directly.
+  bool serialized_tensor_found =
+      TryRestoringSerializedTensor(global_tensor_id, shared_tensor.weights)
+          .ok();
+  if (!serialized_tensor_found) {
+    if (has_prepacked_tflite_tensors_) {
+      return absl::UnimplementedError(
+          "Prepacked batched blockwise quantized weights are not supported.");
+    }
+    if (IsValidExternalBufferId(MaybeGetExternalBufferId(shared_tensor_id))) {
+      return absl::UnimplementedError(
+          "Externalized batched blockwise quantized weights are not "
+          "supported.");
+    }
+    if (tflite_tensor.data.raw_const == nullptr) {
+      return absl::FailedPreconditionError(
+          "Batched blockwise quantized weights tensor has no data.");
+    }
+    if (shape.o <= 0 || shape.h <= 0 || shape.w <= 0 || shape.i <= 0) {
+      return absl::InvalidArgumentError(
+          "Batched blockwise quantized weights shape dimensions must be "
+          "positive.");
+    }
+    constexpr int64_t kMaxElements = std::numeric_limits<int>::max();
+    int64_t num_elements = shape.o;
+    const int dims[] = {shape.h, shape.w, shape.i};
+    for (int dim : dims) {
+      if (num_elements > kMaxElements / dim) {
+        return absl::InvalidArgumentError(
+            "Batched blockwise quantized weights element count exceeds "
+            "supported limit.");
+      }
+      num_elements *= dim;
+    }
+    if (num_elements != tflite::NumElements(&tflite_tensor)) {
+      return absl::InvalidArgumentError(
+          "Batched blockwise quantized weights shape does not match tensor "
+          "element count.");
+    }
+    const bool prefer_textures =
+        create_info_.hints.Check(ModelHints::kPreferTextureWeights);
+    WeightsDescription weights_desc;
+    int bit_width = 8;
+    switch (tflite_tensor.type) {
+      case kTfLiteInt8:
+        weights_desc =
+            GetFullyConnectedInt8WeightsDesc(gpu_info_, shape, prefer_textures);
+        break;
+      case kTfLiteInt4:
+        weights_desc =
+            GetFullyConnectedInt4WeightsDesc(gpu_info_, shape, prefer_textures);
+        bit_width = 4;
+        break;
+      case kTfLiteInt2:
+        weights_desc =
+            GetFullyConnectedInt2WeightsDesc(gpu_info_, shape, prefer_textures);
+        bit_width = 2;
+        break;
+      default:
+        return absl::InternalError(
+            "Only quantized int8, int4, and int2 weights are supported.");
+    }
+
+    // The GPU can only rearrange weights that are stored in OHWI order (see
+    // WeightsManager), so these are reordered and rearranged on the CPU.
+    const int64_t required_bytes =
+        bit_width == 8 ? num_elements
+                       : (bit_width == 4 ? (num_elements + 1) / 2
+                                         : (num_elements + 3) / 4);
+    if (tflite_tensor.bytes < static_cast<size_t>(required_bytes)) {
+      return absl::InvalidArgumentError(
+          "Batched blockwise quantized weights buffer is too small.");
+    }
+    const int8_t* src = tflite_tensor.data.int8;
+    std::vector<int8_t> unpacked;
+    if (bit_width != 8) {
+      unpacked.resize(num_elements);
+      tflite::tensor_utils::UnpackPackedIntToInt8(
+          tflite_tensor.data.int8, static_cast<int>(num_elements), bit_width,
+          unpacked.data());
+      src = unpacked.data();
+    }
+    Tensor<OHWI, DataType::kInt8> weights_i8;
+    weights_i8.shape = shape;
+    weights_i8.data.resize(num_elements);
+    if (oi_transposed) {
+      // [H, I, O] -> (O, H, 1, I), one [I, O] matrix at a time.
+      for (int h = 0; h < shape.h; ++h) {
+        const int8_t* src_matrix =
+            src + static_cast<size_t>(h) * shape.i * shape.o;
+        for (int o = 0; o < shape.o; ++o) {
+          int8_t* dst_row = weights_i8.data.data() +
+                            (static_cast<size_t>(o) * shape.h + h) * shape.i;
+          for (int i = 0; i < shape.i; ++i) {
+            dst_row[i] = src_matrix[static_cast<size_t>(i) * shape.o + o];
+          }
+        }
+      }
+    } else {
+      // [H, O, I] -> (O, H, 1, I), copying each contiguous [I] row directly.
+      for (int h = 0; h < shape.h; ++h) {
+        const int8_t* src_matrix =
+            src + static_cast<size_t>(h) * shape.o * shape.i;
+        for (int o = 0; o < shape.o; ++o) {
+          const int8_t* src_row = src_matrix + static_cast<size_t>(o) * shape.i;
+          int8_t* dst_row = weights_i8.data.data() +
+                            (static_cast<size_t>(o) * shape.h + h) * shape.i;
+          std::copy_n(src_row, shape.i, dst_row);
+        }
+      }
+    }
+    TensorDescriptor weights_td =
+        GetTensorDescriptorForWeightsLayout(weights_i8, weights_desc);
+    ABSL_RETURN_IF_ERROR(create_tensor_func_(
+        weights_td, /*page_adjusted_offset=*/0,
+        /*release_data_callback=*/nullptr, shared_tensor.weights));
+
+    // If serialization is enabled, store the serialized tensor descriptor.
+    ABSL_RETURN_IF_ERROR(
+        TryStoringSerializedTensor(global_tensor_id, weights_td));
+  }
+
+  graph_adapter_->SetValueShapeAndType(
+      shared_tensor_id, shared_tensor.weights->GetDescriptor().GetBHWCShape(),
+      shared_tensor.weights->GetDescriptor().GetDataType());
+  return absl::OkStatus();
+}
+
+absl::Status SharedMemoryManager::AddBlockwiseV2QuantizationParam(
+    const TfLiteTensor& tflite_tensor, const TfLiteTensor& param,
+    const ::litert::ml_drift::BlockwiseV2WeightsInfo& info, bool is_scale,
+    uint32_t fc_op_id, DataType data_type,
+    absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+    std::optional<uint32_t>& param_global_id) {
+  // The zero points are uploaded as floats, as they may be fractional.
+  Tensor<OHWI, DataType::kFloat32> values;
+  values.shape = info.scale_shape;
+  values.data = ::litert::ml_drift::ReadBlockwiseV2WeightsParam(tflite_tensor,
+                                                                param, info);
+  if (is_scale) {
+    RewriteDenormalScales(gpu_info_, create_info_, values.data.data(),
+                          values.data.size());
+  }
+  TensorDescriptor tensor_desc =
+      ScaleOrZeroPointToTensorDesc(gpu_info_, values, data_type);
+
+  param_global_id = ++next_const_tensor_id_;
+  auto [tensor_it, tensor_inserted] =
+      quant_param_id_to_spatial_tensor_.try_emplace(*param_global_id);
+  if (!tensor_inserted) {
+    return absl::InternalError("Could not insert an input tensor.");
+  }
+  ABSL_ASSIGN_OR_RETURN(
+      ValueId value_id,
+      AddInputNode(*param_global_id, tensor_desc.GetBHWCShape(), fc_op_id,
+                   data_type));
+  ABSL_RETURN_IF_ERROR(create_tensor_func_(
+      tensor_desc, /*page_adjusted_offset=*/0,
+      /*release_data_callback=*/nullptr, tensor_it->second.weights));
+  (*external_tensors)[value_id] = GlobalId::BuildParamId(*param_global_id);
+  return absl::OkStatus();
+}
+
+absl::Status SharedMemoryManager::CreateBlockwiseV2QuantizationParams(
+    uint32_t global_tensor_id, const TfLiteTensor& tflite_tensor,
+    absl::flat_hash_map<ValueId, GlobalId>* external_tensors, uint32_t fc_op_id,
+    DataType data_type, bool oi_transposed) {
+  ABSL_ASSIGN_OR_RETURN(
+      const ::litert::ml_drift::BlockwiseV2Params params,
+      ::litert::ml_drift::GetBlockwiseV2Params(
+          context_->tensors, context_->tensors_size, tflite_tensor));
+  ::litert::ml_drift::BlockwiseV2WeightsInfo info;
+  ABSL_RETURN_IF_ERROR(::litert::ml_drift::GetBlockwiseV2WeightsInfo(
+      tflite_tensor, params, &info, oi_transposed));
+
+  SharedConstTensor& shared_tensor =
+      buffer_id_to_spatial_tensor_.at(global_tensor_id);
+  ABSL_RETURN_IF_ERROR(AddBlockwiseV2QuantizationParam(
+      tflite_tensor, *params.scale, info, /*is_scale=*/true, fc_op_id,
+      data_type, external_tensors, shared_tensor.scale_global_tensor_id));
+  if (params.zero_point != nullptr) {
+    ABSL_RETURN_IF_ERROR(AddBlockwiseV2QuantizationParam(
+        tflite_tensor, *params.zero_point, info, /*is_scale=*/false, fc_op_id,
+        data_type, external_tensors,
+        shared_tensor.zero_point_global_tensor_id));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
     const ValueId& shared_tensor_id, uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor,
-    absl::flat_hash_map<ValueId, GlobalId>* external_tensors) {
+    absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+    bool oi_transposed) {
   if (tflite_tensor.type != TfLiteType::kTfLiteInt8 &&
       tflite_tensor.type != TfLiteType::kTfLiteInt4 &&
       tflite_tensor.type != TfLiteType::kTfLiteInt2) {
@@ -1054,7 +1264,12 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
     }
   }
 
-  if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
+  if (IsBlockwiseV2BatchedWeights(tflite_tensor,
+                                  graph_adapter_->GetOpTypeName(fc_op_id))) {
+    ABSL_RETURN_IF_ERROR(CreateBlockwiseV2BatchedWeightsTensor(
+        shared_tensor_id, global_tensor_id, tflite_tensor, weights_shape,
+        oi_transposed, *shared_tensor));
+  } else if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
     ABSL_RETURN_IF_ERROR(CreateQuantizedInt8WeightsTensor(
         shared_tensor_id, global_tensor_id, tflite_tensor, *shared_tensor,
         is_weight_sum_i_required, &shared_tensor->weights_sum_i));
@@ -1083,6 +1298,11 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
     return CreateBlockwiseQuantizationParams(shared_tensor_id, global_tensor_id,
                                              tflite_tensor, external_tensors,
                                              fc_op_id, data_type);
+  } else if (tflite_tensor.quantization.type ==
+             TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2) {
+    return CreateBlockwiseV2QuantizationParams(
+        global_tensor_id, tflite_tensor, external_tensors, fc_op_id, data_type,
+        oi_transposed);
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
@@ -1384,12 +1604,35 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
       (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
           shared_tensor.zero_point_global_tensor_id.value());
     }
+  } else if (tflite_tensor.quantization.type ==
+             TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2) {
+    // The scale and zero point tensors were created for the first signature;
+    // bind them with the shape and type they were created with.
+    for (const std::optional<uint32_t>& param_global_id :
+         {shared_tensor.scale_global_tensor_id,
+          shared_tensor.zero_point_global_tensor_id}) {
+      if (!param_global_id.has_value()) continue;
+      const TensorDescriptor& param_desc =
+          quant_param_id_to_spatial_tensor_.at(*param_global_id)
+              .GetWeights()
+              ->GetDescriptor();
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId param_value_id,
+          AddInputNode(*param_global_id, param_desc.GetBHWCShape(), fc_op_id,
+                       param_desc.GetDataType()));
+      (*external_tensors)[param_value_id] =
+          GlobalId::BuildParamId(*param_global_id);
+    }
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
   }
 
-  if (weights_manager_) {
+  // Weights that were rearranged on the CPU already exist; the others may
+  // still be pending in the weights manager.
+  if (weights_manager_ &&
+      !IsBlockwiseV2BatchedWeights(tflite_tensor,
+                                   graph_adapter_->GetOpTypeName(fc_op_id))) {
     OHWI shape(shared_const_shape.b, shared_const_shape.h, shared_const_shape.w,
                shared_const_shape.c);
     WeightsDescription weights_desc;
@@ -1470,11 +1713,13 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       tensor.quantization.type ==
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2 ||
        IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id)) &&
       !shared_tflite_tensor.dequant_forced) {
     return CreateQuantizedTensorWithScaleAndZeroPoint(
         shared_tensor_id, shared_tflite_tensor.global_id, tensor,
-        external_tensors);
+        external_tensors, shared_tflite_tensor.oi_transposed);
   }
 
   // If weights tensor is quantized, dequantize it. Otherwise it is float and we
@@ -1487,8 +1732,10 @@ absl::Status SharedMemoryManager::CreateSharedTensor(
     dequantized_weight.resize(tflite::NumElements(&tensor));
     ::litert::ml_drift::CopyData(tensor, &dequantized_weight[0]);
     weights_data_ptr = dequantized_weight.data();
-  } else if (tensor.quantization.type ==
-                 TfLiteQuantizationType::kTfLiteBlockwiseQuantization &&
+  } else if ((tensor.quantization.type ==
+                  TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+              tensor.quantization.type ==
+                  TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2) &&
              shared_tflite_tensor.dequant_forced) {
     return absl::UnimplementedError(
         "Enforce dequant Block-wise quantized weights is not supported yet.");
@@ -1673,6 +1920,8 @@ absl::Status SharedMemoryManager::RegisterExternalConstantTensors(
            TfLiteQuantizationType::kTfLiteAffineQuantization ||
        tensor.quantization.type ==
            TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+       tensor.quantization.type ==
+           TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2 ||
        IsMoeExpertsWeights(*graph_adapter_, shared_tensor_id))) {
     if (!shared_tflite_tensor.dequant_forced) {
       ABSL_RETURN_IF_ERROR(RetrieveTensorWithScaleAndZeroPoint(
