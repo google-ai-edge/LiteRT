@@ -18,6 +18,9 @@
 #include <cstring>
 #include <ios>
 #include <limits>
+// copybara:uncomment_begin(google-only)
+// #include <locale>
+// copybara:uncomment_end
 #include <map>
 #include <memory>
 #include <ostream>
@@ -423,6 +426,17 @@ LiteRtStatus LiteRtCreateCompilerPlugin(
     LiteRtOptions options) {
   LiteRtSetMinLoggerSeverity(LiteRtGetDefaultLogger(), LITERT_INFO);
   LiteRtPropagateMinLoggerSeverityWithCompilerContext(compiler_context, env);
+  // copybara:uncomment_begin(google-only)
+  // // OpenVINO converts `ov::Any` property values by printing them into streams
+  // // it owns, and the printing code of a value runs in the library that created
+  // // the value. When this library and OpenVINO each link their own copy of the
+  // // C++ standard library, that printing code looks up locale facets by ids
+  // // that are only valid once this copy has built its classic locale. Build it
+  // // here, before any property value reaches OpenVINO.
+  // // TODO: b/576551005 - Remove once this library and OpenVINO share one C++
+  // // standard library.
+  // static_cast<void>(std::locale::classic());
+  // copybara:uncomment_end
   auto* plugin = new LiteRtCompilerPluginT(compiler_context, env, options);
   *compiler_plugin = plugin;
   return kLiteRtStatusOk;
