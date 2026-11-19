@@ -22,6 +22,7 @@
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -40,6 +41,7 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
@@ -468,6 +470,154 @@ TEST_F(LiteRtOpSelectorIrTest,
   }
   EXPECT_TRUE(found_sparse_sdpa);
   EXPECT_TRUE(found_ring_update);
+}
+
+TEST_F(LiteRtOpSelectorIrTest, BlockFfwInternalOpsLowerCleanly) {
+  const IrTensor* x = AddTensor(BHWC(1, 1, 4, 16));
+  const IrTensor* part0 = AddTensor(BHWC(1, 1, 4, 8));
+  const IrTensor* part1 = AddTensor(BHWC(1, 1, 4, 8));
+  const IrTensor* packed = AddTensor(BHWC(1, 2, 4, 8));
+  const IrTensor* act = AddTensor(BHWC(1, 2, 4, 8));
+
+  ASSERT_OK(SelectOp(kBlockFfwUnpackPartType,
+                     BlockFfwUnpackPartAttributes{.part = 0, .num_parts = 2},
+                     {x}, {part0}));
+  ASSERT_OK(SelectOp(kBlockFfwUnpackPartType,
+                     BlockFfwUnpackPartAttributes{.part = 1, .num_parts = 2},
+                     {x}, {part1}));
+  ASSERT_OK(SelectOp(kBlockFfwPackPartsType,
+                     BlockFfwPackPartsAttributes{.num_parts = 2},
+                     {part0, part1}, {packed}));
+  ASSERT_OK(SelectOp(kBlockFfwSiluType, std::any{}, {packed}, {act}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({x}, {act}, &gpu_model));
+  EXPECT_FALSE(gpu_model.nodes.empty());
+}
+
+TEST_F(LiteRtOpSelectorIrTest, BlockFfwEdgeFcSubgraphFusesSingleTokenDecode) {
+  auto run_edge_match = [&](int tokens) {
+    IrModel model;
+    absl::flat_hash_map<ValueId, TensorDescriptor> runtime_tensors;
+    absl::flat_hash_map<ValueId, TensorDescriptor> const_tensors;
+    auto add_rt = [&](const BHWC& shape) {
+      IrTensor* t = model.add_tensor(DataType::kFloat32, shape);
+      TensorDescriptor desc(DataType::kFloat32, TensorStorageType::kBuffer,
+                            Layout::kHWC);
+      desc.SetBHWCShape(shape);
+      runtime_tensors[t->id] = desc;
+      return t->id;
+    };
+    auto add_const = [&](const BHWC& shape, DataType dt) {
+      IrTensor* t = model.add_tensor(dt, shape);
+      TensorDescriptor desc(dt, TensorStorageType::kBuffer, Layout::kLinear);
+      desc.SetBHWCShape(shape);
+      const_tensors[t->id] = desc;
+      return t->id;
+    };
+
+    const auto x_id = add_rt(BHWC(1, 1, tokens, 16));
+    const auto out_id = add_rt(BHWC(1, 2, tokens, 8));
+    model.add_input(x_id);
+    model.add_output(out_id);
+
+    std::vector<::ml_drift::ir::IrTensorId> parts(2);
+    ::ml_drift::ir::IrOpId first_op_id = 0;
+    for (int k = 0; k < 2; ++k) {
+      const auto unp_id = add_rt(BHWC(1, 1, tokens, 8));
+      IrOp* unp = model.add_op();
+      if (k == 0) first_op_id = unp->id;
+      unp->name = kBlockFfwUnpackPartType;
+      unp->attr = BlockFfwUnpackPartAttributes{.part = k, .num_parts = 2};
+      model.AddConsumer(x_id, unp->id);
+      model.SetProducer(unp_id, unp->id);
+
+      const auto q_in_id = add_rt(BHWC(1, 1, tokens, 8));
+      IrOp* q_in = model.add_op();
+      q_in->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
+      q_in->attr = ::ml_drift::QuantizeAndDequantizeAttributes{
+          .min = -3.2f, .max = 3.175f, .scale = 0.025f};
+      model.AddConsumer(unp_id, q_in->id);
+      model.SetProducer(q_in_id, q_in->id);
+
+      const auto w_id = add_const(BHWC(1, 1, 1, 4), DataType::kUint32);
+      const auto s_id = add_const(BHWC(1, 1, 1, 8), DataType::kFloat32);
+      const auto zp_id = add_const(BHWC(1, 1, 1, 8), DataType::kFloat32);
+      const auto fc_out_id = add_rt(BHWC(1, 1, tokens, 8));
+      IrOp* fc = model.add_op();
+      fc->name = ToString(::ml_drift::OperationType::kFullyConnectedInt2);
+      ::ml_drift::FullyConnectedInt2Attributes fc_attr;
+      ::ml_drift::Tensor<OHWI, DataType::kInt2> w_dummy;
+      w_dummy.shape = OHWI(8, 1, 1, 8);
+      fc_attr.weights = w_dummy;
+      fc_attr.scale.shape = OHWI(8, 1, 1, 1);
+      fc_attr.zero_point.shape = OHWI(8, 1, 1, 1);
+      fc->attr = std::move(fc_attr);
+      model.AddConsumer(q_in_id, fc->id);
+      model.AddConsumer(w_id, fc->id);
+      model.AddConsumer(s_id, fc->id);
+      model.AddConsumer(zp_id, fc->id);
+      model.SetProducer(fc_out_id, fc->id);
+
+      parts[k] = add_rt(BHWC(1, 1, tokens, 8));
+      IrOp* q_out = model.add_op();
+      q_out->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
+      q_out->attr = ::ml_drift::QuantizeAndDequantizeAttributes{
+          .min = -6.4f, .max = 6.35f, .scale = 0.05f};
+      model.AddConsumer(fc_out_id, q_out->id);
+      model.SetProducer(parts[k], q_out->id);
+    }
+
+    const auto packed_id = add_rt(BHWC(1, 2, tokens, 8));
+    IrOp* pack = model.add_op();
+    pack->name = kBlockFfwPackPartsType;
+    pack->attr = BlockFfwPackPartsAttributes{.num_parts = 2};
+    model.AddConsumer(parts[0], pack->id);
+    model.AddConsumer(parts[1], pack->id);
+    model.SetProducer(packed_id, pack->id);
+
+    IrOp* trail_qdq = model.add_op();
+    trail_qdq->name =
+        ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
+    trail_qdq->attr = ::ml_drift::QuantizeAndDequantizeAttributes{
+        .min = -7.68f, .max = 7.62f, .scale = 0.06f};
+    model.AddConsumer(packed_id, trail_qdq->id);
+    model.SetProducer(out_id, trail_qdq->id);
+
+    GpuModelBuilder builder(gpu_info_, {.storage = TensorStorageType::kBuffer},
+                            std::move(runtime_tensors),
+                            std::move(const_tensors));
+    CreateGpuModelInfo create_info{.precision = CalculationsPrecision::kF32,
+                                   .storage_type = TensorStorageType::kBuffer};
+    LiteRtOpSelector selector(&create_info, &gpu_info_);
+    absl::flat_hash_set<::ml_drift::ir::IrOpId> consumed;
+    absl::flat_hash_set<::ml_drift::ir::IrOpId> new_consumed;
+    absl::Status status = selector.GPUSubgraphFromIrModel(
+        model, first_op_id, consumed, &new_consumed, &builder);
+    GpuModel gpu_model;
+    std::vector<std::string> node_names;
+    if (status.ok()) {
+      EXPECT_OK(builder.GetGpuModel({static_cast<ValueId>(x_id)},
+                                    {static_cast<ValueId>(out_id)},
+                                    &gpu_model));
+      for (const auto& node : gpu_model.nodes) {
+        node_names.push_back(node.name);
+      }
+    }
+    return std::make_pair(status,
+                          std::make_pair(new_consumed.size(), node_names));
+  };
+
+  auto [decode_status, decode_res] = run_edge_match(/*tokens=*/1);
+  ASSERT_OK(decode_status);
+  // 2 * (Unpack + QDQ + FC + QDQ) + Pack + trailing QDQ = 10 fused ops.
+  EXPECT_EQ(decode_res.first, 10);
+  ASSERT_EQ(decode_res.second.size(), 1);
+  EXPECT_EQ(decode_res.second[0], "block_ffw_edge_fc");
+
+  auto [prefill_status, prefill_res] = run_edge_match(/*tokens=*/4);
+  EXPECT_FALSE(prefill_status.ok());
+  EXPECT_EQ(prefill_res.first, 0);
 }
 
 }  // namespace
