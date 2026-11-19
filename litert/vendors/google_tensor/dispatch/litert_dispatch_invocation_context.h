@@ -20,7 +20,9 @@
 #include "absl/base/nullability.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
@@ -64,12 +66,7 @@ class LiteRtDispatchInvocationContextT {
 
   LiteRtStatus StopMetricsCollection(LiteRtDispatchMetrics& metrics);
 
-  LiteRtStatus SetRunOptions(LiteRtOptions options) {
-    run_options_ = options;
-    return kLiteRtStatusOk;
-  }
-
-  LiteRtOptions GetRunOptions() const { return run_options_; }
+  LiteRtStatus SetRunOptions(LiteRtOptions options);
 
   LiteRtStatus SetSchedulingInfo(const LiteRtSchedulingInfo* scheduling_info) {
     if (scheduling_info == nullptr) {
@@ -106,6 +103,8 @@ class LiteRtDispatchInvocationContextT {
   // Consumers of this class must use `Destroy` to delete the instance.
   ~LiteRtDispatchInvocationContextT() = default;
 
+  LiteRtStatus ApplyRunOptionsToGraph();
+
   LiteRtStatus DetachAndUnregisterInFences();
 
   LiteRtDispatchDeviceContext device_context_;
@@ -123,7 +122,7 @@ class LiteRtDispatchInvocationContextT {
   // Associates an input edge ID with its attached fence.
   absl::flat_hash_map<LiteRtDispatchEdgeId, ThrFenceHandle> in_fences_;
 
-  LiteRtOptions run_options_ = nullptr;
+  std::optional<LiteRtGoogleTensorOptionsPerformanceMode> run_performance_mode_;
 
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
 
