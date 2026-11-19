@@ -363,10 +363,13 @@ cc_test(
         ":framework",
         ":signature_runner",
         "//tflite:model_builder",
+        "//tflite:version",
         "//tflite/core/c:common",
         "//tflite/core/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "//tflite/testing:util",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 
