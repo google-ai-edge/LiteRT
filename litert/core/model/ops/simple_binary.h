@@ -28,6 +28,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
 #include "tflite/converter/schema/schema_generated.h"
 #include "tflite/kernels/internal/runtime_shape.h"
@@ -176,39 +177,6 @@ inline void ReferenceBinaryGeneric(const InT* input1_data,
 
   RunBinaryOp(input1_data, input2_data, output_data, a_stride, b_stride,
               o_stride, o_shape, rank, op);
-}
-
-template <typename T>
-inline void ApplyActivation(T* output_data, size_t num_elements,
-                            tflite::ActivationFunctionType faf) {
-  if (faf == tflite::ActivationFunctionType_RELU) {
-    for (size_t i = 0; i < num_elements; ++i) {
-      if (output_data[i] < static_cast<T>(0.0f)) {
-        output_data[i] = static_cast<T>(0.0f);
-      }
-    }
-  } else if (faf == tflite::ActivationFunctionType_RELU6) {
-    for (size_t i = 0; i < num_elements; ++i) {
-      if (output_data[i] < static_cast<T>(0.0f)) {
-        output_data[i] = static_cast<T>(0.0f);
-      } else if (output_data[i] > static_cast<T>(6.0f)) {
-        output_data[i] = static_cast<T>(6.0f);
-      }
-    }
-  }
-}
-
-template <typename T>
-inline void ApplyActivation(T* output_data, const int32_t* output_dims,
-                            int rank, tflite::ActivationFunctionType faf) {
-  if (faf == tflite::ActivationFunctionType_NONE) {
-    return;
-  }
-  size_t num_elements = 1;
-  for (int i = 0; i < rank; ++i) {
-    num_elements *= output_dims[i];
-  }
-  ApplyActivation(output_data, num_elements, faf);
 }
 
 inline void ReferenceAdd(

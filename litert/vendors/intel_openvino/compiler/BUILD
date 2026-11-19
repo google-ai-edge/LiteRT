@@ -450,6 +450,7 @@ litert_lib(
         ":decoder",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_header",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_element_type",

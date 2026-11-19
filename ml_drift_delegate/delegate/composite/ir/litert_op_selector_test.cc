@@ -40,6 +40,7 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/qsa_indexer_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
@@ -468,6 +469,29 @@ TEST_F(LiteRtOpSelectorIrTest,
   }
   EXPECT_TRUE(found_sparse_sdpa);
   EXPECT_TRUE(found_ring_update);
+}
+
+TEST_F(LiteRtOpSelectorIrTest, BlockFfwInternalOpsLowerCleanly) {
+  const IrTensor* x = AddTensor(BHWC(1, 1, 4, 16));
+  const IrTensor* part0 = AddTensor(BHWC(1, 1, 4, 8));
+  const IrTensor* part1 = AddTensor(BHWC(1, 1, 4, 8));
+  const IrTensor* packed = AddTensor(BHWC(1, 2, 4, 8));
+  const IrTensor* act = AddTensor(BHWC(1, 2, 4, 8));
+
+  ASSERT_OK(SelectOp(kBlockFfwUnpackPartType,
+                     BlockFfwUnpackPartAttributes{.part = 0, .num_parts = 2},
+                     {x}, {part0}));
+  ASSERT_OK(SelectOp(kBlockFfwUnpackPartType,
+                     BlockFfwUnpackPartAttributes{.part = 1, .num_parts = 2},
+                     {x}, {part1}));
+  ASSERT_OK(SelectOp(kBlockFfwPackPartsType,
+                     BlockFfwPackPartsAttributes{.num_parts = 2},
+                     {part0, part1}, {packed}));
+  ASSERT_OK(SelectOp(kBlockFfwSiluType, std::any{}, {packed}, {act}));
+
+  GpuModel gpu_model;
+  ASSERT_OK(BuildModel({x}, {act}, &gpu_model));
+  EXPECT_FALSE(gpu_model.nodes.empty());
 }
 
 }  // namespace

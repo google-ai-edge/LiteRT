@@ -16,6 +16,7 @@
 
 #include <any>
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <utility>
@@ -971,6 +972,148 @@ TEST(ConvertAuxTest,
   EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(16, 1, 1, 2));
   EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(16, 1, 1, 2));
   EXPECT_TRUE(attr.zero_point.data.empty());
+}
+
+TEST(ConvertAuxTest,
+     ConfigSharedQuantizedFullyConnectedInt2BlockwiseV2CenteredAndSymmetric) {
+  // 2-D [O=4, I=8] with block_shape [1, 4] -> scale_shape (4, 1, 1, 2).
+  std::vector<float> scale_vals(4 * 2, 0.25f);
+  std::vector<float> zp_vals(4 * 2, -0.5f);
+  TfLiteTensor tensors[3] = {};
+  tensors[0].type = kTfLiteInt2;
+  tensors[0].dims = TfLiteIntArrayCreate(2);
+  tensors[0].dims->data[0] = 4;
+  tensors[0].dims->data[1] = 8;
+  tensors[0].allocation_type = kTfLiteMmapRo;
+
+  tensors[1].type = kTfLiteFloat32;
+  tensors[1].dims = TfLiteIntArrayCreate(2);
+  tensors[1].dims->data[0] = 4;
+  tensors[1].dims->data[1] = 2;
+  tensors[1].allocation_type = kTfLiteMmapRo;
+  tensors[1].data.f = scale_vals.data();
+  tensors[1].bytes = scale_vals.size() * sizeof(float);
+
+  tensors[2].type = kTfLiteFloat32;
+  tensors[2].dims = TfLiteIntArrayCreate(2);
+  tensors[2].dims->data[0] = 4;
+  tensors[2].dims->data[1] = 2;
+  tensors[2].allocation_type = kTfLiteMmapRo;
+  tensors[2].data.f = zp_vals.data();
+  tensors[2].bytes = zp_vals.size() * sizeof(float);
+
+  TfLiteIntArray* block_shape = TfLiteIntArrayCreate(2);
+  block_shape->data[0] = 1;
+  block_shape->data[1] = 4;
+  TfLiteBlockwiseQuantizationV2 q = {
+      .scale = 1, .zero_point = 2, .block_shape = block_shape};
+  tensors[0].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  tensors[0].quantization.params = &q;
+
+  TfLiteContext context = {};
+  context.tensors = tensors;
+  context.tensors_size = 3;
+
+  {
+    ::ml_drift::ir::IrOp fc_op(0);
+    EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(
+        tensors[0], ::ml_drift::OHWI(4, 1, 1, 8), {}, &fc_op, &context));
+    EXPECT_EQ(fc_op.name, "fully_connected_int2");
+    const auto& attr =
+        std::any_cast<const ::ml_drift::FullyConnectedInt2Attributes&>(
+            fc_op.attr);
+    EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(4, 1, 1, 2));
+    EXPECT_TRUE(attr.scale.data.empty());
+    EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(4, 1, 1, 2));
+    EXPECT_TRUE(attr.zero_point.data.empty());
+  }
+
+  // Symmetric (no zero point): zero_point.shape remains empty.
+  q.zero_point = kTfLiteOptionalTensor;
+  {
+    ::ml_drift::ir::IrOp fc_op(1);
+    EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(
+        tensors[0], ::ml_drift::OHWI(4, 1, 1, 8), {}, &fc_op, &context));
+    EXPECT_EQ(fc_op.name, "fully_connected_int2");
+    const auto& attr =
+        std::any_cast<const ::ml_drift::FullyConnectedInt2Attributes&>(
+            fc_op.attr);
+    EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(4, 1, 1, 2));
+    EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(0, 0, 0, 0));
+    EXPECT_TRUE(attr.zero_point.data.empty());
+  }
+
+  TfLiteIntArrayFree(block_shape);
+  for (TfLiteTensor& t : tensors) {
+    TfLiteIntArrayFree(t.dims);
+  }
+}
+
+TEST(ConvertAuxTest,
+     ConfigSharedQuantizedFullyConnectedBlockwiseV2BatchedOiTransposed) {
+  auto run_case = [](const std::vector<int>& weight_dims,
+                     const std::vector<int>& scale_dims,
+                     const std::vector<int>& block_dims, bool oi_transposed) {
+    auto make_int_array = [](const std::vector<int>& vals) {
+      TfLiteIntArray* arr = TfLiteIntArrayCreate(vals.size());
+      for (size_t i = 0; i < vals.size(); ++i) arr->data[i] = vals[i];
+      return arr;
+    };
+    size_t scale_count = 1;
+    for (int d : scale_dims) scale_count *= d;
+    std::vector<float> scale_vals(scale_count, 0.25f);
+    std::vector<float> zp_vals(scale_count, -0.5f);
+
+    TfLiteTensor tensors[3] = {};
+    tensors[0].type = kTfLiteInt2;
+    tensors[0].dims = make_int_array(weight_dims);
+    tensors[0].allocation_type = kTfLiteMmapRo;
+
+    tensors[1].type = kTfLiteFloat32;
+    tensors[1].dims = make_int_array(scale_dims);
+    tensors[1].allocation_type = kTfLiteMmapRo;
+    tensors[1].data.f = scale_vals.data();
+    tensors[1].bytes = scale_vals.size() * sizeof(float);
+
+    tensors[2].type = kTfLiteFloat32;
+    tensors[2].dims = make_int_array(scale_dims);
+    tensors[2].allocation_type = kTfLiteMmapRo;
+    tensors[2].data.f = zp_vals.data();
+    tensors[2].bytes = zp_vals.size() * sizeof(float);
+
+    TfLiteIntArray* block_shape = make_int_array(block_dims);
+    TfLiteBlockwiseQuantizationV2 q = {
+        .scale = 1, .zero_point = 2, .block_shape = block_shape};
+    tensors[0].quantization.type = kTfLiteBlockwiseQuantizationV2;
+    tensors[0].quantization.params = &q;
+
+    TfLiteContext context = {};
+    context.tensors = tensors;
+    context.tensors_size = 3;
+
+    ::ml_drift::ir::IrOp fc_op(0);
+    EXPECT_TRUE(ConfigSharedQuantizedFullyConnected(
+        tensors[0], ::ml_drift::OHWI(4, 2, 1, 8), {}, &fc_op, &context,
+        oi_transposed));
+    EXPECT_EQ(fc_op.name, "fully_connected_int2");
+    const auto& attr =
+        std::any_cast<const ::ml_drift::FullyConnectedInt2Attributes&>(
+            fc_op.attr);
+    EXPECT_EQ(attr.scale.shape, ::ml_drift::OHWI(4, 2, 1, 2));
+    EXPECT_EQ(attr.zero_point.shape, ::ml_drift::OHWI(4, 2, 1, 2));
+
+    TfLiteIntArrayFree(block_shape);
+    for (TfLiteTensor& t : tensors) {
+      TfLiteIntArrayFree(t.dims);
+    }
+  };
+
+  // 3-D [H=2, I=8, O=4] with oi_transposed = true.
+  run_case({2, 8, 4}, {2, 2, 4}, {1, 4, 1}, /*oi_transposed=*/true);
+  // 3-D [H=2, O=4, I=8] with oi_transposed = false.
+  run_case({2, 4, 8}, {2, 4, 2}, {1, 1, 4}, /*oi_transposed=*/false);
+  // 4-D [1, H=2, O=4, I=8] with oi_transposed = false.
+  run_case({1, 2, 4, 8}, {1, 2, 4, 2}, {1, 1, 1, 4}, /*oi_transposed=*/false);
 }
 
 }  // namespace

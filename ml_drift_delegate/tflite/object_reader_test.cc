@@ -214,6 +214,23 @@ TEST_F(ObjectBuilderSharingTest, SetSharedTensorWorks) {
   EXPECT_EQ(shared_tensor_map_.at(kFakeGraphNodeId), kExpected);
 }
 
+TEST_F(ObjectBuilderSharingTest, SetSharedTensorPreservesOiTransposedFalse) {
+  reader_.AllowSharingInput(kSharedInputPos);
+  constexpr ::ml_drift::ValueId kFakeGraphNodeId = 6;
+  reader_.SetSharedTensor(kFakeGraphNodeId, kGlobalBufferId, kSharedTensorIdx,
+                          /*dequant_forced=*/false, /*layout=*/std::nullopt,
+                          /*oi_transposed=*/false);
+  ASSERT_EQ(shared_tensor_map_.size(), 1);
+  ASSERT_TRUE(shared_tensor_map_.contains(kFakeGraphNodeId));
+
+  const SharedTfliteTensor kExpected{.tflite_tensor_id = kSharedTensorIdx,
+                                     .global_id = kGlobalBufferId,
+                                     .dequant_forced = false,
+                                     .oi_transposed = false};
+  EXPECT_EQ(shared_tensor_map_.at(kFakeGraphNodeId), kExpected);
+  EXPECT_FALSE(shared_tensor_map_.at(kFakeGraphNodeId).oi_transposed);
+}
+
 TEST(TfLiteTensorToTensorTest, Float2D) {
   float data[5] = {1.0, 2.0, 3.0, 4.0, 5.0};
   SimpleConstTensor tfl_tensor(TfLiteType::kTfLiteFloat32, {1, 5},

@@ -258,7 +258,9 @@ void ObjectReader::ReadQuantizedValueByTensorIdx(
   TfLiteTensor* tflite_tensor = &context_->tensors[tensor_idx];
   ABSL_CHECK(tflite_tensor->quantization.type == kTfLiteAffineQuantization ||
              tflite_tensor->quantization.type ==
-                 TfLiteQuantizationType::kTfLiteBlockwiseQuantization)
+                 TfLiteQuantizationType::kTfLiteBlockwiseQuantization ||
+             tflite_tensor->quantization.type ==
+                 TfLiteQuantizationType::kTfLiteBlockwiseQuantizationV2)
       << absl::StrCat(
              "ReadQuantizedValueByTensorIdx: value is not quantized tensor",
              tensor_idx);
@@ -291,6 +293,22 @@ void ObjectReader::ReadQuantizedValueByTensorIdx(
   (*input_int8)->tensor.ref = tensor_idx;
   (*input_int8)->tensor.is_variable_input = tflite_tensor->is_variable;
   (*tensor_to_value_)[tensor_idx] = *input_int8;
+}
+
+void ObjectReader::ReadQuantizedValueByTensorIdx(uint32_t tensor_idx,
+                                                 const ::ml_drift::BHWC& shape,
+                                                 ::ml_drift::Value** input) {
+  const TfLiteTensor& tflite_tensor = context_->tensors[tensor_idx];
+  ABSL_CHECK(tflite_tensor.type == kTfLiteInt8 ||
+             tflite_tensor.type == kTfLiteInt4 ||
+             tflite_tensor.type == kTfLiteInt2)
+      << "Expected Int8, Int4, or Int2 quantized weights.";
+  *input = graph_->NewValue();
+  (*input)->tensor.type = ToDataType(tflite_tensor.type);
+  (*input)->tensor.shape = shape;
+  (*input)->tensor.ref = tensor_idx;
+  (*input)->tensor.is_variable_input = tflite_tensor.is_variable;
+  (*tensor_to_value_)[tensor_idx] = *input;
 }
 
 bool ObjectReader::CanReadValueByTensorIdx(int tensor_idx) const {
@@ -363,12 +381,14 @@ void ObjectReader::SetSharedTensor(const ::ml_drift::ValueId graph_value_id,
                                    const int global_id,
                                    const int tflite_tensor_id,
                                    bool dequant_forced,
-                                   std::optional<::ml_drift::Layout> layout) {
+                                   std::optional<::ml_drift::Layout> layout,
+                                   bool oi_transposed) {
   SharedTfliteTensor shared_tensor;
   shared_tensor.tflite_tensor_id = tflite_tensor_id;
   shared_tensor.global_id = global_id;
   shared_tensor.dequant_forced = dequant_forced;
   shared_tensor.layout = layout;
+  shared_tensor.oi_transposed = oi_transposed;
   shared_tensor_map_->try_emplace(graph_value_id, shared_tensor);
 }
 

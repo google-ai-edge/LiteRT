@@ -490,6 +490,32 @@ cc_library(
 )
 
 cc_library(
+    name = "ops_reference_numeric_utils",
+    hdrs = ["ops/reference_numeric_utils.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/core/util:tensor_type_util",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ops_reference_numeric_utils_test",
+    srcs = ["ops/reference_numeric_utils_test.cc"],
+    deps = [
+        ":ops_reference_numeric_utils",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/test:matchers",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "shape_inference_types",
     hdrs = ["shape_inference_types.h"],
     deps = [
@@ -507,6 +533,7 @@ cc_library(
     hdrs = ["ops/simple_binary.h"],
     deps = [
         ":model",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
