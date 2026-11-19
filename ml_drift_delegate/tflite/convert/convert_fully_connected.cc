@@ -21,7 +21,9 @@
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -30,6 +32,7 @@
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
@@ -140,11 +143,60 @@ void ConvertFullyConnected(
   const ::ml_drift::BHWC output_shape =
       ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();
 
-  if (weights_are_const &&
-      !ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared) {
-    if (weights_tensor->type == kTfLiteInt8 ||
-        weights_tensor->type == kTfLiteInt4 ||
-        weights_tensor->type == kTfLiteInt2) {
+  const bool is_blockwise_v2 =
+      weights_tensor->quantization.type == kTfLiteBlockwiseQuantizationV2;
+  const bool weights_ir_is_shared =
+      ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared;
+  // N-D blockwise quantized weights are shared in their quantized form when
+  // all input blocks have the same size; otherwise they are dequantized on the
+  // host into float attributes and not added as runtime consumers.
+  bool can_share_blockwise_v2 = false;
+  if (is_blockwise_v2 && weights_ir_is_shared) {
+    const absl::StatusOr<::litert::ml_drift::BlockwiseV2Params> bw_params =
+        ::litert::ml_drift::GetBlockwiseV2Params(
+            context.tensors, context.tensors_size, *weights_tensor);
+    ::litert::ml_drift::BlockwiseV2WeightsInfo bw_info;
+    can_share_blockwise_v2 =
+        bw_params.ok() &&
+        ::litert::ml_drift::GetBlockwiseV2WeightsInfo(*weights_tensor,
+                                                      *bw_params, &bw_info)
+            .ok();
+  }
+  const bool host_dequantize_blockwise_v2 =
+      is_blockwise_v2 && !can_share_blockwise_v2 &&
+      weights_tensor->data.raw_const != nullptr;
+
+  if (host_dequantize_blockwise_v2 ||
+      (weights_are_const && !weights_ir_is_shared)) {
+    if (host_dequantize_blockwise_v2) {
+      const absl::StatusOr<::litert::ml_drift::BlockwiseV2Params> bw_params =
+          ::litert::ml_drift::GetBlockwiseV2Params(
+              context.tensors, context.tensors_size, *weights_tensor);
+      ABSL_QCHECK_OK(bw_params.status());
+      ::ml_drift::FullyConnectedAttributes attr;
+      attr.weights.id = weights_id;
+      attr.weights.shape = ::ml_drift::OHWI(weights_tensor->dims->data[0], 1, 1,
+                                            weights_tensor->dims->data[1]);
+      attr.weights.data.resize(attr.weights.shape.DimensionsProduct() +
+                               XNN_EXTRA_BYTES / sizeof(float));
+      ::litert::ml_drift::DequantizeBlockwiseV2(*weights_tensor, *bw_params,
+                                                attr.weights.data.data());
+      if (input_shape.h != 1 || input_shape.w != 1) {
+        ::ml_drift::Convolution2DAttributes conv_attr;
+        conv_attr.strides = ::ml_drift::HW(1, 1);
+        conv_attr.dilations = ::ml_drift::HW(1, 1);
+        conv_attr.padding.appended = ::ml_drift::HW(0, 0);
+        conv_attr.padding.prepended = ::ml_drift::HW(0, 0);
+        conv_attr.weights = std::move(attr.weights);
+        fc_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
+        fc_op->attr = std::move(conv_attr);
+      } else {
+        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
+        fc_op->attr = std::move(attr);
+      }
+    } else if (weights_tensor->type == kTfLiteInt8 ||
+               weights_tensor->type == kTfLiteInt4 ||
+               weights_tensor->type == kTfLiteInt2) {
       const bool is_blockwise =
           weights_tensor->quantization.type == kTfLiteBlockwiseQuantization;
       if (is_blockwise) {
@@ -240,7 +292,7 @@ void ConvertFullyConnected(
       ConfigSharedQuantizedFullyConnected(
           *weights_tensor,
           ::ml_drift::OHWI(output_shape.c, 1, 1, input_shape.c),
-          std::move(bias), fc_op);
+          std::move(bias), fc_op, &context);
     } else {
       // Plain float fully-connected: embed the (possibly empty) const bias.
       // Keeping this move of `bias` in the same if/else as the quantized path
