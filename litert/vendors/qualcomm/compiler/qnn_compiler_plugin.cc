@@ -722,7 +722,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_INFO, "%s", "Composing graph");
     std::string& entry_point_name = result->graph_names.emplace_back();
     result->byte_code_index[partition_idx] = context_handle_idx;
-    entry_point_name = absl::StrFormat(kEntryPointNameFmt, partition_idx);
+    const auto prefix = backend_options.GetGraphNamePrefix();
+    entry_point_name =
+        prefix.empty()
+            ? absl::StrFormat(kEntryPointNameFmt, partition_idx)
+            : (num_partitions == 1
+                   ? std::string(prefix)
+                   : absl::StrFormat("%s_%d", prefix, partition_idx));
     LITERT_LOG(LITERT_INFO, "Entry point name: %s", entry_point_name.c_str());
 
     std::vector<::qnn::TensorWrapper> inputs;

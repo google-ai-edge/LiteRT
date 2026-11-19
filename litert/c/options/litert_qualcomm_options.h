@@ -600,6 +600,15 @@ LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
                                              const char** dsp_skel_dir);
 
+// graph_name_prefix
+// Prefix for QNN graph names. Applies to all backends. When using the IR
+// backend it also controls the DLC filename stem.
+// Single partition: "{prefix}", multiple partitions: "{prefix}_{idx}".
+LiteRtStatus LrtQualcommOptionsSetGraphNamePrefix(LrtQualcommOptions options,
+                                                  const char* graph_name_prefix);
+LiteRtStatus LrtQualcommOptionsGetGraphNamePrefix(LrtQualcommOptions options,
+                                                  const char** graph_name_prefix);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
