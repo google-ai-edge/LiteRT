@@ -37,10 +37,15 @@ type UrlString = string;
  *     mode without querying WebGPU devices. Defaults to false.
  * @property webGpuDevice A custom WebGPU device to use, or null to disable
  *     WebGPU.
+ * @property identifyGpuWithWebGl Whether to briefly create a WebGL context to
+ *     identify the GPU when the default WebGPU device's adapter info is too
+ *     generic to pick the right kernels (for example on Apple Silicon Macs in
+ *     Chrome). Defaults to true. Only applies when creating the default device.
  **/
 export interface LoadLiteRtOptions extends LoadOptions {
   cpuOnly?: boolean;
   webGpuDevice?: GPUDevice|null;
+  identifyGpuWithWebGl?: boolean;
 }
 
 /**
@@ -50,10 +55,30 @@ export interface LoadLiteRtOptions extends LoadOptions {
  *     mode without querying WebGPU devices. Defaults to false.
  * @property webGpuDevice A custom WebGPU device to use, or null to disable
  *     WebGPU.
+ * @property identifyGpuWithWebGl Whether to briefly create a WebGL context to
+ *     identify the GPU when the default WebGPU device's adapter info is too
+ *     generic to pick the right kernels (for example on Apple Silicon Macs in
+ *     Chrome). Defaults to true. Only applies when creating the default device.
  */
 export interface InitFromWasmModuleOptions {
   cpuOnly?: boolean;
   webGpuDevice?: GPUDevice|null;
+  identifyGpuWithWebGl?: boolean;
+}
+
+function buildEnvironmentOptions(
+    options?: InitFromWasmModuleOptions): EnvironmentOptions {
+  const envOptions: EnvironmentOptions = {};
+  if (options?.cpuOnly !== undefined) {
+    envOptions.cpuOnly = options.cpuOnly;
+  }
+  if (options?.webGpuDevice !== undefined) {
+    envOptions.webGpuDevice = options.webGpuDevice;
+  }
+  if (options?.identifyGpuWithWebGl !== undefined) {
+    envOptions.identifyGpuWithWebGl = options.identifyGpuWithWebGl;
+  }
+  return envOptions;
 }
 
 /**
@@ -81,15 +106,9 @@ export function loadLiteRt(
       load(path, options)
           .then(async liteRt => {
             setGlobalLiteRt(liteRt);
-            const envOptions: EnvironmentOptions = {};
-            if (options?.cpuOnly !== undefined) {
-              envOptions.cpuOnly = options.cpuOnly;
-            }
-            if (options?.webGpuDevice !== undefined) {
-              envOptions.webGpuDevice = options.webGpuDevice;
-            }
             liteRt.setDefaultEnvironment(
-                await Environment.create(envOptions, liteRt));
+                await Environment.create(
+                    buildEnvironmentOptions(options), liteRt));
             return liteRt;
           })
           .catch(error => {
@@ -119,14 +138,8 @@ export function initFromWasmModule(
   setGlobalLiteRt(liteRt);
   const promise = (async () => {
     try {
-      const envOptions: EnvironmentOptions = {};
-      if (options?.cpuOnly !== undefined) {
-        envOptions.cpuOnly = options.cpuOnly;
-      }
-      if (options?.webGpuDevice !== undefined) {
-        envOptions.webGpuDevice = options.webGpuDevice;
-      }
-      const environment = await Environment.create(envOptions, liteRt);
+      const environment =
+          await Environment.create(buildEnvironmentOptions(options), liteRt);
       liteRt.setDefaultEnvironment(environment);
       return liteRt;
     } catch (error) {
