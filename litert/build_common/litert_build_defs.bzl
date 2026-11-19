@@ -455,6 +455,10 @@ def litert_dynamic_lib(
     # Share tags for all targets.
     tags = cc_lib_kwargs.get("tags", [])
 
+    # Share `testonly` for all targets, so that test-only libraries (for example
+    # dispatch libraries backed by fakes) can be packaged as shared libraries.
+    testonly = cc_lib_kwargs.get("testonly", None)
+
     litert_lib(
         ungrte = ungrte,
         **cc_lib_kwargs
@@ -471,6 +475,7 @@ def litert_dynamic_lib(
         user_link_flags = user_link_flags,
         additional_linker_inputs = additional_linker_inputs,
         tags = tags,
+        testonly = testonly,
         visibility = vis,
         deps = [lib_target_ref],
     )
@@ -481,6 +486,7 @@ def litert_dynamic_lib(
         name = so_name,
         srcs = [":" + shared_lib_name],
         tags = tags,
+        testonly = testonly,
         visibility = vis,
     )
 
