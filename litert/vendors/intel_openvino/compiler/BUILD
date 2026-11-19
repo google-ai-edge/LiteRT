@@ -65,12 +65,27 @@ litert_test(
 )
 
 litert_lib(
+    name = "encoded_weights_store",
+    srcs = ["encoded_weights_store.cc"],
+    hdrs = ["encoded_weights_store.h"],
+    copts = ["-fexceptions"],
+    features = ["-use_header_modules"],  # Incompatible with -fexceptions.
+    deps = [
+        "//litert/c:litert_model_types",
+        "//litert/compiler/cc:litert_model",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+litert_lib(
     name = "weight_bank",
     srcs = ["weight_bank.cc"],
     hdrs = ["weight_bank.h"],
     copts = ["-fexceptions"],
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
+        ":encoded_weights_store",
+        "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/compiler/cc:litert_model",
         "@com_google_absl//absl/types:span",
@@ -92,12 +107,17 @@ litert_test(
         "notap",
     ],
     deps = [
+        ":encoded_weights_store",
         ":weight_bank",
+        "//litert/c:litert_common",
         "//litert/c:litert_model",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
         "//litert/cc/internal:litert_extended_model",
         "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:test_models",
@@ -289,6 +309,7 @@ litert_dynamic_lib(
     ],
     deps = [
         ":alias_shared_constants",
+        ":encoded_weights_store",
         ":global_graph",
         ":graph_iterator",
         ":openvino_compile_context",
@@ -342,6 +363,7 @@ litert_bin(
     visibility = ["//visibility:public"],
     deps = [
         ":alias_shared_constants",
+        ":encoded_weights_store",
         ":global_graph",
         ":graph_iterator",
         ":litert_compiler_plugin_c_api",
@@ -402,6 +424,7 @@ litert_lib(
     features = ["-use_header_modules"],  # Incompatible with -fexceptions.
     deps = [
         ":decoder",
+        ":encoded_weights_store",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_compiler_context_header",
