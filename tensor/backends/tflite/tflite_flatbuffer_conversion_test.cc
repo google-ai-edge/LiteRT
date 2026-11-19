@@ -105,6 +105,181 @@ absl::StatusOr<TfLiteTensor&> GetOutputTensor(
   return GetTensor(name, interpreter, interpreter.outputs());
 }
 
+// Limits of TFLite's builtin kernels. The converter writes valid flatbuffers
+// for these graphs, which other TFLite runtimes (e.g. delegates) may run, but
+// the builtin interpreter used by these tests rejects them when it prepares
+// the ops. Each check returns Unimplemented for its limit, so that the tests
+// skip these cases and still fail on any other interpreter error.
+
+// Returns the information of the `index`-th input of `op`.
+absl::StatusOr<const graph::TensorInformation&> GetInputInfo(
+    const graph::Operation& op, size_t index) {
+  if (op.inputs.size() <= index) {
+    return absl::InvalidArgumentError("Missing operation input.");
+  }
+  return graph::GetInfo(op.inputs[index]);
+}
+
+bool IsBlockwise(const graph::TensorInformation& info) {
+  return info.quantization != nullptr &&
+         info.quantization->As<const graph::BlockwiseQuantization>().ok();
+}
+
+template <class Operation>
+bool Is(const graph::Operation& op) {
+  return op.GetTypeId() == internal::TypeId::Get<Operation>();
+}
+
+absl::Status CheckBatchMatMulRhsIsNotSubByte(const graph::Operation& op) {
+  if (!Is<graph::BatchMatMulOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& rhs,
+                              GetInputInfo(op, 1));
+  if (BitSize(rhs.type) < 8) {
+    return absl::UnimplementedError(
+        "TFLite's builtin BatchMatMul kernel doesn't support int4 and int2 "
+        "right-hand sides.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin FullyConnected kernel only runs blockwise int4 weights.
+absl::Status CheckFullyConnectedBlockwiseWeightsAreInt4(
+    const graph::Operation& op) {
+  if (!Is<graph::FullyConnectedOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& weights,
+                              GetInputInfo(op, 1));
+  if (IsBlockwise(weights) && weights.type != Type::kI4) {
+    return absl::UnimplementedError(
+        "TFLite's builtin FullyConnected kernel only supports blockwise int4 "
+        "weights.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin BatchMatMul kernel doesn't support blockwise quantization.
+absl::Status CheckBatchMatMulRhsIsNotBlockwise(const graph::Operation& op) {
+  if (!Is<graph::BatchMatMulOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& rhs,
+                              GetInputInfo(op, 1));
+  if (IsBlockwise(rhs)) {
+    return absl::UnimplementedError(
+        "TFLite's builtin BatchMatMul kernel doesn't support blockwise "
+        "quantization.");
+  }
+  return absl::OkStatus();
+}
+
+// Returns whether `info` has zero points that aren't 0.
+bool HasNonZeroZeroPoints(const graph::TensorInformation& info) {
+  if (info.quantization == nullptr) {
+    return false;
+  }
+  if (auto pcq =
+          info.quantization->As<const graph::PerChannelAffineQuantization>();
+      pcq.ok()) {
+    return pcq->HasNonZeroZeroPoints();
+  }
+  if (auto bwq = info.quantization->As<const graph::BlockwiseQuantization>();
+      bwq.ok()) {
+    return bwq->HasNonZeroZeroPoints();
+  }
+  return false;
+}
+
+// The builtin FullyConnected kernels don't support non-zero zero points of
+// blockwise weights.
+absl::Status CheckFullyConnectedBlockwiseWeightsAreSymmetric(
+    const graph::Operation& op) {
+  if (!Is<graph::FullyConnectedOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& weights,
+                              GetInputInfo(op, 1));
+  if (IsBlockwise(weights) && HasNonZeroZeroPoints(weights)) {
+    return absl::UnimplementedError(
+        "TFLite's builtin FullyConnected kernels don't support non-zero zero "
+        "points of blockwise weights.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin hybrid FullyConnected kernels (float input, int8, uint8, int4 or
+// int2 weights) and the int4 and int2 kernels don't apply the zero points of
+// the weights.
+absl::Status CheckFullyConnectedZeroPointsAreApplied(
+    const graph::Operation& op) {
+  if (!Is<graph::FullyConnectedOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& input,
+                              GetInputInfo(op, 0));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& weights,
+                              GetInputInfo(op, 1));
+  const bool is_sub_byte = BitSize(weights.type) < 8;
+  const bool is_hybrid =
+      input.type == Type::kFP32 &&
+      (weights.type == Type::kI8 || weights.type == Type::kU8 || is_sub_byte);
+  if ((is_hybrid || is_sub_byte) && HasNonZeroZeroPoints(weights)) {
+    return absl::UnimplementedError(
+        "TFLite's builtin hybrid, int4 and int2 FullyConnected kernels don't "
+        "support non-zero zero points of the weights.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin hybrid BatchMatMul kernel (float left-hand side, int8 right-hand
+// side) doesn't support non-zero zero points.
+absl::Status CheckHybridBatchMatMulRhsIsSymmetric(const graph::Operation& op) {
+  if (!Is<graph::BatchMatMulOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& lhs,
+                              GetInputInfo(op, 0));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& rhs,
+                              GetInputInfo(op, 1));
+  if (lhs.type == Type::kFP32 && rhs.type == Type::kI8 &&
+      HasNonZeroZeroPoints(rhs)) {
+    return absl::UnimplementedError(
+        "TFLite's builtin hybrid BatchMatMul kernel doesn't support non-zero "
+        "zero points.");
+  }
+  return absl::OkStatus();
+}
+
+// The builtin Dequantize kernel doesn't support blockwise quantization.
+absl::Status CheckDequantizeInputIsNotBlockwise(const graph::Operation& op) {
+  if (!Is<graph::DequantizeOperation>(op)) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& input,
+                              GetInputInfo(op, 0));
+  if (IsBlockwise(input)) {
+    return absl::UnimplementedError(
+        "TFLite's builtin Dequantize kernel doesn't support blockwise "
+        "quantization.");
+  }
+  return absl::OkStatus();
+}
+
+// Returns Unimplemented if the builtin interpreter can't run `op`.
+absl::Status CheckBuiltinInterpreterLimits(const graph::Operation& op) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckFullyConnectedBlockwiseWeightsAreInt4(op));
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckFullyConnectedBlockwiseWeightsAreSymmetric(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckFullyConnectedZeroPointsAreApplied(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckBatchMatMulRhsIsNotSubByte(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckBatchMatMulRhsIsNotBlockwise(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckHybridBatchMatMulRhsIsSymmetric(op));
+  LRT_TENSOR_RETURN_IF_ERROR(CheckDequantizeInputIsNotBlockwise(op));
+  return absl::OkStatus();
+}
+
 class TfLiteTestBackendBridge : public TestBackendBridge {
  public:
   ~TfLiteTestBackendBridge() override = default;
@@ -115,16 +290,7 @@ class TfLiteTestBackendBridge : public TestBackendBridge {
                           absl::Span<const TensorHandle> outputs) override {
     LRT_TENSOR_ASSIGN_OR_RETURN(auto execution_plan, GetExecutionPlan(outputs));
     for (const auto* op : execution_plan) {
-      if (op->GetTypeId() ==
-          internal::TypeId::Get<graph::FullyConnectedOperation>()) {
-        const auto& weights_tensor = op->inputs[1];
-        LRT_TENSOR_ASSIGN_OR_RETURN(auto info, graph::GetInfo(weights_tensor));
-        if (info.type == Type::kI4 || info.type == Type::kI2) {
-          return absl::UnimplementedError(
-              "TfLite built-in interpreter does not support INT4/INT2 "
-              "execution natively.");
-        }
-      }
+      LRT_TENSOR_RETURN_IF_ERROR(CheckBuiltinInterpreterLimits(*op));
     }
 
     std::vector<TensorHandle> output_handles(outputs.begin(), outputs.end());
@@ -204,25 +370,20 @@ struct TfLiteTraits {
   using Tag = TfLiteMixinTag;
   // TODO(b/574438217): Enable these tests once the TFLite backend is fixed.
   static constexpr absl::string_view kDisabledTests[] = {
-      // The interpreter rejects empty zero points, and blockwise int8 weights
-      // compute zeros.
+      // The interpreter rejects empty zero points.
       "FullyConnectedQuantizedWeightsOp",
+      // The interpreter rejects empty zero points.
+      "FullyConnectedQuantizedWeightsRank3InputOp",
       // The interpreter rejects empty zero points, and single ones shared by
       // several scales.
       "FullyConnectedPerTensorAndAsymmetricOp",
-      // The interpreter rejects empty zero points, and batch matmuls reject
-      // int4 right-hand sides.
+      // The interpreter rejects empty zero points.
       "BatchMatMulQuantizedRhsOp",
-      // The interpreter rejects empty zero points, and batch matmuls reject
-      // int4 right-hand sides.
+      // The interpreter rejects empty zero points.
       "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "TransposedQuantizedWeightsIntoAddOp",
-      // Batch matmuls reject int4 right-hand sides.
-      "BatchMatMulAdjXQuantizedRhsOp",
-      // The interpreter rejects empty zero points, and blockwise
-      // dequantizations compute zeros.
+      // The interpreter rejects empty zero points.
       "QuantizedWeightsSharedByDotAndAddOp",
       // The interpreter rejects empty zero points.
       "DequantizePerChannelOp",
@@ -2946,8 +3107,7 @@ TEST(SerializationTest, CanSerializeArgMax) {
   ASSERT_EQ(interpreter->nodes_size(), 1);
   const auto* node_and_reg = interpreter->node_and_registration(0);
   ASSERT_NE(node_and_reg, nullptr);
-  EXPECT_EQ(node_and_reg->second.builtin_code,
-            tflite::BuiltinOperator_ARG_MAX);
+  EXPECT_EQ(node_and_reg->second.builtin_code, tflite::BuiltinOperator_ARG_MAX);
   const auto* argmax_options = reinterpret_cast<const TfLiteArgMaxParams*>(
       node_and_reg->first.builtin_data);
   ASSERT_NE(argmax_options, nullptr);
