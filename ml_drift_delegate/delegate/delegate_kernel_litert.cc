@@ -157,17 +157,25 @@ absl::StatusOr<DelegateKernelLiteRt*> DelegateKernelLiteRt::Create(
 absl::Status DelegateKernelLiteRt::BindGpuMemoryToInferenceContext(
     ::ml_drift::ValueId tensor_id,
     const ::ml_drift::TensorDescriptor& tensor_desc, GpuMemoryHandle gpu_memory,
-    absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensor>& tensors) {
-  auto it = tensors.find(tensor_id);
-  if (it == tensors.end() || it->second.gpu_memory != gpu_memory) {
-    ABSL_ASSIGN_OR_RETURN(auto gpu_tensor, backend_->CreateTensorWrapper(
-                                               tensor_desc, gpu_memory));
-    ABSL_RETURN_IF_ERROR(
-        ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
-    tensors[tensor_id] = BoundGpuTensor{gpu_memory, std::move(gpu_tensor)};
-    return absl::OkStatus();
+    absl::flat_hash_map<::ml_drift::ValueId, BoundGpuTensorCache>& tensors) {
+  auto& cache = tensors[tensor_id];
+  for (size_t i = 0; i < cache.slots.size(); ++i) {
+    if (cache.slots[i].gpu_tensor != nullptr &&
+        cache.slots[i].gpu_memory == gpu_memory) {
+      if (i > 0) {
+        std::swap(cache.slots[0], cache.slots[i]);
+      }
+      return ctx_->BindSpatialTensor(tensor_id,
+                                     &cache.slots[0].gpu_tensor->Get());
+    }
   }
-  return ctx_->BindSpatialTensor(tensor_id, &it->second.gpu_tensor->Get());
+  ABSL_ASSIGN_OR_RETURN(auto gpu_tensor,
+                        backend_->CreateTensorWrapper(tensor_desc, gpu_memory));
+  ABSL_RETURN_IF_ERROR(
+      ctx_->BindSpatialTensor(tensor_id, &gpu_tensor->Get()));
+  cache.slots[1] = std::move(cache.slots[0]);
+  cache.slots[0] = BoundGpuTensor{gpu_memory, std::move(gpu_tensor)};
+  return absl::OkStatus();
 }
 
 absl::Status DelegateKernelLiteRt::MarkToFlushIfGlBuffer(

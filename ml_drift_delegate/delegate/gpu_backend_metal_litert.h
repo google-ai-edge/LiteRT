@@ -93,8 +93,10 @@ class GpuInferenceContextMetalLitert : public GpuInferenceContextMetal {
   absl::Status PostConvert(bool input) override;
 
  private:
-  // Cache the last post dispatch event for correct ref counting.
-  CustomEventMetal* post_dispatch_event_ = nullptr;
+  // Pool of reusable post-dispatch events so async execution avoids creating a
+  // new MTLSharedEvent + MTLEvent on every decode step.
+  std::vector<CustomEventMetal*> post_dispatch_event_pool_;
+  size_t next_evict_idx_ = 0;
 };
 
 }  // namespace litert::ml_drift
