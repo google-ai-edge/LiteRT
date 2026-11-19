@@ -596,6 +596,9 @@ int32_t FindOrAppendOpCode(
 
   auto code = std::make_unique<TflOpCode>();
   code->builtin_code = static_cast<tflite::BuiltinOperator>(op.OpCode());
+  code->deprecated_builtin_code = static_cast<int8_t>(std::min<int32_t>(
+      code->builtin_code,
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES));
   code->custom_code = std::move(custom_code);
   // TODO: Carry the required version from Builder-created ops; TFLite's
   // UpdateOpVersion cannot safely process LiteRT external-buffer models.

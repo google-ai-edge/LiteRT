@@ -473,15 +473,9 @@ absl::Status ModelFactory::Build() {
           pcq.ok()) {
         t.quantization = std::make_unique<tflite::QuantizationParametersT>();
         t.quantization->scale = pcq->scales;
-        if (!pcq->zero_points.empty()) {
-          if (pcq->scales.empty()) {
-            LRT_TENSOR_RETURN_IF_ERROR(pcq->zero_points.Validate<int64_t>(0));
-          } else {
-            LRT_TENSOR_ASSIGN_OR_RETURN(
-                t.quantization->zero_point,
-                pcq->zero_points.CopyAs<int64_t>(pcq->scales.size()));
-          }
-        }
+        LRT_TENSOR_ASSIGN_OR_RETURN(
+            t.quantization->zero_point,
+            pcq->zero_points.CopyAs<int64_t>(pcq->scales.size()));
         t.quantization->quantized_dimension = pcq->quantized_dimension;
       } else if (auto bwq = tensor_info.quantization
                                 ->As<const BlockwiseQuantization>();

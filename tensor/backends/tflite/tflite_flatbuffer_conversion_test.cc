@@ -368,26 +368,6 @@ class TfLiteTestBackendBridge : public TestBackendBridge {
 
 struct TfLiteTraits {
   using Tag = TfLiteMixinTag;
-  // TODO(b/574438217): Enable these tests once the TFLite backend is fixed.
-  static constexpr absl::string_view kDisabledTests[] = {
-      // The interpreter rejects empty zero points.
-      "FullyConnectedQuantizedWeightsOp",
-      // The interpreter rejects empty zero points.
-      "FullyConnectedQuantizedWeightsRank3InputOp",
-      // The interpreter rejects empty zero points, and single ones shared by
-      // several scales.
-      "FullyConnectedPerTensorAndAsymmetricOp",
-      // The interpreter rejects empty zero points.
-      "BatchMatMulQuantizedRhsOp",
-      // The interpreter rejects empty zero points.
-      "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // The interpreter rejects empty zero points.
-      "TransposedQuantizedWeightsIntoAddOp",
-      // The interpreter rejects empty zero points.
-      "QuantizedWeightsSharedByDotAndAddOp",
-      // The interpreter rejects empty zero points.
-      "DequantizePerChannelOp",
-  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<TfLiteTestBackendBridge>();
   }
