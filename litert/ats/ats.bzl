@@ -17,7 +17,7 @@ Macros to define pre-configured ATS test suites and run through the litert_devic
 """
 
 load("//litert/integration_test:litert_device.bzl", "hidden_test_tags", "litert_device_exec")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "get_mh_device", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load(
     "//litert/integration_test:litert_device_script.bzl",
     "litert_aot_compile",
@@ -246,6 +246,7 @@ def litert_define_ats(
                     model_providers = resolved_models.model_providers,
                     extra_models = resolved_models.cns_models,
                     data = resolved_models.data,
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
             elif mode == "compile_only":
                 compile_args = _make_ats_args(
@@ -323,6 +324,7 @@ def litert_define_ats(
                     model_providers = resolved_models.model_providers,
                     extra_models = resolved_models.cns_models,
                     data = resolved_models.data + [":" + aot_models_target],
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
 
         if mode == "compile_only" and soc_models:

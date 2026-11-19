@@ -714,6 +714,32 @@ cc_import_files(
     target = "@qairt//:libQnnHtpPrepare.so",
 )
 
+# copybara:uncomment_begin(google-only)
+# cc_import_files(
+#     name = "libQnnHtpV69Stub.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV69Stub.so",
+# )
+#
+# cc_import_files(
+#     name = "libQnnHtpV69Skel.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV69Skel.so",
+# )
+#
+# cc_import_files(
+#     name = "libQnnHtpV73Stub.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV73Stub.so",
+# )
+#
+# cc_import_files(
+#     name = "libQnnHtpV73Skel.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV73Skel.so",
+# )
+# copybara:uncomment_end
+
 cc_import_files(
     name = "libQnnHtpV75Stub.so",
     testonly = True,
@@ -737,6 +763,20 @@ cc_import_files(
     testonly = True,
     target = "@qairt//:libQnnHtpV79Skel.so",
 )
+
+# copybara:uncomment_begin(google-only)
+# cc_import_files(
+#     name = "libQnnHtpV81Stub.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV81Stub.so",
+# )
+#
+# cc_import_files(
+#     name = "libQnnHtpV81Skel.so",
+#     testonly = True,
+#     target = "@qairt//:libQnnHtpV81Skel.so",
+# )
+# copybara:uncomment_end
 
 cc_import_files(
     name = "libQnnIr.so",
