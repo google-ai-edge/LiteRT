@@ -26,6 +26,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -417,6 +418,288 @@ bool IsBroadcastable(const TfLiteIntArray* dims1, const TfLiteIntArray* dims2) {
     --idx2;
   }
   return true;
+}
+
+namespace {
+
+// Returns element `index` of the blockwise scale or zero point tensor `param`.
+float ReadBlockwiseV2Param(const TfLiteTensor& param, int64_t index) {
+  switch (param.type) {
+    case kTfLiteFloat32:
+      return param.data.f[index];
+    case kTfLiteFloat16:
+      return fp16_ieee_to_fp32_value(param.data.f16[index].data);
+    case kTfLiteInt32:
+      return static_cast<float>(param.data.i32[index]);
+    case kTfLiteInt16:
+      return static_cast<float>(param.data.i16[index]);
+    case kTfLiteInt8:
+      return static_cast<float>(param.data.int8[index]);
+    default:
+      ABSL_LOG(FATAL) << "Unsupported blockwise quantization parameter type: "
+                      << TfLiteTypeGetName(param.type);
+  }
+}
+
+// Returns the index, in the blockwise scale or zero point tensor `param`, of
+// the block that holds the element at `coords` of the quantized tensor. A
+// `param` extent of 1 broadcasts along that dimension.
+int64_t BlockwiseV2ParamIndex(const TfLiteTensor& param,
+                              const TfLiteIntArray& block_shape,
+                              const int* coords) {
+  int64_t index = 0;
+  for (int d = 0; d < param.dims->size; ++d) {
+    const int extent = param.dims->data[d];
+    index =
+        index * extent + (extent == 1 ? 0 : coords[d] / block_shape.data[d]);
+  }
+  return index;
+}
+
+absl::Status ValidateBlockwiseV2Param(const TfLiteTensor& tensor,
+                                      const TfLiteIntArray& block_shape,
+                                      const TfLiteTensor& param,
+                                      bool is_scale) {
+  size_t element_size = 0;
+  switch (param.type) {
+    case kTfLiteFloat32:
+      element_size = sizeof(float);
+      break;
+    case kTfLiteFloat16:
+      element_size = is_scale ? sizeof(uint16_t) : 0;
+      break;
+    case kTfLiteInt32:
+      element_size = is_scale ? 0 : sizeof(int32_t);
+      break;
+    case kTfLiteInt16:
+      element_size = is_scale ? 0 : sizeof(int16_t);
+      break;
+    case kTfLiteInt8:
+      element_size = is_scale ? 0 : sizeof(int8_t);
+      break;
+    default:
+      break;
+  }
+  if (element_size == 0) {
+    return absl::UnimplementedError(
+        absl::StrCat("Unsupported blockwise quantization ",
+                     is_scale ? "scale" : "zero point",
+                     " type: ", TfLiteTypeGetName(param.type)));
+  }
+  if (!tflite::IsConstantTensor(&param) || param.data.raw_const == nullptr) {
+    return absl::UnimplementedError(
+        "Blockwise quantization scales and zero points must be constant.");
+  }
+  if (param.dims == nullptr || param.dims->size != tensor.dims->size) {
+    return absl::InvalidArgumentError(
+        "Blockwise quantization scales and zero points must have the rank of "
+        "the quantized tensor.");
+  }
+  size_t num_elements = 1;
+  for (int d = 0; d < param.dims->size; ++d) {
+    const int block = block_shape.data[d];
+    const int num_blocks = (tensor.dims->data[d] + block - 1) / block;
+    const int extent = param.dims->data[d];
+    if (extent != 1 && extent != num_blocks) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Blockwise quantization scales and zero points must have an extent "
+          "of 1 or of the number of blocks along every dimension, got ",
+          extent, " for ", num_blocks, " blocks along dimension ", d, "."));
+    }
+    num_elements *= extent;
+  }
+  if (param.bytes < num_elements * element_size) {
+    return absl::InvalidArgumentError(
+        "Blockwise quantization scale or zero point buffer is too small.");
+  }
+  return absl::OkStatus();
+}
+
+// Indices of the dimensions of blockwise quantized FullyConnected weights.
+struct BlockwiseV2WeightsDims {
+  int o = 0;
+  int i = 1;
+  // Dimension of the weights batch, -1 for 2-D FULLY_CONNECTED weights.
+  int h = -1;
+};
+
+bool GetBlockwiseV2WeightsDims(const TfLiteIntArray& dims,
+                               bool transpose_batched_weights,
+                               BlockwiseV2WeightsDims* weights_dims) {
+  if (dims.size == 2) {
+    *weights_dims = {.o = 0, .i = 1, .h = -1};
+    return true;
+  }
+  if (dims.size == 3) {
+    *weights_dims = transpose_batched_weights
+                        ? BlockwiseV2WeightsDims{.o = 2, .i = 1, .h = 0}
+                        : BlockwiseV2WeightsDims{.o = 1, .i = 2, .h = 0};
+    return true;
+  }
+  if (dims.size == 4 && dims.data[0] == 1) {
+    *weights_dims = transpose_batched_weights
+                        ? BlockwiseV2WeightsDims{.o = 3, .i = 2, .h = 1}
+                        : BlockwiseV2WeightsDims{.o = 2, .i = 3, .h = 1};
+    return true;
+  }
+  return false;
+}
+
+}  // namespace
+
+absl::Status GetBlockwiseV2Params(const TfLiteTensor* tensors,
+                                  size_t tensors_size,
+                                  const TfLiteTensor& tensor,
+                                  BlockwiseV2Params* params) {
+  if (tensor.quantization.type != kTfLiteBlockwiseQuantizationV2 ||
+      tensor.quantization.params == nullptr) {
+    return absl::InvalidArgumentError(
+        "Tensor has no N-D blockwise quantization.");
+  }
+  if (tensor.type != kTfLiteInt2 && tensor.type != kTfLiteInt4 &&
+      tensor.type != kTfLiteInt8) {
+    return absl::UnimplementedError(
+        absl::StrCat("Unsupported blockwise quantized tensor type: ",
+                     TfLiteTypeGetName(tensor.type)));
+  }
+  const auto* quant = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+      tensor.quantization.params);
+  if (tensor.dims == nullptr || quant->block_shape == nullptr ||
+      quant->block_shape->size != tensor.dims->size) {
+    return absl::InvalidArgumentError(
+        "Blockwise quantization needs one block extent per dimension.");
+  }
+  for (int d = 0; d < tensor.dims->size; ++d) {
+    if (tensor.dims->data[d] <= 0 || quant->block_shape->data[d] <= 0) {
+      return absl::InvalidArgumentError(
+          "Blockwise quantized tensors need positive dimensions and block "
+          "extents.");
+    }
+  }
+  auto get_tensor = [&](int index) -> const TfLiteTensor* {
+    return index >= 0 && static_cast<size_t>(index) < tensors_size
+               ? &tensors[index]
+               : nullptr;
+  };
+  *params = BlockwiseV2Params();
+  params->scale = get_tensor(quant->scale);
+  if (params->scale == nullptr) {
+    return absl::InvalidArgumentError(
+        "Invalid blockwise quantization scale tensor index.");
+  }
+  ABSL_RETURN_IF_ERROR(ValidateBlockwiseV2Param(
+      tensor, *quant->block_shape, *params->scale, /*is_scale=*/true));
+  if (quant->zero_point != kTfLiteOptionalTensor) {
+    params->zero_point = get_tensor(quant->zero_point);
+    if (params->zero_point == nullptr) {
+      return absl::InvalidArgumentError(
+          "Invalid blockwise quantization zero point tensor index.");
+    }
+    ABSL_RETURN_IF_ERROR(ValidateBlockwiseV2Param(
+        tensor, *quant->block_shape, *params->zero_point, /*is_scale=*/false));
+  }
+  return absl::OkStatus();
+}
+
+void DequantizeBlockwiseV2(const TfLiteTensor& tensor,
+                           const BlockwiseV2Params& params, float* dst) {
+  const auto* quant = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+      tensor.quantization.params);
+  const TfLiteIntArray& block_shape = *quant->block_shape;
+  const int64_t num_elements = tflite::NumElements(&tensor);
+  ABSL_QCHECK_LE(num_elements, std::numeric_limits<int>::max());
+  const int8_t* quantized = tensor.data.int8;
+  std::vector<int8_t> unpacked;
+  if (tensor.type != kTfLiteInt8) {
+    unpacked.resize(num_elements);
+    tflite::tensor_utils::UnpackPackedIntToInt8(
+        tensor.data.int8, static_cast<int>(num_elements),
+        /*bit_width=*/tensor.type == kTfLiteInt2 ? 2 : 4, unpacked.data());
+    quantized = unpacked.data();
+  }
+  const int rank = tensor.dims->size;
+  std::vector<int> coords(rank, 0);
+  for (int64_t e = 0; e < num_elements; ++e) {
+    const float scale = ReadBlockwiseV2Param(
+        *params.scale,
+        BlockwiseV2ParamIndex(*params.scale, block_shape, coords.data()));
+    const float zero_point =
+        params.zero_point == nullptr
+            ? 0.0f
+            : ReadBlockwiseV2Param(
+                  *params.zero_point,
+                  BlockwiseV2ParamIndex(*params.zero_point, block_shape,
+                                        coords.data()));
+    dst[e] = scale * (static_cast<float>(quantized[e]) - zero_point);
+    for (int d = rank - 1; d >= 0; --d) {
+      if (++coords[d] < tensor.dims->data[d]) break;
+      coords[d] = 0;
+    }
+  }
+}
+
+absl::Status GetBlockwiseV2WeightsInfo(const TfLiteTensor& tensor,
+                                       const BlockwiseV2Params& params,
+                                       BlockwiseV2WeightsInfo* info,
+                                       bool transpose_batched_weights) {
+  const auto* quant = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+      tensor.quantization.params);
+  BlockwiseV2WeightsDims dims;
+  if (!GetBlockwiseV2WeightsDims(*tensor.dims, transpose_batched_weights,
+                                 &dims)) {
+    return absl::UnimplementedError(
+        "Blockwise quantized weights must be [O, I], [H, I, O], [H, O, I], "
+        "[1, H, I, O] or [1, H, O, I].");
+  }
+  const int in_channels = tensor.dims->data[dims.i];
+  const int block = quant->block_shape->data[dims.i];
+  int num_blocks = 1;
+  for (const TfLiteTensor* param : {params.scale, params.zero_point}) {
+    // An extent of 1 broadcasts over all the input channels.
+    if (param == nullptr || param->dims->data[dims.i] == 1) continue;
+    if (in_channels % block != 0) {
+      return absl::UnimplementedError(
+          "Blockwise quantized weights need blocks of the same size along the "
+          "input channels.");
+    }
+    num_blocks = in_channels / block;
+  }
+  info->weights_shape = ::ml_drift::OHWI(
+      tensor.dims->data[dims.o], dims.h < 0 ? 1 : tensor.dims->data[dims.h], 1,
+      in_channels);
+  info->scale_shape = ::ml_drift::OHWI(info->weights_shape.o,
+                                       info->weights_shape.h, 1, num_blocks);
+  info->has_zero_point = params.zero_point != nullptr;
+  info->is_hio = dims.h >= 0;
+  info->transpose_batched_weights = transpose_batched_weights;
+  return absl::OkStatus();
+}
+
+std::vector<float> ReadBlockwiseV2WeightsParam(
+    const TfLiteTensor& tensor, const TfLiteTensor& param,
+    const BlockwiseV2WeightsInfo& info) {
+  const auto* quant = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+      tensor.quantization.params);
+  BlockwiseV2WeightsDims dims;
+  ABSL_QCHECK(GetBlockwiseV2WeightsDims(*tensor.dims,
+                                        info.transpose_batched_weights, &dims));
+  const ::ml_drift::OHWI& shape = info.scale_shape;
+  // Input channels covered by each of the `shape.i` values.
+  const int block = info.weights_shape.i / shape.i;
+  std::vector<float> values(shape.DimensionsProduct());
+  int coords[4] = {0, 0, 0, 0};
+  for (int o = 0; o < shape.o; ++o) {
+    coords[dims.o] = o;
+    for (int h = 0; h < shape.h; ++h) {
+      if (dims.h >= 0) coords[dims.h] = h;
+      for (int b = 0; b < shape.i; ++b) {
+        coords[dims.i] = b * block;
+        values[(o * shape.h + h) * shape.i + b] = ReadBlockwiseV2Param(
+            param, BlockwiseV2ParamIndex(param, *quant->block_shape, coords));
+      }
+    }
+  }
+  return values;
 }
 
 }  // namespace litert::ml_drift
