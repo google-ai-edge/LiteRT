@@ -22,6 +22,7 @@ limitations under the License.
 #include "tflite/c/common.h"
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/schema/schema_generated.h"
+#include "tflite/tools/optimize/calibration/calibration_logger.h"
 
 namespace tflite {
 namespace optimize {
@@ -32,7 +33,7 @@ TfLiteStatus CalibrationReader::GetTensorStatsAsMap(
         tensor_id_to_stats_map) const {
   tensor_id_to_stats_map->clear();
   for (const auto& tensorid_stat : logger_->GetCalibrationValues()) {
-    auto minmax = tensorid_stat.second;
+    const MinMax& minmax = tensorid_stat.second;
     CalibrationReader::CalibrationStats stats;
     TF_LITE_ENSURE_STATUS(minmax.Get(&stats.min, &stats.max));
     tensor_id_to_stats_map->insert({tensorid_stat.first, stats});
@@ -50,7 +51,7 @@ TfLiteStatus CalibrationReader::AddCalibrationToModel(ModelT* model,
     int subgraph_index, tensor_index;
     std::tie(subgraph_index, tensor_index) = tensorid_stat.first;
     const auto& subgraph = model->subgraphs[subgraph_index];
-    auto minmax = tensorid_stat.second;
+    const MinMax& minmax = tensorid_stat.second;
     float min, max;
     TfLiteStatus status = minmax.Get(&min, &max);
     if (status != kTfLiteOk) continue;
@@ -75,6 +76,15 @@ TfLiteStatus CalibrationReader::AddCalibrationToModel(ModelT* model,
 
   return kTfLiteOk;
 }
+
+void CalibrationReader::EnableHistogramPass(int num_bins,
+                                            double lower_percentile,
+                                            double upper_percentile) {
+  if (logger_ != nullptr) {
+    logger_->InitializeHistograms(num_bins, lower_percentile, upper_percentile);
+  }
+}
+
 }  // namespace calibration
 }  // namespace optimize
 }  // namespace tflite
