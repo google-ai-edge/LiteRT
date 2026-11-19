@@ -16,6 +16,7 @@
 """Tests for tensor_utils."""
 
 import dataclasses
+from unittest import mock
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -82,6 +83,13 @@ class TensorUtilsTest(parameterized.TestCase):
           tensor_data=np.array([[1, 2], [4, 5]]),
           quantized_dimension=0,
       ),
+      dict(
+          testcase_name="2d_tensor_1d_per_tensor_params",
+          scale=np.array([0.5], dtype=np.float32),
+          zero_point=np.array([0], dtype=np.int8),
+          tensor_data=np.array([[1.0, 2.0], [4.0, 5.0]], dtype=np.float32),
+          quantized_dimension=None,
+      ),
   )
   def test_fix_quantization_params_rank_succeed(
       self, scale, zero_point, tensor_data, quantized_dimension
@@ -98,6 +106,27 @@ class TensorUtilsTest(parameterized.TestCase):
     )
     self.assertEqual(fixed_quant_params.scale.ndim, tensor_data.ndim)
     self.assertEqual(fixed_quant_params.zero_point.ndim, tensor_data.ndim)
+
+  def test_fix_quantization_params_rank_preserves_metadata(self):
+    hadamard = qtyping.UniformQuantParams.HadamardRotationParams(
+        random_binary_vector=np.ones(4, dtype=np.int8),
+        hadamard_size=4,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        quantized_dimensions=(0,),
+        scale=np.array([0.5, 1.5], dtype=np.float32),
+        zero_point=np.array([0, 0], dtype=np.int8),
+        hadamard=hadamard,
+        custom_algorithm_param={"algo": "test"},
+    )
+    fixed = uniform_quantize_tensor.fix_quantization_params_rank(
+        np.zeros((2, 4), dtype=np.float32), quant_params
+    )
+    self.assertEqual(fixed.hadamard, hadamard)
+    self.assertEqual(fixed.custom_algorithm_param, {"algo": "test"})
+    self.assertEqual(fixed.quantized_dimensions, (0,))
 
   def test_fix_quantization_params_rank_scalar_tensor_1d_params_raise(self):
     quant_params = qtyping.UniformQuantParams(
@@ -280,6 +309,59 @@ class TensorUtilsTest(parameterized.TestCase):
     np.testing.assert_array_equal(
         broadcasted.zero_point,
         np.array([[0, 0, 1, 1], [-1, -1, 2, 2]], dtype=np.int32),
+    )
+
+  def test_broadcast_scale_zp_for_blockwise_preserves_metadata(self):
+    hadamard = qtyping.UniformQuantParams.HadamardRotationParams(
+        random_binary_vector=np.ones(4, dtype=np.int8),
+        hadamard_size=4,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        quantized_dimension=None,
+        quantized_dimensions=(0, 1),
+        block_size=2,
+        num_bits=4,
+        scale=np.array([[[0.5, 1.5], [2.0, 3.0]]], dtype=np.float32),
+        zero_point=np.array([[[0, 1], [-1, 2]]], dtype=np.int32),
+        hadamard=hadamard,
+        custom_algorithm_param={"algo": "test"},
+    )
+    broadcasted = uniform_quantize_tensor.broadcast_scale_zp_for_blockwise(
+        np.zeros((1, 2, 4), dtype=np.float32), quant_params
+    )
+    self.assertEqual(broadcasted.hadamard, hadamard)
+    self.assertEqual(broadcasted.custom_algorithm_param, {"algo": "test"})
+    self.assertEqual(broadcasted.quantized_dimensions, (0, 1))
+
+  def test_uniform_quantize_chunked_single_row_exceeds_chunk_bytes(self):
+    tensor_data = np.array(
+        [
+            [0.0, 1.0, 2.0, 3.0, -1.0, -2.0, -3.0, 7.0],
+            [0.0, 2.0, 4.0, 6.0, -2.0, -4.0, -6.0, 14.0],
+            [0.0, -1.0, 1.0, 2.0, -2.0, 3.0, -3.0, 4.0],
+        ],
+        dtype=np.float32,
+    )
+    quant_params = qtyping.UniformQuantParams(
+        num_bits=4,
+        quantized_dimension=0,
+        scale=np.array([[1.0], [2.0], [0.5]], dtype=np.float32),
+        zero_point=np.array([[0], [0], [0]], dtype=np.int8),
+    )
+    with mock.patch.object(uniform_quantize_tensor, "_CHUNK_BYTES", 16):
+      quantized = uniform_quantize_tensor.uniform_quantize(
+          tensor_data, quant_params
+      )
+    np.testing.assert_array_equal(
+        quantized,
+        np.array(
+            [
+                [0, 1, 2, 3, -1, -2, -3, 7],
+                [0, 1, 2, 3, -1, -2, -3, 7],
+                [0, -2, 2, 4, -4, 6, -6, 7],
+            ],
+            dtype=np.int8,
+        ),
     )
 
   @parameterized.named_parameters(
@@ -594,17 +676,45 @@ class TensorUtilsTest(parameterized.TestCase):
       # Range has to be extended to include zero.
       self.assertEqual(calculated_min, 0)
 
-  @parameterized.parameters(
-      # number of bits, is_symmetric, max bound of the quantized range.
-      (4, True, 7),
-      (8, False, 255),
-    )
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="int4_symmetric",
+          num_bits=4,
+          symmetric=True,
+          signed=True,
+          clipping_values=np.array([4.0]),
+          expected_scale=4.0 / 7,
+      ),
+      dict(
+          testcase_name="int8_asymmetric",
+          num_bits=8,
+          symmetric=False,
+          signed=True,
+          clipping_values=np.array([4.0]),
+          expected_scale=4.0 / 255,
+      ),
+      dict(
+          testcase_name="int4_symmetric_zero_clipping",
+          num_bits=4,
+          symmetric=True,
+          signed=True,
+          clipping_values=np.array([[0.0]], dtype=np.float32),
+          expected_scale=1e-9 / 7,
+      ),
+      dict(
+          testcase_name="uint8_asymmetric_zero_clipping",
+          num_bits=8,
+          symmetric=False,
+          signed=False,
+          clipping_values=np.array([[0.0]], dtype=np.float32),
+          expected_scale=1e-9 / 255,
+      ),
+  )
   def test_tensor_zp_scale_from_min_max_with_clipping(
-      self, num_bits, symmetric, quantized_bound
+      self, num_bits, symmetric, signed, clipping_values, expected_scale
   ):
     min_val = np.array([[1.0]])
     max_val = np.array([[5.0]])
-    clipping_values = np.array([4.0])
     zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
         min_val,
         max_val,
@@ -612,8 +722,8 @@ class TensorUtilsTest(parameterized.TestCase):
         symmetric,
         qtyping.QuantGranularity.TENSORWISE,
         clipping_values,
+        signed=signed,
     )
-    expected_scale = clipping_values / quantized_bound
 
     with self.subTest(name="CheckShapes"):
       self.assertEqual(zp.shape, scale.shape)
@@ -624,7 +734,7 @@ class TensorUtilsTest(parameterized.TestCase):
         self.assertEqual(zp[0], 0)
 
     with self.subTest(name="CheckScaleValue"):
-      self.assertEqual(scale[0], expected_scale)
+      self.assertEqual(scale.item(), expected_scale)
 
 
 if __name__ == "__main__":
