@@ -21,6 +21,8 @@
 #include <string>
 #include <vector>
 
+#include "openvino/core/partial_shape.hpp"
+#include "openvino/core/shape.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -212,10 +214,20 @@ GraphIteratorDelegate::get_decoder() const {
                             iterator_indices_.output_index_];
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo> input_meta_info;
     std::vector<ov::frontend::tensorflow_lite::TensorMetaInfo> output_meta_info;
-    for (const auto& input : op.Inputs()) {
+    const auto& inputs = op.Inputs();
+    for (size_t input_idx = 0; input_idx < inputs.size(); ++input_idx) {
+      const auto& input = inputs[input_idx];
       tensor_meta_info = {};
       if (!fill_tensor_meta(tensor_meta_info, input)) {
         return nullptr;
+      }
+      // TFLite accepts a SPLIT axis given as a 1-element vector, but
+      // ov::op::v1::Split requires a rank-0 axis: present such a constant axis
+      // as a scalar (same data).
+      if (op.Code() == kLiteRtOpCodeTflSplit && input_idx == 0 &&
+          input.HasWeights() && tensor_meta_info.m_partial_shape.is_static() &&
+          ov::shape_size(tensor_meta_info.m_partial_shape.to_shape()) == 1) {
+        tensor_meta_info.m_partial_shape = ov::PartialShape{};
       }
       if (input.HasWeights()) {
         LITERT_LOG(LITERT_VERBOSE, "Data is static or constant for op %d",
