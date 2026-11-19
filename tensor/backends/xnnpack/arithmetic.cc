@@ -726,13 +726,34 @@ absl::Status OpMixin<FullyConnectedOperation, XnnpackMixinTag>::ToXnnpack(
     }
   }
 
+  // XNNPACK's fully connected operator only takes channelwise quantized weights
+  // with a float input, so per-tensor quantized int8 weights are defined as
+  // channelwise quantized weights with the same scale for each channel. Int4
+  // and int2 values are always defined as channelwise quantized values.
+  bool per_tensor_weights = false;
+  if (weights_info.ok() && weights_info->quantization &&
+      weights_info->type == Type::kI8 && input_info.ok() &&
+      input_info->quantization == nullptr) {
+    auto pcq = weights_info->quantization->As<PerChannelAffineQuantization>();
+    // Float zero points are dequantized when the weights are defined.
+    per_tensor_weights = pcq.ok() && pcq->scales.size() == 1 &&
+                         pcq->zero_points.size() <= 1 &&
+                         !pcq->HasNonZeroFloatZeroPoints();
+  }
+
   if (weights_are_quantized && input_info.ok() &&
       input_info->type == Type::kFP32) {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         fc_input_id, DynamicallyQuantizeInput(ctx, input_id, *input_info));
   }
 
-  LRT_TENSOR_ASSIGN_OR_RETURN(uint32_t weights_id, ctx.DefineValue(weights));
+  uint32_t weights_id = XNN_INVALID_VALUE_ID;
+  if (per_tensor_weights) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        weights_id, ctx.DefinePerTensorQuantizedWeightsAsChannelwise(weights));
+  } else {
+    LRT_TENSOR_ASSIGN_OR_RETURN(weights_id, ctx.DefineValue(weights));
+  }
   uint32_t bias_id = XNN_INVALID_VALUE_ID;
   if (bias != nullptr) {
     LRT_TENSOR_ASSIGN_OR_RETURN(bias_id, ctx.DefineValue(*bias));

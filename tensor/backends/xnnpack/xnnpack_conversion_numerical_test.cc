@@ -25,7 +25,6 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/testing/numerical_test_bridge.h"
@@ -102,11 +101,6 @@ class XnnpackTestBackendBridge : public TestBackendBridge {
 
 struct XnnpackTraits {
   using Tag = XnnpackMixinTag;
-  // TODO(b/574438217): Enable these tests once the XNNPACK backend is fixed.
-  static constexpr absl::string_view kDisabledTests[] = {
-      // Fully connected ops reject per-tensor int8 weights.
-      "FullyConnectedPerTensorAndAsymmetricOp",
-  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();
   }
