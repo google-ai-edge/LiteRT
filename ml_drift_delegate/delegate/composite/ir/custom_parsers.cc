@@ -15,7 +15,9 @@
 #include "ml_drift_delegate/delegate/composite/ir/custom_parsers.h"
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/glu_parser.h"
@@ -35,6 +37,8 @@ CustomIrOpMap GetCustomParsers() {
   CustomIrOpMap parsers;
 
   parsers["odml.cache_update"] = GetAddValuesToCacheParser();
+  parsers[kBlockedFfwCompositeName] = GetBlockFfwParser();
+  parsers[kBlockFfwCompositeName] = GetBlockFfwParser();
   parsers["odml.fused_sdpa_cache_update"] = GetFusedSdpaCacheUpdateParser();
   parsers["moe"] = GetMoeExpertsParser();
   parsers["odml.runtime_bmm"] = GetRuntimeBatchedMatMulParser();
