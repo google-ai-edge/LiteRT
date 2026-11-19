@@ -59,6 +59,12 @@ TEST(RtldFlagsTest, FlagFactoryWorks) {
 #endif  // defined(RTLD_DEEPBIND)
 }
 
+TEST(SharedLibraryDetailTest, DlCloseIgnoresNullHandle) {
+  // Without the null check, this calls dlclose(nullptr), which crashes on
+  // glibc.
+  internal::shared_library_detail::DlClose(nullptr);
+}
+
 TEST(SharedLibraryTest, LoadRtldDefaultWorks) {
   LITERT_ASSERT_OK_AND_ASSIGN(SharedLibrary lib,
                               SharedLibrary::Load(RtldFlags::kDefault));
