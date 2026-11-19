@@ -272,7 +272,8 @@ class SharedMemoryManager {
   absl::Status CreateQuantizedTensorWithScaleAndZeroPoint(
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
-      absl::flat_hash_map<ValueId, GlobalId>* external_tensors);
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      bool transpose_batched_weights = true);
 
   // Retrieves the existing weights, scale and zero_point tensors from
   // buffer_id_to_spatial_tensor_ for the given shared_tensor_id. This logic is
@@ -339,6 +340,23 @@ class SharedMemoryManager {
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
       uint32_t fc_op_id, DataType data_type);
+
+  // Creates the weights tensor for N-D blockwise quantized batched weights
+  // ([H, I, O] / [1, H, I, O] when `transpose_batched_weights` is true, or
+  // [H, O, I] / [1, H, O, I] when false) that a quantized FullyConnected node
+  // consumes as one weights matrix per H in (O, H, 1, I) `shape`.
+  absl::Status CreateBlockwiseV2BatchedWeightsTensor(
+      const ValueId& shared_tensor_id, uint32_t global_tensor_id,
+      const TfLiteTensor& tflite_tensor, const OHWI& shape,
+      bool transpose_batched_weights, SharedConstTensor& shared_tensor);
+
+  // Creates scale and zero point tensors for N-D blockwise quantized weights
+  // (kTfLiteBlockwiseQuantizationV2), whose zero points may be fractional.
+  absl::Status CreateBlockwiseV2QuantizationParams(
+      uint32_t global_tensor_id, const TfLiteTensor& tflite_tensor,
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      uint32_t fc_op_id, DataType data_type,
+      bool transpose_batched_weights = true);
 
   // Creates a linear tensor with a given shape, adds it to the graph and sets
   // the memory provided by the data pointer.
