@@ -352,9 +352,8 @@ litert_dynamic_lib(
         "//litert/vendors/intel_openvino:bytecode_header",
         "//litert/vendors/intel_openvino:openvino_version_info",
         "@com_google_absl//absl/strings",
-        "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
-        "@flatbuffers",
+        "@flatbuffers",  # keep
     ] + _OPENVINO_DEPS,
 )
 
@@ -587,10 +586,13 @@ litert_test(
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_environment",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
         "//litert/cc/internal:litert_extended_model",
         "//litert/cc/internal:litert_model_predicates",
+        "//litert/cc/options:litert_intel_openvino_options",
         "//litert/test:common",
         "//litert/test:load_test_model",
         "//litert/test:matchers_oss",

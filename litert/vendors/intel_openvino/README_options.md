@@ -54,6 +54,21 @@ backends:
     regardless. Set to `false` to force standalone per-partition bytecode with
     baked-in weights.
 
+### Debug: OpenVINO IR Dump
+
+-   **`dump_ovir_dir`** (default empty = disabled): When set, the compiler
+    plugin serializes each partition's OpenVINO model as OpenVINO IR
+    (`Partition_<idx>.xml` / `Partition_<idx>.bin`) into this directory. When
+    the partition's tensor names start with `prefill`, `decode`, `vision` (or
+    `image`/`pixel`) or `audio` (or `spectrogram`), that role is appended, e.g.
+    `Partition_0_prefill_1024.xml`. The model is dumped right after the
+    optimization passes and before any weight-sharing rewrites, so every IR is
+    self-contained with its own weights. The directory is created if missing.
+    If the directory cannot be created or a dump cannot be written, compilation
+    fails. Dumps from different models into one directory overwrite each other,
+    so use a separate directory per model. CLI flag:
+    `--intel_openvino_dump_ovir_dir=/path/to/dir`.
+
 ### Configuration Map
 
 Allows setting arbitrary OpenVINO configuration properties as key-value pairs.
