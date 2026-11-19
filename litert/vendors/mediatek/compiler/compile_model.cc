@@ -175,6 +175,15 @@ Expected<NeuronCompilationPtr> CompileModel(
                  "Failed to set optimization hint");
   }
 
+  // When weight share is used, disable DLA optimization so that
+  // NeuronExtractShared can process the compiled network. Keep it on when the
+  // adapter cannot extract, since the plugin then takes the normal flow.
+  bool enable_weight_share = false;
+  LrtGetMediatekOptionsEnableWeightShare(mediatek_opts, &enable_weight_share);
+  if (enable_weight_share && neuron_adapter_api.SupportsExtractShared()) {
+    compile_options += " --dla-opt=0";
+  }
+
   if (auto status =
           neuron_adapter_api.api().compilation_set_optimization_string(
               compilation->get(), compile_options.c_str());

@@ -68,6 +68,33 @@ class CompiledGraph {
 
   NeuronSchema::CompiledType GetCompiledType() { return subgraph_.type(); }
 
+  bool HasWeightShareIndex() const {
+    auto* ws_types = subgraph_.weight_share_index_type();
+    return ws_types != nullptr && ws_types->size() > 0;
+  }
+
+  std::vector<std::pair<const void*, size_t>> GetWeightShareBuffers() {
+    std::vector<std::pair<const void*, size_t>> result;
+    auto* ws_types = subgraph_.weight_share_index_type();
+    auto* ws_values = subgraph_.weight_share_index();
+    if (!ws_types || !ws_values) {
+      return result;
+    }
+    for (uint32_t i = 0; i < ws_types->size(); ++i) {
+      if (ws_types->Get(i) == NeuronSchema::BufferIndicate_Index) {
+        auto* index =
+            static_cast<const NeuronSchema::Index*>(ws_values->Get(i));
+        if (index) {
+          auto buf = GetBuffer(index->value());
+          if (buf.HasValue()) {
+            result.push_back(buf.Value());
+          }
+        }
+      }
+    }
+    return result;
+  }
+
   litert::Expected<std::pair<const void*, size_t>> GetBuffer(int32_t i) {
     auto array_size = graph_.data()->size();
     if (i >= array_size) {
@@ -158,6 +185,32 @@ class BytecodeBuilder {
     auto subgraph = NeuronSchema::CreateSubgraph(
         fb_, fb_.CreateString(entry_point), type,
         NeuronSchema::BufferIndicate_Index, index.Union());
+
+    subgraphs_.push_back(subgraph);
+    return subgraphs_count_++;
+  };
+
+  int32_t AddCompiledNetwork(std::string& entry_point,
+                             NeuronSchema::CompiledType type,
+                             int32_t buffer_index,
+                             const std::vector<int32_t>& weight_share_indices) {
+    auto index = NeuronSchema::CreateIndex(fb_, buffer_index);
+
+    // Build union vector for weight_share_index
+    std::vector<uint8_t> ws_types;
+    std::vector<::flatbuffers::Offset<void>> ws_offsets;
+    for (auto ws_idx : weight_share_indices) {
+      ws_types.push_back(NeuronSchema::BufferIndicate_Index);
+      ws_offsets.push_back(
+          NeuronSchema::CreateIndex(fb_, ws_idx).Union());
+    }
+    auto ws_types_vec = fb_.CreateVector(ws_types);
+    auto ws_offsets_vec = fb_.CreateVector(ws_offsets);
+
+    auto subgraph = NeuronSchema::CreateSubgraph(
+        fb_, fb_.CreateString(entry_point), type,
+        NeuronSchema::BufferIndicate_Index, index.Union(),
+        ws_types_vec, ws_offsets_vec);
 
     subgraphs_.push_back(subgraph);
     return subgraphs_count_++;

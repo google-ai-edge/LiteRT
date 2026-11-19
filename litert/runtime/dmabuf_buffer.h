@@ -25,7 +25,7 @@ struct DmaBufBuffer {
   void* addr;
 
   static bool IsSupported();
-  static Expected<DmaBufBuffer> Alloc(size_t size);
+  static Expected<DmaBufBuffer> Alloc(size_t size, bool cached = true);
   static void Free(void* addr);
   static Expected<void> Lock(int fd, LiteRtTensorBufferLockMode mode);
   static Expected<void> Unlock(int fd, LiteRtTensorBufferLockMode mode);

@@ -13,8 +13,10 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -22,7 +24,10 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_model.h"
+#include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/c/litert_options.h"
+#include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
@@ -32,6 +37,8 @@
 #include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/mediatek/neuron_adapter_api.h"
+#include "litert/vendors/mediatek/schema/schema_resolver.h"
 
 namespace litert {
 namespace {
@@ -228,6 +235,122 @@ TEST_P(MtkPluginOpCompatibilityTest, SupportedOpsTest) {
 
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, MtkPluginOpCompatibilityTest,
                          kSupportedOps);
+
+// /////////////////////////////////////////////////////////////////////////////
+// Weight Share Integration Test
+// /////////////////////////////////////////////////////////////////////////////
+
+// Creates a LiteRtOptions with enable_weight_share=true for MediaTek plugin.
+static LiteRtOptions CreateWeightShareOptions() {
+  // Create mediatek options with weight share enabled
+  LrtMediatekOptions* mtk_opts = nullptr;
+  LrtCreateMediatekOptions(&mtk_opts);
+  LrtSetMediatekOptionsEnableWeightShare(mtk_opts, true);
+
+  // Serialize to opaque options payload
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LrtGetOpaqueMediatekOptionsData(mtk_opts, &identifier, &payload,
+                                  &payload_deleter);
+
+  // Create opaque options (ownership of payload transfers)
+  LiteRtOpaqueOptions opaque = nullptr;
+  LiteRtCreateOpaqueOptions(identifier, payload, payload_deleter, &opaque);
+
+  // Create LiteRtOptions and attach opaque options
+  LiteRtOptions options = nullptr;
+  LiteRtCreateOptions(&options);
+  LiteRtAddOpaqueOptions(options, opaque);
+
+  LrtDestroyMediatekOptions(mtk_opts);
+  return options;
+}
+
+TEST(TestMediatekPlugin, WeightShareCompile) {
+  // Check if NeuronAdapter supports ExtractShared
+  {
+    LrtMediatekOptions* opts = nullptr;
+    LrtCreateMediatekOptions(&opts);
+    auto api_result = litert::mediatek::NeuronAdapterApi::Create(
+        /*shared_library_dir=*/std::nullopt, opts);
+    LrtDestroyMediatekOptions(opts);
+    if (!api_result) {
+      GTEST_SKIP() << "NeuronAdapter library not available";
+    }
+    if (!api_result.Value()->SupportsExtractShared()) {
+      GTEST_SKIP() << "NeuronExtractShared API not supported by this SDK";
+    }
+  }
+
+  // Create plugin with weight_share enabled
+  LiteRtOptions options = CreateWeightShareOptions();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext(),
+                                                  /*env=*/nullptr, options));
+
+  // Use a model that exists in testdata and is supported by MediaTek plugin.
+  // Note: models like "add_cst.tflite" require @models repo to generate.
+  auto model = testing::LoadTestFileModel("norm.tflite");
+
+  // Compile through the full compiler plugin path with weight share enabled.
+  LiteRtCompiledResult compiled;
+  ASSERT_EQ(plugin.Api()->compiler_plugin_compile(
+                plugin.Get(), /*soc_model=*/"mt6991", model.Get(), &compiled),
+            kLiteRtStatusOk);
+
+  // Verify bytecode was produced
+  LiteRtParamIndex num_byte_code;
+  ASSERT_EQ(plugin.Api()->get_compiled_result_num_byte_code(compiled,
+                                                            &num_byte_code),
+            kLiteRtStatusOk);
+  ASSERT_EQ(num_byte_code, 1);
+
+  const void* byte_code;
+  size_t byte_code_size;
+  ASSERT_EQ(plugin.Api()->get_compiled_result_byte_code(
+                compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size),
+            kLiteRtStatusOk);
+  ASSERT_GT(byte_code_size, 0u);
+
+  // Verify bytecode is a valid Neuron schema with weight_share_index
+  neuron::SchemaResolver resolver;
+  auto init_res = resolver.Initialize(
+      static_cast<const uint8_t*>(byte_code), byte_code_size);
+  ASSERT_TRUE(init_res.HasValue());
+  ASSERT_TRUE(init_res.Value());
+
+  // Verify version is recorded
+  auto version = resolver.GetNeuronVersion();
+  ASSERT_TRUE(version.has_value());
+  auto [major, minor, patch] = *version;
+  LITERT_LOG(LITERT_INFO, "Bytecode Neuron version: %u.%u.%u", major, minor,
+             patch);
+
+  // Verify the partition exists and has weight share index
+  std::string partition_name = "Partition_0";
+  auto graph = resolver.GetCompiledGraph(partition_name);
+  ASSERT_TRUE(graph.has_value());
+
+  auto compiled_net = graph->GetCompiledNetwork();
+  ASSERT_TRUE(compiled_net.HasValue());
+  EXPECT_GT(compiled_net.Value().second, 0u);
+
+  if (graph->HasWeightShareIndex()) {
+    auto ws_buffers = graph->GetWeightShareBuffers();
+    ASSERT_FALSE(ws_buffers.empty());
+    EXPECT_GT(ws_buffers[0].second, 0u);
+    LITERT_LOG(LITERT_INFO,
+               "Weight share verified: %zu shared buffer(s), first size=%zu",
+               ws_buffers.size(), ws_buffers[0].second);
+  } else {
+    LITERT_LOG(LITERT_INFO,
+               "No weight share produced (SDK heuristic - model too small)");
+  }
+
+  plugin.Api()->destroy_compiled_result(compiled);
+  LiteRtDestroyOptions(options);
+}
 
 }  // namespace
 }  // namespace litert

@@ -168,9 +168,12 @@ litert_test(
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
+        "//litert/c:litert_opaque_options",
+        "//litert/c:litert_options",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
+        "//litert/c/options:litert_mediatek_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_model_predicates",
@@ -182,6 +185,9 @@ litert_test(
         "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/cc:litert_compiler_plugin",
         "//litert/vendors/mediatek:neuron_adapter_api",
+        "//litert/vendors/mediatek/schema:mediatek_litert_schema",
+        "//litert/vendors/mediatek/schema:neuron_litert_schema",
+        "@neuro_pilot//:latest_host_headers",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/strings:string_view",
     ],

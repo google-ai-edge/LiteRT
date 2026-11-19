@@ -562,6 +562,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
 
 namespace {
 
+struct CompilationResult {
+  NeuronModelPtr model;
+  NeuronCompilationPtr compilation;
+};
+
 Expected<std::vector<uint8_t>> CompilePartition(
     const LiteRtCompilerContext* ctx, NeuronAdapterApi& neuron_adapter_api,
     const litert::compiler::Subgraph& partition, const std::string& graph_name,
@@ -589,6 +594,44 @@ Expected<std::vector<uint8_t>> CompilePartition(
   if (neuron_adapter_api.api().compilation_store_compiled_network(
           compilation->get(), bytecode.data(), bytecode.size()) !=
       NEURON_NO_ERROR) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to get compiled network");
+  }
+
+  return bytecode;
+}
+
+Expected<CompilationResult> CompilePartitionKeepAlive(
+    const LiteRtCompilerContext* ctx, NeuronAdapterApi& neuron_adapter_api,
+    const litert::compiler::Subgraph& partition, const std::string& graph_name,
+    std::optional<std::string> soc_model, LrtMediatekOptions* mediatek_opts,
+    const int subgraph_index) {
+  LITERT_ASSIGN_OR_RETURN(auto model, neuron_adapter_api.CreateModel());
+  OperandMap operand_map(neuron_adapter_api, model.get());
+  LITERT_RETURN_IF_ERROR(CreateModel(ctx, neuron_adapter_api, partition,
+                                     graph_name, model.get(), &operand_map));
+
+  auto compilation = CompileModel(neuron_adapter_api, model.get(), soc_model,
+                                  mediatek_opts, subgraph_index);
+  if (!compilation) {
+    return compilation.Error();
+  }
+
+  return CompilationResult{std::move(model), std::move(*compilation)};
+}
+
+Expected<std::vector<uint8_t>> StoreCompiledNetwork(
+    NeuronAdapterApi& neuron_adapter_api, NeuronCompilation* compilation) {
+  size_t bytecode_size;
+  if (neuron_adapter_api.api().compilation_get_compiled_network_size(
+          compilation, &bytecode_size) != NEURON_NO_ERROR) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to get compiled network size");
+  }
+
+  std::vector<uint8_t> bytecode(bytecode_size);
+  if (neuron_adapter_api.api().compilation_store_compiled_network(
+          compilation, bytecode.data(), bytecode.size()) != NEURON_NO_ERROR) {
     return Error(kLiteRtStatusErrorRuntimeFailure,
                  "Failed to get compiled network");
   }
@@ -640,24 +683,143 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   result->bytebuilder.SetNeuronVersion(
       neuron_version.major, neuron_version.minor, neuron_version.patch);
 
-  for (auto i = 0; i < num_partitions; ++i) {
-    auto graph_name = absl::StrFormat("Partition_%d", i);
-    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
-    // TODO(b/424234937): Remove this once the bug is fixed.
-    compiler_plugin->SetSubgraphIndex(i);
-    auto bytecode =
-        CompilePartition(compiler_plugin->ctx(), *api, subgraph, graph_name,
-                         opt_soc_model, compiler_plugin->GetMediatekOptions(),
-                         compiler_plugin->GetSubgraphIndex());
-    if (!bytecode) {
-      LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
-      return bytecode.Error().Status();
+  bool enable_weight_share = false;
+  LrtGetMediatekOptionsEnableWeightShare(mtk_options, &enable_weight_share);
+  const bool use_weight_share =
+      enable_weight_share && api->SupportsExtractShared();
+  if (enable_weight_share && !use_weight_share) {
+    LITERT_LOG(LITERT_WARNING,
+               "Weight share requested but this NeuronAdapter cannot extract "
+               "shared weights; compiling without weight share");
+  }
+
+  if (use_weight_share && num_partitions >= 1) {
+    LITERT_LOG(LITERT_INFO,
+               "Weight share enabled: compiling %d partition(s) with "
+               "ExtractShared",
+               num_partitions);
+
+    // Phase 1: Compile all partitions, keep compilations alive
+    std::vector<CompilationResult> compilations;
+    std::vector<std::string> graph_names;
+    for (auto i = 0; i < num_partitions; ++i) {
+      auto graph_name = absl::StrFormat("Partition_%d", i);
+      LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+      compiler_plugin->SetSubgraphIndex(i);
+      auto comp_result = CompilePartitionKeepAlive(
+          compiler_plugin->ctx(), *api, subgraph, graph_name, opt_soc_model,
+          compiler_plugin->GetMediatekOptions(),
+          compiler_plugin->GetSubgraphIndex());
+      if (!comp_result) {
+        LITERT_LOG(LITERT_INFO, "%s", comp_result.Error().Message().c_str());
+        return comp_result.Error().Status();
+      }
+      compilations.push_back(std::move(*comp_result));
+      graph_names.push_back(graph_name);
     }
-    auto bufferIdx = result->bytebuilder.AddBuffer(
-        graph_name, (int8_t*)bytecode->data(), bytecode->size());
-    result->bytebuilder.AddCompiledNetwork(
-        graph_name, NeuronSchema::CompiledType_AdapterCache, bufferIdx);
-    result->graph_names.emplace_back(graph_name);
+
+    // Phase 2: Create NeuronExtractShared context (UNION mode)
+    NeuronExtractShared* es = nullptr;
+    if (api->api().extract_shared_create(
+            &es, litert::mediatek::kNeuronExtractSharedModeUnion, nullptr) !=
+        NEURON_NO_ERROR) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+    // C++17 lambdas cannot capture the structured binding `api` directly.
+    absl::Cleanup es_cleanup = [&es, &adapter = *api]() {
+      adapter.api().extract_shared_free(es);
+    };
+
+    // Add all compilations
+    for (auto& comp : compilations) {
+      if (api->api().extract_shared_add_compilation(
+              es, comp.compilation.get()) != NEURON_NO_ERROR) {
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+    }
+
+    // Phase 3: Extract shared weights (modifies compilations in-place)
+    if (api->api().extract_shared_extract(es) != NEURON_NO_ERROR) {
+      LITERT_LOG(LITERT_ERROR, "NeuronExtractShared_extract failed");
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+
+    // Phase 4: Get extracted shared buffer
+    size_t shared_size = 0;
+    if (api->api().extract_shared_get_extracted_size(es, &shared_size) !=
+        NEURON_NO_ERROR) {
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+
+    if (shared_size == 0) {
+      // No shared data extracted, fall back to normal flow
+      LITERT_LOG(LITERT_INFO,
+                 "ExtractShared produced no shared data, using normal flow");
+      for (int i = 0; i < num_partitions; ++i) {
+        auto bytecode =
+            StoreCompiledNetwork(*api, compilations[i].compilation.get());
+        if (!bytecode) {
+          return bytecode.Error().Status();
+        }
+        auto bufferIdx = result->bytebuilder.AddBuffer(
+            graph_names[i], (int8_t*)bytecode->data(), bytecode->size());
+        result->bytebuilder.AddCompiledNetwork(
+            graph_names[i], NeuronSchema::CompiledType_AdapterCache, bufferIdx);
+        result->graph_names.emplace_back(graph_names[i]);
+      }
+    } else {
+      // Store the shared buffer
+      std::vector<uint8_t> shared_data(shared_size);
+      if (api->api().extract_shared_get_extracted_data(
+              es, shared_data.data(), shared_size) != NEURON_NO_ERROR) {
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
+
+      std::string shared_id = "shared_weights";
+      auto shared_buffer_idx = result->bytebuilder.AddBuffer(
+          shared_id, (int8_t*)shared_data.data(), shared_data.size());
+
+      LITERT_LOG(LITERT_INFO,
+                 "ExtractShared: shared buffer size=%zu, index=%d", shared_size,
+                 shared_buffer_idx);
+
+      // Phase 5: Store each (now smaller) compiled network with
+      // weight_share_index
+      for (int i = 0; i < num_partitions; ++i) {
+        auto bytecode =
+            StoreCompiledNetwork(*api, compilations[i].compilation.get());
+        if (!bytecode) {
+          return bytecode.Error().Status();
+        }
+        auto bufferIdx = result->bytebuilder.AddBuffer(
+            graph_names[i], (int8_t*)bytecode->data(), bytecode->size());
+        result->bytebuilder.AddCompiledNetwork(
+            graph_names[i], NeuronSchema::CompiledType_AdapterCache, bufferIdx,
+            {shared_buffer_idx});
+        result->graph_names.emplace_back(graph_names[i]);
+      }
+    }
+  } else {
+    // Original flow (unchanged)
+    for (auto i = 0; i < num_partitions; ++i) {
+      auto graph_name = absl::StrFormat("Partition_%d", i);
+      LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+      // TODO(b/424234937): Remove this once the bug is fixed.
+      compiler_plugin->SetSubgraphIndex(i);
+      auto bytecode =
+          CompilePartition(compiler_plugin->ctx(), *api, subgraph, graph_name,
+                           opt_soc_model, compiler_plugin->GetMediatekOptions(),
+                           compiler_plugin->GetSubgraphIndex());
+      if (!bytecode) {
+        LITERT_LOG(LITERT_INFO, "%s", bytecode.Error().Message().c_str());
+        return bytecode.Error().Status();
+      }
+      auto bufferIdx = result->bytebuilder.AddBuffer(
+          graph_name, (int8_t*)bytecode->data(), bytecode->size());
+      result->bytebuilder.AddCompiledNetwork(
+          graph_name, NeuronSchema::CompiledType_AdapterCache, bufferIdx);
+      result->graph_names.emplace_back(graph_name);
+    }
   }
 
   if (!result->bytebuilder.Finish()) {

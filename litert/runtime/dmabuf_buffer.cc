@@ -70,11 +70,11 @@ class DmaBufLibrary {
 
   ~DmaBufLibrary() { close(heap_fd_); }
 
-  static Expected<Ptr> Create() {
-    int heap_fd = open("/dev/dma_heap/system", O_RDONLY | O_CLOEXEC);
+  static Expected<Ptr> Create(const char* heap_path = "/dev/dma_heap/system") {
+    int heap_fd = open(heap_path, O_RDONLY | O_CLOEXEC);
     if (heap_fd < 0) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to open DMA-BUF system heap.");
+                        "Failed to open DMA-BUF heap.");
     }
     return Ptr(new DmaBufLibrary(heap_fd));
   }
@@ -118,18 +118,23 @@ class DmaBufLibrary {
   absl::node_hash_map<void*, Record> records_;
 };
 
-DmaBufLibrary* TheDmaBufLibrary;
+constexpr const char* kHeapPaths[] = {
+    "/dev/dma_heap/system",
+    "/dev/dma_heap/system-uncached",
+};
+DmaBufLibrary* TheDmaBufLibraries[2];  // [0]=cached, [1]=uncached
 ABSL_CONST_INIT absl::Mutex TheMutex(absl::kConstInit);
 
-Expected<void> InitLibraryIfNeededUnlocked() {
-  if (!TheDmaBufLibrary) {
-    if (auto library = DmaBufLibrary::Create(); library) {
-      TheDmaBufLibrary = library->release();
-    } else {
+Expected<DmaBufLibrary*> GetOrCreateLibraryUnlocked(bool cached) {
+  int idx = cached ? 0 : 1;
+  if (!TheDmaBufLibraries[idx]) {
+    auto library = DmaBufLibrary::Create(kHeapPaths[idx]);
+    if (!library) {
       return Unexpected(library.Error());
     }
+    TheDmaBufLibraries[idx] = library->release();
   }
-  return {};
+  return TheDmaBufLibraries[idx];
 }
 
 uint64_t ToDmaBufSyncFlags(LiteRtTensorBufferLockMode mode,
@@ -160,20 +165,21 @@ uint64_t ToDmaBufSyncFlags(LiteRtTensorBufferLockMode mode,
 bool DmaBufBuffer::IsSupported() {
 #if LITERT_HAS_DMABUF_SUPPORT
   absl::MutexLock lock(&TheMutex);
-  auto status = InitLibraryIfNeededUnlocked();
-  return static_cast<bool>(status);
+  auto lib = GetOrCreateLibraryUnlocked(/*cached=*/true);
+  return static_cast<bool>(lib);
 #else   // LITERT_HAS_DMABUF_SUPPORT
   return false;
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 }
 
-Expected<DmaBufBuffer> DmaBufBuffer::Alloc(size_t size) {
+Expected<DmaBufBuffer> DmaBufBuffer::Alloc(size_t size, bool cached) {
 #if LITERT_HAS_DMABUF_SUPPORT
   absl::MutexLock lock(&TheMutex);
-  if (auto status = InitLibraryIfNeededUnlocked(); !status) {
-    return Unexpected(status.Error());
+  auto lib = GetOrCreateLibraryUnlocked(cached);
+  if (!lib) {
+    return Unexpected(lib.Error());
   }
-  return TheDmaBufLibrary->Alloc(size);
+  return (*lib)->Alloc(size);
 #else   // LITERT_HAS_DMABUF_SUPPORT
   return Unexpected(kLiteRtStatusErrorUnsupported,
                     "DmaBufBuffer::Alloc not implemented for this platform");
@@ -183,8 +189,10 @@ Expected<DmaBufBuffer> DmaBufBuffer::Alloc(size_t size) {
 void DmaBufBuffer::Free(void* addr) {
 #if LITERT_HAS_DMABUF_SUPPORT
   absl::MutexLock lock(&TheMutex);
-  if (TheDmaBufLibrary) {
-    TheDmaBufLibrary->Free(addr);
+  for (auto* lib : TheDmaBufLibraries) {
+    if (lib) {
+      lib->Free(addr);
+    }
   }
 #endif  // LITERT_HAS_DMABUF_SUPPORT
 }

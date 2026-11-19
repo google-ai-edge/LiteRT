@@ -14,9 +14,12 @@
 
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_invocation_context.h"
 
+#include <sys/mman.h>
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
@@ -33,6 +36,7 @@
 #include "litert/vendors/mediatek/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 #include "litert/vendors/mediatek/schema/schema_resolver.h"
+#include "litert/runtime/dmabuf_buffer.h"
 
 using litert::Error;
 using litert::Expected;
@@ -41,6 +45,56 @@ using litert::mediatek::NeuronExecutionPtr;
 using litert::mediatek::NeuronModelPtr;
 
 namespace {
+
+struct NeuronMemoryWithFd {
+  NeuronMemory* memory;
+  int fd;
+};
+
+// Creates a NeuronMemory from raw data using uncached DMA-BUF.
+// The returned fd must be kept alive until the NeuronMemory is freed.
+Expected<NeuronMemoryWithFd> CreateNeuronMemoryFromData(
+    const litert::mediatek::NeuronAdapterApi& neuron_adapter_api,
+    const void* data, size_t size, int source_fd) {
+#if defined(__linux__) || defined(__ANDROID__)
+  int fd = -1;
+  void* mapped = MAP_FAILED;
+
+  if (litert::internal::DmaBufBuffer::IsSupported()) {
+    auto dmabuf = litert::internal::DmaBufBuffer::Alloc(size, /*cached=*/false);
+    if (!dmabuf) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to allocate DMA-BUF for shared weights");
+    }
+    fd = dmabuf->fd;
+    mapped = dmabuf->addr;
+    // Copy in 4 MiB chunks and drop the source pages of each chunk as it
+    // completes, so the mmapped model never holds the whole blob resident.
+    // The source is left alone without a backing file (`source_fd < 0`).
+    litert::mediatek::CopyAndReleaseFileBackedPages(source_fd, data, mapped,
+                                                    size, /*chunk_size=*/4 << 20);
+    munmap(mapped, size);
+    // the ownership of fd moves to NeuronMemoryWithFd.
+  } else {
+    return Error(kLiteRtStatusErrorUnsupported,
+      "dmabuf not supported on this platform");
+  }
+
+  NeuronMemory* neuron_memory = nullptr;
+  if (neuron_adapter_api.api().memory_create_from_fd(
+          size, PROT_READ, fd, 0, &neuron_memory) != NEURON_NO_ERROR) {
+    close(fd);
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 "Failed to create NeuronMemory from shared weights fd");
+  }
+  // Do NOT close fd here — Neuron SDK does not dup the fd,
+  // so it must remain open for the lifetime of neuron_memory.
+  return NeuronMemoryWithFd{neuron_memory, fd};
+#else
+  return Error(kLiteRtStatusErrorUnsupported,
+               "Shared weights not supported on this platform");
+#endif
+}
 
 // FIXME (b/409133962): This is used as a workaround to b/409133962.
 constexpr int kExpectedRankForB409133962War = 4;
@@ -297,6 +351,10 @@ LiteRtDispatchInvocationContextT::Create(
       static_cast<const uint8_t*>(exec_bytecode_buffer->base_addr) +
       exec_bytecode_buffer->offset;
   auto exec_bytecode_size = exec_bytecode_buffer->size;
+
+  // Weight share buffer info (populated if schema has weight_share_index)
+  std::vector<std::pair<const void*, size_t>> weight_share_buffers;
+
   auto res = resolver.Initialize((const uint8_t*)exec_bytecode_ptr,
                                  exec_bytecode_size);
   if (res.HasValue() && res.Value()) {
@@ -310,7 +368,17 @@ LiteRtDispatchInvocationContextT::Create(
       return litert::Error(kLiteRtStatusErrorRuntimeFailure,
                            "Couldn't find the subgraph");
     }
-    auto compile_graph = graph.value().GetCompiledNetwork();
+
+    // Check for weight share buffers before getting compiled network
+    if (graph->HasWeightShareIndex()) {
+      weight_share_buffers = graph->GetWeightShareBuffers();
+      LITERT_LOG(LITERT_INFO,
+                 "Weight share detected: %zu shared buffer(s) for subgraph %s",
+                 weight_share_buffers.size(),
+                 function_name ? function_name : "");
+    }
+
+    auto compile_graph = graph->GetCompiledNetwork();
     if (!compile_graph) {
       return compile_graph.Error();
     }
@@ -348,6 +416,52 @@ LiteRtDispatchInvocationContextT::Create(
                          "Failed to set execution boost hint");
   }
 
+  // Attach shared weight buffers to the last input(s)
+  std::vector<std::shared_ptr<NeuronMemory>> shared_weights;
+  for (size_t i = 0; i < weight_share_buffers.size(); ++i) {
+    // Plain locals: C++17 lambdas cannot capture structured bindings.
+    const void* shared_data = weight_share_buffers[i].first;
+    const size_t shared_size = weight_share_buffers[i].second;
+    bool created = false;
+    auto neuron_mem_result = device_context->shared_weights().GetOrCreate(
+        shared_data, shared_size,
+        [&]() -> Expected<std::shared_ptr<NeuronMemory>> {
+          created = true;
+          auto mem = CreateNeuronMemoryFromData(neuron_adapter_api, shared_data,
+                                                shared_size, bytecode_fd);
+          if (!mem) {
+            return mem.Error();
+          }
+          const int fd = mem->fd;
+          return std::shared_ptr<NeuronMemory>(
+              mem->memory, [&neuron_adapter_api, fd](NeuronMemory* m) {
+                neuron_adapter_api.api().memory_free(m);
+                close(fd);
+              });
+        });
+    if (!neuron_mem_result) {
+      return neuron_mem_result.Error();
+    }
+    if (!created) {
+      LITERT_LOG(LITERT_INFO, "Reusing shared weights (size=%zu)",
+                 shared_size);
+    }
+
+    // ExtractShared appends extra inputs after the original model inputs.
+    int shared_input_index = num_inputs + static_cast<int>(i);
+    if (neuron_adapter_api.api().execution_set_input_from_memory(
+            execution->get(), shared_input_index, nullptr,
+            neuron_mem_result->get(), 0, shared_size) != NEURON_NO_ERROR) {
+      return litert::Error(kLiteRtStatusErrorRuntimeFailure,
+                           "Failed to attach shared weights to execution");
+    }
+
+    shared_weights.push_back(std::move(*neuron_mem_result));
+    LITERT_LOG(LITERT_INFO,
+               "Shared weights attached to input index %d (size=%zu)",
+               shared_input_index, shared_size);
+  }
+
   if (litert::mediatek::ReleaseFileBackedPages(bytecode_fd, exec_bytecode_ptr,
                                                exec_bytecode_size)) {
     LITERT_LOG(LITERT_INFO,
@@ -355,9 +469,11 @@ LiteRtDispatchInvocationContextT::Create(
                exec_bytecode_size);
   }
 
-  return Ptr(new LiteRtDispatchInvocationContextT(
+  auto ctx = Ptr(new LiteRtDispatchInvocationContextT(
       neuron_adapter_api, device_context, model.release(),
       compilation.release(), execution->release(), num_inputs, num_outputs));
+  ctx->shared_weights_ = std::move(shared_weights);
+  return ctx;
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
@@ -370,6 +486,7 @@ LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
   if (model_) {
     neuron_adapter_api_.api().model_free(model_);
   }
+  // shared_weights_ released by shared_ptr refcount.
 }
 
 LiteRtDispatchInvocationContextT::IoRequirementsBuilder::IoRequirementsBuilder(

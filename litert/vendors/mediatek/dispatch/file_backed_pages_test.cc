@@ -193,5 +193,65 @@ TEST_F(FileBackedPagesTest, AdviseNoHugePagesKeepsContents) {
   EXPECT_EQ(std::memcmp(data(), expected_.data(), size_), 0);
 }
 
+TEST_F(FileBackedPagesTest, CopyAndReleaseCopiesAndReleasesInChunks) {
+  ASSERT_NO_FATAL_FAILURE(MapTestFile());
+  TouchAll();
+  const int64_t page_kb = page_size_ / 1024;
+  ASSERT_EQ(MappingRssKb(mapping_), kNumPages * page_kb);
+
+  // Chunks are not page multiples and the region is unaligned, so this checks
+  // that pages straddling chunk boundaries are still released.
+  const size_t offset = 100;
+  const size_t size = size_ - 200;
+  std::vector<char> dst(size);
+  const size_t released = CopyAndReleaseFileBackedPages(
+      fd_, data() + offset, dst.data(), size, 3 * page_size_ + 17);
+
+  EXPECT_EQ(released, (kNumPages - 2) * page_size_);
+  EXPECT_EQ(MappingRssKb(mapping_), 2 * page_kb);
+  EXPECT_EQ(std::memcmp(dst.data(), expected_.data() + offset, size), 0);
+  EXPECT_EQ(std::memcmp(data(), expected_.data(), size_), 0);
+}
+
+TEST_F(FileBackedPagesTest, CopyAndReleaseWithZeroChunkSizeCopiesAtOnce) {
+  ASSERT_NO_FATAL_FAILURE(MapTestFile());
+  TouchAll();
+  std::vector<char> dst(size_);
+  EXPECT_EQ(CopyAndReleaseFileBackedPages(fd_, data(), dst.data(), size_,
+                                          /*chunk_size=*/0),
+            size_);
+  EXPECT_EQ(MappingRssKb(mapping_), 0);
+  EXPECT_EQ(dst, expected_);
+}
+
+TEST_F(FileBackedPagesTest, CopyAndReleaseDoesNotTouchHeapSource) {
+  std::vector<char> heap_copy = expected_;
+  std::vector<char> dst(size_);
+  EXPECT_EQ(CopyAndReleaseFileBackedPages(/*fd=*/-1, heap_copy.data(),
+                                          dst.data(), size_, page_size_),
+            0);
+  EXPECT_EQ(heap_copy, expected_);
+  EXPECT_EQ(dst, expected_);
+}
+
+TEST_F(FileBackedPagesTest, CopyAndReleaseIgnoresNullOrEmptyRegion) {
+  ASSERT_NO_FATAL_FAILURE(MapTestFile());
+  std::vector<char> dst(size_, 0);
+  EXPECT_EQ(CopyAndReleaseFileBackedPages(fd_, nullptr, dst.data(), size_, 0),
+            0);
+  EXPECT_EQ(CopyAndReleaseFileBackedPages(fd_, data(), nullptr, size_, 0), 0);
+  EXPECT_EQ(CopyAndReleaseFileBackedPages(fd_, data(), dst.data(), 0, 0), 0);
+  EXPECT_EQ(dst, std::vector<char>(size_, 0));
+}
+
+TEST_F(FileBackedPagesTest, CopyAndReleaseKeepsRegionSmallerThanAPage) {
+  ASSERT_NO_FATAL_FAILURE(MapTestFile());
+  std::vector<char> dst(page_size_);
+  EXPECT_EQ(
+      CopyAndReleaseFileBackedPages(fd_, data() + 1, dst.data(), page_size_, 0),
+      0);
+  EXPECT_EQ(std::memcmp(dst.data(), expected_.data() + 1, page_size_), 0);
+}
+
 }  // namespace
 }  // namespace litert::mediatek
