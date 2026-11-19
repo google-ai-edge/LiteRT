@@ -32,11 +32,16 @@
 #include <utility>
 #include <vector>
 
+#include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
@@ -44,6 +49,7 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "third_party/odml/infra/ml_drift_delegate/testdata/simple_add.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -53,6 +59,8 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_identifier.h"
@@ -68,6 +76,8 @@
 
 namespace litert::ml_drift {
 namespace {
+
+using ::absl_testing::IsOk;
 
 TEST(DelegateOpenClTest, FdCachingWorksWithoutSerializationDir) {
   // MSAN does not support GPU tests.
@@ -1194,6 +1204,488 @@ TEST(DelegateOpenClTest,
     }
     EXPECT_EQ(actual_k, expected_k);
     EXPECT_EQ(actual_v, expected_v);
+  }
+}
+
+std::vector<uint8_t> BuildQuantizedAddModelBuffer(
+    tflite::TensorType tensor_type = tflite::TensorType_UINT8,
+    int64_t in0_zp = 10, int64_t in1_zp = 20, int64_t out_zp = 5) {
+  flatbuffers::FlatBufferBuilder builder;
+
+  std::vector<flatbuffers::Offset<tflite::OperatorCode>> opcodes = {
+      tflite::CreateOperatorCode(
+          builder,
+          /*deprecated_builtin_code=*/tflite::BuiltinOperator_ADD,
+          /*custom_code=*/0, /*version=*/1,
+          /*builtin_code=*/tflite::BuiltinOperator_ADD),
+  };
+  std::vector<flatbuffers::Offset<tflite::Buffer>> buffers = {
+      tflite::CreateBuffer(builder),
+  };
+
+  auto make_quant = [&](float scale, int64_t zero_point) {
+    return tflite::CreateQuantizationParameters(
+        builder, /*min=*/0, /*max=*/0, builder.CreateVector<float>({scale}),
+        builder.CreateVector<int64_t>({zero_point}));
+  };
+
+  const std::vector<int32_t> shape = {1, 1, 1, 8};
+  auto make_q_tensor = [&](const char* name, float scale, int64_t zero_point) {
+    return tflite::CreateTensor(builder, builder.CreateVector(shape),
+                                tensor_type,
+                                /*buffer=*/0, builder.CreateString(name),
+                                make_quant(scale, zero_point));
+  };
+
+  std::vector<flatbuffers::Offset<tflite::Tensor>> tensors = {
+      make_q_tensor("in0", /*scale=*/0.1f, in0_zp),
+      make_q_tensor("in1", /*scale=*/0.05f, in1_zp),
+      make_q_tensor("out", /*scale=*/0.1f, out_zp),
+  };
+
+  auto add_opts =
+      tflite::CreateAddOptions(builder, tflite::ActivationFunctionType_NONE)
+          .Union();
+  std::vector<flatbuffers::Offset<tflite::Operator>> ops = {
+      tflite::CreateOperator(builder, /*opcode_index=*/0,
+                             builder.CreateVector(std::vector<int32_t>{0, 1}),
+                             builder.CreateVector(std::vector<int32_t>{2}),
+                             tflite::BuiltinOptions_AddOptions, add_opts),
+  };
+
+  auto subgraph = tflite::CreateSubGraph(
+      builder, builder.CreateVector(tensors),
+      builder.CreateVector(std::vector<int32_t>{0, 1}),
+      builder.CreateVector(std::vector<int32_t>{2}), builder.CreateVector(ops),
+      builder.CreateString("main"));
+  auto model = tflite::CreateModel(
+      builder, TFLITE_SCHEMA_VERSION, builder.CreateVector(opcodes),
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<tflite::SubGraph>>{subgraph}),
+      builder.CreateString("Quantized Add test"),
+      builder.CreateVector(buffers));
+  builder.Finish(model, tflite::ModelIdentifier());
+  return std::vector<uint8_t>(builder.GetBufferPointer(),
+                              builder.GetBufferPointer() + builder.GetSize());
+}
+
+template <typename QuantT>
+struct QuantizedAddInputPair {
+  std::vector<QuantT> in0;
+  std::vector<QuantT> in1;
+};
+
+template <typename QuantT>
+struct QuantizedAddCase {
+  std::vector<QuantT> in0;
+  std::vector<QuantT> in1;
+  std::vector<QuantT> expected;
+};
+
+template <typename QuantT>
+absl::Status CompareQuantizedOutputs(absl::Span<const QuantT> actual,
+                                     absl::Span<const QuantT> expected,
+                                     absl::string_view label) {
+  if (actual.size() != expected.size()) {
+    return absl::InternalError(
+        absl::StrCat(label, " size mismatch: actual=", actual.size(),
+                     ", expected=", expected.size()));
+  }
+  for (size_t i = 0; i < expected.size(); ++i) {
+    if (std::abs(static_cast<int>(actual[i]) - static_cast<int>(expected[i])) >
+        1) {
+      return absl::FailedPreconditionError(
+          absl::StrCat(label, " mismatch at index ", i,
+                       ": gpu=", static_cast<int>(actual[i]),
+                       ", cpu=", static_cast<int>(expected[i])));
+    }
+  }
+  return absl::OkStatus();
+}
+
+template <typename QuantT>
+absl::Status RunSingleQuantizedAddConfigOnOpenCl(
+    litert::Environment& env, absl::Span<const uint8_t> model_buf,
+    litert::GpuOptions::Precision precision, bool external_tensors_mode,
+    absl::Span<const QuantizedAddCase<QuantT>> cases) {
+  if (cases.empty()) {
+    return absl::InvalidArgumentError(
+        "QuantizedAddCase span must not be empty.");
+  }
+  auto litert_options = litert::Options::Create();
+  if (!litert_options ||
+      !litert_options->SetHardwareAccelerators(litert::HwAccelerators::kGpu)) {
+    return absl::InternalError("Failed to configure LiteRT GPU options.");
+  }
+  auto gpu_options = litert_options->GetOptions<litert::GpuOptions>();
+  if (!gpu_options ||
+      !gpu_options->SetBackend(litert::GpuOptions::Backend::kOpenCl) ||
+      !gpu_options->SetPrecision(precision) ||
+      gpu_options->SetSerializeProgramCache(false) != kLiteRtStatusOk ||
+      gpu_options->EnableExternalTensorsMode(external_tensors_mode) !=
+          kLiteRtStatusOk) {
+    return absl::InternalError("Failed to configure OpenCL GpuOptions.");
+  }
+
+  auto compiled_model = litert::CompiledModel::Create(
+      env, litert::BufferRef<uint8_t>(model_buf.data(), model_buf.size()),
+      *litert_options);
+  if (!compiled_model) {
+    return absl::InternalError(absl::StrCat("CompiledModel::Create failed: ",
+                                            compiled_model.Error().Message()));
+  }
+  auto fully_accelerated = compiled_model->IsFullyAccelerated();
+  if (!fully_accelerated || !*fully_accelerated) {
+    return absl::FailedPreconditionError("Model is not fully GPU accelerated.");
+  }
+
+  auto input_buffers = compiled_model->CreateInputBuffers();
+  if (!input_buffers || input_buffers->size() != 2) {
+    return absl::InternalError("Unexpected input buffer count.");
+  }
+  auto output_buffers = compiled_model->CreateOutputBuffers();
+  if (!output_buffers || output_buffers->size() != 1) {
+    return absl::InternalError("Unexpected output buffer count.");
+  }
+
+  // Boundary quantized tensors are not in GPU external/buffer requirements,
+  // so CompiledModel creates HostMemory custom allocations directly.
+  auto in_buf_type = (*input_buffers)[0].BufferType();
+  auto out_buf_type = (*output_buffers)[0].BufferType();
+  if (!in_buf_type || *in_buf_type != litert::TensorBufferType::kHostMemory ||
+      !out_buf_type || *out_buf_type != litert::TensorBufferType::kHostMemory) {
+    return absl::FailedPreconditionError(
+        "Expected HostMemory boundary buffers for quantized I/O.");
+  }
+
+  for (size_t run_idx = 0; run_idx < cases.size(); ++run_idx) {
+    const QuantizedAddCase<QuantT>& test_case = cases[run_idx];
+    const std::string run_label = absl::StrCat("run ", run_idx + 1);
+    if (!(*input_buffers)[0].Write<QuantT>(
+            absl::MakeConstSpan(test_case.in0)) ||
+        !(*input_buffers)[1].Write<QuantT>(
+            absl::MakeConstSpan(test_case.in1)) ||
+        !compiled_model->Run(*input_buffers, *output_buffers)) {
+      return absl::InternalError(absl::StrCat(run_label, " execution failed."));
+    }
+    std::vector<QuantT> gpu_out(test_case.expected.size(), 0);
+    if (!(*output_buffers)[0].Read<QuantT>(absl::MakeSpan(gpu_out))) {
+      return absl::InternalError(
+          absl::StrCat(run_label, " output Read failed."));
+    }
+    ABSL_RETURN_IF_ERROR(CompareQuantizedOutputs<QuantT>(
+        gpu_out, test_case.expected, run_label));
+  }
+
+  if (!external_tensors_mode) {
+    // Also verify quantized outputs when the caller provides
+    // OpenClBufferPacked output buffers.
+    const QuantizedAddCase<QuantT>& last_case = cases.back();
+    auto packed_type = (*output_buffers)[0].TensorType();
+    auto packed_bytes = (*output_buffers)[0].Size();
+    if (!packed_type || !packed_bytes) {
+      return absl::InternalError("Failed to query output tensor type/size.");
+    }
+    auto cl_out = litert::TensorBuffer::CreateManaged(
+        env, litert::TensorBufferType::kOpenClBufferPacked, *packed_type,
+        *packed_bytes);
+    if (!cl_out) {
+      return absl::InternalError("Failed to create OpenClBufferPacked output.");
+    }
+    std::vector<litert::TensorBuffer> packed_outputs;
+    packed_outputs.push_back(std::move(*cl_out));
+    if (!compiled_model->Run(*input_buffers, packed_outputs)) {
+      return absl::InternalError("OpenClBufferPacked boundary Run failed.");
+    }
+    std::vector<QuantT> gpu_out(last_case.expected.size(), 0);
+    if (!packed_outputs[0].Read<QuantT>(absl::MakeSpan(gpu_out))) {
+      return absl::InternalError("OpenClBufferPacked boundary Read failed.");
+    }
+    ABSL_RETURN_IF_ERROR(CompareQuantizedOutputs<QuantT>(
+        gpu_out, last_case.expected, "OpenClBufferPacked boundary"));
+  }
+  return absl::OkStatus();
+}
+
+template <typename QuantT>
+absl::Status VerifyQuantizedAddMatchesCpuOnOpenCl(
+    tflite::TensorType tensor_type, int64_t in0_zp, int64_t in1_zp,
+    int64_t out_zp, absl::Span<const QuantizedAddInputPair<QuantT>> inputs) {
+  if (inputs.empty()) {
+    return absl::InvalidArgumentError("Input pairs must not be empty.");
+  }
+  const std::vector<uint8_t> model_buf =
+      BuildQuantizedAddModelBuffer(tensor_type, in0_zp, in1_zp, out_zp);
+  auto tflite_model = tflite::FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(model_buf.data()), model_buf.size());
+  if (tflite_model == nullptr) {
+    return absl::InternalError("Failed to build FlatBufferModel.");
+  }
+
+  // 1. CPU reference execution across all input pairs.
+  std::unique_ptr<tflite::Interpreter> cpu_interp;
+  if (tflite::InterpreterBuilder(*tflite_model,
+                                 tflite::ops::builtin::BuiltinOpResolver())(
+          &cpu_interp) != kTfLiteOk ||
+      cpu_interp == nullptr || cpu_interp->AllocateTensors() != kTfLiteOk) {
+    return absl::InternalError("Failed to initialize CPU reference model.");
+  }
+
+  auto run_cpu = [&](const QuantizedAddInputPair<QuantT>& pair)
+      -> absl::StatusOr<std::vector<QuantT>> {
+    QuantT* in0 = cpu_interp->typed_input_tensor<QuantT>(0);
+    QuantT* in1 = cpu_interp->typed_input_tensor<QuantT>(1);
+    if (in0 == nullptr || in1 == nullptr) {
+      return absl::InternalError("CPU reference input tensor is null.");
+    }
+    std::memcpy(in0, pair.in0.data(), pair.in0.size() * sizeof(QuantT));
+    std::memcpy(in1, pair.in1.data(), pair.in1.size() * sizeof(QuantT));
+    if (cpu_interp->Invoke() != kTfLiteOk) {
+      return absl::InternalError("CPU reference Invoke() failed.");
+    }
+    const QuantT* ptr = cpu_interp->typed_output_tensor<QuantT>(0);
+    if (ptr == nullptr) {
+      return absl::InternalError("CPU reference output tensor is null.");
+    }
+    return std::vector<QuantT>(ptr, ptr + pair.in0.size());
+  };
+
+  std::vector<QuantizedAddCase<QuantT>> cases;
+  cases.reserve(inputs.size());
+  for (const QuantizedAddInputPair<QuantT>& pair : inputs) {
+    ABSL_ASSIGN_OR_RETURN(std::vector<QuantT> expected, run_cpu(pair));
+    cases.push_back(QuantizedAddCase<QuantT>{
+        .in0 = pair.in0,
+        .in1 = pair.in1,
+        .expected = std::move(expected),
+    });
+  }
+
+  auto env = litert::Environment::Create({});
+  if (!env) {
+    return absl::InternalError("Failed to create LiteRT Environment.");
+  }
+
+  std::vector<litert::GpuOptions::Precision> precisions = {
+      litert::GpuOptions::Precision::kFp32,
+      litert::GpuOptions::Precision::kDefault,
+  };
+  ::ml_drift::cl::Environment cl_env;
+  if (::ml_drift::cl::CreateEnvironment(&cl_env).ok() &&
+      cl_env.IsSupported(::ml_drift::CalculationsPrecision::kF16)) {
+    precisions.push_back(litert::GpuOptions::Precision::kFp16);
+  }
+
+  std::vector<std::string> failures;
+  for (const litert::GpuOptions::Precision precision : precisions) {
+    const absl::string_view precision_name =
+        precision == litert::GpuOptions::Precision::kFp32
+            ? "fp32"
+            : (precision == litert::GpuOptions::Precision::kFp16 ? "fp16"
+                                                                 : "default");
+    for (const bool external_tensors_mode : {false, true}) {
+      const absl::Status status = RunSingleQuantizedAddConfigOnOpenCl<QuantT>(
+          *env, model_buf, precision, external_tensors_mode, cases);
+      if (!status.ok()) {
+        failures.push_back(absl::StrCat(
+            "[precision=", precision_name,
+            ",external_tensors_mode=", external_tensors_mode, "] ", status));
+      }
+    }
+  }
+  if (!failures.empty()) {
+    return absl::FailedPreconditionError(absl::StrJoin(failures, "; "));
+  }
+  return absl::OkStatus();
+}
+
+TEST(DelegateOpenClTest, QuantizedUInt8AddMatchesCpuOnOpenCl) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!IsOpenClSupported()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform";
+  }
+
+  const std::vector<QuantizedAddInputPair<uint8_t>> inputs = {
+      {
+          .in0 = {10, 11, 15, 20, 25, 30, 35, 40},
+          .in1 = {20, 24, 28, 32, 36, 40, 44, 48},
+      },
+      {
+          .in0 = {45, 50, 55, 60, 65, 70, 75, 80},
+          .in1 = {12, 16, 20, 24, 28, 32, 36, 40},
+      },
+  };
+  EXPECT_THAT(VerifyQuantizedAddMatchesCpuOnOpenCl<uint8_t>(
+                  tflite::TensorType_UINT8, /*in0_zp=*/10, /*in1_zp=*/20,
+                  /*out_zp=*/5, inputs),
+              IsOk());
+}
+
+TEST(DelegateOpenClTest, QuantizedInt8AddMatchesCpuOnOpenCl) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!IsOpenClSupported()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform";
+  }
+
+  const std::vector<QuantizedAddInputPair<int8_t>> inputs = {
+      {
+          .in0 = {-40, -25, -10, 0, 15, 30, 45, 60},
+          .in1 = {-20, -8, 4, 12, 20, 28, 36, 44},
+      },
+      {
+          .in0 = {-50, -30, -15, 5, 25, 40, 55, 70},
+          .in1 = {10, -12, 18, -4, 22, 30, -16, 8},
+      },
+  };
+  EXPECT_THAT(VerifyQuantizedAddMatchesCpuOnOpenCl<int8_t>(
+                  tflite::TensorType_INT8, /*in0_zp=*/-10, /*in1_zp=*/12,
+                  /*out_zp=*/-5, inputs),
+              IsOk());
+}
+
+TEST(DelegateOpenClTest, QuantizedDelegateOmitsArenaTemporariesAndGuardsShape) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!IsOpenClSupported()) {
+    GTEST_SKIP() << "OpenCL is not supported on this platform";
+  }
+
+  const std::vector<uint8_t> model_buf = BuildQuantizedAddModelBuffer(
+      tflite::TensorType_INT8, /*in0_zp=*/-10, /*in1_zp=*/12, /*out_zp=*/-5);
+  auto tflite_model = tflite::FlatBufferModel::BuildFromBuffer(
+      reinterpret_cast<const char*>(model_buf.data()), model_buf.size());
+  ASSERT_NE(tflite_model, nullptr);
+
+  const std::vector<int8_t> in0_vals = {-40, -25, -10, 0, 15, 30, 45, 60};
+  const std::vector<int8_t> in1_vals = {-20, -8, 4, 12, 20, 28, 36, 44};
+
+  std::unique_ptr<tflite::Interpreter> cpu_interp;
+  ASSERT_EQ(tflite::InterpreterBuilder(
+                *tflite_model,
+                tflite::ops::builtin::BuiltinOpResolver())(&cpu_interp),
+            kTfLiteOk);
+  ASSERT_NE(cpu_interp, nullptr);
+  ASSERT_EQ(cpu_interp->AllocateTensors(), kTfLiteOk);
+  std::memcpy(cpu_interp->typed_input_tensor<int8_t>(0), in0_vals.data(),
+              in0_vals.size());
+  std::memcpy(cpu_interp->typed_input_tensor<int8_t>(1), in1_vals.data(),
+              in1_vals.size());
+  ASSERT_EQ(cpu_interp->Invoke(), kTfLiteOk);
+  const int8_t* cpu_out_ptr = cpu_interp->typed_output_tensor<int8_t>(0);
+  ASSERT_NE(cpu_out_ptr, nullptr);
+  const std::vector<int8_t> cpu_out(cpu_out_ptr, cpu_out_ptr + in0_vals.size());
+
+  std::unique_ptr<tflite::Interpreter> interpreter;
+  ASSERT_EQ(tflite::InterpreterBuilder(
+                *tflite_model,
+                tflite::ops::builtin::BuiltinOpResolver())(&interpreter),
+            kTfLiteOk);
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->tensors_size(), 3);
+
+  LiteRtEnvironment environment = nullptr;
+  ASSERT_EQ(LiteRtCreateEnvironment(0, nullptr, &environment), kLiteRtStatusOk);
+  absl::Cleanup env_cleanup = [&]() {
+    if (environment != nullptr) {
+      LiteRtDestroyEnvironment(environment);
+    }
+  };
+
+  auto get_tensor_id = [&interpreter](const TfLiteOpaqueTensor* target_tensor)
+      -> litert::internal::TfLiteTensorIdentifier {
+    auto tensor_id = litert::internal::GetTensorIdentifier(
+        *interpreter, reinterpret_cast<const TfLiteTensor*>(target_tensor));
+    if (!tensor_id) {
+      return {-1, -1};
+    }
+    return *tensor_id;
+  };
+  LiteRtExternalLiteRtBufferContextT buffer_context(environment, get_tensor_id);
+  interpreter->SetExternalContext(kTfLiteLiteRtBufferContext, &buffer_context);
+
+  auto options = MlDriftClDelegateDefaultOptionsPtr();
+  options->serialize_program_cache = false;
+  options->runtime_context = LrtGetRuntimeContext();
+
+  auto delegate = CreateMlDriftClDelegate(std::move(options), environment);
+  ASSERT_NE(delegate, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(std::move(delegate)),
+            kTfLiteOk);
+  ASSERT_EQ(interpreter->AllocateTensors(), kTfLiteOk);
+
+  // Verify the delegated node registers zero arena temporaries.
+  const std::vector<int>& plan = interpreter->execution_plan();
+  ASSERT_FALSE(plan.empty());
+  for (int node_index : plan) {
+    const auto* node_and_reg = interpreter->node_and_registration(node_index);
+    ASSERT_NE(node_and_reg, nullptr);
+    const TfLiteNode& node = node_and_reg->first;
+    EXPECT_TRUE(node.temporaries == nullptr || node.temporaries->size == 0);
+  }
+
+  // Verify all synthetic fp32 intermediate tensors remain unallocated in the
+  // TFLite arena (`data.raw == nullptr`).
+  ASSERT_EQ(interpreter->tensors_size(), 6);
+  for (int t_idx = 3; t_idx < interpreter->tensors_size(); ++t_idx) {
+    const TfLiteTensor* tensor = interpreter->tensor(t_idx);
+    ASSERT_NE(tensor, nullptr);
+    EXPECT_EQ(tensor->type, kTfLiteFloat32);
+    EXPECT_EQ(tensor->data.raw, nullptr) << "tensor index " << t_idx;
+    EXPECT_EQ(tensor->bytes, in0_vals.size() * sizeof(float));
+  }
+
+  std::memcpy(interpreter->typed_input_tensor<int8_t>(0), in0_vals.data(),
+              in0_vals.size());
+  std::memcpy(interpreter->typed_input_tensor<int8_t>(1), in1_vals.data(),
+              in1_vals.size());
+  ASSERT_EQ(interpreter->Invoke(), kTfLiteOk);
+
+  // Synthetic fp32 tensors must remain unallocated after Invoke().
+  for (int t_idx = 3; t_idx < interpreter->tensors_size(); ++t_idx) {
+    EXPECT_EQ(interpreter->tensor(t_idx)->data.raw, nullptr);
+  }
+
+  const int8_t* gpu_out = interpreter->typed_output_tensor<int8_t>(0);
+  ASSERT_NE(gpu_out, nullptr);
+  for (size_t i = 0; i < cpu_out.size(); ++i) {
+    EXPECT_LE(
+        std::abs(static_cast<int>(gpu_out[i]) - static_cast<int>(cpu_out[i])),
+        1);
+  }
+
+  // Verify that an unexpected post-init dimension mismatch on a quantized I/O
+  // tensor is rejected cleanly instead of overflowing the locked TensorBuffer.
+  TfLiteTensor* orig_in0 = interpreter->tensor(0);
+  ASSERT_NE(orig_in0, nullptr);
+  ASSERT_NE(orig_in0->dims, nullptr);
+  ASSERT_EQ(orig_in0->dims->size, 4);
+  const int saved_dim = orig_in0->dims->data[3];
+  {
+    absl::Cleanup restore_dim = [&]() { orig_in0->dims->data[3] = saved_dim; };
+    orig_in0->dims->data[3] = saved_dim * 2;
+    EXPECT_EQ(interpreter->Invoke(), kTfLiteError);
+  }
+
+  // Verify unsupported sub-8-bit quantized types fail cleanly before locking.
+  const TfLiteType saved_type = orig_in0->type;
+  {
+    absl::Cleanup restore_type = [&]() { orig_in0->type = saved_type; };
+    orig_in0->type = kTfLiteInt4;
+    EXPECT_EQ(interpreter->Invoke(), kTfLiteError);
+  }
+
+  // Verify a non-empty quantized tensor with null data fails cleanly instead
+  // of silently succeeding with uninitialized GPU buffer contents.
+  char* saved_raw = orig_in0->data.raw;
+  {
+    absl::Cleanup restore_raw = [&]() { orig_in0->data.raw = saved_raw; };
+    orig_in0->data.raw = nullptr;
+    EXPECT_EQ(interpreter->Invoke(), kTfLiteError);
   }
 }
 
