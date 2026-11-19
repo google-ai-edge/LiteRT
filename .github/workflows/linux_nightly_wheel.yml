@@ -251,7 +251,7 @@ jobs:
                   raise RuntimeError(desc.stderr)
 
           manifest = {
-              "publish_all": false := False,
+              "publish_all": False,
               "publishing_groups": [
                   {
                       "packages": [
