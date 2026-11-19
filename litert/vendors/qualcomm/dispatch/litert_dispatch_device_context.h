@@ -64,7 +64,10 @@ class LiteRtDispatchDeviceContextT {
 
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
-                     Qnn_ProfileHandle_t profile_handle);
+                     Qnn_ProfileHandle_t profile_handle,
+                     size_t bytecode_fd_offset = 0,
+                     LiteRtDmaContextBinaryCallback
+                         dma_context_binary_callback = {});
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;

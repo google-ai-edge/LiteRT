@@ -1115,6 +1115,17 @@ class LiteRtModelT {
 
   const std::optional<std::string>& SourcePath() const { return source_path_; }
 
+  // Caller-supplied DMA context binary callback, set via
+  // LiteRtCreateModelFromFdWithDmaContextCallback. Empty (provide ==
+  // nullptr) if the model wasn't loaded that way.
+  void SetDmaContextBinaryCallback(LiteRtDmaContextBinaryCallback callback) {
+    dma_context_binary_callback_ = callback;
+  }
+
+  const LiteRtDmaContextBinaryCallback& DmaContextBinaryCallback() const {
+    return dma_context_binary_callback_;
+  }
+
   // EXTERNAL BUFFER GROUPS
 
   // The names of the external buffer groups (tflite ExternalBufferGroup) that
@@ -1205,6 +1216,7 @@ class LiteRtModelT {
   TflFlatbuffer tfl_flatbuffer_;
   std::optional<std::string> source_path_;
   std::vector<std::string> external_buffer_groups_;
+  LiteRtDmaContextBinaryCallback dma_context_binary_callback_ = {};
 };
 
 // Get the build stamp from the model if it exists.

@@ -320,6 +320,25 @@ class Model : public internal::BaseHandle<LiteRtModel> {
     return CreateFromOwnedHandle(model);
   }
 
+  /// @brief Creates a model from a file descriptor region, streaming the
+  /// context binary through `callback` instead of reading it through `fd`
+  /// itself, on backends that support it.
+  ///
+  /// LiteRT duplicates the file descriptor internally; the caller retains
+  /// ownership of `fd`. `callback` must remain valid for the lifetime of the
+  /// resulting model's compiled form.
+  static Expected<Model> CreateFromFdWithDmaContextCallback(
+      Environment& env, int fd, size_t offset, size_t size,
+      LiteRtDmaContextBinaryCallback callback) {
+    LiteRtModel model;
+    if (auto status = LiteRtCreateModelFromFdWithDmaContextCallback(
+            env.Get(), fd, offset, size, callback, &model);
+        status != kLiteRtStatusOk) {
+      return Unexpected(ToStatus(status), "Failed to load model from fd");
+    }
+    return CreateFromOwnedHandle(model);
+  }
+
 #if !defined(LITERT_DYNAMIC_RUNTIME) && !defined(LITERT_NO_ABSL)
   // copybara:uncomment_begin(google_only)
   // /// @internal

@@ -76,6 +76,9 @@ typedef struct LiteRtMemBuffer {
   // Offset of base_addr in fd. Use alloc_base_file_offset + offset for the
   // absolute fd offset when fd-backed loading is used.
   size_t alloc_base_file_offset;
+  // Caller-supplied DMA context binary callback, if any (provide == nullptr
+  // otherwise). Vendors that don't support it ignore this field.
+  LiteRtDmaContextBinaryCallback dma_context_binary_callback;
 } LiteRtMemBuffer;
 
 // Initialize the Dispatch API runtime.

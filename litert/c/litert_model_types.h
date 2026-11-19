@@ -242,6 +242,57 @@ typedef struct LiteRtModelSerializationOptions {
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
 
+// A byte range request within a model's context binary, relative to the
+// start of the file the model was loaded from.
+typedef struct LiteRtDmaContextDataRequest {
+  size_t offset;
+  size_t size;
+} LiteRtDmaContextDataRequest;
+
+// The caller-owned buffer satisfying a LiteRtDmaContextDataRequest.
+//
+// Requirements on the caller (the HTP backend does not validate them):
+//  - `fd` must be a DMA-BUF fd that is DISTINCT from the fd returned by every
+//    other outstanding request. To serve many ranges from one DMA-BUF that
+//    already holds the model, return a dup() of its fd per request. Returning
+//    the same fd again makes HTP reject the import and retry, and the model
+//    output can be wrong.
+//  - `data` is the caller's mapping of the whole DMA-BUF and `data_start_offset`
+//    is where the requested range starts inside it.
+//  - `aligned_size` must equal the requested `size`, so that HTP's later unmap
+//    length matches the length it mapped.
+//  - The bytes of the requested range must start on a 4KB boundary in memory
+//    (`data + data_start_offset`). An unaligned start is not rejected: the model
+//    silently produces wrong output.
+//  - The DMA-BUF and its mapping must stay valid and unmodified until the
+//    matching release call. Release must only close the per-request fd.
+typedef struct LiteRtDmaContextDataResponse {
+  int fd;
+  void* data;
+  size_t data_start_offset;
+  size_t aligned_size;
+} LiteRtDmaContextDataResponse;
+
+// Provides the bytes for a requested range, filling in `response`. The
+// buffer described by `response` must remain valid until the matching
+// LiteRtDmaContextDataReleaseFn call.
+typedef LiteRtStatus (*LiteRtDmaContextDataProviderFn)(
+    LiteRtDmaContextDataRequest request, LiteRtDmaContextDataResponse* response,
+    void* user_data);
+
+// Releases a buffer previously returned by LiteRtDmaContextDataProviderFn.
+typedef LiteRtStatus (*LiteRtDmaContextDataReleaseFn)(
+    LiteRtDmaContextDataResponse response, void* user_data);
+
+// Caller-supplied callback pair for streaming a model's context binary
+// directly into caller-owned DMA buffers. See
+// LiteRtCreateModelFromFdWithDmaContextCallback.
+typedef struct LiteRtDmaContextBinaryCallback {
+  LiteRtDmaContextDataProviderFn provide;
+  LiteRtDmaContextDataReleaseFn release;
+  void* user_data;
+} LiteRtDmaContextBinaryCallback;
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus
