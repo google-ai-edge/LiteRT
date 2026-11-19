@@ -450,7 +450,7 @@ void Free(TfLiteContext*, void* buffer) {
   delete reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(buffer);
 }
 
-TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
+TfLiteStatus Prepare(TfLiteContext*, TfLiteNode* node) {
   auto* delegate_kernel =
       reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(
           node->user_data);
@@ -459,12 +459,10 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
     ABSL_LOG(ERROR) << "Delegate kernel initialization failed.";
     return kTfLiteError;
   }
-  if (absl::Status s = delegate_kernel->GetRequiredTemporaries(
-          context, node, &node->temporaries);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
+  // Intentionally omit GetRequiredTemporaries(): synthetic fp32 tensors in
+  // `quant_conversion_map_` remain unallocated in the TFLite arena
+  // (`data.raw == nullptr`), and `DelegateKernelLiteRt` performs fused
+  // Quantize/Dequantize directly into/from locked `TensorBuffer`s.
   return kTfLiteOk;
 }
 

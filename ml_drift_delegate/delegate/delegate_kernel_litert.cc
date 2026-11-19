@@ -18,10 +18,12 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
 
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -29,6 +31,7 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
@@ -49,6 +52,7 @@
 #include "ml_drift_delegate/delegate/delegate_kernel.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
+#include "ml_drift_delegate/delegate/quantization_util.h"
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/core/c/common.h"
 
@@ -126,6 +130,46 @@ Expected<GpuTensorBufferPtr> AllocateTensorBuffer(
   // Release the raw pointer since it's owned by the buffer context now.
   tensor_buffer.release();
   return GetTensorBuffer(runtime_context, buffer_context, tflite_tensor);
+}
+
+template <typename Fn>
+absl::Status WithLockedTensorBuffer(
+    const LiteRtRuntimeContext* runtime_context,
+    LiteRtExternalLiteRtBufferContext buffer_context,
+    const TfLiteTensor& tensor, LiteRtTensorBufferLockMode lock_mode,
+    size_t min_packed_bytes, Fn&& fn) {
+  LITERT_ASSIGN_OR_RETURN(
+      auto tensor_buffer,
+      GetTensorBuffer(runtime_context, buffer_context, &tensor),
+      (_ << "TensorBuffer is not registered"));
+  size_t buffer_size = 0;
+  LITERT_RETURN_IF_ERROR(runtime_context->get_tensor_buffer_packed_size(
+                             tensor_buffer.get(), &buffer_size),
+                         (_ << "Failed to get packed TensorBuffer size"));
+  if (buffer_size < min_packed_bytes) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        "LiteRT packed buffer size (", buffer_size,
+        ") is smaller than required size (", min_packed_bytes, ")"));
+  }
+
+  void* host_memory = nullptr;
+  LITERT_RETURN_IF_ERROR(runtime_context->lock_tensor_buffer(
+                             tensor_buffer.get(), &host_memory, lock_mode),
+                         (_ << "Failed to lock TensorBuffer"));
+  absl::Cleanup unlock_guard = [&]() {
+    (void)runtime_context->unlock_tensor_buffer(tensor_buffer.get());
+  };
+  if (host_memory == nullptr) {
+    return absl::InternalError("Locked TensorBuffer returned null host memory");
+  }
+
+  ABSL_RETURN_IF_ERROR(std::forward<Fn>(fn)(host_memory, buffer_size));
+
+  std::move(unlock_guard).Cancel();
+  LITERT_RETURN_IF_ERROR(
+      runtime_context->unlock_tensor_buffer(tensor_buffer.get()),
+      (_ << "Failed to unlock TensorBuffer"));
+  return absl::OkStatus();
 }
 
 }  // namespace
@@ -579,10 +623,94 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
   return absl::OkStatus();
 }
 
+absl::StatusOr<bool> DelegateKernelLiteRt::TrySyncFusedQuantizedTensorBuffer(
+    TfLiteContext* context, int io_index, int64_t tensor_index,
+    QuantizedSyncDirection direction) {
+  const absl::string_view io_label =
+      direction == QuantizedSyncDirection::kUploadInput ? "input" : "output";
+  if (context == nullptr || context->tensors == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("TfLiteContext or tensors array is null for ", io_label,
+                     "#", io_index));
+  }
+  if (tensor_index < 0 || tensor_index > std::numeric_limits<int>::max() ||
+      static_cast<uint64_t>(tensor_index) >= context->tensors_size) {
+    return absl::FailedPreconditionError(
+        absl::StrCat("Out-of-range tensor index ", tensor_index, " for ",
+                     io_label, "#", io_index, "."));
+  }
+
+  const TfLiteTensor& fp32_tensor = context->tensors[tensor_index];
+  const auto quant_it =
+      quant_conversion_map().find(static_cast<int>(tensor_index));
+  if (quant_it == quant_conversion_map().end() ||
+      fp32_tensor.type != kTfLiteFloat32 || fp32_tensor.data.raw != nullptr) {
+    return false;
+  }
+
+  const int orig_tensor_index = quant_it->second;
+  if (orig_tensor_index < 0 ||
+      static_cast<uint64_t>(orig_tensor_index) >= context->tensors_size) {
+    return absl::FailedPreconditionError(absl::StrCat(
+        "Out-of-range quantized tensor index ", orig_tensor_index, " for ",
+        io_label, "#", io_index, " tensor T#", tensor_index, "."));
+  }
+  TfLiteTensor& orig_tensor = context->tensors[orig_tensor_index];
+
+  const LiteRtTensorBufferLockMode lock_mode =
+      direction == QuantizedSyncDirection::kUploadInput
+          ? kLiteRtTensorBufferLockModeWrite
+          : kLiteRtTensorBufferLockModeRead;
+  const auto with_context = [&](const absl::Status& status) {
+    return absl::Status(status.code(),
+                        absl::StrCat(status.message(), " [for ", io_label, "#",
+                                     io_index, " tensor T#", tensor_index,
+                                     " (original T#", orig_tensor_index, ")]"));
+  };
+
+  const absl::StatusOr<size_t> required_bytes =
+      ::ml_drift::delegate::ValidatedDequantizedBytes(orig_tensor);
+  if (!required_bytes.ok()) {
+    return with_context(required_bytes.status());
+  }
+  if (*required_bytes != fp32_tensor.bytes) {
+    return with_context(absl::FailedPreconditionError(
+        absl::StrCat("Required dequantized byte size (", *required_bytes,
+                     ") does not match synthetic fp32 tensor byte size (",
+                     fp32_tensor.bytes, ")")));
+  }
+  if (*required_bytes == 0) {
+    return true;
+  }
+
+  const absl::Status sync_status = WithLockedTensorBuffer(
+      runtime_context_, buffer_context_, fp32_tensor, lock_mode,
+      *required_bytes, [&](void* host_memory, size_t buffer_size) {
+        absl::Span<float> host_floats = absl::MakeSpan(
+            static_cast<float*>(host_memory), buffer_size / sizeof(float));
+        return direction == QuantizedSyncDirection::kUploadInput
+                   ? ::ml_drift::delegate::DequantizeTo(orig_tensor,
+                                                        host_floats)
+                   : ::ml_drift::delegate::QuantizeFrom(host_floats,
+                                                        orig_tensor);
+      });
+  if (!sync_status.ok()) {
+    return with_context(sync_status);
+  }
+  return true;
+}
+
 absl::Status DelegateKernelLiteRt::UploadIntermediateCpuTensorsToGpuMemory(
     TfLiteContext* context) {
   for (int i = 0; i < input_indices_.size(); ++i) {
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
+      continue;
+    }
+    ABSL_ASSIGN_OR_RETURN(const bool synced,
+                          TrySyncFusedQuantizedTensorBuffer(
+                              context, i, input_indices_[i],
+                              QuantizedSyncDirection::kUploadInput));
+    if (synced) {
       continue;
     }
     TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
@@ -628,6 +756,13 @@ absl::Status DelegateKernelLiteRt::UploadIntermediateCpuTensorsToGpuMemory(
 absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToIntermediateCpuTensors(
     TfLiteContext* context) {
   for (int i = 0; i < output_ids_.size(); ++i) {
+    ABSL_ASSIGN_OR_RETURN(const bool synced,
+                          TrySyncFusedQuantizedTensorBuffer(
+                              context, i, output_indices_[i],
+                              QuantizedSyncDirection::kDownloadOutput));
+    if (synced) {
+      continue;
+    }
     TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
     // External tensors bound to a CPU-synced buffer are kTfLiteCustom CPU
     // allocations (see UploadIntermediateCpuTensorsToGpuMemory()), so the

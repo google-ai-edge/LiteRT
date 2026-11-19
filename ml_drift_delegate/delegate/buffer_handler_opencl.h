@@ -50,6 +50,25 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
 
 #ifdef __cplusplus
 }  // extern "C"
+
+namespace ml_drift::delegate::testing {
+
+// RAII test guard that forces `kLiteRtTensorBufferTypeOpenClBufferPacked`
+// allocations through the `CL_MEM_ALLOC_HOST_PTR` path on non-PowerVR hosts.
+class ScopedOpenClPackedHostAllocForTesting {
+ public:
+  ScopedOpenClPackedHostAllocForTesting();
+  ScopedOpenClPackedHostAllocForTesting(
+      const ScopedOpenClPackedHostAllocForTesting&) = delete;
+  ScopedOpenClPackedHostAllocForTesting& operator=(
+      const ScopedOpenClPackedHostAllocForTesting&) = delete;
+  ~ScopedOpenClPackedHostAllocForTesting();
+
+ private:
+  bool previous_;
+};
+
+}  // namespace ml_drift::delegate::testing
 #endif  // __cplusplus
 
 #endif  // THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_BUFFER_HANDLER_OPENCL_H_

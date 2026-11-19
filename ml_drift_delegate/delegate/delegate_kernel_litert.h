@@ -172,8 +172,10 @@ class DelegateKernelLiteRt : public DelegateKernel {
   }
 
  private:
-  const LiteRtRuntimeContext* runtime_context_;
-  LiteRtExternalLiteRtBufferContext buffer_context_ = nullptr;
+  enum class QuantizedSyncDirection {
+    kUploadInput,
+    kDownloadOutput,
+  };
 
   // Context structure that encapsulates the common parameters needed for tensor
   // processing operations in the ML Drift delegate. This structure helps reduce
@@ -192,6 +194,11 @@ class DelegateKernelLiteRt : public DelegateKernel {
 
     // Set of ValueIds whose FP32 precision must be preserved.
     const absl::flat_hash_set<::ml_drift::ValueId>& preserved_fp32_values;
+  };
+
+  struct BoundGpuTensor {
+    GpuMemoryHandle gpu_memory = nullptr;
+    std::unique_ptr<GpuTensorWrapper> gpu_tensor;
   };
 
   // Registers LiteRT buffer requirements for the given tensor.
@@ -219,11 +226,6 @@ class DelegateKernelLiteRt : public DelegateKernel {
       ::ml_drift::TensorDescriptor& out_tensor_descriptor,
       const ::ml_drift::TensorRef<::ml_drift::BHWC>* graph_tensor_ref);
 
-  struct BoundGpuTensor {
-    GpuMemoryHandle gpu_memory = nullptr;
-    std::unique_ptr<GpuTensorWrapper> gpu_tensor;
-  };
-
   // Binds the GPU memory to the inference context.
   absl::Status BindGpuMemoryToInferenceContext(
       ::ml_drift::ValueId tensor_id,
@@ -239,6 +241,17 @@ class DelegateKernelLiteRt : public DelegateKernel {
 
   // Returns true if the tensor buffer is an AHardwareBuffer.
   bool IsAhwbTensorBuffer(const GpuTensorBufferPtr& tensor_buffer) const;
+
+  // Performs fused dequantize/quantize directly into/from the locked
+  // TensorBuffer when `tensor_index` is an unallocated synthetic fp32 tensor
+  // in `quant_conversion_map()`. Returns `false` if the tensor does not use
+  // the fused quantized path, or `true` once synced.
+  absl::StatusOr<bool> TrySyncFusedQuantizedTensorBuffer(
+      TfLiteContext* context, int io_index, int64_t tensor_index,
+      QuantizedSyncDirection direction);
+
+  const LiteRtRuntimeContext* runtime_context_;
+  LiteRtExternalLiteRtBufferContext buffer_context_ = nullptr;
 
   // Tensor descriptors for I/O tensors.
   // The size and order of these vectors should be the same as input_indices_

@@ -136,6 +136,10 @@ class DelegateKernel {
     return absl::OkStatus();
   }
 
+  const absl::flat_hash_map<int, int>& quant_conversion_map() const {
+    return quant_conversion_map_;
+  }
+
  private:
   // Initializes the delegate kernel using the legacy GraphFloat32 pipeline
   // (the default, non-IrModel path). Called by Initialize().
