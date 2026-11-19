@@ -128,6 +128,7 @@ cc_library(
     hdrs = ["dispatch_opaque_options.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_opaque_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

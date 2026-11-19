@@ -1180,6 +1180,7 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     SetModelSourceInfoFromAllocation(tfl_wrapper.FlatbufferModel().allocation(),
                                      fb_model_fd_, fb_model_file_offset_,
                                      fb_model_size_);
+    fb_model_dma_context_binary_callback_ = model.DmaContextBinaryCallback();
     return {};
   }
 
@@ -1279,6 +1280,8 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         dispatch_options.SetAllocBase(compiled_model->GetModelBase()));
     LITERT_RETURN_IF_ERROR(
         dispatch_options.SetAllocBaseFd(compiled_model->fb_model_fd_));
+    LITERT_RETURN_IF_ERROR(dispatch_options.SetDmaContextBinaryCallback(
+        compiled_model->fb_model_dma_context_binary_callback_));
 #if !defined(LITERT_DISABLE_NPU)
     if (compiled_model->apply_plugins_result_.has_value()) {
       for (const auto& [name, handle] :

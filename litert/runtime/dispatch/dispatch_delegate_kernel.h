@@ -46,7 +46,8 @@ namespace litert::internal {
 Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
     const DispatchOpOptions& dispatch_options, const void* alloc_base,
     int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
-    bool has_alloc_base_file_region);
+    bool has_alloc_base_file_region,
+    LiteRtDmaContextBinaryCallback dma_context_binary_callback = {});
 
 // A TFL kernel that the interpreter calls to dispatch execution through the
 // Dispatch API.
@@ -171,6 +172,10 @@ class DispatchDelegateKernel : public DispatchKernelInterface {
   // Checks if the allocation base file region (offset and size) is set in the
   // options.
   Expected<bool> HasAllocBaseFileRegion() const;
+  // Retrieves the caller-supplied DMA context binary callback from the
+  // options, if any.
+  Expected<LiteRtDmaContextBinaryCallback> FindDmaContextBinaryCallback()
+      const;
 
   LiteRtEnvironmentOptions environment_options_;
   LiteRtOptions options_;

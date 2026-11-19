@@ -259,6 +259,16 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
                                      size_t offset, size_t size,
                                      LiteRtModel* model);
 
+// Identical to LiteRtCreateModelFromFd, except a supporting dispatch backend
+// streams the context binary directly into buffers from `callback` (e.g.
+// caller-owned DMA buffers) instead of reading through `fd` itself. The
+// caller retains ownership of `fd`; `callback` must remain valid for the
+// lifetime of the resulting model's compiled form. Backends that don't
+// support this fall back to the regular LiteRtCreateModelFromFd behavior.
+LiteRtStatus LiteRtCreateModelFromFdWithDmaContextCallback(
+    LiteRtEnvironment environment, int fd, size_t offset, size_t size,
+    LiteRtDmaContextBinaryCallback callback, LiteRtModel* model);
+
 // Get the metadata buffer associated with given key if it exists.
 LiteRtStatus LiteRtGetModelMetadata(LiteRtModel model, const char* metadata_key,
                                     const void** metadata_buffer,

@@ -103,6 +103,31 @@ LiteRtStatus LiteRtCreateModelFromFd(LiteRtEnvironment environment, int fd,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtCreateModelFromFdWithDmaContextCallback(
+    LiteRtEnvironment environment, int fd, size_t offset, size_t size,
+    LiteRtDmaContextBinaryCallback callback, LiteRtModel* model) {
+  LITERT_PERFETTO_TRACE_EVENT("LiteRT Graph Loading From Fd");
+  if (fd < 0 || size == 0 || !model) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (!tflite::MMAPAllocation::IsSupported()) {
+    return kLiteRtStatusErrorUnsupported;
+  }
+
+  auto allocation = std::make_unique<tflite::MMAPAllocation>(
+      fd, offset, size, tflite::DefaultErrorReporter());
+  if (!allocation->valid()) {
+    return kLiteRtStatusErrorFileIO;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(
+      LiteRtModelT::Ptr new_model,
+      litert::internal::LoadModelFromAllocation(std::move(allocation)));
+  new_model->SetDmaContextBinaryCallback(callback);
+  *model = new_model.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetNumModelSubgraphs(LiteRtModel model,
                                         LiteRtParamIndex* num_subgraphs) {
   if (model == nullptr || num_subgraphs == nullptr) {

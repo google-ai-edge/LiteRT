@@ -64,6 +64,18 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "dma_context_callback_adapter",
+    srcs = ["dma_context_callback_adapter.cc"],
+    hdrs = ["dma_context_callback_adapter.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
 litert_cc_lib_with_qnn(
     name = "qnn_manager",
     srcs = [
@@ -75,8 +87,10 @@ litert_cc_lib_with_qnn(
     ungrte = True,
     deps = [
         ":common",
+        ":dma_context_callback_adapter",
         ":qnn_saver_utils",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",

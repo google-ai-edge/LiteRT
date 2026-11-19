@@ -64,6 +64,7 @@
 #include "litert/vendors/qualcomm/core/op_code.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
+#include "litert/vendors/qualcomm/dma_context_callback_adapter.h"
 #include "litert/vendors/qualcomm/qnn_saver_utils.h"
 
 namespace {
@@ -711,12 +712,18 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
-    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+    size_t bytecode_fd_offset,
+    LiteRtDmaContextBinaryCallback dma_context_binary_callback) {
+  const bool use_dma_context_callback =
+      dma_context_binary_callback.provide != nullptr && !bytecode.empty() &&
+      options_.GetBackendType() == ::qnn::BackendType::kHtpBackend;
+
 #if !defined(_WIN32)
   const int64_t page_size = sysconf(_SC_PAGESIZE);
   uintptr_t aligned_start = 0;
   uintptr_t aligned_end = 0;
-  if (page_size > 0 && !bytecode.empty()) {
+  if (!use_dma_context_callback && page_size > 0 && !bytecode.empty()) {
     const uintptr_t mask = static_cast<uintptr_t>(page_size) - 1;
     const uintptr_t start = reinterpret_cast<uintptr_t>(bytecode.data());
     const uintptr_t end = start + bytecode.size();
@@ -735,6 +742,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 
   Qnn_ContextHandle_t context_handle;
   Qnn_ErrorHandle_t status;
+  std::shared_ptr<void> owned_callback_context;
   if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
     HtpContextConfigs htp_configs;
     const auto htp_span =
@@ -749,10 +757,33 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     if (vote_during_load) {
       qnn_backend.UpVote();
     }
-    status = Api()->contextCreateFromBinary(
-        qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
-        context_configs, bytecode.data(), bytecode.size(), &context_handle,
-        profile_handle);
+    if (use_dma_context_callback) {
+      auto adapter = DmaContextCallbackAdapter::Create(
+          bytecode_fd_offset, dma_context_binary_callback);
+      Qnn_ContextBinaryCallback_t callback = adapter->AsQnnCallback();
+      status = Api()->contextCreateFromBinaryWithCallback(
+          qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+          context_configs, &callback, bytecode.data(), bytecode.size(),
+          &context_handle, profile_handle, /*signal=*/nullptr);
+      if (status == QNN_SUCCESS) {
+        owned_callback_context =
+            std::shared_ptr<DmaContextCallbackAdapter>(std::move(adapter));
+      } else {
+        LITERT_LOG(LITERT_WARNING,
+                   "contextCreateFromBinaryWithCallback failed (err=%d), "
+                   "falling back to contextCreateFromBinary",
+                   status);
+        status = Api()->contextCreateFromBinary(
+            qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+            context_configs, bytecode.data(), bytecode.size(), &context_handle,
+            profile_handle);
+      }
+    } else {
+      status = Api()->contextCreateFromBinary(
+          qnn_backend.GetBackendHandle(), qnn_backend.GetDeviceHandle(),
+          context_configs, bytecode.data(), bytecode.size(), &context_handle,
+          profile_handle);
+    }
 
     if (vote_during_load) {
       qnn_backend.ScheduleDownVote();
@@ -779,7 +810,7 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   auto context_deleter = Api()->contextFree;
   auto profile_deleter = Api()->profileFree;
   return ContextHandle{context_handle, profile_handle, context_deleter,
-                       profile_deleter};
+                       profile_deleter, std::move(owned_callback_context)};
 }
 
 Expected<QnnManager::Ptr> QnnManager::Create(

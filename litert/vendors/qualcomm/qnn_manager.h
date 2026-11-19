@@ -37,6 +37,7 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/internal/litert_shared_library.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"  // IWYU pragma: keep
@@ -131,10 +132,15 @@ class QnnManager {
       ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
+  // `bytecode_fd_offset` and `dma_context_binary_callback` identify the
+  // bytecode's location within the model file, if a caller-supplied DMA
+  // context binary callback was provided.
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
-      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
+      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+      size_t bytecode_fd_offset = 0,
+      LiteRtDmaContextBinaryCallback dma_context_binary_callback = {});
 
   //
   // Context Binary
@@ -209,11 +215,13 @@ class QnnManager::ContextHandle {
  public:
   ContextHandle(Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile,
                 QnnContext_FreeFn_t free_fn,
-                QnnProfile_FreeFn_t profile_free_fn)
+                QnnProfile_FreeFn_t profile_free_fn,
+                std::shared_ptr<void> owned_callback_context = nullptr)
       : context_handle_(context_handle),
         profile_(profile),
         free_fn_(free_fn),
-        profile_free_fn_(profile_free_fn) {}
+        profile_free_fn_(profile_free_fn),
+        owned_callback_context_(std::move(owned_callback_context)) {}
 
   ContextHandle() = default;
 
@@ -242,6 +250,7 @@ class QnnManager::ContextHandle {
     std::swap(profile_, other.profile_);
     std::swap(free_fn_, other.free_fn_);
     std::swap(profile_free_fn_, other.profile_free_fn_);
+    std::swap(owned_callback_context_, other.owned_callback_context_);
     return *this;
   }
 
@@ -256,6 +265,7 @@ class QnnManager::ContextHandle {
   Qnn_ProfileHandle_t profile_ = nullptr;
   QnnContext_FreeFn_t free_fn_ = nullptr;
   QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
+  std::shared_ptr<void> owned_callback_context_;
 };
 
 }  // namespace litert::qnn

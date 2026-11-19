@@ -21,6 +21,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_opaque_options.h"
 
@@ -80,6 +81,13 @@ class DispatchDelegateOptions : public OpaqueOptions {
 
   // Get alloc base fd.
   Expected<int> GetAllocBaseFd();
+
+  // Set the caller-supplied DMA context binary callback.
+  Expected<void> SetDmaContextBinaryCallback(
+      LiteRtDmaContextBinaryCallback callback);
+
+  // Get the caller-supplied DMA context binary callback.
+  Expected<LiteRtDmaContextBinaryCallback> GetDmaContextBinaryCallback();
 
   // Add an opaque executable handle for JIT
   Expected<void> AddExecHandle(absl::string_view name,

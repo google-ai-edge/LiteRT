@@ -731,7 +731,11 @@ litert_bin(
     ],
     data = litert_gpu_accelerator_prebuilts(),
     ungrte = True,
-    deps = RUN_MODEL_DEPS + litert_gpu_accelerator_deps(),
+    deps = RUN_MODEL_DEPS + litert_gpu_accelerator_deps() + select({
+        "//litert:android": ["//litert/tools/ai_core_sample:dma_buf_provider"],
+        "//litert:linux": ["//litert/tools/ai_core_sample:dma_buf_provider"],
+        "//conditions:default": [],
+    }),
 )
 
 [
