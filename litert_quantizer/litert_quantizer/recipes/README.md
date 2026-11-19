@@ -48,6 +48,16 @@ class, with the following exceptions:
 *   `algorithm_params` is an optional dictionary of algorithm-specific options
     on `weight_tensor_config` (or `activation_tensor_config`), such as:
 
+    *   `"centered"` (`bool`, default `false`): Supported for signed symmetric
+        2-bit weights when `algorithm_key` is `"min_max_uniform_quantize"`,
+        `"OCTAV"`, or `"HADAMARD_ROTATION"` / `"DECOMPOSED_HADAMARD_ROTATION"`
+        (when `scale_refinement` is `"none"`). Quantizes weights to the
+        4-level grid `{-1.5, -0.5, 0.5, 1.5} * scale` (`zero_point = -0.5`),
+        stored as `INT2` with `BlockwiseQuantization`. Runs only on TFLite
+        2.23+ built-in CPU kernels, not on XNNPACK or GPU delegates. With
+        `false`, XNNPACK runs `"CHANNELWISE"` dynamic-range `FULLY_CONNECTED`
+        if the number of input channels is a multiple of 4.
+
     *   `"int2_in_int4"` (`bool`, default `false`): Supported when
         `algorithm_key` is `"OCTAV"` (or an algorithm that delegates weight
         quantization to OCTAV, such as `"HADAMARD_ROTATION"` or
