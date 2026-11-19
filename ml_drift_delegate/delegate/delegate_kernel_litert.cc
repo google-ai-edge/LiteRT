@@ -38,6 +38,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_object_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_tensor.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "litert/c/internal/litert_logging.h"
@@ -259,77 +260,143 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
   return absl::OkStatus();
 }
 
-absl::Status DelegateKernelLiteRt::ConvertNonExternalInputTensorsToGpuMemory(
-    TfLiteContext* context) {
+bool DelegateKernelLiteRt::IsConvertCommandBufferSupported() const {
+  if (delegate_data_ && delegate_data_->options &&
+      !delegate_data_->options->enable_convert_command_buffer) {
+    return false;
+  }
+  return backend_ != nullptr && backend_->SupportsConvertCommandBuffer();
+}
+
+template <typename BatchT, typename ItemT, typename ConverterT,
+          typename CreateBatchFn, typename MakeItemFn, typename ConvertItemFn>
+absl::Status DelegateKernelLiteRt::ConvertNonExternalTensors(
+    TfLiteContext* context, bool is_input, const std::vector<int64_t>& indices,
+    const std::vector<::ml_drift::ValueId>& ids,
+    const std::vector<std::unique_ptr<ConverterT>>& converters,
+    std::vector<GpuMemoryHandle>& bound_memories,
+    std::unique_ptr<BatchT>& batch, CreateBatchFn create_batch,
+    MakeItemFn make_item, ConvertItemFn convert_item) {
   if (!NoExternalTensorsMode()) {
     return absl::OkStatus();
   }
 
-  ABSL_RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/true));
+  ABSL_RETURN_IF_ERROR(ctx_->PreConvert(is_input));
 
-  for (int i = 0; i < input_indices_.size(); ++i) {
-    if (IsExternalSharedConstantTensor(input_ids_[i]) ||
-        external_tensor_ids_.contains(input_ids_[i])) {
-      // External tensors don't need to convert since they're updated directly
-      // in the inference context.
+  const char* direction_label = is_input ? "Input#" : "Output#";
+  const char* batch_label = is_input ? "pack" : "unpack";
+  const bool use_cb = IsConvertCommandBufferSupported() && ids.size() > 1;
+  std::vector<GpuMemoryHandle> current_memories(ids.size(), nullptr);
+  for (int i = 0; i < ids.size(); ++i) {
+    if ((is_input && IsExternalSharedConstantTensor(ids[i])) ||
+        external_tensor_ids_.contains(ids[i])) {
       continue;
     }
-
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor = &context->tensors[indices[i]];
     LITERT_ASSIGN_OR_RETURN(
         auto tensor_buffer,
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
-        _ << absl::StrCat("Input#", i, " doesn't have a tensor buffer."));
+        _ << absl::StrCat(direction_label, i,
+                          " doesn't have a tensor buffer."));
     LITERT_ASSIGN_OR_RETURN(
-        auto gpu_memory, backend_->GetGpuMemoryAllocated(tensor_buffer),
-        _ << absl::StrCat("Input#", i, " tensor does not have a GPU Memory."));
-
-    ABSL_ASSIGN_OR_RETURN(auto src_buffer,
-                          backend_->CreateIOBuffer(gpu_memory));
-    ABSL_ASSIGN_OR_RETURN(auto dst_tensor,
-                          ctx_->GetSpatialTensor(input_ids_[i]));
-    ABSL_RETURN_IF_ERROR(
-        input_converters_[i]->Convert(*src_buffer, *dst_tensor));
+        current_memories[i], backend_->GetGpuMemoryAllocated(tensor_buffer),
+        _ << absl::StrCat(direction_label, i,
+                          " tensor does not have a GPU Memory."));
   }
 
-  ABSL_RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/true));
+  if (use_cb && batch != nullptr && bound_memories == current_memories) {
+    ABSL_RETURN_IF_ERROR(batch->Dispatch());
+  } else if (use_cb) {
+    batch.reset();
+    bound_memories.clear();
+    std::vector<std::unique_ptr<GpuIOBuffer>> io_buffers;
+    io_buffers.reserve(ids.size());
+    std::vector<ItemT> items;
+    items.reserve(ids.size());
+    for (int i = 0; i < ids.size(); ++i) {
+      if (current_memories[i] == nullptr) {
+        continue;
+      }
+      ABSL_ASSIGN_OR_RETURN(auto io_buffer,
+                            backend_->CreateIOBuffer(current_memories[i]));
+      ABSL_ASSIGN_OR_RETURN(auto spatial_tensor,
+                            ctx_->GetSpatialTensor(ids[i]));
+      items.push_back(
+          make_item(converters[i].get(), io_buffer.get(), spatial_tensor));
+      io_buffers.push_back(std::move(io_buffer));
+    }
+    absl::StatusOr<std::unique_ptr<BatchT>> new_batch = create_batch(items);
+    if (new_batch.ok() && *new_batch != nullptr) {
+      LITERT_LOG(LITERT_INFO, "Created layout %s CommandBuffer with %zu items.",
+                 batch_label, items.size());
+      batch = std::move(*new_batch);
+      bound_memories = std::move(current_memories);
+      ABSL_RETURN_IF_ERROR(batch->Dispatch());
+    } else {
+      for (const auto& item : items) {
+        ABSL_RETURN_IF_ERROR(convert_item(item));
+      }
+    }
+  } else {
+    batch.reset();
+    bound_memories.clear();
+    for (int i = 0; i < ids.size(); ++i) {
+      if (current_memories[i] == nullptr) {
+        continue;
+      }
+      ABSL_ASSIGN_OR_RETURN(auto io_buffer,
+                            backend_->CreateIOBuffer(current_memories[i]));
+      ABSL_ASSIGN_OR_RETURN(auto spatial_tensor,
+                            ctx_->GetSpatialTensor(ids[i]));
+      ABSL_RETURN_IF_ERROR(convert_item(
+          make_item(converters[i].get(), io_buffer.get(), spatial_tensor)));
+    }
+  }
+
+  ABSL_RETURN_IF_ERROR(ctx_->PostConvert(is_input));
   return absl::OkStatus();
+}
+
+absl::Status DelegateKernelLiteRt::ConvertNonExternalInputTensorsToGpuMemory(
+    TfLiteContext* context) {
+  return ConvertNonExternalTensors<GpuPackBatch, InputPackItem>(
+      context, /*is_input=*/true, input_indices_, input_ids_, input_converters_,
+      bound_input_memories_, pack_batch_,
+      [this](absl::Span<const InputPackItem> items) {
+        return backend_->CreatePackBatch(items);
+      },
+      [](Buffer2TensorConverter* converter, GpuIOBuffer* io_buffer,
+         ::ml_drift::GpuSpatialTensor* spatial_tensor) {
+        return InputPackItem{
+            .converter = converter,
+            .src_buffer = io_buffer,
+            .dst_tensor = spatial_tensor,
+        };
+      },
+      [](const InputPackItem& item) {
+        return item.converter->Convert(*item.src_buffer, *item.dst_tensor);
+      });
 }
 
 absl::Status DelegateKernelLiteRt::ConvertGpuMemoryToNonExternalOutputTensors(
     TfLiteContext* context) {
-  if (!NoExternalTensorsMode()) {
-    return absl::OkStatus();
-  }
-
-  ABSL_RETURN_IF_ERROR(ctx_->PreConvert(/*input=*/false));
-
-  for (int i = 0; i < output_ids_.size(); ++i) {
-    if (external_tensor_ids_.contains(output_ids_[i])) {
-      // External tensors don't need to convert since they're updated directly
-      // in the inference context.
-      continue;
-    }
-
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
-    LITERT_ASSIGN_OR_RETURN(
-        auto tensor_buffer,
-        GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
-        _ << absl::StrCat("Output#", i, " doesn't have a tensor buffer."));
-    LITERT_ASSIGN_OR_RETURN(
-        auto gpu_memory, backend_->GetGpuMemoryAllocated(tensor_buffer),
-        _ << absl::StrCat("Output#", i, " tensor does not have a GPU Memory."));
-
-    ABSL_ASSIGN_OR_RETURN(auto dst_buffer,
-                          backend_->CreateIOBuffer(gpu_memory));
-    ABSL_ASSIGN_OR_RETURN(auto src_tensor,
-                          ctx_->GetSpatialTensor(output_ids_[i]));
-    ABSL_RETURN_IF_ERROR(
-        output_converters_[i]->Convert(*src_tensor, *dst_buffer));
-  }
-
-  ABSL_RETURN_IF_ERROR(ctx_->PostConvert(/*input=*/false));
-  return absl::OkStatus();
+  return ConvertNonExternalTensors<GpuUnpackBatch, OutputUnpackItem>(
+      context, /*is_input=*/false, output_indices_, output_ids_,
+      output_converters_, bound_output_memories_, unpack_batch_,
+      [this](absl::Span<const OutputUnpackItem> items) {
+        return backend_->CreateUnpackBatch(items);
+      },
+      [](Tensor2BufferConverter* converter, GpuIOBuffer* io_buffer,
+         ::ml_drift::GpuSpatialTensor* spatial_tensor) {
+        return OutputUnpackItem{
+            .converter = converter,
+            .src_tensor = spatial_tensor,
+            .dst_buffer = io_buffer,
+        };
+      },
+      [](const OutputUnpackItem& item) {
+        return item.converter->Convert(*item.src_tensor, *item.dst_buffer);
+      });
 }
 
 // Registers LiteRT buffer requirements for the given tensor.
@@ -667,6 +734,15 @@ absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToIntermediateCpuTensors(
 
 absl::Status DelegateKernelLiteRt::FlushBufferCacheIfNeeded(
     TfLiteContext* context) {
+  if (tensors_to_flush_.empty()) {
+    return absl::OkStatus();
+  }
+  // Invalidate cached batches before unregistering buffers so a partial
+  // unregister failure never leaves command buffers holding stale handles.
+  pack_batch_.reset();
+  unpack_batch_.reset();
+  bound_input_memories_.clear();
+  bound_output_memories_.clear();
   for (const auto& [tflite_tensor, tensor_id] : tensors_to_flush_) {
     // Flush from buffer context.
     LITERT_RETURN_IF_ERROR(
@@ -722,6 +798,10 @@ absl::Status DelegateKernelLiteRt::ValidateRestoredInferenceContext() {
 // tensors.
 absl::Status DelegateKernelLiteRt::InitTensorConverters(
     TfLiteContext* context) {
+  if (delegate_data_ && delegate_data_->options &&
+      delegate_data_->options->force_convert_command_buffer && backend_) {
+    backend_->SetForceConvertCommandBuffer(true);
+  }
   input_converters_.resize(input_indices_.size());
 
   for (int i = 0; i < input_indices_.size(); ++i) {

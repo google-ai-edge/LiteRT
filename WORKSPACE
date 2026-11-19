@@ -495,9 +495,9 @@ load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 google_tensor()
 
 # ML Drift ----------------------------------------------------------------------------------
-ML_DRIFT_COMMIT = "1b18771f44c0be3d972847b31a80f6dc3d6964b5"
+ML_DRIFT_COMMIT = "fd34d90e900ceedf66144f90d0031b052c1747c1"
 
-ML_DRIFT_SHA256 = "0a7384901754a4ee84220561bcf5447fde4363cbc8a42c94743f183d178feb30"
+ML_DRIFT_SHA256 = "cf690046a3ce027a552a63f609d48a2b375c1443bb9ae4d84420f2440adfd1fa"
 
 http_archive(
     name = "ml_drift",
@@ -506,8 +506,6 @@ http_archive(
         "sed -i -e 's|\"-I .\",|\"-I .\", \"-I external/ml_drift\",|g' ml_drift/gl/BUILD",
         # Avoid passing -ldl to MSVC linker on Windows in opencl_wrapper.
         "grep -q '\"//conditions:default\": \\[\"-ldl\"\\],' ml_drift/cl/BUILD && sed -i -e 's|\"//conditions:default\": \\[\"-ldl\"\\],|\"@platforms//os:windows\": [], \"//conditions:default\": [\"-ldl\"],|g' ml_drift/cl/BUILD",
-        # Avoid int -> uint32_t narrowing conversion in VulkanInfo default member initializers on MSVC.
-        "grep -q 'uint32_t api_version.* = -1;' ml_drift/common/gpu_info.h && sed -i -e 's|uint32_t api_version\\(.*\\) = -1;|uint32_t api_version\\1 = static_cast<uint32_t>(-1);|g' ml_drift/common/gpu_info.h",
     ],
     repo_mapping = {
         "@fp16": "@FP16",

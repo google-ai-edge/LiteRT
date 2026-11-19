@@ -32,9 +32,11 @@
 #include <utility>
 #include <vector>
 
+#include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -57,6 +59,7 @@
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_identifier.h"
 #include "litert/runtime/tfl_utils.h"
+#include "ml_drift_delegate/delegate/gpu_backend.h"
 #include "ml_drift_delegate/delegate/gpu_backend_opencl.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -1195,6 +1198,59 @@ TEST(DelegateOpenClTest,
     EXPECT_EQ(actual_k, expected_k);
     EXPECT_EQ(actual_v, expected_v);
   }
+}
+
+TEST(DelegateOpenClTest, ConvertCommandBufferBatchRejectsEmptyAndSingleItem) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL not loaded for ml_drift";
+  }
+  ::ml_drift::cl::Environment env;
+  if (!::ml_drift::cl::CreateEnvironment(&env).ok()) {
+    GTEST_SKIP() << "Unable to create OpenCL environment";
+  }
+  GpuBackendOpenCl backend(&env);
+  backend.SetForceConvertCommandBuffer(true);
+
+  EXPECT_THAT(backend.CreatePackBatch({}),
+              ::absl_testing::IsOkAndHolds(::testing::IsNull()));
+  EXPECT_THAT(backend.CreateUnpackBatch({}),
+              ::absl_testing::IsOkAndHolds(::testing::IsNull()));
+
+  InputPackItem single_pack_item;
+  EXPECT_THAT(
+      backend.CreatePackBatch(absl::MakeConstSpan(&single_pack_item, 1)),
+      ::absl_testing::IsOkAndHolds(::testing::IsNull()));
+
+  OutputUnpackItem single_unpack_item;
+  EXPECT_THAT(
+      backend.CreateUnpackBatch(absl::MakeConstSpan(&single_unpack_item, 1)),
+      ::absl_testing::IsOkAndHolds(::testing::IsNull()));
+}
+
+TEST(DelegateOpenClTest, ConvertCommandBufferBatchRejectsNullItemPointers) {
+#if defined(MEMORY_SANITIZER) || defined(THREAD_SANITIZER)
+  GTEST_SKIP() << "GPU tests are not supported in MSAN";
+#endif
+  if (!::ml_drift::cl::LoadOpenCL().ok()) {
+    GTEST_SKIP() << "OpenCL not loaded for ml_drift";
+  }
+  ::ml_drift::cl::Environment env;
+  if (!::ml_drift::cl::CreateEnvironment(&env).ok()) {
+    GTEST_SKIP() << "Unable to create OpenCL environment";
+  }
+  GpuBackendOpenCl backend(&env);
+  backend.SetForceConvertCommandBuffer(true);
+
+  std::vector<InputPackItem> pack_items(2);
+  EXPECT_THAT(backend.CreatePackBatch(pack_items),
+              ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+
+  std::vector<OutputUnpackItem> unpack_items(2);
+  EXPECT_THAT(backend.CreateUnpackBatch(unpack_items),
+              ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace

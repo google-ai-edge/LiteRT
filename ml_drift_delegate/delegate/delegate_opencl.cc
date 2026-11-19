@@ -793,6 +793,9 @@ TfLiteDelegatePtr CreateMlDriftClDelegate(MlDriftDelegateOptionsPtr options,
   }
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
+  if (delegate_data->options->force_convert_command_buffer) {
+    backend->SetForceConvertCommandBuffer(true);
+  }
   if (delegate_data->options->kernel_batch_size > 0) {
     backend->set_kernel_batch_size(delegate_data->options->kernel_batch_size);
   } else if (const auto& gpu_info =

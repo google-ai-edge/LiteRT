@@ -41,11 +41,15 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/buffer.h"  // from @ml_drift
+#include "ml_drift/cl/cl_command_buffer.h"  // from @ml_drift
+#include "ml_drift/cl/cl_device.h"  // from @ml_drift
+#include "ml_drift/cl/command_buffer.h"  // from @ml_drift
 #include "ml_drift/cl/converter.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
 #include "ml_drift/cl/memory_manager.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/cl/qcom_command_buffer.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/cl/util.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -739,6 +743,145 @@ absl::Status Tensor2BufferConverterOpenCl::Convert(
       &(static_cast<GpuIOBufferOpenCl&>(dst_buffer).cl_buffer()));
 }
 
+absl::Status Tensor2BufferConverterOpenCl::AddToCommandBuffer(
+    ::ml_drift::cl::CommandBuffer* cb, ::ml_drift::GpuSpatialTensor& src_tensor,
+    GpuIOBuffer& dst_buffer) {
+  return converter_->AddToCommandBuffer(
+      cb, static_cast<::ml_drift::cl::Tensor*>(&src_tensor),
+      &(static_cast<GpuIOBufferOpenCl&>(dst_buffer).cl_buffer()));
+}
+
+bool GpuBackendOpenCl::SupportsConvertCommandBuffer() const {
+  const auto& device = env_->device();
+  const auto& gpu_info = env_->GetDevicePtr()->GetInfo();
+  const bool has_qcom = ::ml_drift::cl::IsQcomCommandBufferSupported(device);
+  const bool has_khr = gpu_info.SupportsExtension("cl_khr_command_buffer") &&
+                       ::ml_drift::cl::clCreateCommandBufferKHR != nullptr;
+
+  if (!has_qcom && !has_khr) {
+    return false;
+  }
+  if (force_convert_command_buffer_) {
+    return true;
+  }
+  if (has_qcom) {
+    return true;
+  }
+  auto caps =
+      ::ml_drift::cl::GetDeviceInfo<cl_device_command_buffer_capabilities_khr>(
+          device.id(), CL_DEVICE_COMMAND_BUFFER_CAPABILITIES_KHR);
+  if (!(caps & CL_COMMAND_BUFFER_CAPABILITY_SIMULTANEOUS_USE_KHR)) {
+    return false;
+  }
+  if (gpu_info.IsPowerVR()) {
+    return gpu_info.powervr_info.driver_version.IsHigherOrEqual(
+        ::ml_drift::PowerVRInfo::DriverVersion{25, 3, 6908880});
+  }
+  return false;
+}
+
+namespace {
+
+template <typename BaseBatchT>
+class GpuConvertBatchOpenCl : public BaseBatchT {
+ public:
+  GpuConvertBatchOpenCl(::ml_drift::cl::Environment* env,
+                        std::unique_ptr<::ml_drift::cl::CommandBuffer> cb)
+      : env_(env), cb_(std::move(cb)) {}
+
+  absl::Status Dispatch() override {
+    return cb_->Enqueue(env_->queue(), /*event=*/nullptr);
+  }
+
+ private:
+  ::ml_drift::cl::Environment* const env_;
+  std::unique_ptr<::ml_drift::cl::CommandBuffer> cb_;
+};
+
+absl::StatusOr<std::unique_ptr<::ml_drift::cl::CommandBuffer>>
+CreateOpenClCommandBuffer(::ml_drift::cl::Environment* env) {
+  if (::ml_drift::cl::IsQcomCommandBufferSupported(env->device())) {
+    return ::ml_drift::cl::CreateQcomCommandBuffer(env->device(),
+                                                   env->context());
+  }
+  if (::ml_drift::cl::clCreateCommandBufferKHR == nullptr) {
+    return absl::UnavailableError(
+        "OpenCL command buffer function pointer is null.");
+  }
+  auto cl_cb = std::make_unique<::ml_drift::cl::CLCommandBuffer>();
+  ABSL_RETURN_IF_ERROR(cl_cb->Init(env->queue(), /*simultaneous_use=*/true));
+  return cl_cb;
+}
+
+template <typename BatchT, typename ItemT, typename SupportsCbFn,
+          typename ValidateItemFn, typename AddItemFn>
+absl::StatusOr<std::unique_ptr<BatchT>> CreateOpenClConvertBatch(
+    ::ml_drift::cl::Environment* env, absl::Span<const ItemT> items,
+    SupportsCbFn supports_cb, ValidateItemFn validate_item,
+    AddItemFn add_item) {
+  if (items.size() <= 1) {
+    return nullptr;
+  }
+  for (const ItemT& item : items) {
+    if (!validate_item(item)) {
+      return absl::InvalidArgumentError("Convert batch item has null field.");
+    }
+  }
+  if (!supports_cb()) {
+    return nullptr;
+  }
+  absl::StatusOr<std::unique_ptr<::ml_drift::cl::CommandBuffer>>
+      command_buffer = CreateOpenClCommandBuffer(env);
+  if (!command_buffer.ok() || *command_buffer == nullptr) {
+    return nullptr;
+  }
+  std::unique_ptr<::ml_drift::cl::CommandBuffer> cb =
+      std::move(*command_buffer);
+  for (const ItemT& item : items) {
+    if (!add_item(*cb, item).ok()) {
+      return nullptr;
+    }
+  }
+  if (!cb->Finalize().ok()) {
+    return nullptr;
+  }
+  return std::make_unique<GpuConvertBatchOpenCl<BatchT>>(env, std::move(cb));
+}
+
+}  // namespace
+
+absl::StatusOr<std::unique_ptr<GpuPackBatch>> GpuBackendOpenCl::CreatePackBatch(
+    absl::Span<const InputPackItem> items) {
+  return CreateOpenClConvertBatch<GpuPackBatch>(
+      env_, items, [this]() { return SupportsConvertCommandBuffer(); },
+      [](const InputPackItem& item) {
+        return item.converter != nullptr && item.src_buffer != nullptr &&
+               item.dst_tensor != nullptr;
+      },
+      [](::ml_drift::cl::CommandBuffer& cb, const InputPackItem& item) {
+        auto* cl_conv =
+            static_cast<Buffer2TensorConverterOpenCl*>(item.converter);
+        return cl_conv->AddToCommandBuffer(&cb, *item.src_buffer,
+                                           *item.dst_tensor);
+      });
+}
+
+absl::StatusOr<std::unique_ptr<GpuUnpackBatch>>
+GpuBackendOpenCl::CreateUnpackBatch(absl::Span<const OutputUnpackItem> items) {
+  return CreateOpenClConvertBatch<GpuUnpackBatch>(
+      env_, items, [this]() { return SupportsConvertCommandBuffer(); },
+      [](const OutputUnpackItem& item) {
+        return item.converter != nullptr && item.src_tensor != nullptr &&
+               item.dst_buffer != nullptr;
+      },
+      [](::ml_drift::cl::CommandBuffer& cb, const OutputUnpackItem& item) {
+        auto* cl_conv =
+            static_cast<Tensor2BufferConverterOpenCl*>(item.converter);
+        return cl_conv->AddToCommandBuffer(&cb, *item.src_tensor,
+                                           *item.dst_buffer);
+      });
+}
+
 Buffer2TensorConverterOpenCl::Buffer2TensorConverterOpenCl(
     ::ml_drift::cl::Environment* env,
     std::unique_ptr<::ml_drift::cl::BHWCBufferToTensorConverter> converter)
@@ -748,6 +891,14 @@ absl::Status Buffer2TensorConverterOpenCl::Convert(
     GpuIOBuffer& src_buffer, ::ml_drift::GpuSpatialTensor& dst_tensor) {
   return converter_->ConvertExplicit(
       env_->queue(), &(static_cast<GpuIOBufferOpenCl&>(src_buffer).cl_buffer()),
+      static_cast<::ml_drift::cl::Tensor*>(&dst_tensor));
+}
+
+absl::Status Buffer2TensorConverterOpenCl::AddToCommandBuffer(
+    ::ml_drift::cl::CommandBuffer* cb, GpuIOBuffer& src_buffer,
+    ::ml_drift::GpuSpatialTensor& dst_tensor) {
+  return converter_->AddToCommandBuffer(
+      cb, &(static_cast<GpuIOBufferOpenCl&>(src_buffer).cl_buffer()),
       static_cast<::ml_drift::cl::Tensor*>(&dst_tensor));
 }
 
