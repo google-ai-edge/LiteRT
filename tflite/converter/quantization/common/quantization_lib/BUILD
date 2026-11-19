@@ -26,6 +26,8 @@ package(
     # "//platforms/darwinn/compiler:__subpackages__",
     # "//third_party/odml/litert:__subpackages__",
     # "@org_tensorflow//tensorflow:__subpackages__",
+    # "//waymo/accelerator/alpine/compiler/compute/transforms:__pkg__",
+    # "//waymo/accelerator/alpine/compiler/conversion:__pkg__",
     # ],
     # copybara:uncomment_end_and_comment_begin
     default_visibility = [
@@ -87,10 +89,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
-        "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
         "@org_tensorflow//tensorflow/compiler/mlir/tools/optimize:quantization_utils",
-        "@org_tensorflow//tensorflow/core:lib_proto_parsing",
-        "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
 
@@ -99,6 +98,7 @@ tf_cc_test(
     srcs = ["quantization_driver_test.cc"],
     deps = [
         ":quantization_lib",
+        ":tfl_quantization_driver",
         "//tflite/converter/quantization/common:test_base",
         "//tflite/converter/quantization/ir:QuantOps",
         "@com_google_absl//absl/strings:string_view",
@@ -154,6 +154,32 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings",
         "@llvm-project//llvm:Support",
+    ],
+)
+
+cc_library(
+    name = "tf_quantization_config",
+    srcs = [
+        "tf_quantization_config.cc",
+    ],
+    hdrs = [
+        "tf_quantization_config.h",
+    ],
+    deps = [
+        ":quantization_config",
+        "@com_google_absl//absl/strings",
+        "@llvm-project//llvm:Support",
+        "@org_tensorflow//tensorflow/core:protos_all_cc",
+    ],
+)
+
+tf_cc_test(
+    name = "tf_quantization_config_test",
+    srcs = ["tf_quantization_config_test.cc"],
+    deps = [
+        ":quantization_config",
+        ":tf_quantization_config",
+        "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
