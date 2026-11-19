@@ -600,6 +600,20 @@ LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
                                              const char** dsp_skel_dir);
 
+// model_version — user-defined ASCII string stored in the DLC metadata.
+// Only first 64 bytes are stored. Only effective when backend is IR.
+LiteRtStatus LrtQualcommOptionsSetModelVersion(LrtQualcommOptions options,
+                                               const char* model_version);
+LiteRtStatus LrtQualcommOptionsGetModelVersion(LrtQualcommOptions options,
+                                               const char** model_version);
+
+// copyright — copyright text to embed in the DLC metadata.
+// Only effective when backend is IR.
+LiteRtStatus LrtQualcommOptionsSetCopyright(LrtQualcommOptions options,
+                                            const char* copyright);
+LiteRtStatus LrtQualcommOptionsGetCopyright(LrtQualcommOptions options,
+                                            const char** copyright);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
