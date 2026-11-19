@@ -52,6 +52,9 @@ struct LiteRtNvidiaHcMixParams {
   float down_scale;
   float eps;
   int32_t int4;
+  // The rows of an extra projection of the normed streams (0 to 16), for
+  // LiteRtNvidiaLaunchHcMixExtra.
+  int32_t extra;
 };
 
 extern "C" bool LiteRtNvidiaHcMixSupports(const LiteRtNvidiaHcMixParams* p);
@@ -60,6 +63,17 @@ extern "C" size_t LiteRtNvidiaHcMixWorkspaceBytes(
     const LiteRtNvidiaHcMixParams* p);
 
 extern "C" size_t LiteRtNvidiaHcMixStateBytes();
+
+// The same, and an extra projection of the normed streams in the same
+// launch (the combine's injection weights, which read them too):
+//   extra = w_extra . normed     w_extra [p->extra, streams * hidden] in the
+//           weights' type, extra [rows, p->extra] BF16
+extern "C" cudaError_t LiteRtNvidiaLaunchHcMixExtra(
+    const LiteRtNvidiaHcMixParams* p, const __nv_bfloat16* x,
+    const float* norm_weight, const void* w_down, const __half* down_scales,
+    const void* w_up, const __half* up_scales, const void* w_extra,
+    const __half* extra_scales, __nv_bfloat16* mixed, __nv_bfloat16* normed,
+    __nv_bfloat16* extra, void* state, void* workspace, cudaStream_t stream);
 
 extern "C" cudaError_t LiteRtNvidiaLaunchHcMix(
     const LiteRtNvidiaHcMixParams* p, const __nv_bfloat16* x,
