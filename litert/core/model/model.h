@@ -1457,11 +1457,12 @@ void AbslStringify(Sink& sink, const LiteRtTensorT& tensor) {
 template <class Sink>
 void AbslStringify(Sink& sink, const std::vector<LiteRtTensor>& tensors) {
   sink.Append("(");
-  for (auto it = tensors.begin(); it < tensors.end() - 1; ++it) {
-    sink.Append(absl::StrCat(**it));
-    sink.Append(",");
+  for (size_t i = 0; i < tensors.size(); ++i) {
+    if (i > 0) {
+      sink.Append(",");
+    }
+    sink.Append(absl::StrCat(*tensors[i]));
   }
-  sink.Append(absl::StrCat(*tensors.back()));
   sink.Append(")");
 }
 
