@@ -747,10 +747,6 @@ INTEL_OPENVINO_SOC_MODELS = {
 litert_define_ats(
     name = "intel_openvino_compile_ats",
     aot_shard_count = 32,
-    aot_tags = [
-        "manual",
-        "notap",
-    ],
     backend = "intel_openvino",
     dont_register = INTEL_OPENVINO_DONT_REGISTER,
     mode = "compile_only",
@@ -768,10 +764,6 @@ litert_define_ats(
 litert_define_ats(
     name = "intel_openvino_aot_ats",
     aot_shard_count = 32,
-    aot_tags = [
-        "manual",
-        "notap",
-    ],
     backend = "intel_openvino",
     dont_register = INTEL_OPENVINO_DONT_REGISTER + INTEL_OPENVINO_RUN_DONT_REGISTER,
     mode = "aot",
