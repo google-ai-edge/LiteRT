@@ -74,8 +74,10 @@
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
+#include "litert/vendors/nvidia/compiler/hyper_connection_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/ple_tail_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
@@ -4642,6 +4644,8 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
     litert::nvidia::EnsureGatedDeltaPluginsRegistered();
+    litert::nvidia::EnsureHyperConnectionPluginRegistered();
+    litert::nvidia::EnsurePleTailPluginRegistered();
     litert::nvidia::EnsureInt8CacheWritePluginRegistered();
     litert::nvidia::EnsureMoePluginRegistered();
     litert::nvidia::EnsureQkvNormRopePluginRegistered();

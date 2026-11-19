@@ -42,6 +42,7 @@ cuda_library(
         "hyper_connection.cu",
         "int2_gemv.cu",
         "int4_block_gemv.cu",
+        "ple_tail.cu",
         "qkv_norm_rope.cu",
         "quant_cache.cu",
         "quant_gemm.cu",
@@ -60,6 +61,7 @@ cuda_library(
         "int2_gemv.h",
         "int4_block_gemv.cuh",
         "int4_block_gemv.h",
+        "ple_tail.h",
         "qkv_norm_rope.h",
         "quant_cache.h",
         "quant_gemm.h",
@@ -100,6 +102,7 @@ cc_library(
         "hyper_connection.h",
         "int2_gemv.h",
         "int4_block_gemv.h",
+        "ple_tail.h",
         "qkv_norm_rope.h",
         "quant_cache.h",
         "quant_gemm.h",
@@ -260,6 +263,28 @@ cc_test(
 cc_test(
     name = "hyper_connection_test",
     srcs = ["hyper_connection_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "ple_tail_test",
+    srcs = ["ple_tail_test.cc"],
     tags = [
         "exclusive",
         "manual",
