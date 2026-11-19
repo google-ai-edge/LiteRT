@@ -104,6 +104,18 @@ constexpr bool kForceCompletion = true;
 constexpr bool kForceCompletion = false;
 #endif
 
+// Returns true if `tensor_idx` is a float tensor that the delegate added for
+// the dequantized values of a quantized tensor. `quant_conversion_map` maps
+// these float tensors to their original quantized tensors and back, so the
+// original tensors (which parsers can retag inputs and outputs to, e.g., for
+// raw INT8 queries and quantized KV caches) are also keys of the map.
+bool IsDequantizedTensor(
+    const TfLiteContext* context, int64_t tensor_idx,
+    const absl::flat_hash_map<int, int>& quant_conversion_map) {
+  return quant_conversion_map.contains(static_cast<int>(tensor_idx)) &&
+         context->tensors[tensor_idx].type == kTfLiteFloat32;
+}
+
 }  // namespace
 
 DelegateKernel::~DelegateKernel() {
@@ -142,15 +154,18 @@ absl::Status DelegateKernel::GetRequiredTemporaries(
     TfLiteIntArray** temporaries_array_ptr) {
   if (!HasQuantizedTensors()) return absl::OkStatus();
 
+  // Only the dequantized float tensors are temporaries of the delegate node.
+  // Inputs and outputs retagged to their original quantized tensors are graph
+  // tensors whose lifetime the arena planner must keep.
   std::vector<int> temporary_tensors;
   temporary_tensors.reserve(input_indices_.size() + output_indices_.size());
   for (auto index : input_indices_) {
-    if (quant_conversion_map_.find(index) != quant_conversion_map_.end()) {
+    if (IsDequantizedTensor(context, index, quant_conversion_map_)) {
       temporary_tensors.push_back(index);
     }
   }
   for (auto index : output_indices_) {
-    if (quant_conversion_map_.find(index) != quant_conversion_map_.end()) {
+    if (IsDequantizedTensor(context, index, quant_conversion_map_)) {
       temporary_tensors.push_back(index);
     }
   }

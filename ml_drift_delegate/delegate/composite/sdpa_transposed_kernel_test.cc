@@ -1473,7 +1473,7 @@ absl::Status RunSdpaTransposedInt8KvTest(
     uint64_t max_decomposed_score_bytes = kMaxDecomposedSdpaScoreBytes,
     uint64_t max_decomposed_score_chunk_bytes =
         kMaxDecomposedSdpaScoreChunkBytes,
-    int expected_score_chunks = 0) {
+    int expected_score_chunks = 0, bool float16_output = false) {
   constexpr float kScaleK = 0.01f;
   constexpr float kScaleV = 0.02f;
   if (flatten_output && T != 1) {
@@ -1506,7 +1506,9 @@ absl::Status RunSdpaTransposedInt8KvTest(
   } else if (mask_mode == MaskMode::kFloatAdditive) {
     auto mask_float = builder.AddTensor(mask_shape, datatype);
     mask_feed_handle = mask_float;
-    mask_handle = mask_float;
+    mask_handle = float16_output
+                      ? builder.Cast(mask_float, ::ml_drift::DataType::kFloat16)
+                      : mask_float;
   }
 
   ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
@@ -1547,13 +1549,15 @@ absl::Status RunSdpaTransposedInt8KvTest(
   const ::ml_drift::BHWC out_shape = flatten_output
                                          ? ::ml_drift::BHWC(1, 1, 1, BK * H)
                                          : ::ml_drift::BHWC(1, BK, T, H);
-  auto out_tensor = builder.AddTensor(out_shape, datatype);
+  auto out_tensor = builder.AddTensor(
+      out_shape, float16_output ? ::ml_drift::DataType::kFloat16 : datatype);
 
   // The attributes the parsers build for int8 K/V caches.
   SdpaTransposedAttributes attr;
   attr.runtime_check.src_end_ch_index = 2;
   attr.from_cache_update = true;
   attr.is_prefill = (T > 1);
+  attr.kv_cache_dtype = ::ml_drift::DataType::kInt8;
   attr.bmm1_weights.weights_shape = ::ml_drift::OHWI(S, KV, 1, H);
   attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
       ::ml_drift::DataType::kUint8, attr.bmm1_weights.weights_shape);
@@ -1562,12 +1566,8 @@ absl::Status RunSdpaTransposedInt8KvTest(
   attr.bmm2_weights.weights_shape = ::ml_drift::OHWI(H, KV, 1, S);
   attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
       ::ml_drift::DataType::kUint8, attr.bmm2_weights.weights_shape);
-  attr.scale_k.emplace();
-  attr.scale_k->shape = ::ml_drift::Linear(S);
-  attr.scale_k->data = std::vector<float>(S, kScaleK);
-  attr.scale_v.emplace();
-  attr.scale_v->shape = ::ml_drift::Linear(H);
-  attr.scale_v->data = std::vector<float>(H, kScaleV);
+  attr.scale_k = kScaleK;
+  attr.scale_v = kScaleV;
 
   std::vector<uint32_t> graph_input_ids = {q.id, k.id, v.id};
   if (mask_handle.has_value()) {
@@ -1721,6 +1721,311 @@ TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenInt8KvGqaScoreChunks) {
       /*H=*/64, mask_mode(), /*KV=*/2, /*flatten_output=*/false,
       /*max_decomposed_score_bytes=*/0,
       /*max_decomposed_score_chunk_bytes=*/0, /*expected_score_chunks=*/4);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+// Runs `CreateAddValuesToCacheFromNode` with packed INT4 K/V caches into
+// `BuildSdpaTransposedGpuGraph`, optionally feeding a symmetric per-tensor INT8
+// query (`int8_query = true`) and bounding `active_tokens < S`.
+absl::Status RunSdpaTransposedInt4KvTest(
+    ::ml_drift::TestExecutionEnvironment& env,
+    ::ml_drift::CalculationsPrecision precision,
+    ::ml_drift::TensorStorageType storage, int BK, int T, int S, int H,
+    MaskMode mask_mode, int KV, bool flatten_output = false,
+    bool int8_query = false, int active_tokens = 0,
+    uint64_t max_decomposed_score_bytes = kMaxDecomposedSdpaScoreBytes,
+    uint64_t max_decomposed_score_chunk_bytes =
+        kMaxDecomposedSdpaScoreChunkBytes,
+    int expected_score_chunks = 0, bool float16_output = false) {
+  if (active_tokens <= 0) active_tokens = S;
+  const ::ml_drift::DataType datatype =
+      ::ml_drift::DeduceDataTypeFromPrecision(precision);
+  ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision, storage);
+
+  constexpr float kScaleK = 0.125f;
+  constexpr float kScaleV = 0.125f;
+  const float scale_q =
+      0.0625f / std::sqrt(static_cast<float>(H));
+
+  auto q_feed = builder.AddTensor(::ml_drift::BHWC(1, BK, T, H), datatype);
+  auto q = q_feed;
+  if (int8_query) {
+    auto q_int8 = builder.AddTensor(
+        1, BK, T, H, ::ml_drift::TensorStorageType::kBuffer,
+        ::ml_drift::DataType::kInt8);
+    auto q_cast = builder.Cast(q_feed, ::ml_drift::DataType::kInt8);
+    ABSL_RETURN_IF_ERROR(builder.UpdateOutputTensor(q_cast, q_int8.id));
+    q = q_int8;
+  }
+
+  auto src_k = builder.AddTensor(::ml_drift::BHWC(1, KV, S, H), datatype);
+  auto src_v = builder.AddTensor(::ml_drift::BHWC(1, KV, S, H), datatype);
+  // Packed INT4 caches store 2 nibbles per byte -> half head_dim in kUint8.
+  auto k = builder.AddTensor(1, KV, S, H / 2,
+                             ::ml_drift::TensorStorageType::kBuffer,
+                             ::ml_drift::DataType::kUint8);
+  auto v = builder.AddTensor(1, KV, H / 2, S,
+                             ::ml_drift::TensorStorageType::kBuffer,
+                             ::ml_drift::DataType::kUint8);
+
+  std::optional<::ml_drift::GpuModelBuilder::TensorHandle> mask_handle;
+  std::optional<::ml_drift::GpuModelBuilder::TensorHandle> mask_feed_handle;
+  ::ml_drift::BHWC mask_shape(1, 1, T, S);
+  if (mask_mode == MaskMode::kBool) {
+    auto mask_float = builder.AddTensor(mask_shape, datatype);
+    mask_feed_handle = mask_float;
+    mask_handle = builder.Cast(mask_float, ::ml_drift::DataType::kBool);
+  } else if (mask_mode == MaskMode::kFloatAdditive) {
+    auto mask_float = builder.AddTensor(mask_shape, datatype);
+    mask_feed_handle = mask_float;
+    mask_handle = float16_output
+                      ? builder.Cast(mask_float, ::ml_drift::DataType::kFloat16)
+                      : mask_float;
+  }
+
+  ::ml_drift::Tensor<::ml_drift::StrongShape<::ml_drift::Layout::kBHWC>,
+                     ::ml_drift::DataType::kInt32>
+      param_tensor_cpu;
+  param_tensor_cpu.shape = ::ml_drift::BHWC(1, 1, 1, 7);
+  param_tensor_cpu.data = {0, S, active_tokens, 0, 0, 0, 0};
+
+  ::ml_drift::TensorDescriptor param_desc(
+      ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kBHWC);
+  param_desc.UploadData(param_tensor_cpu);
+  auto param_tensor = builder.AddConstantTensor(std::move(param_desc));
+
+  ::ml_drift::OperationDef cache_op_def;
+  cache_op_def.src_tensors = {src_k.tensor_desc, src_v.tensor_desc,
+                              param_tensor.tensor_desc};
+  cache_op_def.dst_tensors = {k.tensor_desc, v.tensor_desc};
+  AddValuesToCacheAttributes cache_attr;
+  cache_attr.kv_cache_batch_size = KV;
+  cache_attr.cache_size = S;
+  cache_attr.head_size = H;
+  cache_attr.kv_cache_dtype = ::ml_drift::DataType::kInt4;
+  cache_attr.scale_k = kScaleK;
+  cache_attr.scale_v = kScaleV;
+  ::ml_drift::ir::IrOp cache_ir_op(::ml_drift::ir::IrOpId{0});
+  cache_ir_op.name = kAddValuesToCacheType;
+  cache_ir_op.attr = cache_attr;
+  ABSL_ASSIGN_OR_RETURN(
+      std::unique_ptr<::ml_drift::GPUOperation> cache_op,
+      CreateAddValuesToCacheFromNode(cache_op_def, cache_ir_op));
+  builder.AddGpuOperation({src_k, src_v, param_tensor}, {k, v},
+                          std::move(cache_op), kAddValuesToCacheType);
+
+  const ::ml_drift::BHWC out_shape = flatten_output
+                                         ? ::ml_drift::BHWC(1, 1, 1, BK * H)
+                                         : ::ml_drift::BHWC(1, BK, T, H);
+  auto out_tensor = builder.AddTensor(
+      out_shape, float16_output ? ::ml_drift::DataType::kFloat16 : datatype);
+
+  SdpaTransposedAttributes attr;
+  attr.runtime_check.src_end_ch_index = 2;
+  attr.from_cache_update = true;
+  attr.is_prefill = (T > 1);
+  attr.kv_cache_dtype = ::ml_drift::DataType::kInt4;
+  if (int8_query) {
+    attr.scale_q = scale_q;
+  }
+  attr.bmm1_weights.weights_shape = ::ml_drift::OHWI(S, KV, 1, H);
+  attr.bmm1_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      ::ml_drift::DataType::kUint8, attr.bmm1_weights.weights_shape);
+  attr.bmm1_weights.desc.layout =
+      ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4;
+  attr.bmm2_weights.weights_shape = ::ml_drift::OHWI(H, KV, 1, S);
+  attr.bmm2_weights.desc = ::ml_drift::GetFullyConnectedWeightsDesc(
+      ::ml_drift::DataType::kUint8, attr.bmm2_weights.weights_shape);
+  attr.scale_k = kScaleK;
+  attr.scale_v = kScaleV;
+
+  std::vector<uint32_t> graph_input_ids = {q.id, k.id, v.id};
+  if (mask_handle.has_value()) {
+    graph_input_ids.push_back(mask_handle->id);
+  }
+  graph_input_ids.push_back(param_tensor.id);
+
+  ABSL_RETURN_IF_ERROR(BuildSdpaTransposedGpuGraph(
+      graph_input_ids, out_tensor.id, attr, &builder,
+      max_decomposed_score_bytes, max_decomposed_score_chunk_bytes));
+
+  std::vector<std::pair<uint32_t, uint32_t>> model_inputs = {
+      {q_feed.id, 0}, {src_k.id, 1}, {src_v.id, 2}};
+  if (mask_feed_handle.has_value()) {
+    model_inputs.push_back({mask_feed_handle->id, 3});
+  }
+
+  ::ml_drift::GpuModel gpu_model;
+  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+      model_inputs,
+      std::vector<std::pair<uint32_t, uint32_t>>{{out_tensor.id, 0}},
+      &gpu_model));
+  ABSL_RETURN_IF_ERROR(
+      CheckDecomposedSdpaScoreChunks(gpu_model, expected_score_chunks));
+
+  // Query values: when `int8_query` is true, feed exact integer values in
+  // [-64, 63] to `q_feed` and compare against `q_int * scale_q`.
+  std::vector<float> q_feed_data(BK * T * H, 0.0f);
+  std::vector<float> q_ref_data(BK * T * H, 0.0f);
+  for (int bk = 0; bk < BK; ++bk) {
+    for (int t = 0; t < T; ++t) {
+      for (int h = 0; h < H; ++h) {
+        const int idx = (bk * T + t) * H + h;
+        const int q_int = ((bk * 7 + t * 5 + h * 3) % 41) - 20;
+        if (int8_query) {
+          q_feed_data[idx] = static_cast<float>(q_int);
+          q_ref_data[idx] = static_cast<float>(q_int) * scale_q;
+        } else {
+          const float val = static_cast<float>(q_int) * scale_q;
+          q_feed_data[idx] = val;
+          q_ref_data[idx] = val;
+        }
+      }
+    }
+  }
+
+  // K and V values are exact signed INT4 multiples in [-8, 7] * scale so the
+  // INT4 cache quantization + unpack to INT8 is bit-exact.
+  std::vector<float> k_data(KV * S * H, 0.0f);
+  std::vector<float> src_v_data(KV * S * H, 0.0f);
+  std::vector<float> v_data(KV * H * S, 0.0f);
+  for (int kvh = 0; kvh < KV; ++kvh) {
+    for (int s = 0; s < S; ++s) {
+      for (int h = 0; h < H; ++h) {
+        const int k_idx = (kvh * S + s) * H + h;
+        const int v_idx = (kvh * H + h) * S + s;
+        const int k_int4 = ((kvh * 5 + s * 3 + h) % 16) - 8;
+        const int v_int4 = ((kvh * 3 + s * 7 + h * 2) % 16) - 8;
+        k_data[k_idx] = kScaleK * static_cast<float>(k_int4);
+        const float v_value = kScaleV * static_cast<float>(v_int4);
+        src_v_data[k_idx] = v_value;
+        v_data[v_idx] = v_value;
+      }
+    }
+  }
+
+  const int q_start = (T == 1) ? (active_tokens - 1) : 0;
+  std::vector<float> mask_data(T * S, 0.0f);
+  if (mask_mode == MaskMode::kBool) {
+    for (int t = 0; t < T; ++t) {
+      for (int s = 0; s < S; ++s) {
+        const bool unmasked =
+            (s < active_tokens) &&
+            ((T == 1) ? (s == 0 || s % 4 != 3) : (s <= t + q_start));
+        mask_data[t * S + s] = unmasked ? 1.0f : 0.0f;
+      }
+    }
+  } else if (mask_mode == MaskMode::kFloatAdditive) {
+    for (int t = 0; t < T; ++t) {
+      for (int s = 0; s < S; ++s) {
+        const bool unmasked =
+            (s < active_tokens) &&
+            ((T == 1) ? (s == 0 || s % 4 != 3) : (s <= t + q_start));
+        mask_data[t * S + s] =
+            unmasked ? -0.25f * static_cast<float>((t + s) % 4) : -10000.0f;
+      }
+    }
+  }
+
+  std::vector<float> expected_out_data = ComputeSdpaReferenceOutput(
+      q_ref_data, k_data, v_data, mask_data, BK, T, S, H, mask_mode, KV,
+      q_start, /*implicit_causal=*/false, active_tokens);
+
+  ::ml_drift::TensorFloat32 q_tensor;
+  q_tensor.shape = q_feed.tensor_desc.GetBHWCShape();
+  q_tensor.data = q_feed_data;
+
+  ::ml_drift::TensorFloat32 src_k_tensor;
+  src_k_tensor.shape = src_k.tensor_desc.GetBHWCShape();
+  src_k_tensor.data = k_data;
+
+  ::ml_drift::TensorFloat32 src_v_tensor;
+  src_v_tensor.shape = src_v.tensor_desc.GetBHWCShape();
+  src_v_tensor.data = src_v_data;
+
+  std::vector<::ml_drift::TensorFloat32> src_cpu = {q_tensor, src_k_tensor,
+                                                    src_v_tensor};
+  if (mask_mode != MaskMode::kNone) {
+    ::ml_drift::TensorFloat32 mask_tensor;
+    mask_tensor.shape = mask_shape;
+    mask_tensor.data = mask_data;
+    src_cpu.push_back(mask_tensor);
+  }
+
+  ::ml_drift::TensorFloat32 out_tensor_cpu;
+  out_tensor_cpu.shape = out_shape;
+  out_tensor_cpu.data.resize(BK * T * H);
+  std::vector<::ml_drift::TensorFloat32*> dst_cpu = {&out_tensor_cpu};
+
+  ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(src_cpu, dst_cpu, &gpu_model));
+
+  const float tolerance = (H > 16) ? 1.5e-2f : 2e-3f;
+  constexpr float kRelativeTolerance = 4e-3f;
+  EXPECT_THAT(out_tensor_cpu.data,
+              testing::Pointwise(FloatNearWithRelativeTolerance(
+                                     tolerance, kRelativeTolerance),
+                                 expected_out_data));
+  return absl::OkStatus();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest, SingleTokenDecodeInt4KvGqa) {
+  auto status = RunSdpaTransposedInt4KvTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/64,
+      /*H=*/256, mask_mode(), /*KV=*/2, /*flatten_output=*/true,
+      /*int8_query=*/false,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), /*filled=*/20,
+                                           /*cache_size=*/64));
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenInt4KvGqa) {
+  auto status = RunSdpaTransposedInt4KvTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/4, /*S=*/64,
+      /*H=*/256, mask_mode(), /*KV=*/2, /*flatten_output=*/false,
+      /*int8_query=*/false,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), /*filled=*/20,
+                                           /*cache_size=*/64));
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest,
+       SingleTokenDecodeInt8QueryInt4KvGqaScoreChunks) {
+  auto status = RunSdpaTransposedInt4KvTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/1, /*S=*/16,
+      /*H=*/64, mask_mode(), /*KV=*/2, /*flatten_output=*/true,
+      /*int8_query=*/true, /*active_tokens=*/16,
+      /*max_decomposed_score_bytes=*/0,
+      /*max_decomposed_score_chunk_bytes=*/0, /*expected_score_chunks=*/4);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest, PrefillMultiTokenInt8QueryInt4KvGqa) {
+  auto status = RunSdpaTransposedInt4KvTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/4, /*S=*/32,
+      /*H=*/256, mask_mode(), /*KV=*/2, /*flatten_output=*/false,
+      /*int8_query=*/true);
+  EXPECT_TRUE(status.ok()) << status.message();
+}
+
+TEST_P(SdpaTransposedKernelExecuteTest,
+       Float32QueryFloat16OutputInt4KvGqa) {
+  if (precision() != ::ml_drift::CalculationsPrecision::kF32) {
+    GTEST_SKIP() << "Output already matches query precision.";
+  }
+  if (!exec_env->IsStorageSupported(storage(),
+                                    ::ml_drift::DataType::kFloat16)) {
+    GTEST_SKIP() << "FLOAT16 tensors are not supported.";
+  }
+  auto status = RunSdpaTransposedInt4KvTest(
+      *exec_env, precision(), storage(), /*BK=*/8, /*T=*/4, /*S=*/64,
+      /*H=*/256, mask_mode(), /*KV=*/2, /*flatten_output=*/false,
+      /*int8_query=*/false,
+      /*active_tokens=*/FilledCacheEntries(mask_mode(), /*filled=*/20,
+                                           /*cache_size=*/64),
+      /*max_decomposed_score_bytes=*/kMaxDecomposedSdpaScoreBytes,
+      /*max_decomposed_score_chunk_bytes=*/kMaxDecomposedSdpaScoreChunkBytes,
+      /*expected_score_chunks=*/0, /*float16_output=*/true);
   EXPECT_TRUE(status.ok()) << status.message();
 }
 

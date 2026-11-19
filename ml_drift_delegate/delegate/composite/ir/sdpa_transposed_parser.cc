@@ -62,6 +62,8 @@ absl::Status SdpaTransposedIsSupported(
     return absl::InvalidArgumentError("SDPA transposed expects 1 output.");
   }
 
+  ABSL_RETURN_IF_ERROR(
+      CheckSdpaTransposedQueryAndOutputTypes(context, tflite_node));
   ABSL_RETURN_IF_ERROR(CheckSdpaTransposedKvCacheTypes(context, tflite_node));
 
   return absl::OkStatus();
@@ -100,15 +102,23 @@ void Reshape(::ml_drift::ir::IrModel* ir_model,
   return new_tensor_id;
 }
 
-// Makes the delegate hand the raw int8 cache bytes of `tensor_id` to the kernel
-// as a kUint8 tensor instead of its dequantized f32 shadow. Same trick as the
-// IR AddValuesToCache parser (TODO(b/482104479): allow native int8 tensors in
-// MLDrift).
-void RetagInt8CacheTensor(::ml_drift::ir::IrModel& ir_model,
-                          ::ml_drift::ir::IrTensorId tensor_id) {
+// Makes the delegate hand the raw int8/int4 cache bytes of `tensor_id` to the
+// kernel as a kUint8 tensor instead of its dequantized f32 shadow. For INT4
+// caches, halves the head_dim axis once via `PackInt4KvCacheShape`.
+void RetagQuantizedCacheTensor(::ml_drift::ir::IrModel& ir_model,
+                               ::ml_drift::ir::IrTensorId tensor_id,
+                               ::ml_drift::DataType kv_cache_dtype,
+                               int cache_ts_idx) {
+  auto* tensor = ir_model.GetMutableTensor(tensor_id);
+  if (tensor->desc.GetDataType() == ::ml_drift::DataType::kUint8) {
+    return;
+  }
   ir_model.ResetQuantParams(tensor_id);
-  ir_model.GetMutableTensor(tensor_id)->desc.SetDataType(
-      ::ml_drift::DataType::kUint8);
+  tensor->desc.SetDataType(::ml_drift::DataType::kUint8);
+  if (kv_cache_dtype == ::ml_drift::DataType::kInt4) {
+    tensor->desc.SetBHWCShape(::litert::ml_drift::PackInt4KvCacheShape(
+        tensor->desc.GetBHWCShape(), cache_ts_idx));
+  }
 }
 
 void SdpaTransposedConvert(
@@ -140,16 +150,40 @@ void SdpaTransposedConvert(
         &std::any_cast<const AddValuesToCacheAttributes&>(key_producer->attr);
   }
 
-  // INT8 K/V caches (checked to be both int8 or both float in IsSupported).
-  // Caches produced by odml.cache_update in this graph are already kUint8;
-  // other int8 caches are retagged here, before the merge-batch reshape copies
-  // their type.
+  // Quantized K/V caches (checked to be both INT8, both INT4, or both float in
+  // IsSupported). Caches produced by odml.cache_update in this graph are
+  // already kUint8 (with packed shape for INT4); external caches are retagged
+  // here, before the merge-batch reshape copies their type and shape.
+  const TfLiteTensor& q_tensor = context.tensors[tflite_node.inputs->data[0]];
   const TfLiteTensor& k_tensor = context.tensors[tflite_node.inputs->data[1]];
   const TfLiteTensor& v_tensor = context.tensors[tflite_node.inputs->data[2]];
+  // When a symmetric per-tensor INT8 query enters the GPU partition directly as
+  // a subgraph/partition input (no GPU producer), retag it to raw kInt8 so
+  // BuildSdpaTransposedGpuGraph dequantizes it on GPU via `scale_q` in both
+  // external and non-external tensor modes. IsSupported() checked that this
+  // node is its only consumer. Interior INT8 queries (with a GPU producer) stay
+  // kFloat32 and are scaled by TransformIrModel.
+  if (IsInt8Tensor(q_tensor) && ir_model.FindProducer(input0) == nullptr) {
+    ir_model.ResetQuantParams(input0);
+    ir_model.GetMutableTensor(input0)->desc.SetDataType(
+        ::ml_drift::DataType::kInt8);
+  }
   const bool int8_kv = IsInt8Tensor(k_tensor);
-  if (int8_kv && cache_update_attr == nullptr) {
-    RetagInt8CacheTensor(ir_model, input1);
-    RetagInt8CacheTensor(ir_model, input2);
+  const bool int4_kv = IsInt4Tensor(k_tensor);
+  const bool quant_kv = int8_kv || int4_kv;
+  const ::ml_drift::DataType kv_cache_dtype =
+      int4_kv ? ::ml_drift::DataType::kInt4
+              : (int8_kv ? ::ml_drift::DataType::kInt8
+                         : ::ml_drift::DataType::kUnknown);
+  // Quantized caches entering the GPU partition directly (IsSupported() checked
+  // that they are graph inputs or odml.cache_update outputs).
+  if (quant_kv && ir_model.FindProducer(input1) == nullptr) {
+    RetagQuantizedCacheTensor(ir_model, input1, kv_cache_dtype,
+                              /*cache_ts_idx=*/2);
+  }
+  if (quant_kv && ir_model.FindProducer(input2) == nullptr) {
+    RetagQuantizedCacheTensor(ir_model, input2, kv_cache_dtype,
+                              /*cache_ts_idx=*/3);
   }
 
   const auto q_shape = ir_model.tensor(input0)->desc.GetBHWCShape();
@@ -167,6 +201,11 @@ void SdpaTransposedConvert(
   }
 
   ::litert::ml_drift::SdpaTransposedAttributes attr;
+  if (IsInt8Tensor(q_tensor) &&
+      ir_model.tensor(q_val)->desc.GetDataType() ==
+          ::ml_drift::DataType::kInt8) {
+    attr.scale_q = GetAffineTensorScale(q_tensor);
+  }
   const bool has_param_tensor =
       (input3 != -1 && ir_model.tensor(input3)->desc.GetDataType() ==
                            ::ml_drift::DataType::kInt32) ||
@@ -180,10 +219,11 @@ void SdpaTransposedConvert(
     attr.from_cache_update = true;
   }
 
-  if (int8_kv) {
-    SetSdpaTransposedInt8KvCacheWeights(
+  if (quant_kv) {
+    SetSdpaTransposedQuantizedKvCacheWeights(
         k_tensor, v_tensor, ir_model.tensor(k_val)->desc.GetBHWCShape(),
-        ir_model.tensor(v_val)->desc.GetBHWCShape(), cache_update_attr, attr);
+        ir_model.tensor(v_val)->desc.GetBHWCShape(), kv_cache_dtype,
+        cache_update_attr, attr);
   } else {
     const ::ml_drift::BHWC right_shape_k =
         ir_model.tensor(k_val)->desc.GetBHWCShape();
@@ -222,9 +262,9 @@ void SdpaTransposedConvert(
       attr.is_causal = flexbuffer_map["is_causal"].AsBool();
     }
   }
-  // The int8 cache bytes are only meaningful in the packed layout written by
+  // Quantized cache bytes are only meaningful in the packed layout written by
   // odml.cache_update, which the FullyConnected external weights path reads.
-  if (int8_kv) {
+  if (quant_kv) {
     attr.from_cache_update = true;
   }
 
@@ -235,11 +275,11 @@ void SdpaTransposedConvert(
   // (key <= q_start + X) and the active KV cache bound (key < active_tokens)
   // directly in registers from input4 (params) when attr.is_causal is set, so
   // the BOOL mask is not needed. The decomposed BMM + SoftmaxReduce graph,
-  // which int8 K/V caches always take, still reads the mask, and
+  // which quantized K/V caches always take, still reads the mask, and
   // BuildSdpaTransposedGpuGraph rejects a pruned mask there.
   bool skip_bool_mask_for_flash_sdpa = false;
   if (options.gpu_info != nullptr && attr.is_causal && attr.from_cache_update &&
-      !int8_kv && input4 != -1 && input3 != -1 &&
+      !quant_kv && input4 != -1 && input3 != -1 &&
       ir_model.tensor(input3)->desc.GetDataType() ==
           ::ml_drift::DataType::kBool) {
     skip_bool_mask_for_flash_sdpa = ::litert::ml_drift::UsesFusedSdpaKernel(
