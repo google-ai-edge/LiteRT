@@ -1429,6 +1429,7 @@ objc_library(
 #         "//litert/cc:litert_common",
 #         "//litert/cc:litert_compiled_model",
 #         "//litert/cc:litert_environment",
+#         "//litert/cc:litert_expected",
 #         "//litert/cc:litert_options",
 #         "//litert/cc/options:litert_gpu_options",
 #         "//litert/runtime:external_litert_buffer_context",

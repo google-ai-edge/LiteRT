@@ -18,6 +18,7 @@
 #include <optional>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/operation_parser.h"
@@ -34,11 +35,14 @@ constexpr const char kFusedSdpaCacheUpdateType[] = "fused_sdpa_cache_update";
 // `odml.fused_sdpa_cache_update` attends over a ring-buffer KV cache *before*
 // this step's write plus the new tokens, and optionally writes the new tokens
 // into the ring buffer. The node consumes 7 inputs:
-//   0 query        [1, Hkv, G*T, D]  pre-scaled, query heads packed g-major.
-//   1 key_cache    [1, Hkv, W, D]    packed kOSpatialIOGroupO4I4 GPU layout.
-//   2 value_cache  [1, Hkv, D, W]    packed kOSpatialIOGroupI4O4 GPU layout.
-//   3 key_new      [1, Hkv, T, D]
-//   4 value_new    [1, Hkv, D, T]
+//   0 query        [1, Hkv, G*T, D]  pre-scaled, query heads packed g-major
+//                                    (float or symmetric per-tensor INT8).
+//   1 key_cache    [1, Hkv, W, D]    packed kOSpatialIOGroupO4I4 GPU layout
+//                                    (float, INT8, or packed INT4).
+//   2 value_cache  [1, Hkv, D, W]    packed kOSpatialIOGroupI4O4 GPU layout
+//                                    (float, INT8, or packed INT4).
+//   3 key_new      [1, Hkv, T, D]    float or symmetric per-tensor INT8.
+//   4 value_new    [1, Hkv, D, T]    float or symmetric per-tensor INT8.
 //   5 mask         [1, 1, T, W + T]  bool (true = attend) or additive float.
 //   6 param        int32, [0] = start position, [1] = end position.
 // and produces 1 (attention) or 3 (attention, key_cache', value_cache')
@@ -48,7 +52,34 @@ struct FusedSdpaCacheUpdateAttributes {
   std::optional<float> softcap;
   // True when the node has 3 outputs and must write the ring buffer.
   bool update_cache = false;
+  // Element type of symmetric per-tensor quantized KV caches: kInt8 or packed
+  // kInt4. kUnknown for float caches.
+  ::ml_drift::DataType kv_cache_dtype = ::ml_drift::DataType::kUnknown;
+  // Symmetric per-tensor dequantization scales, set only for raw INT8 inputs
+  // (`scale_q`, `scale_key_new`, `scale_value_new`) and quantized KV caches
+  // (`scale_k`, `scale_v`), as in `SdpaTransposedAttributes`.
+  std::optional<float> scale_q;
+  std::optional<float> scale_k;
+  std::optional<float> scale_v;
+  std::optional<float> scale_key_new;
+  std::optional<float> scale_value_new;
 };
+
+// Indicates which partition-boundary INT8 inputs were retagged to raw `kInt8`
+// without graph-level dequantization adjustments.
+struct RawInt8Inputs {
+  bool query = false;
+  bool key_new = false;
+  bool value_new = false;
+};
+
+// Populates `softcap`, `update_cache`, `kv_cache_dtype`, and quantization
+// scales from `tflite_node` and its input tensors.
+FusedSdpaCacheUpdateAttributes PopulateFusedSdpaCacheUpdateAttributes(
+    const TfLiteNode& tflite_node, const TfLiteTensor& q_tensor,
+    const TfLiteTensor& k_cache_tensor, const TfLiteTensor& v_cache_tensor,
+    const TfLiteTensor& k_new_tensor, const TfLiteTensor& v_new_tensor,
+    RawInt8Inputs raw_int8_inputs);
 
 class FusedSdpaCacheUpdateOperationParser : public TFLiteOperationParser {
  public:

@@ -209,13 +209,14 @@ cc_library(
     srcs = ["fused_sdpa_cache_update_parser.cc"],
     hdrs = ["fused_sdpa_cache_update_parser.h"],
     deps = [
+        "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
         "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
-        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
     ],
 )
@@ -541,9 +542,12 @@ cc_test(
         "//tflite:framework_stable",
         "//tflite/c:common",
         "//tflite/core/c:private_common",
+        "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 

@@ -955,6 +955,7 @@ cc_library(
     srcs = ["fused_sdpa_cache_update_parser.cc"],
     hdrs = ["fused_sdpa_cache_update_parser.h"],
     deps = [
+        ":add_values_to_cache_parser",
         "//ml_drift_delegate/tflite:model_builder_helper",
         "//ml_drift_delegate/tflite:object_reader",
         "//ml_drift_delegate/tflite:operation_parser",
@@ -963,7 +964,9 @@ cc_library(
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/strings",
         "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 
@@ -1075,9 +1078,12 @@ cc_library(
     hdrs = ["fused_sdpa_cache_update_kernel.h"],
     deps = [
         ":fused_sdpa_cache_update_parser",
+        ":sdpa_transposed_kernel",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model_builder",
@@ -1086,6 +1092,7 @@ cc_library(
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/task:gpu_operation",
@@ -1098,8 +1105,13 @@ cc_library(
 mld_kernel_test(
     name = "fused_sdpa_cache_update_kernel_test",
     srcs = ["fused_sdpa_cache_update_kernel_test.cc"],
-    platforms = ["opencl"],
+    platforms = [
+        "opencl",
+        "webgpu",
+    ],
     deps = [
+        ":add_values_to_cache_kernel",
+        ":add_values_to_cache_parser",
         ":fused_sdpa_cache_update_kernel",
         ":fused_sdpa_cache_update_parser",
         "@com_google_absl//absl/status",
@@ -1108,11 +1120,66 @@ mld_kernel_test(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
+    ],
+)
+
+objc_library(
+    name = "fused_sdpa_cache_update_kernel_test_objc_lib",
+    testonly = True,
+    srcs = [
+        "fused_sdpa_cache_update_kernel_test.cc",
+        "@ml_drift//ml_drift/common/kernels/tests:kernel_test.h",
+        "@ml_drift//ml_drift/common/kernels/tests:metal_kernel_test.mm",
+    ],
+    tags = [
+        "manual",
+        "nobuilder",
+        "notap",
+    ],
+    deps = [
+        ":add_values_to_cache_kernel",
+        ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_kernel",
+        ":fused_sdpa_cache_update_parser",
+        "@com_google_googletest//:gtest",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        # Dependency placeholder: apple_frameworks Metal,
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:testing_util",
+        "@ml_drift//ml_drift/metal/testing:test_util",
+    ],
+)
+
+cc_test(
+    name = "fused_sdpa_cache_update_kernel_test_mac",
+    tags = [
+        "mac",
+        "manual",
+        "nobuilder",
+        "notap",
+        "nozapfhahn",
+    ],
+    deps = [
+        ":fused_sdpa_cache_update_kernel_test_objc_lib",
     ],
 )
 
@@ -1408,6 +1475,7 @@ cc_test(
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_googletest//:gtest_main",
