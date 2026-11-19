@@ -236,6 +236,37 @@ class DynamicHistogramTensorTest(parameterized.TestCase):
     self.assertEqual(hist.global_min, 0.5)
     self.assertEqual(hist.global_max, 2.5)
 
+  def test_from_bins_matches_added_data(self):
+    expected = histogram_utils.DynamicHistogram(
+        max_tensor_bins=10, initial_bin_width=1.0
+    )
+    expected.add(np.array([0.5, 1.5, 1.7, 2.5]))
+    np.testing.assert_array_equal(expected.counts, [1, 3])
+
+    hist = histogram_utils.DynamicHistogram.from_bins(
+        counts=[1, 3],
+        lower_bound=0.5,
+        bin_width=1.0,
+        global_min=0.5,
+        global_max=2.5,
+        max_tensor_bins=10,
+    )
+
+    self.assertTrue(hist.initialized)
+    self.assertIsNone(hist.axis)
+    np.testing.assert_array_equal(hist.counts, expected.counts)
+    self.assertEqual(hist.lower_bound, expected.lower_bound)
+    self.assertEqual(hist.bin_width, expected.bin_width)
+    np.testing.assert_array_equal(hist.global_min, expected.global_min)
+    np.testing.assert_array_equal(hist.global_max, expected.global_max)
+    d = hist.to_dict()
+    expected_d = expected.to_dict()
+    self.assertEqual(d.keys(), expected_d.keys())
+    self.assertEqual(d['channels'][0].keys(), expected_d['channels'][0].keys())
+    np.testing.assert_array_equal(
+        d['channels'][0]['bin_edges'], expected_d['channels'][0]['bin_edges']
+    )
+
 
 class DynamicHistogramChannelTest(parameterized.TestCase):
   """Tests for DynamicHistogram in per-channel mode (axis is not None)."""

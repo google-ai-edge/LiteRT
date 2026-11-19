@@ -31,7 +31,9 @@ from litert_quantizer import default_policy as policy
 from litert_quantizer import qtyping
 from litert_quantizer import recipe
 from litert_quantizer import recipe_manager
+from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.utils import calibration_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import progress_utils
 from litert_quantizer.utils import qsv_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
@@ -88,6 +90,7 @@ class CalibrationInterpreter:
           [qtyping.QSV, qtyping.QSV],
           qtyping.QSV,
       ] = _MISSING_FUNC,
+      quantization_recipe: qtyping.ModelQuantizationRecipe | None = None,
   ):
     """Initializes the CalibrationInterpreter.
 
@@ -96,6 +99,10 @@ class CalibrationInterpreter:
       mode: The mode of the interpreter. If CALIBRATION, the interpreter will
         preserve all tensors for calibration purposes.
       qsv_update_func: The function to update the QSVs across calibration steps.
+      quantization_recipe: The quantization recipe used for calibration. If
+        None, calibration collects min/max statistics only (no histograms or
+        GPTQ statistics). To quantize with a histogram activation `range_method`
+        (or GPTQ), pass the same recipe you will quantize with.
     """
     self._calibrator = Calibrator(
         model_path,
@@ -103,11 +110,15 @@ class CalibrationInterpreter:
         qsv_update_func=qsv_update_func,
     )
     self._mode = mode
+    self._quantization_recipe = quantization_recipe
 
   def get_signature_runner(self, signature_key: str | None = None):
     """Returns the signature runner."""
     return CalibrationSignatureRunner(
-        self._calibrator, signature_key, self._mode
+        self._calibrator,
+        signature_key,
+        self._mode,
+        quantization_recipe=self._quantization_recipe,
     )
 
   def get_calibration_results(self):
@@ -141,7 +152,7 @@ class CalibrationSignatureRunner:
       calibrator_obj: "Calibrator",
       signature_key: str | None = None,
       mode: CalibrationMode = CalibrationMode.INFERENCE,
-      quantization_recipe: qtyping.ModelQuantizationRecipe = recipe.static_wi8_ai8(),
+      quantization_recipe: qtyping.ModelQuantizationRecipe | None = None,
   ):
     """Initializes the CalibrationSignatureRunner.
 
@@ -152,12 +163,17 @@ class CalibrationSignatureRunner:
       mode: The mode of the runner. If CALIBRATION, invoking the runner will
         update 'calibrator_obj' with new quantization statistics values. If
         INFERENCE, the runner behaves like a standard signature runner.
-      quantization_recipe: The quantization recipe to use for calibration.
-        Defaults to static_wi8_ai8.
+      quantization_recipe: The quantization recipe to use for calibration. If
+        None, calibration collects min/max statistics only (no histograms or
+        GPTQ statistics).
     """
     self._calibrator = calibrator_obj
     self._signature_key = signature_key
     self._mode = mode
+    if quantization_recipe is None:
+      # A recipe without histogram range methods or GPTQ, so only min/max
+      # statistics are collected.
+      quantization_recipe = recipe.static_wi8_ai8()
     self._recipe_manager = recipe_manager.RecipeManager()
     self._recipe_manager.load_quantization_recipe(quantization_recipe)
     self._signature_runner = (
@@ -415,7 +431,11 @@ class Calibrator:
       if tensor_name not in self._model_qsvs:
         self._model_qsvs[tensor_name] = qsv
       else:
-        updated_qsv = qsv_update_func(self._model_qsvs[tensor_name], qsv)
+        existing_qsv = self._model_qsvs[tensor_name]
+        updated_qsv = qsv_update_func(existing_qsv, qsv)
+        histogram = qsv_utils.merge_histograms(existing_qsv, qsv)
+        if histogram is not None:
+          updated_qsv["histogram"] = histogram
         self._model_qsvs[tensor_name] = updated_qsv
       updated_tensor_names.add(tensor_name)
     return updated_tensor_names
@@ -510,6 +530,7 @@ class _PreserveAllTensorsCalibrator(Calibrator):
       pbar: progress_utils.ProgressBar,
   ) -> None:
     op_codes = self._flatbuffer_model.operatorCodes
+    collect_histogram = model_recipe_manager.need_histogram()
     # Step0: get subgraph index.
     subgraph_idx = tfl_interpreter_utils.get_signature_main_subgraph_index(
         self._tfl_interpreter, signature_key
@@ -576,6 +597,18 @@ class _PreserveAllTensorsCalibrator(Calibrator):
             algorithm_name, op_key, qtyping.QuantizeMode.CALIBRATE
         )
         op_qsvs = calibrate_func(op, graph_info, self._tensor_content_map)
+        if collect_histogram:
+          # `_update_qsvs` skips tensors already updated in this step, so only
+          # build histograms for the tensors it will update.
+          for tensor_name, tensor_qsv in op_qsvs.items():
+            tensor_content = self._tensor_content_map.get(tensor_name)
+            if tensor_name in updated_tensor_names or tensor_content is None:
+              continue
+            histogram = naive_min_max_quantize.compute_activation_histogram(
+                tensor_content
+            )
+            if histogram is not None:
+              tensor_qsv["histogram"] = histogram
         # Step3: Update tensor qsvs with the new values. Ignore the tensor
         # names that are already updated in this round of calibration.
         if not self._is_custom_qsv_update_func:
@@ -595,6 +628,24 @@ class _PreserveAllTensorsCalibrator(Calibrator):
         )
 
 
+def _histogram_dict(stats: Any) -> dict[str, Any]:
+  """Converts a `_pywrap_tfl_calibration.Range` histogram to QSV format.
+
+  Args:
+    stats: A `_pywrap_tfl_calibration.Range` with a non-None `histogram`.
+
+  Returns:
+    The histogram in `DynamicHistogram.to_dict` format.
+  """
+  return histogram_utils.DynamicHistogram.from_bins(
+      counts=stats.histogram.counts,
+      lower_bound=stats.histogram.lower_bound,
+      bin_width=stats.histogram.bin_width,
+      global_min=stats.min,
+      global_max=stats.max,
+  ).to_dict()
+
+
 class _ProfilerBasedCalibrator(Calibrator):
   """Calibrator using the profiler-based calibration mode.
 
@@ -602,8 +653,11 @@ class _ProfilerBasedCalibrator(Calibrator):
   2. The C++ engine tracks the min/max values internally during execution.
   3. After execution, the python wrapper retrieves the statistics (tensor_stats)
   and updates self._model_qsvs.
-  4. This mode only supports min/max tracking and cannot be used for algorithms
-  that require custom statistics.
+  4. This mode supports min/max and histogram statistics only, and cannot be
+  used for algorithms that require other custom statistics. When the recipe
+  uses a histogram activation range, a histogram is collected for every
+  activation tensor on each step and merged into the QSVs, the same way as in
+  CALIBRATION_PRESERVE_ALL_TENSORS mode.
   """
 
   @override
@@ -630,8 +684,16 @@ class _ProfilerBasedCalibrator(Calibrator):
       cache_output: bool,
       pbar: progress_utils.ProgressBar,
   ) -> None:
-    del model_recipe_manager  # Unused.
     del pbar  # Can't do per-op progress bar in this mode.
+    collect_histogram = model_recipe_manager.need_histogram()
+    if collect_histogram and not hasattr(
+        _pywrap_tfl_calibration, "TensorHistogram"
+    ):
+      raise ValueError(
+          "Histogram activation ranges in CALIBRATION_PROFILER_BASED mode"
+          " require a newer ai-edge-litert package. Please upgrade"
+          " ai-edge-litert or use CALIBRATION_PRESERVE_ALL_TENSORS instead."
+      )
 
     cpp_interpreter = self._tfl_interpreter._interpreter  # pylint: disable=protected-access
     if tfl_interpreter_utils.is_signatureless_default(
@@ -669,10 +731,12 @@ class _ProfilerBasedCalibrator(Calibrator):
     for input_name, value in data.items():
       cpp_interpreter.SetTensor(inputs[input_name], value, subgraph_index)
 
-    # Invoke the interpreter with calibration.
+    # Invoke the interpreter with calibration. Older ai-edge-litert packages do
+    # not accept `collect_histogram`, so only pass it when needed.
     tensor_stats = _pywrap_tfl_calibration.InvokeWithCalibration(
         self._tfl_interpreter._native_handle(),  # pylint: disable=protected-access
         subgraph_index,
+        **({"collect_histogram": True} if collect_histogram else {}),
     )
 
     # Get inference result.
@@ -684,14 +748,14 @@ class _ProfilerBasedCalibrator(Calibrator):
       self._cached_output.append(inference_result)
 
     # Update model QSVs with tensor_stats.
+    op_qsvs = {}
     for tensor_name, stats in tensor_stats.items():
       # Wrap scalar values in numpy arrays to support .shape attribute.
-      qsv = {
+      qsv: qtyping.QSV = {
           "min": np.array([stats.min]),
           "max": np.array([stats.max]),
       }
-      existing_qsv = self._model_qsvs.get(tensor_name)
-      if existing_qsv is None:
-        self._model_qsvs[tensor_name] = qsv
-      else:
-        self._model_qsvs[tensor_name] = self._qsv_update_func(existing_qsv, qsv)
+      if collect_histogram and stats.histogram is not None:
+        qsv["histogram"] = _histogram_dict(stats)
+      op_qsvs[tensor_name] = qsv
+    self._update_qsvs(op_qsvs, set(), self._qsv_update_func)

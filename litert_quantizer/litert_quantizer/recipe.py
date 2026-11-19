@@ -46,6 +46,9 @@ Naming convention decoder for recipes:
     explicit_dequantize=False).
 """
 
+from collections.abc import Mapping
+from typing import Any
+
 from litert_quantizer import algorithm_manager
 from litert_quantizer import qtyping
 from litert_quantizer import recipe_manager
@@ -175,6 +178,7 @@ def weight_only_wi4_afp32(
 
 def static_wi8_ai8(
     algorithm_key: AlgorithmName = AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+    activation_algorithm_params: Mapping[str, Any] | None = None,
 ) -> qtyping.ModelQuantizationRecipe:
   """Returns a static quantization recipe with int8 weights and int8 activations.
 
@@ -183,6 +187,8 @@ def static_wi8_ai8(
 
   Args:
     algorithm_key: The algorithm to use for quantization.
+    activation_algorithm_params: Optional algorithm parameters for the
+      activations, e.g. `{"range_method": "histogram_mse"}`.
 
   Returns:
     A static quantization recipe.
@@ -194,12 +200,14 @@ def static_wi8_ai8(
       activation_num_bits=8,
       weight_num_bits=8,
       algorithm_key=algorithm_key,
+      activation_algorithm_params=activation_algorithm_params,
   )
   return rp_manager.get_quantization_recipe()
 
 
 def static_wi8_ai16(
     algorithm_key: AlgorithmName = AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+    activation_algorithm_params: Mapping[str, Any] | None = None,
 ) -> qtyping.ModelQuantizationRecipe:
   """Returns a static quantization recipe with int8 weights and int16 activations.
 
@@ -208,6 +216,8 @@ def static_wi8_ai16(
 
   Args:
     algorithm_key: The algorithm to use for quantization.
+    activation_algorithm_params: Optional algorithm parameters for the
+      activations, e.g. `{"range_method": "histogram_mse"}`.
 
   Returns:
     A static quantization recipe.
@@ -219,6 +229,7 @@ def static_wi8_ai16(
       activation_num_bits=16,
       weight_num_bits=8,
       algorithm_key=algorithm_key,
+      activation_algorithm_params=activation_algorithm_params,
   )
   return rp_manager.get_quantization_recipe()
 

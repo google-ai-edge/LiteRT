@@ -23,6 +23,7 @@ import numpy as np
 
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import gptq
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
 
@@ -322,6 +323,41 @@ class GptqTest(parameterized.TestCase):
     self.assertIsNone(quant_params.quantized_data)
     np.testing.assert_allclose(quant_params.scale, np.array([[2.2 / 127]]))
     np.testing.assert_allclose(quant_params.zero_point, np.array([[0]]))
+
+  def test_get_tensor_quant_params_uses_activation_range_method(self):
+    op_info = qtyping.OpInfo(
+        op=qtyping.OperatorT(),
+        op_name=qtyping.TFLOperationName.FULLY_CONNECTED,
+        op_quant_config=qtyping.OpQuantizationConfig(),
+        subgraph_op_index=-1,
+    )
+    hist = histogram_utils.DynamicHistogram(max_tensor_bins=512)
+    hist.add(np.random.default_rng(99).uniform(-5.0, 5.0, size=500_000))
+    hist.add(np.array([-8.0, 8.0]))
+    tensor_qsv = {
+        "min": np.array([[-8.0]]),
+        "max": np.array([[8.0]]),
+        "histogram": hist.to_dict(),
+    }
+
+    def get_scale(algorithm_params):
+      quant_params = gptq.get_tensor_quant_params(
+          op_info,
+          qtyping.TensorQuantizationConfig(
+              num_bits=8,
+              symmetric=True,
+              granularity=qtyping.QuantGranularity.TENSORWISE,
+              algorithm_params=algorithm_params,
+          ),
+          tensor_qsv=tensor_qsv,
+      )
+      return float(np.squeeze(quant_params.scale))
+
+    self.assertAlmostEqual(get_scale({}), 8.0 / 127)
+    # The MSE range clips the two outliers at +-8.
+    self.assertAlmostEqual(
+        get_scale({"range_method": "histogram_mse"}), 0.0393084, delta=1e-6
+    )
 
   @mock.patch.object(
       gptq.uniform_quantize_tensor,

@@ -458,6 +458,40 @@ class DynamicHistogram:
     }
 
   @classmethod
+  def from_bins(
+      cls,
+      counts: Sequence[int] | np.ndarray,
+      lower_bound: float,
+      bin_width: float,
+      global_min: float,
+      global_max: float,
+      max_tensor_bins: int = 2048,
+  ) -> 'DynamicHistogram':
+    """Creates a per-tensor histogram from existing bins.
+
+    Args:
+      counts: The bin counts.
+      lower_bound: The lower edge of the first bin.
+      bin_width: The width of each bin.
+      global_min: The minimum value counted in the histogram.
+      global_max: The maximum value counted in the histogram.
+      max_tensor_bins: The maximum number of bins allocated for the tensor.
+
+    Returns:
+      A per-tensor DynamicHistogram with the given bins.
+    """
+    impl = _DynamicHistogram1D(max_bins=max_tensor_bins)
+    impl.counts = np.array(counts, dtype=np.int64)
+    impl.lower_bound = float(lower_bound)
+    impl.bin_width = float(bin_width)
+    impl.global_min = float(global_min)
+    impl.global_max = float(global_max)
+    impl.initialized = True
+    obj = cls(max_tensor_bins=max_tensor_bins)
+    obj._impls = [impl]
+    return obj
+
+  @classmethod
   def from_dict(
       cls, d: Mapping[str, Any], max_tensor_bins: int = 2048
   ) -> 'DynamicHistogram':

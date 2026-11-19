@@ -20,6 +20,7 @@ from absl.testing import parameterized
 import numpy as np
 
 from litert_quantizer import quantizer
+from litert_quantizer import recipe
 from litert_quantizer.utils import calibration_utils
 from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import test_utils
@@ -151,13 +152,17 @@ class CalibrationQsvAlignmentUtilsTest(parameterized.TestCase):
     )
     self.assertEqual(tensor_name, [expected_tensor_name])
 
-  def test_align_quant_stats_succeeds(self):
-    recipe_path = test_utils.get_path_to_datafile(
-        "../recipes/default_a8w8_recipe.json"
+  @parameterized.named_parameters(
+      ("min_max", "min_max"),
+      ("histogram_mse", "histogram_mse"),
+  )
+  def test_align_quant_stats_succeeds(self, range_method):
+    qt = quantizer.Quantizer(
+        self._kv_model_path,
+        recipe.static_wi8_ai8(
+            activation_algorithm_params={"range_method": range_method}
+        ),
     )
-
-    # Obtain the calibration results.
-    qt = quantizer.Quantizer(self._kv_model_path, recipe_path)
     qsv = qt.calibrate(_CALIBRATION_DATASET)
 
     # First quantize the model without aligning the quantization parameters.
@@ -178,13 +183,17 @@ class CalibrationQsvAlignmentUtilsTest(parameterized.TestCase):
         all(x == quant_params[0] for x in quant_params)
     )  # equal quantization params.
 
-  def test_update_quant_stats_succeeds(self):
-    recipe_path = test_utils.get_path_to_datafile(
-        "../recipes/default_a8w8_recipe.json"
+  @parameterized.named_parameters(
+      ("min_max", "min_max"),
+      ("histogram_mse", "histogram_mse"),
+  )
+  def test_update_quant_stats_succeeds(self, range_method):
+    qt = quantizer.Quantizer(
+        self._kv_model_path,
+        recipe.static_wi8_ai8(
+            activation_algorithm_params={"range_method": range_method}
+        ),
     )
-
-    # Obtain the calibration results.
-    qt = quantizer.Quantizer(self._kv_model_path, recipe_path)
     qsv = qt.calibrate(_CALIBRATION_DATASET)
 
     # First quantize the model without updating the `signature_1`.

@@ -15,7 +15,7 @@
 
 """LiteRT Quantizer API."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 import dataclasses
 import json
 import logging
@@ -337,6 +337,7 @@ class Quantizer:
       weight_num_bits: int,
       weight_granularity: qtyping.QuantGranularity = qtyping.QuantGranularity.CHANNELWISE,
       algorithm_key: str = algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      activation_algorithm_params: Mapping[str, Any] | None = None,
   ):
     """Adds a static quantization configuration to the recipe.
 
@@ -357,6 +358,10 @@ class Quantizer:
       weight_num_bits: Number of bits for weight quantization.
       weight_granularity: Granularity of weight quantization.
       algorithm_key: Algorithm key to be applied.
+      activation_algorithm_params: Optional algorithm parameters for the
+        activation tensors, e.g. `{"range_method": "histogram_mse"}` to derive
+        activation ranges from calibration histograms. See
+        `naive_min_max_quantize.ActivationRangeMethod`.
     """
     self._recipe_manager.add_static_config(
         regex,
@@ -365,6 +370,7 @@ class Quantizer:
         weight_num_bits,
         weight_granularity,
         algorithm_key,
+        activation_algorithm_params,
     )
 
   @property
@@ -425,6 +431,19 @@ class Quantizer:
       self, calibration_result: _CalibrationResult
   ):
     """Checks if the calibration result has sufficient QSV."""
+
+    # Histogram range methods need histograms from calibration. Check the whole
+    # result rather than each tensor, since tensors with an aligned or fixed
+    # range have no histogram by design.
+    if self._recipe_manager.need_histogram() and not any(
+        qsv and qsv.get('histogram') for qsv in calibration_result.values()
+    ):
+      raise ValueError(
+          'The quantization recipe uses a histogram activation `range_method`,'
+          ' but the calibration result has no histograms. Calibrate with the'
+          ' same recipe used for quantization (e.g. pass it as'
+          ' `quantization_recipe` to `CalibrationInterpreter`).'
+      )
 
     # Find all tensor names with empty entries.
     empty_qsvs = [key for key, value in calibration_result.items() if not value]
