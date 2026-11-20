@@ -17,6 +17,9 @@
 #include <array>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
+#include <ios>
+#include <iterator>
 #include <memory>
 #include <string>
 #include <utility>
@@ -29,6 +32,8 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "flatbuffers/detached_buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_any.h"
 #include "litert/c/litert_common.h"
@@ -41,6 +46,7 @@
 #include "litert/c/options/litert_runtime_options.h"
 #include "litert/cc/internal/litert_consts.h"
 #include "litert/cc/litert_api_types.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_environment.h"
@@ -71,6 +77,7 @@
 // #include "tflite/core/subgraph.h"
 // copybara:uncomment_end
 #include "tflite/interpreter.h"
+#include "tflite/schema/schema_generated.h"
 
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
@@ -1946,6 +1953,73 @@ TEST(CompiledModelTest, InvalidInputShapesFailCreateEvenWithCpuFallback) {
       env, testing::GetTestFilePath(kModelFileName), options);
   ASSERT_FALSE(compiled_model.HasValue());
   EXPECT_EQ(compiled_model.Error().Status(), kLiteRtStatusErrorNotFound);
+}
+
+// Returns a copy of `simple_model.tflite` whose output tensor is serialized
+// with `shape=[]` (rank 0) so only AllocateTensors() / op Prepare() populates
+// its runtime [2] shape.
+Expected<flatbuffers::DetachedBuffer> BuildSimpleModelWithShapelessOutput() {
+  std::ifstream input_file(testing::GetTestFilePath(kModelFileName),
+                           std::ios::binary);
+  if (!input_file.is_open()) {
+    return Unexpected(kLiteRtStatusErrorNotFound,
+                      "Failed to open simple_model.tflite");
+  }
+  const std::string original_model((std::istreambuf_iterator<char>(input_file)),
+                                   std::istreambuf_iterator<char>());
+  std::unique_ptr<tflite::ModelT> tfl_model =
+      tflite::UnPackModel(original_model.data());
+  if (tfl_model == nullptr || tfl_model->subgraphs.size() != 1 ||
+      tfl_model->subgraphs[0]->outputs.size() != 1) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Expected one subgraph with one output");
+  }
+  tflite::SubGraphT& subgraph = *tfl_model->subgraphs[0];
+  tflite::TensorT& output_tensor = *subgraph.tensors[subgraph.outputs[0]];
+  output_tensor.shape.clear();
+  output_tensor.shape_signature.clear();
+
+  flatbuffers::FlatBufferBuilder builder;
+  tflite::FinishModelBuffer(builder,
+                            tflite::Model::Pack(builder, tfl_model.get()));
+  return builder.Release();
+}
+
+// Tests that CreateOutputBuffers() resolves runtime layouts for rank-0
+// (shapeless) outputs before the first Run().
+TEST_F(CompiledModelWithDefaultEnvironmentTest,
+       CreateOutputBufferResolvesShapelessOutputLayout) {
+  LITERT_ASSERT_OK_AND_ASSIGN(flatbuffers::DetachedBuffer model_buffer,
+                              BuildSimpleModelWithShapelessOutput());
+  LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+  LITERT_ASSERT_OK(options.SetHardwareAccelerators(HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          *env_, BufferRef<uint8_t>(model_buffer.data(), model_buffer.size()),
+          options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_THAT(output_buffers, SizeIs(1));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(RankedTensorType output_type,
+                              output_buffers[0].TensorType());
+  EXPECT_THAT(output_type.Layout().Dimensions(), ElementsAre(2));
+  EXPECT_THAT(output_buffers[0].Size(), IsOkAndHolds(2 * sizeof(float)));
+
+  ASSERT_TRUE(input_buffers[0].Write<float>(
+      absl::MakeConstSpan(kTestInput0Tensor, kTestInput0Size)));
+  ASSERT_TRUE(input_buffers[1].Write<float>(
+      absl::MakeConstSpan(kTestInput1Tensor, kTestInput1Size)));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  std::vector<float> output_data(kTestOutputSize);
+  ASSERT_TRUE(output_buffers[0].Read<float>(absl::MakeSpan(output_data)));
+  EXPECT_THAT(output_data, Pointwise(FloatNear(1e-5), kTestOutputTensor));
 }
 
 }  // namespace

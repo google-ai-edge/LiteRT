@@ -753,6 +753,7 @@ cc_test(
     ],
     deps = [
         ":litert_api_types",
+        ":litert_buffer_ref",
         ":litert_common",
         ":litert_compiled_model",
         ":litert_element_type",
@@ -797,12 +798,14 @@ cc_test(
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
         "//tflite/kernels:builtin_ops",
+        "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@flatbuffers//:runtime_cc",
     ],
 )
 
