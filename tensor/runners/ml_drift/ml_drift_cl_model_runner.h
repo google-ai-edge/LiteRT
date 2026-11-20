@@ -16,7 +16,9 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_ML_DRIFT_CL_MODEL_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_ML_DRIFT_CL_MODEL_RUNNER_H_
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -25,6 +27,7 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
@@ -43,6 +46,7 @@ limitations under the License.
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/runners/ml_drift/ml_drift_model_runner_base.h"
 #include "tensor/utils/macros.h"
+#include <CL/cl.h>
 
 namespace litert::tensor {
 
@@ -115,6 +119,92 @@ struct MlDriftClBackend {
                                         const ml_drift::TensorDescriptor& desc,
                                         Tensor* tensor) {
     return tensor->CreateFromDescriptor(desc, env->context());
+  }
+
+  // Creates a constant tensor with the layout of `desc` (without data) holding
+  // the packed bytes `data`. With `zero_copy`, first tries to create the
+  // tensor over `data` itself: a `CL_MEM_USE_HOST_PTR` buffer (and a 2D image
+  // over that buffer for 2D texture storage), returned in `*keep_alive`; then
+  // `data` and `*keep_alive` must outlive `tensor`. Otherwise (or where that
+  // isn't possible, e.g. unaligned `data` or texture rows) copies `data` into
+  // a new tensor and leaves `*keep_alive` empty.
+  static absl::Status CreateConstTensorFromHostData(
+      Environment* env, const ml_drift::TensorDescriptor& desc,
+      absl::Span<const uint8_t> data, bool zero_copy, Tensor* tensor,
+      std::shared_ptr<const void>* keep_alive) {
+    keep_alive->reset();
+    if (data.size() < desc.GetMemorySizeInBytes()) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Constant tensor data has ", data.size(),
+                       " bytes, expected ", desc.GetMemorySizeInBytes()));
+    }
+    if (zero_copy) {
+      absl::StatusOr<std::shared_ptr<const void>> wrapped =
+          WrapHostData(env, desc, data, tensor);
+      if (wrapped.ok() && *wrapped != nullptr) {
+        *keep_alive = *std::move(wrapped);
+        return absl::OkStatus();
+      }
+      if (!wrapped.ok()) {
+        ABSL_LOG_FIRST_N(WARNING, 1)
+            << "Copying constant tensors instead of creating them over host "
+               "memory: "
+            << wrapped.status().message();
+      }
+    }
+    ml_drift::TensorDescriptor desc_without_data;
+    desc.CopyWithoutData(&desc_without_data);
+    LRT_TENSOR_RETURN_IF_ERROR(
+        tensor->CreateFromDescriptor(desc_without_data, env->context()));
+    return tensor->WriteData(data.data(), env->queue(), /*async=*/false);
+  }
+
+  // `CreateConstTensorFromHostData` without copying: the buffer wrapping
+  // `data`, or null if `desc` / `data` don't allow it.
+  static absl::StatusOr<std::shared_ptr<const void>> WrapHostData(
+      Environment* env, const ml_drift::TensorDescriptor& desc,
+      absl::Span<const uint8_t> data, Tensor* tensor) {
+    const ml_drift::GpuInfo& gpu_info = env->device().GetInfo();
+    const ml_drift::TensorStorageType storage = desc.GetStorageType();
+    const bool texture = storage == ml_drift::TensorStorageType::kTexture2D;
+    if (!texture && storage != ml_drift::TensorStorageType::kBuffer &&
+        storage != ml_drift::TensorStorageType::kImageBuffer) {
+      return nullptr;
+    }
+    const size_t base_alignment =
+        std::max<size_t>(1, gpu_info.opencl_info.base_addr_align_in_bits / 8);
+    if (reinterpret_cast<uintptr_t>(data.data()) % base_alignment != 0) {
+      return nullptr;
+    }
+    const uint64_t pitch_alignment = gpu_info.opencl_info.image_pitch_alignment;
+    if (texture && (!gpu_info.opencl_info.IsImage2dFromBufferSupported() ||
+                    pitch_alignment == 0 ||
+                    desc.GetStorageDims()[0] % pitch_alignment != 0)) {
+      return nullptr;
+    }
+    const size_t size = desc.GetMemorySizeInBytes();
+    cl_int error = CL_SUCCESS;
+    cl_mem buffer = ml_drift::cl::clCreateBuffer(
+        env->context().context(), CL_MEM_READ_ONLY | CL_MEM_USE_HOST_PTR, size,
+        const_cast<uint8_t*>(data.data()), &error);
+    if (buffer == nullptr || error != CL_SUCCESS) {
+      return absl::UnavailableError(
+          absl::StrCat("clCreateBuffer(CL_MEM_USE_HOST_PTR) of ", size,
+                       " bytes: ", ml_drift::cl::CLErrorCodeToString(error)));
+    }
+    std::shared_ptr<const void> owner(
+        buffer, [](cl_mem mem) { ml_drift::cl::clReleaseMemObject(mem); });
+    ml_drift::TensorDescriptor desc_without_data;
+    desc.CopyWithoutData(&desc_without_data);
+    if (texture) {
+      LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::CreateTensorSharedImage2DBuffer(
+          env->context(), buffer, desc_without_data,
+          static_cast<int>(pitch_alignment), tensor));
+    } else {
+      LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::CreateTensorShared(
+          env->context(), buffer, desc_without_data, tensor));
+    }
+    return owner;
   }
 
   static absl::Status UploadTensorDescriptorData(
