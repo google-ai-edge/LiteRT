@@ -302,6 +302,7 @@ exports_files(glob([
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
+        "litert_aml_options.h",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.h",
         "litert_concrete_options_base.h",

@@ -9,8 +9,8 @@ package(
 
 # ---------------------------------------------------------------------------
 # Compatibility aliases.
-# Compiler core: external @aml_npu//compiler_core
-# Runtime log: this package (dispatch / nnsdk).
+# Compiler core / nnsdk: @aml_npu_nn_runtime (GitHub nn_runtime / LITERT_AML_NN_RUNTIME).
+# Runtime log: this package (dispatch).
 # ---------------------------------------------------------------------------
 cc_library(
     name = "aml_adla_log",
@@ -25,7 +25,7 @@ cc_library(
 
 alias(
     name = "Aml_common_lib",
-    actual = "@aml_npu//compiler_core:aml_compiler_core_lib",
+    actual = "@aml_npu_nn_runtime//:aml_compiler_core_lib",
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
@@ -34,7 +34,7 @@ alias(
 
 alias(
     name = "aml_compiler_core_lib",
-    actual = "@aml_npu//compiler_core:aml_compiler_core_lib",
+    actual = "@aml_npu_nn_runtime//:aml_compiler_core_lib",
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
@@ -43,13 +43,13 @@ alias(
 
 alias(
     name = "aml_compiler_core",
-    actual = "@aml_npu//compiler_core:aml_compiler_core",
+    actual = "@aml_npu_nn_runtime//:aml_compiler_core",
     visibility = ["//visibility:public"],
 )
 
 alias(
     name = "Aml_common",
-    actual = "@aml_npu//compiler_core:aml_compiler_core_lib",
+    actual = "@aml_npu_nn_runtime//:aml_compiler_core_lib",
     visibility = ["//visibility:public"],
 )
 
@@ -88,7 +88,7 @@ cc_library(
         "//litert/cc/options:litert_aml_options",
         ":aml_dispatch_info",
         "@com_google_absl//absl/strings:string_view",
-        "@aml_npu//runtime_lib:nnsdk_headers",
+        "@aml_npu_nn_runtime//:nnsdk_headers",
     ],
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",

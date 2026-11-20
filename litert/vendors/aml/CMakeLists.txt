@@ -22,33 +22,137 @@ set(AML_DISPATCH_DIR "${AML_ROOT}/dispatch")
 set(AML_COMPILER_DIR "${AML_ROOT}/compiler")
 get_filename_component(AML_REPO_ROOT "${AML_ROOT}/../../.." ABSOLUTE)
 
-# Prebuilt libaml_compiler_core.so + nnsdk headers live in the external
-# aml_npu repo (not inside this LiteRT tree).
-# Default: <01_LiteRT>/aml_npu, sibling of this LiteRT checkout.
-if(NOT AML_NPU_ROOT)
-  if(DEFINED ENV{AML_NPU_ROOT} AND NOT "$ENV{AML_NPU_ROOT}" STREQUAL "")
-    set(AML_NPU_ROOT "$ENV{AML_NPU_ROOT}")
-  else()
-    get_filename_component(AML_NPU_ROOT "${AML_REPO_ROOT}/../aml_npu" ABSOLUTE)
+# One GitHub fetch: amlnn-toolkit/.../nn_runtime (nnsdk + aml_compiler_core).
+# Same idea as Bazel @aml_npu_nn_runtime / LITERT_AML_NN_RUNTIME.
+set(_AMLNN_TOOLKIT_COMMIT "5efa2cd45971766bb7cb1f2ddab727e3ce301463")
+
+# Resolve nn_runtime root (contains nnsdk/ + aml_compiler_core/).
+if(NOT AML_NN_RUNTIME_ROOT)
+  set(_aml_nn_rt_candidates)
+  if(DEFINED ENV{LITERT_AML_NN_RUNTIME} AND NOT "$ENV{LITERT_AML_NN_RUNTIME}" STREQUAL "")
+    list(APPEND _aml_nn_rt_candidates "$ENV{LITERT_AML_NN_RUNTIME}")
+  endif()
+  list(APPEND _aml_nn_rt_candidates "${CMAKE_BINARY_DIR}/_deps/aml_nn_runtime")
+  # Legacy: separate roots still accepted.
+  if(DEFINED ENV{LITERT_AML_COMPILER_CORE} AND NOT "$ENV{LITERT_AML_COMPILER_CORE}" STREQUAL "")
+    get_filename_component(_legacy_cc_parent "$ENV{LITERT_AML_COMPILER_CORE}/.." ABSOLUTE)
+    list(APPEND _aml_nn_rt_candidates "${_legacy_cc_parent}")
+  endif()
+  foreach(_cand IN LISTS _aml_nn_rt_candidates)
+    if(EXISTS "${_cand}/aml_compiler_core/include/compiler_core_context.h" AND
+       EXISTS "${_cand}/nnsdk/include/nnsdk2.h")
+      set(AML_NN_RUNTIME_ROOT "${_cand}")
+      break()
+    endif()
+  endforeach()
+endif()
+
+if(NOT AML_NN_RUNTIME_ROOT)
+  set(_nn_archive "${CMAKE_BINARY_DIR}/_deps/amlnn-toolkit-${_AMLNN_TOOLKIT_COMMIT}.tar.gz")
+  set(_nn_extract "${CMAKE_BINARY_DIR}/_deps/amlnn-toolkit-src")
+  set(_nn_url "https://github.com/Amlogic-NN/amlnn-toolkit/archive/${_AMLNN_TOOLKIT_COMMIT}.tar.gz")
+  set(_nn_rt_in_archive
+    "${_nn_extract}/amlnn-toolkit-${_AMLNN_TOOLKIT_COMMIT}/amlnn_runtime/nn_runtime")
+  if(NOT EXISTS "${_nn_rt_in_archive}/aml_compiler_core/include/compiler_core_context.h")
+    if(NOT EXISTS "${_nn_archive}")
+      message(STATUS "Downloading AML amlnn-toolkit archive (nn_runtime)...")
+      file(DOWNLOAD "${_nn_url}" "${_nn_archive}" SHOW_PROGRESS STATUS _nn_dl_status)
+      list(GET _nn_dl_status 0 _nn_dl_code)
+      if(NOT _nn_dl_code EQUAL 0)
+        message(FATAL_ERROR "AML nn_runtime download failed (${_nn_dl_status})")
+      endif()
+    endif()
+    if(EXISTS "${_nn_archive}")
+      file(MAKE_DIRECTORY "${_nn_extract}")
+      file(ARCHIVE_EXTRACT INPUT "${_nn_archive}" DESTINATION "${_nn_extract}")
+    endif()
+  endif()
+  if(EXISTS "${_nn_rt_in_archive}/aml_compiler_core/include/compiler_core_context.h")
+    set(_nn_stable "${CMAKE_BINARY_DIR}/_deps/aml_nn_runtime")
+    file(MAKE_DIRECTORY "${_nn_stable}")
+    file(COPY "${_nn_rt_in_archive}/" DESTINATION "${_nn_stable}")
+    set(AML_NN_RUNTIME_ROOT "${_nn_stable}")
   endif()
 endif()
-set(AML_NPU_ROOT "${AML_NPU_ROOT}" CACHE PATH
-  "External aml_npu repository (compiler_core + runtime_lib)" FORCE)
-if(NOT EXISTS "${AML_NPU_ROOT}/compiler_core/cmake/AmlCompilerCorePrebuilt.cmake")
-  message(FATAL_ERROR
-    "External aml_npu not found at: ${AML_NPU_ROOT}\n"
-    "  Pass -DAML_NPU_ROOT=/path/to/aml_npu")
-endif()
-include("${AML_NPU_ROOT}/compiler_core/cmake/AmlCompilerCorePrebuilt.cmake")
-include("${AML_NPU_ROOT}/runtime_lib/cmake/AmlNpuRuntime.cmake")
 
-set(AML_LINUX_LIB_DIR "${AML_NPU_RUNTIME_LIB_DIR}" CACHE PATH
-  "Directory with Linux ARM prebuilt libs (libcompiler_adla.so, libnnsdk.so)")
+if(NOT AML_NN_RUNTIME_ROOT)
+  message(FATAL_ERROR
+    "AML nn_runtime not found. Set LITERT_AML_NN_RUNTIME to a tree with "
+    "nnsdk/ + aml_compiler_core/, or allow GitHub download.")
+endif()
+set(AML_NN_RUNTIME_ROOT "${AML_NN_RUNTIME_ROOT}" CACHE PATH
+  "nn_runtime root (nnsdk/ + aml_compiler_core/)" FORCE)
+
+# compiler_core
+if(NOT AML_COMPILER_CORE_ROOT)
+  if(DEFINED ENV{LITERT_AML_COMPILER_CORE} AND NOT "$ENV{LITERT_AML_COMPILER_CORE}" STREQUAL "")
+    set(AML_COMPILER_CORE_ROOT "$ENV{LITERT_AML_COMPILER_CORE}")
+  else()
+    set(AML_COMPILER_CORE_ROOT "${AML_NN_RUNTIME_ROOT}/aml_compiler_core")
+  endif()
+endif()
+set(AML_COMPILER_CORE_ROOT "${AML_COMPILER_CORE_ROOT}" CACHE PATH
+  "aml_compiler_core root (include/ + libs/)" FORCE)
+include("${AML_REPO_ROOT}/third_party/aml_nn_runtime/AmlCompilerCorePrebuilt.cmake")
+
+# nnsdk headers
+if(NOT AML_NNSDK_INCLUDE_DIRS)
+  set(_aml_nnsdk_candidates)
+  if(DEFINED ENV{LITERT_AML_SDK} AND NOT "$ENV{LITERT_AML_SDK}" STREQUAL "")
+    list(APPEND _aml_nnsdk_candidates
+      "$ENV{LITERT_AML_SDK}/include"
+      "$ENV{LITERT_AML_SDK}"
+    )
+  endif()
+  list(APPEND _aml_nnsdk_candidates
+    "${AML_NN_RUNTIME_ROOT}/nnsdk/include"
+  )
+  foreach(_cand IN LISTS _aml_nnsdk_candidates)
+    if(EXISTS "${_cand}/nnsdk2.h")
+      set(AML_NNSDK_INCLUDE_DIRS "${_cand}")
+      set(AML_NNSDK_INCLUDE_DIR "${_cand}")
+      message(STATUS "AML nnsdk headers at: ${_cand}")
+      break()
+    endif()
+  endforeach()
+endif()
+if(NOT AML_NNSDK_INCLUDE_DIRS)
+  message(FATAL_ERROR "nnsdk headers not found under ${AML_NN_RUNTIME_ROOT}/nnsdk/include")
+endif()
+
+# Optional: Linux packaging dir (compiler_adla / nnsdk .so next to binaries).
+# Libs come from the fetched nn_runtime.
+if(NOT AML_LINUX_LIB_DIR)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
+    if(DEFINED ENV{OECORE_TARGET_SYSROOT} OR DEFINED ENV{OE_CMAKE_TOOLCHAIN_FILE})
+      set(_aml_pack_dir "${AML_NN_RUNTIME_ROOT}/aml_compiler_core/libs/yocto/aarch64")
+    else()
+      set(_aml_pack_dir "${AML_NN_RUNTIME_ROOT}/aml_compiler_core/libs/linux/aarch64")
+    endif()
+  else()
+    set(_aml_pack_dir "${AML_NN_RUNTIME_ROOT}/aml_compiler_core/libs/linux/x86_64")
+  endif()
+  if(EXISTS "${_aml_pack_dir}")
+    set(AML_NPU_RUNTIME_LIB_DIR "${_aml_pack_dir}")
+  endif()
+endif()
+if(AML_NPU_RUNTIME_LIB_DIR)
+  set(AML_LINUX_LIB_DIR "${AML_NPU_RUNTIME_LIB_DIR}" CACHE PATH
+    "Directory with Linux ARM prebuilt libs (libcompiler_adla.so, libnnsdk.so)")
+elseif(AML_LINUX_LIB_DIR)
+  set(AML_NPU_RUNTIME_LIB_DIR "${AML_LINUX_LIB_DIR}")
+else()
+  message(WARNING
+    "No AML_LINUX_LIB_DIR; set it if binaries need libcompiler_adla.so / libnnsdk.so beside them")
+endif()
 
 # TFLite FlatBuffers v25 must precede vendor FlatBuffers if any leftover path leaks.
+if(NOT AML_COMPILER_CORE_INCLUDE_DIRS)
+  set(AML_COMPILER_CORE_INCLUDE_DIRS "${AML_COMPILER_CORE_INCLUDE_DIR}")
+endif()
 set(AML_COMMON_INCLUDES
   ${TFLITE_BUILD_DIR}/flatbuffers/include
-  ${AML_COMPILER_CORE_INCLUDE_DIR}
+  ${AML_COMPILER_CORE_INCLUDE_DIRS}
   ${AML_CORE_DIR}
   ${AML_NNSDK_INCLUDE_DIRS}
   ${CMAKE_SOURCE_DIR}
@@ -196,6 +300,8 @@ if(UNIX AND NOT APPLE)
     # Export LiteRt* + RTTI; hide std::filesystem etc so they resolve from
     # system C++ runtime (avoids hijacking libcompiler_adla.so Compile()).
     "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/compiler/export_aml_compiler_plugin_linux.lds"
+    "-Wl,--exclude-libs,libc++_static.a"
+    "-Wl,--exclude-libs,libc++abi.a"
     "LINKER:-rpath,$ORIGIN"
     "LINKER:--disable-new-dtags"
     "LINKER:--allow-shlib-undefined"
@@ -213,6 +319,8 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Convenience install for board / buildroot rootfs packaging.
+# Generic ATS (//litert/ats:ats) is built from litert/ats/CMakeLists.txt when
+# LITERT_ENABLE_AML=ON. Board wrapper: run_aml_ats.sh (installed with ats).
 install(TARGETS
   litert_runtime_c_api_shared_lib
   aml_dispatch_so
@@ -221,14 +329,42 @@ install(TARGETS
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
 )
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats.sh")
+  install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats.sh" DESTINATION bin)
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_collect_issues.sh")
+  install(PROGRAMS
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_collect_issues.sh"
+      DESTINATION bin
+  )
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_gtest.sh")
+  install(PROGRAMS
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_gtest.sh"
+      DESTINATION bin
+  )
+endif()
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_extra_models.sh")
+  install(PROGRAMS
+      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_extra_models.sh"
+      DESTINATION bin
+  )
+endif()
 
 install(FILES
   "${AML_COMPILER_CORE_LIB}"
   DESTINATION lib
 )
+# GitHub flat include/ or legacy aml_npu/compiler_core/ nesting.
+set(_aml_install_hdr_api "${AML_COMPILER_CORE_INCLUDE_DIR}/compiler_core_api.h")
+set(_aml_install_hdr_ctx "${AML_COMPILER_CORE_INCLUDE_DIR}/compiler_core_context.h")
+if(NOT EXISTS "${_aml_install_hdr_api}")
+  set(_aml_install_hdr_api "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_api.h")
+  set(_aml_install_hdr_ctx "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_context.h")
+endif()
 install(FILES
-  "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_api.h"
-  "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_context.h"
+  "${_aml_install_hdr_api}"
+  "${_aml_install_hdr_ctx}"
   DESTINATION include/aml_npu/compiler_core
 )
 if(AML_COMPILER_ADLA_LIB)

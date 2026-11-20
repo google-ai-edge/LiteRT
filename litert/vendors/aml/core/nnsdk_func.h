@@ -64,9 +64,9 @@ typedef struct {
 } aml_nn_tensordef;
 
 /**
- * @brief Shared NNSDK2 runtime state for LiteRT AML dispatch.
- * @var qcontext         Active NNSDK2 context handle.
- * @var nnsdk2_func_ptr  Resolved NNSDK2 API symbols.
+ * @brief NNSDK2 runtime state for one loaded ADLA model.
+ * @var qcontext         This model's amlnn_init handle. Not process-wide.
+ * @var nnsdk2_func_ptr  Resolved NNSDK2 API symbols (copied from the dlopen).
  * @var available        True if NNSDK2 base symbols loaded.
  */
 struct AML_NN {
@@ -76,9 +76,15 @@ struct AML_NN {
 };
 
 /**
- * @brief Return the process-wide AML_NN singleton (dlopen once).
+ * @brief Process-wide symbol cache. Do not store a model qcontext here.
  */
 AML_NN* AML_NNImplementation();
+
+/**
+ * @brief AML_NN for one ADLA model: same function table, its own qcontext.
+ * @note libnnsdk.so is dlopen'd once. Each model must keep the returned object.
+ */
+AML_NN CreateAmlNn();
 
 /**
  * @brief True if NNSDK2 symbols were successfully resolved.

@@ -411,6 +411,8 @@ exports_files(glob(["litert_*.h"]))
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
+        "litert_aml_options.cc",
+        "litert_aml_options.h",
         "litert_arm_vulkan_ml_options.cc",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.cc",

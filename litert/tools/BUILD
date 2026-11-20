@@ -254,8 +254,8 @@ litert_bin(
         "//litert:windows": [],
         "//conditions:default": [
             "//litert/vendors/aml/compiler:aml_compiler_plugin_so",
-            "@aml_npu//runtime_lib:compiler_adla_so_x86",
-            "@aml_npu//compiler_core:aml_compiler_core_so_x86",
+            "@aml_npu_nn_runtime//:compiler_adla_so_x86",
+            "@aml_npu_nn_runtime//:aml_compiler_core_so_x86",
         ],
     }),
     export_litert_only = 1,

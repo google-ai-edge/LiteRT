@@ -442,7 +442,7 @@ else()
   message(STATUS "Skipping Qualcomm dispatch: LITERT_ENABLE_QUALCOMM is OFF or QAIRT_HEADERS_DIR not set")
 endif()
 
-# Amlogic. External repo @aml_npu (see -DAML_NPU_ROOT). Buildroot/Yocto
+# Amlogic. nn_runtime is fetched from GitHub (amlnn-toolkit). Buildroot/Yocto
 # selects libs/yocto/aarch64 from that tree.
 option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
 if(LITERT_ENABLE_AML)

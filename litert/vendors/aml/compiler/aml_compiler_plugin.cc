@@ -16,6 +16,7 @@
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+// #include <fstream>  // for test.tadla override (currently disabled)
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,7 +29,8 @@
 #include "absl/container/flat_hash_set.h" // from @com_google_absl
 #include "absl/strings/str_format.h"      // from @com_google_absl
 #include "absl/strings/string_view.h"     // from @com_google_absl
-#include "aml_npu/compiler_core/compiler_core_context.h" // from @aml_npu
+#include "aml_npu/compiler_core/compiler_core_context.h" // from @aml_npu_nn_runtime
+#include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
 #include "litert/c/litert_common.h"
@@ -45,6 +47,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/aml/core/aml_dispatch_info.h"
 #include "litert/vendors/aml/compiler/node_binary_info.h"
 
@@ -93,6 +96,63 @@ namespace
 #else
   constexpr bool kEmbedAdlaInDispatch = true;
 #endif
+
+#if 0  // test.tadla offline override (disabled for now)
+  // Offline override: if this file exists, skip ADLA compile/cache and embed
+  // its bytes into dispatch_info[0] of the output tflite.
+  constexpr char kOverrideTadlaFileName[] = "test.tadla";
+
+  /**
+   * @brief Resolve and read optional offline override bytecode.
+   * @param model_path AML model_path option (directory); may be empty.
+   * @param[out] out_bytes File contents on success.
+   * @param[out] out_path Resolved path that was read.
+   * @return true if test.tadla was found and read.
+   * @note Search order: <model_path>/test.tadla, then ./test.tadla (cwd).
+   */
+  bool TryLoadOverrideTadla(const std::string& model_path,
+                            std::vector<uint8_t>* out_bytes,
+                            std::string* out_path) {
+    if (out_bytes == nullptr || out_path == nullptr) {
+      return false;
+    }
+    std::vector<std::string> candidates;
+    if (!model_path.empty()) {
+      std::string dir = model_path;
+      if (dir.back() != '/' && dir.back() != '\\') {
+        dir.push_back('/');
+      }
+      candidates.push_back(dir + kOverrideTadlaFileName);
+    }
+    candidates.emplace_back(kOverrideTadlaFileName);
+
+    for (const auto& path : candidates) {
+      std::ifstream ifs(path, std::ios::binary | std::ios::ate);
+      if (!ifs) {
+        continue;
+      }
+      const auto end = ifs.tellg();
+      if (end <= 0) {
+        LITERT_LOG(LITERT_WARNING, "override tadla empty, skip path=%s",
+                   path.c_str());
+        continue;
+      }
+      const auto size = static_cast<size_t>(end);
+      ifs.seekg(0, std::ios::beg);
+      std::vector<uint8_t> buf(size);
+      if (!ifs.read(reinterpret_cast<char*>(buf.data()),
+                    static_cast<std::streamsize>(size))) {
+        LITERT_LOG(LITERT_WARNING, "failed to read override tadla path=%s",
+                   path.c_str());
+        continue;
+      }
+      *out_bytes = std::move(buf);
+      *out_path = path;
+      return true;
+    }
+    return false;
+  }
+#endif  // test.tadla offline override
 
   // LiteRT TFL opcodes/element types are defined to match TFLite numeric
   // values (see litert_op_code.h / litert_model_types.h comments). AML IR
@@ -679,22 +739,27 @@ class LiteRtCompilerPluginT {
                         LiteRtOptions litert_options)
       : compiler_context_(compiler_context) {
     (void)env_options;
-    (void)compiler_context_;
     LITERT_LOG(LITERT_DEBUG, "[AML] LiteRtCompilerPluginT init");
 
-    if (!litert_options) {
+    // These two entry points must run inside libLiteRt.so. The plugin's own
+    // copies walk std::string / std::unique_ptr built by the runtime's libc++.
+    if (!litert_options || compiler_context_ == nullptr ||
+        compiler_context_->get_opaque_options == nullptr ||
+        compiler_context_->find_opaque_options_data == nullptr) {
       return;
     }
 
     LiteRtOpaqueOptions opaque_options = nullptr;
-    if (LiteRtGetOpaqueOptions(litert_options, &opaque_options) !=
-        kLiteRtStatusOk) {
+    if (compiler_context_->get_opaque_options(litert_options, &opaque_options) !=
+            kLiteRtStatusOk ||
+        opaque_options == nullptr) {
       return;
     }
 
     void* payload = nullptr;
-    if (LiteRtFindOpaqueOptionsData(opaque_options, LrtAmlOptionsGetIdentifier(),
-                                    &payload) != kLiteRtStatusOk ||
+    if (compiler_context_->find_opaque_options_data(
+            opaque_options, LrtAmlOptionsGetIdentifier(), &payload) !=
+            kLiteRtStatusOk ||
         payload == nullptr) {
       return;
     }
@@ -996,6 +1061,13 @@ extern "C" LiteRtStatus LiteRtCompilerPluginCompile(
              compile_target.empty() ? "(empty, device query)"
                                     : compile_target.c_str());
 
+  // #if 0  // test.tadla offline override (disabled for now)
+  // std::vector<uint8_t> override_tadla;
+  // std::string override_tadla_path;
+  // const bool use_override_tadla =
+  //     TryLoadOverrideTadla(model_path, &override_tadla, &override_tadla_path);
+  // #endif
+
   std::vector<AML_Dispatch_Info> dispatch_infos;
   dispatch_infos.reserve(num_partitions);
 
@@ -1174,5 +1246,57 @@ extern "C" LiteRtStatus LiteRtGetCompiledResultHandle(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *handle = nullptr;
+  return kLiteRtStatusErrorUnsupported;
+}
+
+namespace {
+
+static const LiteRtCompilerPluginInterface_V1 AmlCompilerPluginInterface = {
+    .abi_header =
+        {
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1),
+            .major_version = 1,
+            .minor_version = 0,
+            .reserved = 0,
+        },
+    .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
+    .get_compiler_plugin_soc_manufacturer =
+        LiteRtGetCompilerPluginSocManufacturer,
+    .create_compiler_plugin = LiteRtCreateCompilerPlugin,
+    .destroy_compiler_plugin = LiteRtDestroyCompilerPlugin,
+    .get_compiler_plugin_supported_hardware =
+        LiteRtGetCompilerPluginSupportedHardware,
+    .get_num_compiler_plugin_supported_models =
+        LiteRtGetNumCompilerPluginSupportedSocModels,
+    .get_compiler_plugin_supported_soc_model =
+        LiteRtGetCompilerPluginSupportedSocModel,
+    .compiler_plugin_partition = LiteRtCompilerPluginPartition,
+    .compiler_plugin_compile = LiteRtCompilerPluginCompile,
+    .destroy_compiled_result = LiteRtDestroyCompiledResult,
+    .get_compiled_result_byte_code = LiteRtGetCompiledResultByteCode,
+    .get_compiled_result_num_byte_code = LiteRtCompiledResultNumByteCodeModules,
+    .get_compiled_result_call_info = LiteRtGetCompiledResultCallInfo,
+    .get_num_compiled_result_calls = LiteRtGetNumCompiledResultCalls,
+    .register_all_transformations =
+        LiteRtCompilerPluginRegisterAllTransformations,
+    .get_compiler_plugin_sdk_version = LiteRtGetCompilerPluginSDKVersion,
+    .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
+    .check_compiler_compatibility =
+        LiteRtCompilerPluginCheckCompilerCompatibility,
+};
+
+}  // namespace
+
+extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
+    LiteRtCompilerPluginInterfaceId interface_id,
+    LiteRtApiVersion litert_runtime_version, LiteRtInterface* out_interface) {
+  if (out_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (litert_runtime_version.major >= 1 &&
+      interface_id == kLiteRtCompilerPluginInterfaceBasic) {
+    *out_interface = &AmlCompilerPluginInterface;
+    return kLiteRtStatusOk;
+  }
   return kLiteRtStatusErrorUnsupported;
 }
