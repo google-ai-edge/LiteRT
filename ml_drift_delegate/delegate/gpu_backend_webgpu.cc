@@ -314,7 +314,54 @@ absl::Status GpuBackendWebGpu::ReadSpatialTensorToDescriptor(
 
 absl::Status GpuBackendWebGpu::ReadSpatialTensorData(
     ::ml_drift::GpuSpatialTensor& tensor, absl::Span<uint8_t> dst) {
-  return absl::UnimplementedError("ReadSpatialTensorData is not implemented");
+  auto* wgpu_tensor = static_cast<::ml_drift::webgpu::SpatialTensor*>(&tensor);
+  if (wgpu_tensor->GetMemorySizeInBytes() != dst.size()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "ReadSpatialTensorData: destination size (", dst.size(),
+        ") does not match tensor size (", wgpu_tensor->GetMemorySizeInBytes(),
+        ")."));
+  }
+  if (dst.empty()) {
+    return absl::OkStatus();
+  }
+  // Mirrors SpatialTensor::ReadData (private in spatial_tensor.h) using
+  // env_->queue().
+  switch (wgpu_tensor->GetStorageType()) {
+    case ::ml_drift::TensorStorageType::kBuffer:
+    case ::ml_drift::TensorStorageType::kImageBuffer:
+      if (!wgpu_tensor->GetBufferHandle()) {
+        return absl::InvalidArgumentError(
+            "ReadSpatialTensorData: buffer handle is null.");
+      }
+      if (wgpu_tensor->offset() != 0) {
+        return absl::InvalidArgumentError(
+            "ReadSpatialTensorData: non-zero buffer offset is not supported.");
+      }
+      return ::ml_drift::webgpu::ReadDataFromBuffer(
+          env_->device(), env_->queue(), wgpu_tensor->GetBufferHandle(),
+          dst.size(), dst.data());
+    case ::ml_drift::TensorStorageType::kTextureArray:
+    case ::ml_drift::TensorStorageType::kTexture2D:
+    case ::ml_drift::TensorStorageType::kTexture3D:
+    case ::ml_drift::TensorStorageType::kSingleTexture2D: {
+      if (!wgpu_tensor->GetTextureHandle()) {
+        return absl::InvalidArgumentError(
+            "ReadSpatialTensorData: texture handle is null.");
+      }
+      const int channels = wgpu_tensor->GetStorageType() ==
+                                   ::ml_drift::TensorStorageType::kSingleTexture2D
+                               ? wgpu_tensor->Channels()
+                               : 4;
+      const int pixel_size =
+          ::ml_drift::SizeOf(wgpu_tensor->GetDataType()) * channels;
+      const auto region = wgpu_tensor->GetDescriptor().GetFullTensorRegion();
+      return ::ml_drift::webgpu::ReadDataFromTexture(
+          env_->device(), env_->queue(), wgpu_tensor->GetTextureHandle(),
+          pixel_size, region.x, region.y, region.z, dst.data());
+    }
+    default:
+      return absl::InternalError("Unsupported tensor storage type");
+  }
 }
 
 absl::Status GpuBackendWebGpu::UpdateSpatialTensor(
