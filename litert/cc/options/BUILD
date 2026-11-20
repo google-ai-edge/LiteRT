@@ -240,6 +240,19 @@ cc_library(
 )
 
 cc_library(
+    name = "litert_aml_options",
+    hdrs = ["litert_aml_options.h"],
+    deps = [
+        ":litert_concrete_options_base",
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_aml_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+    ],
+    alwayslink = True,
+)
+
+cc_library(
     name = "litert_runtime_options",
     hdrs = ["litert_runtime_options.h"],
     deps = [
@@ -289,6 +302,7 @@ exports_files(glob([
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
+        "litert_aml_options.h",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.h",
         "litert_concrete_options_base.h",

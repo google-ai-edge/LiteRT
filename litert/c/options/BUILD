@@ -318,6 +318,20 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "litert_aml_options",
+    srcs = ["litert_aml_options.cc"],
+    hdrs = ["litert_aml_options.h"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_macros",
+        "//litert/core:litert_toml_parser",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_library(
 #     name = "litert_fabric_options",
@@ -397,6 +411,8 @@ exports_files(glob(["litert_*.h"]))
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
+        "litert_aml_options.cc",
+        "litert_aml_options.h",
         "litert_arm_vulkan_ml_options.cc",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.cc",

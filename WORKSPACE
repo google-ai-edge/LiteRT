@@ -489,6 +489,13 @@ load("//third_party/neuro_pilot:workspace.bzl", "neuro_pilot")
 
 neuro_pilot()
 
+# AML --------------------------------------------------------------------------------------------
+# nnsdk + aml_compiler_core are fetched as @aml_npu_nn_runtime.
+# Local override: LITERT_AML_NN_RUNTIME=/path/to/nn_runtime (nnsdk/ + aml_compiler_core/).
+load("//third_party/aml_nn_runtime:workspace.bzl", "aml_npu_nn_runtime")
+
+aml_npu_nn_runtime()
+
 # GOOGLE TENSOR ----------------------------------------------------------------------------------
 load("//third_party/google_tensor:workspace.bzl", "google_tensor")
 

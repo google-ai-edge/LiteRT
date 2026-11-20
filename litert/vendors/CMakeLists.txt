@@ -442,6 +442,13 @@ else()
   message(STATUS "Skipping Qualcomm dispatch: LITERT_ENABLE_QUALCOMM is OFF or QAIRT_HEADERS_DIR not set")
 endif()
 
+# Amlogic. nn_runtime is fetched from GitHub (amlnn-toolkit). Buildroot/Yocto
+# selects libs/yocto/aarch64 from that tree.
+option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
+if(LITERT_ENABLE_AML)
+  add_subdirectory(aml)
+endif()
+
 # Samsung
 if(LITERT_ENABLE_SAMSUNG AND LITECORE_HEADERS_DIR)
   # Use modular CMake structure for Samsung

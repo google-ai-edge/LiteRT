@@ -33,6 +33,7 @@ litert/c/litert_tensor_buffer.h
 litert/c/litert_tensor_buffer_requirements.h
 litert/c/litert_tensor_buffer_types.h
 litert/c/litert_webgpu_types.h
+litert/c/options/litert_aml_options.h
 litert/c/options/litert_arm_vulkan_ml_options.h
 litert/c/options/litert_compiler_options.h
 litert/c/options/litert_cpu_options.h
@@ -87,6 +88,7 @@ litert/cc/litert_string_util.h
 litert/cc/litert_tensor_buffer.h
 litert/cc/litert_tensor_buffer_requirements.h
 litert/cc/litert_tensor_buffer_types.h
+litert/cc/options/litert_aml_options.h
 litert/cc/options/litert_arm_vulkan_ml_options.h
 litert/cc/options/litert_compiler_options.h
 litert/cc/options/litert_concrete_options_base.h

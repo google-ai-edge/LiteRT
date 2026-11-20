@@ -1,0 +1,113 @@
+/*******************************************************************************
+ * Copyright (C) 2026 Amlogic, Inc. All rights reserved.
+ *
+ * @file    nnsdk_func.h
+ * @module  aml_runtime
+ * @brief   dlopen wrappers for libnnsdk.so (NNSDK2 / amlnn_* APIs) used by dispatch.
+ * @note    Runtime only; not part of aml_compiler_core. NNSDK1 (module_*) removed.
+ ******************************************************************************/
+
+#ifndef NNSDK_FUNC_H__
+#define NNSDK_FUNC_H__
+
+#include <dlfcn.h>
+
+#include <cstdint>
+
+#include "nnsdk2.h"
+
+namespace aml_nnsdk {
+
+typedef int (*amlnn_init_func)(void** context, void* model, uint32_t size,
+                               amlnn_init_config* init_config);
+typedef int (*amlnn_destroy_func)(void* context);
+typedef int (*amlnn_query_func)(void* context, amlnn_query_cmd query_cmd,
+                                void* info, uint32_t size);
+typedef int (*amlnn_inputs_set_func)(void* context, uint32_t n_inputs,
+                                     amlnn_input inputs[]);
+typedef int (*amlnn_run_func)(void* context, amlnn_run_config* run_config);
+typedef int (*amlnn_outputs_get_func)(void* context, uint32_t n_outputs,
+                                      amlnn_output outputs[]);
+
+/**
+ * @brief Optional multi-subgraph selector (amlnn_select_subgraph).
+ * @note Subgraph count is queried via amlnn_query(AMLNN_QUERY_SUBGRAPH_NUM).
+ */
+typedef int (*amlnn_select_subgraph_func)(void* context,
+                                          uint32_t subgraph_index);
+
+/**
+ * @brief Function-pointer table for NNSDK2 (amlnn_* APIs).
+ * @note select_subgraph is optional (dlsym); older SDKs may omit it.
+ */
+typedef struct _nnsdk2_func_api {
+  amlnn_init_func init;
+  amlnn_destroy_func destroy;
+  amlnn_query_func query;
+  amlnn_inputs_set_func inputs_set;
+  amlnn_run_func run;
+  amlnn_outputs_get_func outputs_get;
+  amlnn_select_subgraph_func select_subgraph;
+} NNSDK2_FUNC_PTR;
+
+/**
+ * @brief Simple NHWC tensor descriptor used by some host helpers.
+ */
+typedef struct {
+  uint32_t batches;
+  uint32_t height;
+  uint32_t width;
+  uint32_t depth;
+  uint8_t* data;
+  uint32_t dataLen;
+  uint32_t data_valid_len;
+} aml_nn_tensordef;
+
+/**
+ * @brief NNSDK2 runtime state for one loaded ADLA model.
+ * @var qcontext         This model's amlnn_init handle. Not process-wide.
+ * @var nnsdk2_func_ptr  Resolved NNSDK2 API symbols (copied from the dlopen).
+ * @var available        True if NNSDK2 base symbols loaded.
+ */
+struct AML_NN {
+  void* qcontext = nullptr;
+  NNSDK2_FUNC_PTR nnsdk2_func_ptr = {};
+  bool available = false;
+};
+
+/**
+ * @brief Process-wide symbol cache. Do not store a model qcontext here.
+ */
+AML_NN* AML_NNImplementation();
+
+/**
+ * @brief AML_NN for one ADLA model: same function table, its own qcontext.
+ * @note libnnsdk.so is dlopen'd once. Each model must keep the returned object.
+ */
+AML_NN CreateAmlNn();
+
+/**
+ * @brief True if NNSDK2 symbols were successfully resolved.
+ */
+bool IsNnsdk2Available(const AML_NN* aml_nn);
+
+/**
+ * @brief Query subgraph count via AMLNN_QUERY_SUBGRAPH_NUM.
+ * @param[out] subgraph_num Receives n_subgraph; set to 1 if query unsupported.
+ * @return 0 on success (including fallback to 1); <0 on hard failure.
+ */
+int Nnsdk2QuerySubgraphNum(const AML_NN* aml_nn, void* context,
+                           int* subgraph_num);
+
+/**
+ * @brief Select active subgraph when multi-subgraph APIs are present.
+ * @param subgraph_idx Partition index from AML_Dispatch_Info.
+ * @param subgraph_num Queried count from Nnsdk2QuerySubgraphNum().
+ * @return 0 on success / not needed; <0 on select failure.
+ * @note Matches NNSDK sample: select then query IO / run.
+ */
+int Nnsdk2SelectSubgraphIfNeeded(const AML_NN* aml_nn, void* context,
+                                 int subgraph_idx, int subgraph_num);
+
+}  // namespace aml_nnsdk
+#endif  // NNSDK_FUNC_H__
