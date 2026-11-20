@@ -533,7 +533,9 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
             auto tensor_map_for_batch,
             backend_->PrepareWeightsInBatch(
                 shared_mem_manager->GetWeightsManager(), batch));
-        for (auto& [main_model_id, tensor] : tensor_map_for_batch) {
+        for (auto& tensor_entry : tensor_map_for_batch) {
+          auto& main_model_id = tensor_entry.first;
+          auto& tensor = tensor_entry.second;
           ::ml_drift::SharedMemoryManager::GlobalId global_id =
               local_to_global_id_map[main_model_id];
           if (use_serialization_cache) {
