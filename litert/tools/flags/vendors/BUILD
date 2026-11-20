@@ -71,7 +71,7 @@ cc_library(
     name = "google_tensor_flags",
     srcs = ["google_tensor_flags.cc"],
     hdrs = ["google_tensor_flags.h"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],
@@ -91,7 +91,7 @@ cc_library(
 cc_test(
     name = "google_tensor_flags_test",
     srcs = ["google_tensor_flags_test.cc"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],

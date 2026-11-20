@@ -145,6 +145,11 @@ static absl::StatusOr<ml_drift::TensorDescriptor> GetConstantTensorDescriptor(
   }
   ml_drift::TensorDescriptor desc(mld_data_type, storage_type, layout,
                                   physical_layout_1d);
+  if (!create_linear_tensor && !force_buffer_storage) {
+    desc.UpdateToSupportedStorageType(ctx.gpu_model_builder->gpu_info(),
+                                      bhwc_shape)
+        .IgnoreError();
+  }
   desc.SetBHWCShape(bhwc_shape);
   return desc;
 }
@@ -306,6 +311,11 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
         mld_data_type, storage_type,
         shape.b == 1 ? ml_drift::Layout::kHWC : ml_drift::Layout::kBHWC,
         physical_layout_1d);
+    if (!force_buffer_storage) {
+      desc.UpdateToSupportedStorageType(ctx.gpu_model_builder->gpu_info(),
+                                        shape)
+          .IgnoreError();
+    }
     desc.SetBHWCShape(shape);
     handle = ctx.gpu_model_builder->AddTensor(desc);
   }
@@ -344,6 +354,32 @@ GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
                        ml_drift::TensorDescriptor::PhysicalLayout1D::kDCHWBC4));
   ctx.constant_handles_in_tensor_layout.insert({t, handle});
   return handle;
+}
+
+absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
+    const graph::PerChannelAffineQuantization& pcq, int num_channels) {
+  if (num_channels < 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Negative number of channels: ", num_channels));
+  }
+  const auto one_or_per_channel = [&](size_t count) {
+    return count == 1 || count == static_cast<size_t>(num_channels);
+  };
+  // Integer or float zero points: none, one, or one per channel.
+  if (!one_or_per_channel(pcq.scales.size())) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        pcq.scales.size(), " scales don't match ", num_channels, " channels"));
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(
+      pcq.zero_points.Validate<float>(static_cast<size_t>(num_channels)));
+  std::vector<float> values(num_channels, 0.0f);
+  LRT_TENSOR_RETURN_IF_ERROR(
+      pcq.zero_points.CopyTo<float>(absl::MakeSpan(values)));
+  for (int o = 0; o < num_channels; ++o) {
+    const float scale = pcq.scales[pcq.scales.size() == 1 ? 0 : o];
+    values[o] *= -scale;
+  }
+  return values;
 }
 
 }  // namespace litert::tensor
