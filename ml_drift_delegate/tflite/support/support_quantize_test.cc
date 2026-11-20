@@ -43,7 +43,17 @@ TEST_P(SupportQuantizeTest, SupportedTypes) {
   tensors[1].type = std::get<1>(GetParam());
   context.tensors = tensors;
 
+  struct {
+    int size;
+    float data[1];
+  } scale = {1, {0.5f}};
+  struct {
+    int size;
+    int data[1];
+  } zero_point = {1, {0}};
   TfLiteAffineQuantization quant_params = {};
+  quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale);
+  quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zero_point);
   tensors[1].quantization.params = &quant_params;
   tensors[1].quantization.type = kTfLiteAffineQuantization;
 
@@ -75,7 +85,17 @@ TEST(SupportQuantizeTest, UnsupportedVersion) {
   tensors[1].type = kTfLiteInt8;
   context.tensors = tensors;
 
+  struct {
+    int size;
+    float data[1];
+  } scale = {1, {0.5f}};
+  struct {
+    int size;
+    int data[1];
+  } zero_point = {1, {0}};
   TfLiteAffineQuantization quant_params = {};
+  quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale);
+  quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zero_point);
   tensors[1].quantization.params = &quant_params;
   tensors[1].quantization.type = kTfLiteAffineQuantization;
 
@@ -101,7 +121,17 @@ TEST(SupportQuantizeTest, UnsupportedInputType) {
   tensors[1].type = kTfLiteInt8;
   context.tensors = tensors;
 
+  struct {
+    int size;
+    float data[1];
+  } scale = {1, {0.5f}};
+  struct {
+    int size;
+    int data[1];
+  } zero_point = {1, {0}};
   TfLiteAffineQuantization quant_params = {};
+  quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale);
+  quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zero_point);
   tensors[1].quantization.params = &quant_params;
   tensors[1].quantization.type = kTfLiteAffineQuantization;
 
@@ -127,7 +157,17 @@ TEST(SupportQuantizeTest, UnsupportedOutputType) {
   tensors[1].type = kTfLiteFloat32;
   context.tensors = tensors;
 
+  struct {
+    int size;
+    float data[1];
+  } scale = {1, {0.5f}};
+  struct {
+    int size;
+    int data[1];
+  } zero_point = {1, {0}};
   TfLiteAffineQuantization quant_params = {};
+  quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale);
+  quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zero_point);
   tensors[1].quantization.params = &quant_params;
   tensors[1].quantization.type = kTfLiteAffineQuantization;
 
@@ -188,6 +228,106 @@ TEST(SupportQuantizeTest, UnsupportedPerAxisScale) {
   std::string error;
   EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
   EXPECT_EQ(error, "Unsupported quantization scale size");
+}
+
+TEST(SupportQuantizeTest, RejectsNonAffineQuantization) {
+  TfLiteContext context = {};
+  context.tensors_size = 2;
+  TfLiteNode node = {};
+  TfLiteRegistration registration = {};
+  registration.version = 4;
+
+  int inputs[] = {1, 0};
+  int outputs[] = {1, 1};
+  node.inputs = reinterpret_cast<TfLiteIntArray*>(inputs);
+  node.outputs = reinterpret_cast<TfLiteIntArray*>(outputs);
+
+  TfLiteTensor tensors[2] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[1].type = kTfLiteInt4;
+  context.tensors = tensors;
+
+  TfLiteBlockwiseQuantizationV2 quant_params = {};
+  tensors[1].quantization.params = &quant_params;
+  tensors[1].quantization.type = kTfLiteBlockwiseQuantizationV2;
+
+  std::string error;
+  EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+  EXPECT_EQ(error, "Quantize needs an output with affine quantization.");
+}
+
+TEST(SupportQuantizeTest, RejectsMissingOrEmptyScaleAndZeroPoint) {
+  TfLiteContext context = {};
+  context.tensors_size = 2;
+  TfLiteNode node = {};
+  TfLiteRegistration registration = {};
+  registration.version = 1;
+
+  int inputs[] = {1, 0};
+  int outputs[] = {1, 1};
+  node.inputs = reinterpret_cast<TfLiteIntArray*>(inputs);
+  node.outputs = reinterpret_cast<TfLiteIntArray*>(outputs);
+
+  TfLiteTensor tensors[2] = {};
+  tensors[0].type = kTfLiteFloat32;
+  tensors[1].type = kTfLiteInt8;
+  context.tensors = tensors;
+
+  struct {
+    int size;
+    float data[1];
+  } scale_one = {1, {0.5f}};
+  struct {
+    int size;
+    float data[1];
+  } scale_zero = {0, {}};
+  struct {
+    int size;
+    int data[1];
+  } zp_one = {1, {0}};
+  struct {
+    int size;
+    int data[1];
+  } zp_zero = {0, {}};
+
+  // Null scale.
+  {
+    TfLiteAffineQuantization quant_params = {};
+    quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zp_one);
+    tensors[1].quantization = {kTfLiteAffineQuantization, &quant_params};
+    std::string error;
+    EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+    EXPECT_EQ(error, "Unsupported quantization scale size");
+  }
+  // Empty scale (size == 0).
+  {
+    TfLiteAffineQuantization quant_params = {};
+    quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale_zero);
+    quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zp_one);
+    tensors[1].quantization = {kTfLiteAffineQuantization, &quant_params};
+    std::string error;
+    EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+    EXPECT_EQ(error, "Unsupported quantization scale size");
+  }
+  // Null zero_point.
+  {
+    TfLiteAffineQuantization quant_params = {};
+    quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale_one);
+    tensors[1].quantization = {kTfLiteAffineQuantization, &quant_params};
+    std::string error;
+    EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+    EXPECT_EQ(error, "Unsupported quantization scale size");
+  }
+  // Empty zero_point (size == 0).
+  {
+    TfLiteAffineQuantization quant_params = {};
+    quant_params.scale = reinterpret_cast<TfLiteFloatArray*>(&scale_one);
+    quant_params.zero_point = reinterpret_cast<TfLiteIntArray*>(&zp_zero);
+    tensors[1].quantization = {kTfLiteAffineQuantization, &quant_params};
+    std::string error;
+    EXPECT_FALSE(IsQuantizeSupported(&context, &node, &registration, &error));
+    EXPECT_EQ(error, "Unsupported quantization scale size");
+  }
 }
 
 }  // namespace

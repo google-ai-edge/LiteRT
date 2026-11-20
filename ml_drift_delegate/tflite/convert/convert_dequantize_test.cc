@@ -18,6 +18,7 @@
 #include <vector>
 
 #include "testing/base/public/gunit.h"
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
@@ -106,6 +107,33 @@ TEST_F(ConvertDequantizeTest, BasicConstantInput) {
   const auto* attr =
       std::any_cast<::ml_drift::ConstTensorAttributes>(&op->attr);
   ASSERT_TRUE(attr);
+}
+
+TEST_F(ConvertDequantizeTest, Float16OutputInsertsCast) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinDequantize, /*version=*/6);
+  model.AddInput(kTfLiteInt8, {1, 2, 3, 4});
+  model.AddOutput(kTfLiteFloat16, {1, 2, 3, 4});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_EQ(ir_model->ops().size(), 2);
+  const ::ml_drift::ir::IrOp* qdq_op = ir_model->op(0);
+  const ::ml_drift::ir::IrOp* cast_op = ir_model->op(1);
+  EXPECT_EQ(qdq_op->name, "quantize_and_dequantize");
+  EXPECT_EQ(cast_op->name, "cast");
+  ASSERT_EQ(qdq_op->outputs.size(), 1);
+  ASSERT_EQ(cast_op->inputs.size(), 1);
+  ASSERT_EQ(cast_op->outputs.size(), 1);
+  EXPECT_EQ(qdq_op->outputs[0], cast_op->inputs[0]);
+  EXPECT_EQ(ir_model->tensor(qdq_op->outputs[0])->desc.GetDataType(),
+            ::ml_drift::DataType::kFloat32);
+  EXPECT_EQ(ir_model->tensor(cast_op->outputs[0])->desc.GetDataType(),
+            ::ml_drift::DataType::kFloat16);
 }
 
 }  // namespace

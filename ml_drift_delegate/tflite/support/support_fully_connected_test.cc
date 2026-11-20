@@ -85,7 +85,7 @@ INSTANTIATE_TEST_SUITE_P(
     FCOps, SupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {kTfLiteBuiltinFullyConnected,          1},  // min
-        {kTfLiteBuiltinFullyConnected,          14},  // max
+        {kTfLiteBuiltinFullyConnected,          17},  // max
     }),
     [](const TestParamInfo<SupportedVersionTest::ParamType>& info) {
       return absl::StrCat(::tflite::EnumNamesBuiltinOperator()[info.param.op],
@@ -114,7 +114,7 @@ INSTANTIATE_TEST_SUITE_P(
     FCOps, UnsupportedVersionTest,
     ValuesIn<VersionTestCase>({
         {kTfLiteBuiltinFullyConnected,          0},  // min-1
-        {kTfLiteBuiltinFullyConnected,          15},  // max+1
+        {kTfLiteBuiltinFullyConnected,          18},  // max+1
     }),
     [](const TestParamInfo<UnsupportedVersionTest::ParamType>& info) {
       return absl::StrCat(::tflite::EnumNamesBuiltinOperator()[info.param.op],
@@ -718,6 +718,148 @@ TEST_F(ActivationTest, RejectsActivationTooLarge) {
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(ParamsTest, RejectsQuantSpec) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kDefaultDtype, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultWeightsDims);
+  const int c = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  TfLiteFullyConnectedParams params = kDefaultFullyConnectedParams;
+  params.quant_spec_size = 1;
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/15,
+                        /*params=*/&params,
+                        /*inputs=*/{a, b}, /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST(BlockwiseV2Test, Supports2DCenteredInt2) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat32, {1, 4});
+  const int b = context_builder.AddConstTensor(kTfLiteInt2, {2, 4});
+  const int c = context_builder.AddTensor(kTfLiteFloat32, {1, 2});
+  const int scale_id = context_builder.AddConstTensor(kTfLiteFloat32, {2, 1});
+  const int zp_id = context_builder.AddConstTensor(kTfLiteFloat32, {2, 1});
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/17,
+                        &kDefaultFullyConnectedParams, /*inputs=*/{a, b},
+                        /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+
+  float scales[2] = {0.5f, 1.0f};
+  float zps[2] = {-0.5f, -0.5f};
+  context->tensors[scale_id].data.f = scales;
+  context->tensors[scale_id].bytes = sizeof(scales);
+  context->tensors[zp_id].data.f = zps;
+  context->tensors[zp_id].bytes = sizeof(zps);
+
+  TfLiteIntArray* block_shape = TfLiteIntArrayCreate(2);
+  block_shape->data[0] = 1;
+  block_shape->data[1] = 4;
+  TfLiteBlockwiseQuantizationV2 q = {
+      .scale = scale_id, .zero_point = zp_id, .block_shape = block_shape};
+  context->tensors[b].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  context->tensors[b].quantization.params = &q;
+
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+  context->tensors[b].quantization.params = nullptr;
+  TfLiteIntArrayFree(block_shape);
+}
+
+TEST(BlockwiseV2Test, RejectsBiasAnd3DWeights) {
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddTensor(kTfLiteFloat32, {1, 4});
+    const int b = context_builder.AddConstTensor(kTfLiteInt2, {2, 4});
+    const int bias = context_builder.AddConstTensor(kTfLiteFloat32, {2});
+    const int c = context_builder.AddTensor(kTfLiteFloat32, {1, 2});
+    const int scale_id = context_builder.AddConstTensor(kTfLiteFloat32, {2, 1});
+    context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/17,
+                          &kDefaultFullyConnectedParams,
+                          /*inputs=*/{a, b, bias}, /*outputs=*/{c});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    float scales[2] = {0.5f, 1.0f};
+    context->tensors[scale_id].data.f = scales;
+    context->tensors[scale_id].bytes = sizeof(scales);
+    TfLiteIntArray* block_shape = TfLiteIntArrayCreate(2);
+    block_shape->data[0] = 1;
+    block_shape->data[1] = 4;
+    TfLiteBlockwiseQuantizationV2 q = {.scale = scale_id,
+                                       .zero_point = kTfLiteOptionalTensor,
+                                       .block_shape = block_shape};
+    context->tensors[b].quantization.type = kTfLiteBlockwiseQuantizationV2;
+    context->tensors[b].quantization.params = &q;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+    context->tensors[b].quantization.params = nullptr;
+    TfLiteIntArrayFree(block_shape);
+  }
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddTensor(kTfLiteFloat32, {1, 4});
+    const int b = context_builder.AddConstTensor(kTfLiteInt2, {1, 2, 4});
+    const int c = context_builder.AddTensor(kTfLiteFloat32, {1, 2});
+    const int scale_id =
+        context_builder.AddConstTensor(kTfLiteFloat32, {1, 2, 1});
+    context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/17,
+                          &kDefaultFullyConnectedParams, /*inputs=*/{a, b},
+                          /*outputs=*/{c});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    float scales[2] = {0.5f, 1.0f};
+    context->tensors[scale_id].data.f = scales;
+    context->tensors[scale_id].bytes = sizeof(scales);
+    TfLiteIntArray* block_shape = TfLiteIntArrayCreate(3);
+    block_shape->data[0] = 1;
+    block_shape->data[1] = 1;
+    block_shape->data[2] = 4;
+    TfLiteBlockwiseQuantizationV2 q = {.scale = scale_id,
+                                       .zero_point = kTfLiteOptionalTensor,
+                                       .block_shape = block_shape};
+    context->tensors[b].quantization.type = kTfLiteBlockwiseQuantizationV2;
+    context->tensors[b].quantization.params = &q;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+    context->tensors[b].quantization.params = nullptr;
+    TfLiteIntArrayFree(block_shape);
+  }
+}
+
+TEST(BlockwiseV2Test, RejectsUnevenBlocksWithoutHostData) {
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat32, {1, 5});
+  const int b = context_builder.AddConstTensor(kTfLiteInt2, {2, 5});
+  const int c = context_builder.AddTensor(kTfLiteFloat32, {1, 2});
+  const int scale_id = context_builder.AddConstTensor(kTfLiteFloat32, {2, 2});
+  context_builder.SetOp(kTfLiteBuiltinFullyConnected, /*version=*/17,
+                        &kDefaultFullyConnectedParams, /*inputs=*/{a, b},
+                        /*outputs=*/{c});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+
+  float scales[4] = {0.5f, 0.5f, 1.0f, 1.0f};
+  context->tensors[scale_id].data.f = scales;
+  context->tensors[scale_id].bytes = sizeof(scales);
+  TfLiteIntArray* block_shape = TfLiteIntArrayCreate(2);
+  block_shape->data[0] = 1;
+  block_shape->data[1] = 4;
+  TfLiteBlockwiseQuantizationV2 q = {.scale = scale_id,
+                                     .zero_point = kTfLiteOptionalTensor,
+                                     .block_shape = block_shape};
+  context->tensors[b].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  context->tensors[b].quantization.params = &q;
+
+  // No host data on weights (data.raw_const == nullptr) and uneven blocks
+  // (5 % 4 != 0) cannot be dequantized on host.
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+
+  // With host data present, it is supported (host-dequantized fallback).
+  char dummy_weights[4] = {};
+  context->tensors[b].data.raw = dummy_weights;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+  context->tensors[b].quantization.params = nullptr;
+  TfLiteIntArrayFree(block_shape);
 }
 
 }  // namespace
