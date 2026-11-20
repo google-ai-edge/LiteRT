@@ -1274,6 +1274,7 @@ cc_test(
     srcs = ["verifier_test.cc"],
     deps = [
         ":verifier",
+        "//litert/c:litert_op_code",
         "//tflite:stderr_reporter",
         "//tflite:version",
         "//tflite/schema:schema_fbs",
