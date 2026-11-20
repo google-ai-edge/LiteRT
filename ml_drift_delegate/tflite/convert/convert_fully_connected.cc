@@ -21,7 +21,9 @@
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
@@ -30,6 +32,7 @@
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
@@ -52,6 +55,48 @@ bool IsFullyConnectedOutputReshapeNeeded(const ::ml_drift::BHWC& input_shape,
   SetFullyConnectedOutputShape(input_shape, output_channels,
                                expected_output_shape);
   return output_shape != expected_output_shape;
+}
+
+// Returns true when N-D blockwise v2 weights cannot be consumed directly as
+// shared quantized GPU weights (non-shared weights or uneven input blocks) and
+// therefore need CPU dequantization into float32 attributes.
+bool ShouldHostDequantizeBlockwiseV2(const TfLiteContext& context,
+                                     const TfLiteTensor& weights_tensor,
+                                     bool weights_ir_is_shared) {
+  if (weights_tensor.quantization.type != kTfLiteBlockwiseQuantizationV2 ||
+      weights_tensor.data.raw_const == nullptr) {
+    return false;
+  }
+  if (!weights_ir_is_shared) {
+    return true;
+  }
+  const absl::StatusOr<::litert::ml_drift::BlockwiseV2Params> bw_params =
+      ::litert::ml_drift::GetBlockwiseV2Params(
+          context.tensors, context.tensors_size, weights_tensor);
+  ::litert::ml_drift::BlockwiseV2WeightsInfo bw_info;
+  return !bw_params.ok() ||
+         !::litert::ml_drift::GetBlockwiseV2WeightsInfo(weights_tensor,
+                                                        *bw_params, &bw_info)
+              .ok();
+}
+
+void SetFloatFullyConnectedOrConv2DOp(
+    const ::ml_drift::BHWC& input_shape,
+    ::ml_drift::FullyConnectedAttributes&& attr, ::ml_drift::ir::IrOp* fc_op) {
+  if (input_shape.h != 1 || input_shape.w != 1) {
+    ::ml_drift::Convolution2DAttributes conv_attr;
+    conv_attr.strides = ::ml_drift::HW(1, 1);
+    conv_attr.dilations = ::ml_drift::HW(1, 1);
+    conv_attr.padding.appended = ::ml_drift::HW(0, 0);
+    conv_attr.padding.prepended = ::ml_drift::HW(0, 0);
+    conv_attr.weights = std::move(attr.weights);
+    conv_attr.bias = std::move(attr.bias);
+    fc_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
+    fc_op->attr = std::move(conv_attr);
+  } else {
+    fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
+    fc_op->attr = std::move(attr);
+  }
 }
 
 template <typename AttrType>
@@ -140,8 +185,28 @@ void ConvertFullyConnected(
   const ::ml_drift::BHWC output_shape =
       ir_model.tensor(tensor_map[output_id])->desc.GetBHWCShape();
 
-  if (weights_are_const &&
-      !ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared) {
+  const bool weights_ir_is_shared =
+      ir_model.tensor(tensor_map[weights_id])->buffer_source.is_shared;
+  if (ShouldHostDequantizeBlockwiseV2(context, *weights_tensor,
+                                      weights_ir_is_shared)) {
+    const absl::StatusOr<::litert::ml_drift::BlockwiseV2Params> bw_params =
+        ::litert::ml_drift::GetBlockwiseV2Params(
+            context.tensors, context.tensors_size, *weights_tensor);
+    ABSL_QCHECK_OK(bw_params.status());
+    ::ml_drift::FullyConnectedAttributes attr;
+    attr.weights.id = weights_id;
+    attr.weights.shape = ::ml_drift::OHWI(weights_tensor->dims->data[0], 1, 1,
+                                          weights_tensor->dims->data[1]);
+    attr.weights.data.resize(attr.weights.shape.DimensionsProduct() +
+                             XNN_EXTRA_BYTES / sizeof(float));
+    // Dequantize on CPU into float32 attributes because ML Drift's quantized FC
+    // kernels only support uniform block sizes across the input dimension and
+    // require shared quantized weight tensors for blockwise v2 scales/zero
+    // points.
+    ::litert::ml_drift::DequantizeBlockwiseV2(*weights_tensor, *bw_params,
+                                              attr.weights.data.data());
+    SetFloatFullyConnectedOrConv2DOp(input_shape, std::move(attr), fc_op);
+  } else if (weights_are_const && !weights_ir_is_shared) {
     if (weights_tensor->type == kTfLiteInt8 ||
         weights_tensor->type == kTfLiteInt4 ||
         weights_tensor->type == kTfLiteInt2) {
@@ -195,23 +260,7 @@ void ConvertFullyConnected(
                        options.enable_spanned_weights);
       }
 
-      if (input_shape.h != 1 || input_shape.w != 1) {
-        ::ml_drift::Convolution2DAttributes conv_attr;
-        conv_attr.strides = ::ml_drift::HW(1, 1);
-        conv_attr.dilations = ::ml_drift::HW(1, 1);
-        conv_attr.padding.appended = ::ml_drift::HW(0, 0);
-        conv_attr.padding.prepended = ::ml_drift::HW(0, 0);
-        conv_attr.weights = attr.weights;
-        conv_attr.bias = attr.bias;
-        fc_op->name = ToString(::ml_drift::OperationType::kConvolution2D);
-        fc_op->attr = std::move(conv_attr);
-      } else {
-        fc_op->name = ToString(::ml_drift::OperationType::kFullyConnected);
-        fc_op->attr = std::move(attr);
-      }
-    }
-    if (has_bias && !bias_is_const) {
-      ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
+      SetFloatFullyConnectedOrConv2DOp(input_shape, std::move(attr), fc_op);
     }
   } else {
     const auto* weights_ir_tensor = ir_model.tensor(tensor_map[weights_id]);
@@ -240,7 +289,7 @@ void ConvertFullyConnected(
       ConfigSharedQuantizedFullyConnected(
           *weights_tensor,
           ::ml_drift::OHWI(output_shape.c, 1, 1, input_shape.c),
-          std::move(bias), fc_op);
+          std::move(bias), fc_op, &context);
     } else {
       // Plain float fully-connected: embed the (possibly empty) const bias.
       // Keeping this move of `bias` in the same if/else as the quantized path
@@ -287,10 +336,9 @@ void ConvertFullyConnected(
       // If it's already 1x1, just use it directly
       ir_model.AddConsumer(tensor_map[weights_id], fc_op->id);
     }
-
-    if (has_bias && !bias_is_const) {
-      ir_model.AddConsumer(tensor_map[node.inputs->data[2]], fc_op->id);
-    }
+  }
+  if (has_bias && !bias_is_const) {
+    ir_model.AddConsumer(tensor_map[bias_id], fc_op->id);
   }
 
   const ::ml_drift::BHWDC weights_shape_bhwdc =

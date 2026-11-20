@@ -269,7 +269,8 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
 bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias,
-    ::ml_drift::ir::IrOp* fc_op);
+    ::ml_drift::ir::IrOp* fc_op, const TfLiteContext* context = nullptr,
+    bool oi_transposed = true);
 
 // Populates `attr` for a native (const) blockwise-quantized int4
 // fully-connected node, mirroring GraphFloat32's native blockwise path (which

@@ -1,0 +1,286 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
+
+#include <cstdint>
+#include <cstring>
+#include <initializer_list>
+#include <memory>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "testing/base/public/gmock.h"
+#include "testing/base/public/gunit.h"
+#include "absl/status/status.h"  // from @com_google_absl
+#include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "tflite/c/builtin_op_data.h"
+#include "tflite/c/common.h"
+
+namespace litert::ml_drift {
+namespace {
+
+using ::absl_testing::StatusIs;
+
+struct IntArrayHolder {
+  IntArrayHolder(std::initializer_list<int> vals) {
+    ptr = TfLiteIntArrayCreate(vals.size());
+    int i = 0;
+    for (int v : vals) ptr->data[i++] = v;
+  }
+  ~IntArrayHolder() { TfLiteIntArrayFree(ptr); }
+  IntArrayHolder(const IntArrayHolder&) = delete;
+  IntArrayHolder& operator=(const IntArrayHolder&) = delete;
+  IntArrayHolder(IntArrayHolder&& other) noexcept : ptr(other.ptr) {
+    other.ptr = nullptr;
+  }
+  TfLiteIntArray* ptr = nullptr;
+};
+
+class SyntheticCompositeArena {
+ public:
+  int AddRuntimeTensor(TfLiteType type, std::initializer_list<int> dims) {
+    dims_.emplace_back(dims);
+    TfLiteTensor t{};
+    t.type = type;
+    t.dims = dims_.back().ptr;
+    t.allocation_type = kTfLiteArenaRw;
+    tensors_.push_back(t);
+    return static_cast<int>(tensors_.size()) - 1;
+  }
+
+  int AddConstFloatTensor(std::initializer_list<int> dims, float fill_val) {
+    dims_.emplace_back(dims);
+    size_t count = 1;
+    for (int d : dims) count *= d;
+    float_buffers_.push_back(std::vector<float>(count, fill_val));
+    TfLiteTensor t{};
+    t.type = kTfLiteFloat32;
+    t.dims = dims_.back().ptr;
+    t.data.raw_const =
+        reinterpret_cast<const char*>(float_buffers_.back().data());
+    t.bytes = count * sizeof(float);
+    t.allocation_type = kTfLiteMmapRo;
+    tensors_.push_back(t);
+    return static_cast<int>(tensors_.size()) - 1;
+  }
+
+  int AddBlockwiseV2Int2Tensor(std::initializer_list<int> dims,
+                               std::initializer_list<int> block_shape,
+                               std::initializer_list<int> param_dims,
+                               float scale_val, float zp_val) {
+    const int scale_idx = AddConstFloatTensor(param_dims, scale_val);
+    const int zp_idx = AddConstFloatTensor(param_dims, zp_val);
+    dims_.emplace_back(dims);
+    dims_.emplace_back(block_shape);
+    size_t count = 1;
+    for (int d : dims) count *= d;
+    const size_t packed_bytes = (count + 3) / 4;
+    byte_buffers_.push_back(std::vector<int8_t>(packed_bytes, 0x4E));
+    auto q = std::make_unique<TfLiteBlockwiseQuantizationV2>();
+    q->scale = scale_idx;
+    q->zero_point = zp_idx;
+    q->block_shape = dims_.back().ptr;
+    quant_params_.push_back(std::move(q));
+
+    TfLiteTensor t{};
+    t.type = kTfLiteInt2;
+    t.dims = dims_[dims_.size() - 2].ptr;
+    t.data.raw_const =
+        reinterpret_cast<const char*>(byte_buffers_.back().data());
+    t.bytes = packed_bytes;
+    t.allocation_type = kTfLiteMmapRo;
+    t.quantization.type = kTfLiteBlockwiseQuantizationV2;
+    t.quantization.params = quant_params_.back().get();
+    tensors_.push_back(t);
+    return static_cast<int>(tensors_.size()) - 1;
+  }
+
+  TfLiteContext BuildContext() {
+    TfLiteContext ctx{};
+    ctx.tensors = tensors_.data();
+    ctx.tensors_size = tensors_.size();
+    return ctx;
+  }
+
+ private:
+  std::vector<IntArrayHolder> dims_;
+  std::vector<std::vector<float>> float_buffers_;
+  std::vector<std::vector<int8_t>> byte_buffers_;
+  std::vector<std::unique_ptr<TfLiteBlockwiseQuantizationV2>> quant_params_;
+  std::vector<TfLiteTensor> tensors_;
+};
+
+std::vector<uint8_t> BuildFlexAttrs(const std::string& activation,
+                                    bool include_scales,
+                                    bool distinct_adjacent_scales = false,
+                                    bool dynamic_spec = false) {
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.String("activation", activation);
+    if (dynamic_spec) {
+      fbb.String("u1_quant_spec", "cint2_fp32_int4_e8m0_drq");
+    }
+    if (include_scales) {
+      fbb.Float("u1_in_scale", 0.02f);
+      fbb.Float("u1_out_scale", 0.05f);
+      fbb.Float("u2_in_scale", distinct_adjacent_scales ? 0.06f : 0.05f);
+      fbb.Float("u2_out_scale", 0.10f);
+      fbb.Float("d1_in_scale", 0.04f);
+      fbb.Float("d1_out_scale", 0.03f);
+      fbb.Float("d2_in_scale", distinct_adjacent_scales ? 0.025f : 0.03f);
+      fbb.Float("d2_out_scale", 0.02f);
+    }
+  });
+  fbb.Finish();
+  return fbb.GetBuffer();
+}
+
+TEST(BlockFfwParserTest, ResolvesPlanAndExtractsHostFallback) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 2, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 2, 16});
+  const int w_u1_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  std::vector<uint8_t> fb_attrs =
+      BuildFlexAttrs("silu", /*include_scales=*/true,
+                     /*distinct_adjacent_scales=*/true);
+  TfLiteStablehloCompositeParams params{};
+  params.name = kBlockFfwCompositeName;
+  params.attributes = fb_attrs.data();
+  params.attributes_size = fb_attrs.size();
+
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+  node.builtin_data = &params;
+
+  TfLiteContext ctx = arena.BuildContext();
+  ResolvedBlockFfwPlan plan;
+  ASSERT_OK(
+      ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node, &plan));
+  EXPECT_EQ(plan.tokens, 2);
+  EXPECT_EQ(plan.model_dim, 16);
+  EXPECT_EQ(plan.k1, 2);
+  EXPECT_EQ(plan.k2, 2);
+  EXPECT_TRUE(plan.u2_weight.oi_transposed);
+  EXPECT_TRUE(plan.d1_weight.oi_transposed);
+
+  const std::vector<float> u1_fb = ExtractBlockFfwHostFallback(
+      ctx.tensors, ctx.tensors_size, plan.u1_weights[0]);
+  EXPECT_EQ(u1_fb.size(), 64);
+  const std::vector<float> u2_fb = ExtractBlockFfwHostFallback(
+      ctx.tensors, ctx.tensors_size, plan.u2_weight);
+  EXPECT_EQ(u2_fb.size(), 2 * 8 * 12);
+}
+
+TEST(BlockFfwParserTest, Rejects3dEdgeWeights) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int w_u1 = arena.AddBlockwiseV2Int2Tensor({2, 8, 8}, {1, 1, 8},
+                                                  {2, 8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 8}, {1, 1, 8},
+                                                  {2, 8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1, w_u2, w_d1, w_d2});
+  IntArrayHolder outputs({out_id});
+  std::vector<uint8_t> fb_attrs =
+      BuildFlexAttrs("silu", /*include_scales=*/true);
+  TfLiteStablehloCompositeParams params{};
+  params.name = kBlockedFfwCompositeName;
+  params.attributes = fb_attrs.data();
+  params.attributes_size = fb_attrs.size();
+
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+  node.builtin_data = &params;
+
+  TfLiteContext ctx = arena.BuildContext();
+  ResolvedBlockFfwPlan plan;
+  EXPECT_THAT(ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node, &plan),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(BlockFfwParserTest, RejectsUnsupportedActivationAndDynamicQuantSpec) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int w_u1_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  TfLiteContext ctx = arena.BuildContext();
+  ResolvedBlockFfwPlan plan;
+
+  {
+    std::vector<uint8_t> bad_act = BuildFlexAttrs("gelu", false);
+    TfLiteStablehloCompositeParams params{};
+    params.attributes = bad_act.data();
+    params.attributes_size = bad_act.size();
+    TfLiteNode node{};
+    node.inputs = inputs.ptr;
+    node.outputs = outputs.ptr;
+    node.builtin_data = &params;
+    EXPECT_THAT(
+        ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node, &plan),
+        StatusIs(absl::StatusCode::kUnimplemented));
+  }
+  {
+    std::vector<uint8_t> dyn_spec = BuildFlexAttrs("silu", false, false, true);
+    TfLiteStablehloCompositeParams params{};
+    params.attributes = dyn_spec.data();
+    params.attributes_size = dyn_spec.size();
+    TfLiteNode node{};
+    node.inputs = inputs.ptr;
+    node.outputs = outputs.ptr;
+    node.builtin_data = &params;
+    EXPECT_THAT(
+        ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node, &plan),
+        StatusIs(absl::StatusCode::kUnimplemented));
+  }
+}
+
+}  // namespace
+}  // namespace litert::ml_drift
