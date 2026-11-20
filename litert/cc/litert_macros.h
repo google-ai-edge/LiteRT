@@ -66,6 +66,13 @@
 /// @code
 /// LITERT_RETURN_IF_ERROR(expr) << "Failed while trying to ...";
 /// @endcode
+///
+/// The returned status can be replaced with `SetStatus()`.
+///
+/// @code
+/// LITERT_RETURN_IF_ERROR(expr).SetStatus(litert::Status::kErrorNotFound)
+///     << "Failed while trying to ...";
+/// @endcode
 #define LITERT_RETURN_IF_ERROR(...)                                       \
   LITERT_RETURN_IF_ERROR_SELECT_OVERLOAD(                                 \
       (__VA_ARGS__, LITERT_RETURN_IF_ERROR_2, LITERT_RETURN_IF_ERROR_1))( \
@@ -87,6 +94,28 @@
 ///
 /// @code
 /// LITERT_ASSIGN_OR_RETURN(decl, expr, _ << "Failed while trying to ...");
+/// @endcode
+///
+/// The builder can also replace the status that is returned with
+/// `SetStatus()`.
+///
+/// @code
+/// LITERT_ASSIGN_OR_RETURN(
+///     decl, expr,
+///     _.SetStatus(litert::Status::kErrorInvalidArgument)
+///         << "Failed while trying to ...");
+/// @endcode
+///
+/// To remap only specific errors, check the error being returned with
+/// `StatusValue()` (or `Message()`).
+///
+/// @code
+/// LITERT_ASSIGN_OR_RETURN(
+///     decl, expr,
+///     _.StatusValue() == litert::Status::kErrorCompilation
+///         ? _.SetStatus(litert::Status::kErrorInvalidArgument)
+///               << "The model can't be compiled."
+///         : _);
 /// @endcode
 #define LITERT_ASSIGN_OR_RETURN(DECL, ...)                                     \
   LITERT_ASSIGN_OR_RETURN_SELECT_OVERLOAD((DECL, __VA_ARGS__,                  \
@@ -197,6 +226,28 @@ class ErrorStatusBuilder {
       }
     }
 #endif
+  }
+
+  /// @brief Returns the status of the error held by this builder.
+  ///
+  /// Together with `SetStatus()`, this lets the custom return value of
+  /// `LITERT_RETURN_IF_ERROR` and `LITERT_ASSIGN_OR_RETURN` remap specific
+  /// errors.
+  litert::Status StatusValue() const noexcept { return error_.StatusValue(); }
+
+  /// @brief Returns the message of the error held by this builder.
+  ///
+  /// The message doesn't include the data appended with the `<<` operator.
+  const std::string& Message() const noexcept { return error_.Message(); }
+
+  /// @brief Replaces the status of the error held by this builder.
+  ///
+  /// The error message and the data appended with the `<<` operator are kept.
+  ///
+  /// @note `litert::Status::kOk` should not be passed.
+  ErrorStatusBuilder& SetStatus(litert::Status status) {
+    error_ = litert::Error::FromExistingMessage(status, error_.Message());
+    return *this;
   }
 
   /// @brief Appends data to the error message.
