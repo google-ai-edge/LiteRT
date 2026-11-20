@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_TENSOR_MAPPING_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_TENSOR_MAPPING_H_
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <type_traits>
@@ -23,6 +24,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -153,6 +155,13 @@ class LazyTensorMapping : public TensorMapping {
   // the hooks.
   absl::Status Set(absl::string_view model_name, TensorHandle tensor) override;
 
+  // Drops cached tensors loaded from the checkpoint / loader callback that
+  // were not pinned via `Set()`, allowing them to be reloaded on demand without
+  // keeping host copies resident after backend upload. No-op for in-memory
+  // mappings constructed without a loader. Returns the count of dropped
+  // entries.
+  size_t ReleaseCachedLoaderTensors();
+
  private:
   // Loads the tensor that maps to `model_name` from the checkpoint.
   //
@@ -164,6 +173,8 @@ class LazyTensorMapping : public TensorMapping {
   SafetensorLoader loader_;
   absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
       loader_fn_;
+  bool has_loader_ = false;
+  absl::flat_hash_set<std::string> pinned_names_;
   std::vector<std::unique_ptr<TensorMappingHooks>> hooks_;
   absl::flat_hash_map<std::string, TensorHandle> tensors_;
 };
