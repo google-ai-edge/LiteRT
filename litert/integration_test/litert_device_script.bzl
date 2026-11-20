@@ -282,7 +282,16 @@ def litert_device_script(
 
     for lib in backend.libs:
         if backend.plugin and backend.plugin in lib:
-            buildable_libs.append(lib)
+            # Build the OpenVINO compiler plugin in the same exec configuration
+            # as openvino_runtime in extra_host_libs so both sides of the C++
+            # frontend/model ABI share one runtime build.
+            target_libs = buildable_libs
+
+            # copybara:uncomment_begin(google-only)
+            # target_libs = extra_host_libs if (build_for_host and backend_id == "intel_openvino") else buildable_libs
+            #
+            # copybara:uncomment_end
+            target_libs.append(lib)
         elif backend.dispatch and backend.dispatch in lib:
             buildable_libs.append(lib)
         elif "libLiteRt.so" in lib:
