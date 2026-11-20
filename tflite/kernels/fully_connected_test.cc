@@ -2890,6 +2890,67 @@ TEST_P(SparseFullyConnectedOpTest, Simple1x4TestMultiThreadedMoreBatches) {
   }
 }
 
+TEST_P(SparseFullyConnectedOpTest,
+       RejectsInvalidRowCountBeforeSegmentTraversal) {
+  TensorData weight = {};
+  weight.type = TensorType_FLOAT32;
+  weight.shape = {2, 4};
+  weight.traversal_order = {0, 1, 2};
+  weight.format = {kTfLiteDimDense, kTfLiteDimSparseCSR};
+  weight.block_map = {1};
+  weight.block_size = {4};
+  SparseFullyConnectedOpModel<float> m(
+      GetRegistration(), /*units=*/2, /*batches=*/1,
+      /*input=*/{TensorType_FLOAT32, {1, 4}}, weight,
+      /*weight_data=*/{1, 2, 3, 4, 5, 6, 7, 8});
+  m.SetBias({1, 2});
+  m.SetInput({1, 2, 3, 4});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAre(31, 72));
+
+  TfLiteTensor* filter = m.weight_tensor();
+  ASSERT_NE(filter, nullptr);
+  ASSERT_NE(filter->sparsity, nullptr);
+  auto& row_count = filter->sparsity->dim_metadata[0].dense_size;
+  const int original_row_count = row_count;
+  for (int invalid_row_count :
+       {-1, 0, original_row_count - 1, std::numeric_limits<int>::max()}) {
+    SCOPED_TRACE(invalid_row_count);
+    row_count = invalid_row_count;
+    EXPECT_EQ(m.Invoke(), kTfLiteError);
+  }
+  row_count = original_row_count;
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput(), ElementsAre(31, 72));
+}
+
+TEST(SparseFullyConnectedReferenceTest,
+     OutputDimensionBlocksRequireReferenceKernel) {
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_FULLY_CONNECTED_REF(),
+        ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT()}) {
+    TensorData weight = {};
+    weight.type = TensorType_FLOAT32;
+    weight.shape = {4, 4};
+    weight.traversal_order = {0, 1, 2};
+    weight.format = {kTfLiteDimDense, kTfLiteDimSparseCSR};
+    weight.block_map = {0};
+    weight.block_size = {4};
+    SparseFullyConnectedOpModel<float> m(
+        registration, /*units=*/4, /*batches=*/1,
+        /*input=*/{TensorType_FLOAT32, {1, 4}}, weight,
+        /*weight_data=*/{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1});
+    m.SetBias({0, 0, 0, 0});
+    m.SetInput({1, 2, 3, 4});
+    if (registration == ops::builtin::Register_FULLY_CONNECTED_REF()) {
+      ASSERT_EQ(m.Invoke(), kTfLiteOk);
+      EXPECT_THAT(m.GetOutput(), ElementsAre(1, 2, 3, 4));
+    } else {
+      EXPECT_EQ(m.Invoke(), kTfLiteError);
+    }
+  }
+}
+
 TEST(SparseFullyConnectedReferenceTest, Supports2x2BlockSparseWeights) {
   std::initializer_list<float> weight_data = {
       1, 0, 2, 3,  // u = 0
@@ -3983,6 +4044,513 @@ TEST(FullyConnectedSecurityTest,
   ASSERT_EQ(m.AllocateTensors(), kTfLiteOk);
   EXPECT_THAT(m.GetOutputShape(), ElementsAre(0, 4));
   EXPECT_EQ(m.Invoke(), kTfLiteOk);
+}
+
+class MalformedSparseFullyConnectedOpModel : public SingleOpModel {
+ public:
+  MalformedSparseFullyConnectedOpModel(
+      const TensorData& input, const TensorData& weights,
+      const TensorData& output,
+      TfLiteRegistration* registration =
+          ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+      bool allocate_and_delegate = true,
+      bool asymmetric_quantize_inputs = false) {
+    input_ = AddInput(input);
+    weights_ = AddInput(weights);
+    output_ = AddOutput(output);
+    SetBuiltinOp(
+        BuiltinOperator_FULLY_CONNECTED, BuiltinOptions_FullyConnectedOptions,
+        CreateFullyConnectedOptions(builder_, ActivationFunctionType_NONE,
+                                    FullyConnectedOptionsWeightsFormat_DEFAULT,
+                                    /*keep_num_dims=*/false,
+                                    asymmetric_quantize_inputs)
+            .Union());
+    resolver_ = std::make_unique<SingleOpResolver>(
+        BuiltinOperator_FULLY_CONNECTED, registration);
+    BuildInterpreter({GetShape(input_), GetShape(weights_)},
+                     /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/allocate_and_delegate);
+  }
+
+  using SingleOpModel::AllocateTensors;
+
+  void SetInput(std::initializer_list<float> data) {
+    PopulateTensor<float>(input_, data);
+  }
+
+  void SetWeights(std::initializer_list<float> data) {
+    PopulateTensor<float>(weights_, data);
+  }
+
+  void SetWeightsBytes(size_t bytes) {
+    interpreter_->tensor(weights_)->bytes = bytes;
+  }
+
+  void SetInt8Weights(const std::vector<int8_t>& data) {
+    PopulateTensor<int8_t>(weights_, data);
+  }
+
+  void SetFloatInput(const std::vector<float>& data) {
+    PopulateTensor<float>(input_, data);
+  }
+
+  std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
+
+  void SetSparsity(TfLiteSparsity* sparsity) {
+    interpreter_->tensor(weights_)->sparsity = sparsity;
+  }
+
+  void ResetSparsity() { interpreter_->tensor(weights_)->sparsity = nullptr; }
+
+ protected:
+  int input_;
+  int weights_;
+  int output_;
+};
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     BlockSparse1x4OutOfBoundsIndexRejected) {
+  // Construct a 1x4 block-sparse weights tensor where accum_depth=16,
+  // block_size=4. Valid block indices are in [0, 3].
+  // An unscaled block index idx=12 exceeds
+  // (accum_depth - block_size) / block_size = 3 and must be rejected before
+  // memory is accessed out-of-bounds.
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+        ops::builtin::Register_FULLY_CONNECTED_REF()}) {
+    MalformedSparseFullyConnectedOpModel model(
+        /*input=*/{TensorType_FLOAT32, {1, 16}},
+        /*weights=*/{TensorType_FLOAT32, {2, 16}},
+        /*output=*/{TensorType_FLOAT32, {1, 2}}, registration);
+    model.SetInput({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    model.SetWeights({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+
+    TfLiteIntArray* traversal_order = TfLiteIntArrayCreate(3);
+    traversal_order->data[0] = 0;
+    traversal_order->data[1] = 1;
+    traversal_order->data[2] = 2;
+    TfLiteIntArray* block_map = TfLiteIntArrayCreate(1);
+    block_map->data[0] = 1;
+
+    TfLiteIntArray* segments = TfLiteIntArrayCreate(3);
+    segments->data[0] = 0;
+    segments->data[1] = 1;
+    segments->data[2] = 2;
+
+    TfLiteIntArray* indices = TfLiteIntArrayCreate(2);
+    indices->data[0] = 0;
+    indices->data[1] = 3;
+
+    TfLiteDimensionMetadata meta[3] = {
+        {kTfLiteDimDense, 2, nullptr, nullptr},
+        {kTfLiteDimSparseCSR, 4, segments, indices},
+        {kTfLiteDimDense, 4, nullptr, nullptr},
+    };
+    TfLiteSparsity sparsity{traversal_order, block_map, meta, 3};
+
+    model.SetSparsity(&sparsity);
+    EXPECT_EQ(model.Invoke(), kTfLiteOk);
+
+    indices->data[1] = 12;
+    EXPECT_EQ(model.Invoke(), kTfLiteError);
+
+    model.ResetSparsity();
+    TfLiteIntArrayFree(traversal_order);
+    TfLiteIntArrayFree(block_map);
+    TfLiteIntArrayFree(segments);
+    TfLiteIntArrayFree(indices);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest, NonMonotonicSegmentsRejected) {
+  // Construct CSR sparsity where array_segments = {0, 2, 1} with
+  // array_indices of size 2 is non-monotonic (row_start > row_end on row 1)
+  // while keeping every segment endpoint <= indices->size.
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+        ops::builtin::Register_FULLY_CONNECTED_REF()}) {
+    MalformedSparseFullyConnectedOpModel model(
+        /*input=*/{TensorType_FLOAT32, {1, 8}},
+        /*weights=*/{TensorType_FLOAT32, {2, 8}},
+        /*output=*/{TensorType_FLOAT32, {1, 2}}, registration);
+    model.SetInput({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    model.SetWeights({0.0f, 0.0f, 0.0f, 0.0f});
+
+    TfLiteIntArray* traversal_order = TfLiteIntArrayCreate(2);
+    traversal_order->data[0] = 0;
+    traversal_order->data[1] = 1;
+    TfLiteIntArray* block_map = TfLiteIntArrayCreate(0);
+
+    TfLiteIntArray* bad_segments = TfLiteIntArrayCreate(3);
+    bad_segments->data[0] = 0;
+    bad_segments->data[1] = 1;
+    bad_segments->data[2] = 2;
+
+    TfLiteIntArray* indices = TfLiteIntArrayCreate(2);
+    indices->data[0] = 0;
+    indices->data[1] = 1;
+
+    TfLiteDimensionMetadata meta[2] = {
+        {kTfLiteDimDense, 2, nullptr, nullptr},
+        {kTfLiteDimSparseCSR, 8, bad_segments, indices},
+    };
+    TfLiteSparsity bad_seg_sparsity{traversal_order, block_map, meta, 2};
+
+    model.SetSparsity(&bad_seg_sparsity);
+    EXPECT_EQ(model.Invoke(), kTfLiteOk);
+
+    bad_segments->data[1] = 2;
+    bad_segments->data[2] = 1;
+    EXPECT_EQ(model.Invoke(), kTfLiteError);
+
+    model.ResetSparsity();
+    TfLiteIntArrayFree(traversal_order);
+    TfLiteIntArrayFree(block_map);
+    TfLiteIntArrayFree(bad_segments);
+    TfLiteIntArrayFree(indices);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest, TruncatedCompressedWeightsRejected) {
+  // Verify that when the compressed filter buffer holds fewer elements than
+  // indices->size * block_size, VerifySparsity rejects the tensor before
+  // reading past filter->data.
+  for (TfLiteRegistration* registration :
+       {ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+        ops::builtin::Register_FULLY_CONNECTED_REF()}) {
+    MalformedSparseFullyConnectedOpModel model(
+        /*input=*/{TensorType_FLOAT32, {1, 16}},
+        /*weights=*/{TensorType_FLOAT32, {2, 16}},
+        /*output=*/{TensorType_FLOAT32, {1, 2}}, registration);
+    model.SetInput({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
+                    0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+    model.SetWeights({0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f});
+
+    TfLiteIntArray* traversal_order = TfLiteIntArrayCreate(3);
+    traversal_order->data[0] = 0;
+    traversal_order->data[1] = 1;
+    traversal_order->data[2] = 2;
+    TfLiteIntArray* block_map = TfLiteIntArrayCreate(1);
+    block_map->data[0] = 1;
+
+    TfLiteIntArray* segments = TfLiteIntArrayCreate(3);
+    segments->data[0] = 0;
+    segments->data[1] = 1;
+    segments->data[2] = 2;
+
+    TfLiteIntArray* indices = TfLiteIntArrayCreate(2);
+    indices->data[0] = 0;
+    indices->data[1] = 1;
+
+    TfLiteDimensionMetadata meta[3] = {
+        {kTfLiteDimDense, 2, nullptr, nullptr},
+        {kTfLiteDimSparseCSR, 4, segments, indices},
+        {kTfLiteDimDense, 4, nullptr, nullptr},
+    };
+    TfLiteSparsity sparsity{traversal_order, block_map, meta, 3};
+
+    model.SetSparsity(&sparsity);
+    model.SetWeightsBytes(8 * sizeof(float));
+    EXPECT_EQ(model.Invoke(), kTfLiteOk);
+
+    model.SetWeightsBytes(4 * sizeof(float));
+    EXPECT_EQ(model.Invoke(), kTfLiteError);
+
+    model.ResetSparsity();
+    TfLiteIntArrayFree(traversal_order);
+    TfLiteIntArrayFree(block_map);
+    TfLiteIntArrayFree(segments);
+    TfLiteIntArrayFree(indices);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseMalformedLedgerMetadataRejected) {
+  MalformedSparseFullyConnectedOpModel model(
+      /*input=*/{TensorType_FLOAT32, {1, 16}},
+      /*weights=*/{TensorType_INT8, {2, 16}, -64.0f, 63.5f},
+      /*output=*/{TensorType_FLOAT32, {1, 2}},
+      ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+      /*allocate_and_delegate=*/false);
+
+  TfLiteIntArray* segments = TfLiteIntArrayCreate(3);
+  segments->data[0] = 0;
+  segments->data[1] = 1;
+  segments->data[2] = 1;
+
+  TfLiteIntArray* indices = TfLiteIntArrayCreate(2);
+  indices->data[0] = 0;
+  indices->data[1] = 0;
+
+  TfLiteIntArray* traversal_order = TfLiteIntArrayCreate(3);
+  traversal_order->data[0] = 0;
+  traversal_order->data[1] = 1;
+  traversal_order->data[2] = 2;
+
+  TfLiteDimensionMetadata meta[3] = {
+      {kTfLiteDimDense, 2, nullptr, nullptr},
+      {kTfLiteDimSparseCSR, 1, segments, indices},
+      {kTfLiteDimDense, 16, nullptr, nullptr},
+  };
+  TfLiteSparsity sparsity{traversal_order, nullptr, meta, 3};
+
+  // Terminal segment (1) != indices->size (2) must fail in CreateLedgerTensor.
+  model.SetSparsity(&sparsity);
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteError);
+
+  // Repair terminal segment so CreateLedgerTensor succeeds.
+  segments->data[2] = 2;
+  EXPECT_EQ(model.AllocateTensors(), kTfLiteOk);
+
+  model.ResetSparsity();
+  TfLiteIntArrayFree(traversal_order);
+  TfLiteIntArrayFree(segments);
+  TfLiteIntArrayFree(indices);
+}
+
+// Parameters of a float-input, int8-filter (hybrid) sparse filter. Every field
+// defaults to a valid 1x16 block-CSR layout, so a case only names the field it
+// corrupts.
+struct HybridSparseCase {
+  int input_depth = 16;
+  std::vector<int> segments = {0, 1, 2};
+  std::vector<int> indices = {0, 0};
+  std::vector<int> block_map = {1};
+  bool has_block_map = true;
+  int dim_metadata_size = 3;
+  TfLiteDimensionType block_format = kTfLiteDimDense;
+  int block_dense_size = 16;
+  std::vector<float> input;
+  std::vector<int8_t> weights;
+};
+
+struct HybridSparseOutcome {
+  TfLiteStatus allocate_status = kTfLiteError;
+  TfLiteStatus invoke_status = kTfLiteError;
+  std::vector<float> output;
+};
+
+HybridSparseOutcome RunHybridSparse(const HybridSparseCase& c,
+                                    bool asymmetric_quantize_inputs) {
+  MalformedSparseFullyConnectedOpModel model(
+      /*input=*/{TensorType_FLOAT32, {1, c.input_depth}},
+      /*weights=*/{TensorType_INT8, {2, c.input_depth}, -64.0f, 63.5f},
+      /*output=*/{TensorType_FLOAT32, {1, 2}},
+      ops::builtin::Register_FULLY_CONNECTED_GENERIC_OPT(),
+      /*allocate_and_delegate=*/false, asymmetric_quantize_inputs);
+
+  TfLiteIntArray* segments = TfLiteIntArrayCreate(c.segments.size());
+  for (size_t i = 0; i < c.segments.size(); ++i) {
+    segments->data[i] = c.segments[i];
+  }
+  TfLiteIntArray* indices = TfLiteIntArrayCreate(c.indices.size());
+  for (size_t i = 0; i < c.indices.size(); ++i) {
+    indices->data[i] = c.indices[i];
+  }
+  TfLiteIntArray* traversal_order = TfLiteIntArrayCreate(c.dim_metadata_size);
+  for (int i = 0; i < c.dim_metadata_size; ++i) traversal_order->data[i] = i;
+  TfLiteIntArray* block_map = nullptr;
+  if (c.has_block_map) {
+    block_map = TfLiteIntArrayCreate(c.block_map.size());
+    for (size_t i = 0; i < c.block_map.size(); ++i) {
+      block_map->data[i] = c.block_map[i];
+    }
+  }
+  TfLiteDimensionMetadata meta[4] = {
+      {kTfLiteDimDense, 2, nullptr, nullptr},
+      {kTfLiteDimSparseCSR, c.input_depth / 16, segments, indices},
+      {c.block_format, c.block_dense_size, nullptr, nullptr},
+      {kTfLiteDimDense, 1, nullptr, nullptr},
+  };
+  TfLiteSparsity sparsity{traversal_order, block_map, meta,
+                          c.dim_metadata_size};
+
+  HybridSparseOutcome outcome;
+  model.SetSparsity(&sparsity);
+  outcome.allocate_status = model.AllocateTensors();
+  if (outcome.allocate_status == kTfLiteOk) {
+    model.SetFloatInput(
+        c.input.empty() ? std::vector<float>(c.input_depth, 1.0f) : c.input);
+    model.SetInt8Weights(c.weights.empty()
+                             ? std::vector<int8_t>(2 * c.input_depth, 2)
+                             : c.weights);
+    outcome.invoke_status = model.Invoke();
+    if (outcome.invoke_status == kTfLiteOk) outcome.output = model.GetOutput();
+  }
+  model.ResetSparsity();
+  TfLiteIntArrayFree(traversal_order);
+  TfLiteIntArrayFree(block_map);
+  TfLiteIntArrayFree(segments);
+  TfLiteIntArrayFree(indices);
+  return outcome;
+}
+
+// The malformed hybrid layouts are only visible to the kernel at Invoke time,
+// after AllocateTensors accepted the ledger structure, so every rejection test
+// below requires AllocateTensors to succeed and Invoke to fail.
+void ExpectHybridSparseRejectedAtInvoke(const HybridSparseCase& c) {
+  for (bool asymmetric_quantize_inputs : {false, true}) {
+    SCOPED_TRACE(asymmetric_quantize_inputs);
+    const HybridSparseOutcome outcome =
+        RunHybridSparse(c, asymmetric_quantize_inputs);
+    ASSERT_EQ(outcome.allocate_status, kTfLiteOk);
+    EXPECT_EQ(outcome.invoke_status, kTfLiteError);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseValidLayoutControlsAccepted) {
+  for (bool asymmetric_quantize_inputs : {false, true}) {
+    SCOPED_TRACE(asymmetric_quantize_inputs);
+    {
+      // One 16-wide block per row at the start of a 16-wide row. The
+      // compressed filter buffer is exactly 2 blocks.
+      HybridSparseCase c;
+      const HybridSparseOutcome outcome =
+          RunHybridSparse(c, asymmetric_quantize_inputs);
+      ASSERT_EQ(outcome.allocate_status, kTfLiteOk);
+      ASSERT_EQ(outcome.invoke_status, kTfLiteOk);
+      // Weight 2 at scale 0.5 is 1.0, input is all 1.0: 16 * 1.0 * 1.0.
+      EXPECT_THAT(outcome.output,
+                  ElementsAreArray(ArrayFloatNear({16, 16}, 0.5)));
+    }
+    {
+      // The last block of a 48-wide row is the largest legal index (2), and
+      // each row selects a different input block.
+      HybridSparseCase c;
+      c.input_depth = 48;
+      c.indices = {2, 0};
+      c.input.assign(48, 1.0f);
+      std::fill(c.input.begin() + 32, c.input.end(), 2.0f);
+      c.weights.assign(2 * 48, 0);
+      std::fill(c.weights.begin(), c.weights.begin() + 16, 2);
+      std::fill(c.weights.begin() + 16, c.weights.begin() + 32, 6);
+      const HybridSparseOutcome outcome =
+          RunHybridSparse(c, asymmetric_quantize_inputs);
+      ASSERT_EQ(outcome.allocate_status, kTfLiteOk);
+      ASSERT_EQ(outcome.invoke_status, kTfLiteOk);
+      // Row 0: weight 1.0 on input block 2 (value 2.0). Row 1: weight 3.0 on
+      // input block 0 (value 1.0).
+      EXPECT_THAT(outcome.output,
+                  ElementsAreArray(ArrayFloatNear({32, 48}, 0.5)));
+    }
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseBlockIndexBeyondInputDepthRejectedAtInvoke) {
+  {
+    // Scaled offset 255 * 16 is far past a 16-wide input row.
+    HybridSparseCase c;
+    c.indices = {0, 255};
+    SCOPED_TRACE("index 255, depth 16");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    // First index past the last block of a 48-wide row (blocks 0 to 2).
+    HybridSparseCase c;
+    c.input_depth = 48;
+    c.indices = {3, 0};
+    SCOPED_TRACE("index 3, depth 48");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.indices = {0, -1};
+    SCOPED_TRACE("negative index");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseCompressedFilterTooShortRejectedAtInvoke) {
+  {
+    // 510 blocks need 8160 compressed bytes, the filter holds 32.
+    HybridSparseCase c;
+    c.segments = {0, 255, 510};
+    c.indices.assign(510, 0);
+    SCOPED_TRACE("510 blocks");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    // 3 blocks need 48 compressed bytes, the filter holds 32.
+    HybridSparseCase c;
+    c.segments = {0, 2, 3};
+    c.indices = {0, 0, 0};
+    SCOPED_TRACE("3 blocks");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseNon1x16LayoutRejectedAtInvoke) {
+  {
+    HybridSparseCase c;
+    c.block_dense_size = 4;
+    SCOPED_TRACE("1x4 block");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.block_dense_size = 32;
+    SCOPED_TRACE("1x32 block");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.block_format = kTfLiteDimSparseCSR;
+    SCOPED_TRACE("sparse block dimension");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.has_block_map = false;
+    SCOPED_TRACE("missing block map");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.block_map = {};
+    SCOPED_TRACE("empty block map");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.block_map = {0};
+    SCOPED_TRACE("block map names dimension 0");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.block_map = {1, 0};
+    SCOPED_TRACE("block map of two dimensions");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.dim_metadata_size = 2;
+    SCOPED_TRACE("two dimension metadata entries");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+  {
+    HybridSparseCase c;
+    c.dim_metadata_size = 4;
+    SCOPED_TRACE("four dimension metadata entries");
+    ExpectHybridSparseRejectedAtInvoke(c);
+  }
+}
+
+TEST(MalformedSparseFullyConnectedOpTest,
+     HybridSparseInputDepthNotMultipleOfBlockRejectedAtInvoke) {
+  // Depth 40 is not a multiple of 16. Block index 0 and the compressed buffer
+  // size are both in range, so only the divisibility check rejects it.
+  HybridSparseCase c;
+  c.input_depth = 40;
+  SCOPED_TRACE("depth 40");
+  ExpectHybridSparseRejectedAtInvoke(c);
 }
 
 }  // namespace
