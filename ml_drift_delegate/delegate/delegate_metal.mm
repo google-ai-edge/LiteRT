@@ -72,7 +72,9 @@ void DestroyMetalDevice(void* metal_device) {
     g_metal_device = nullptr;
   }
 
-  delete reinterpret_cast<ml_drift::metal::MetalDevice*>(metal_device);
+  @autoreleasepool {
+    delete reinterpret_cast<ml_drift::metal::MetalDevice*>(metal_device);
+  }
   ABSL_LOG(INFO) << "Destroyed the Metal environment.";
 }
 
@@ -120,32 +122,38 @@ litert::Expected<ml_drift::metal::MetalDevice*> GetSingletonDevice(
 }
 
 void* Init(TfLiteContext* context, const char* buffer, size_t) {
-  auto kernel = litert::ml_drift::DelegateKernelLiteRt::Create(
-      context, reinterpret_cast<const TfLiteDelegateParams*>(buffer));
-  if (!kernel.ok()) {
-    ABSL_LOG(ERROR) << "Failed to create DelegateKernelLiteRtMetal: " << kernel.status();
-    return TfLiteKernelInitFailed();
+  @autoreleasepool {
+    auto kernel = litert::ml_drift::DelegateKernelLiteRt::Create(
+        context, reinterpret_cast<const TfLiteDelegateParams*>(buffer));
+    if (!kernel.ok()) {
+      ABSL_LOG(ERROR) << "Failed to create DelegateKernelLiteRtMetal: " << kernel.status();
+      return TfLiteKernelInitFailed();
+    }
+    return *kernel;
   }
-  return *kernel;
 }
 
 void Free(TfLiteContext*, void* buffer) {
-  delete reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(buffer);
+  @autoreleasepool {
+    delete reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(buffer);
+  }
 }
 
 TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
-  auto* delegate_kernel =
-      reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(node->user_data);
-  if (delegate_kernel == nullptr || delegate_kernel == TfLiteKernelInitFailed()) {
-    ABSL_LOG(ERROR) << "Metal delegate kernel initialization failed.";
-    return kTfLiteError;
+  @autoreleasepool {
+    auto* delegate_kernel =
+        reinterpret_cast<litert::ml_drift::DelegateKernelLiteRt*>(node->user_data);
+    if (delegate_kernel == nullptr || delegate_kernel == TfLiteKernelInitFailed()) {
+      ABSL_LOG(ERROR) << "Metal delegate kernel initialization failed.";
+      return kTfLiteError;
+    }
+    if (absl::Status s = delegate_kernel->GetRequiredTemporaries(context, node, &node->temporaries);
+        !s.ok()) {
+      ABSL_LOG(ERROR) << s;
+      return kTfLiteError;
+    }
+    return kTfLiteOk;
   }
-  if (absl::Status s = delegate_kernel->GetRequiredTemporaries(context, node, &node->temporaries);
-      !s.ok()) {
-    ABSL_LOG(ERROR) << s;
-    return kTfLiteError;
-  }
-  return kTfLiteOk;
 }
 
 #define CALL_DELEGATE_KERNEL(function, ...)                               \
@@ -272,8 +280,10 @@ extern "C" {
 
 void LiteRtDeleteMlDriftMetalDelegate(TfLiteDelegate* delegate) {
   if (!delegate) return;
-  delete reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(delegate->data_);
-  delete delegate;
+  @autoreleasepool {
+    delete reinterpret_cast<litert::ml_drift::MlDriftDelegateData*>(delegate->data_);
+    delete delegate;
+  }
 }
 
 }  // extern "C"
@@ -301,103 +311,105 @@ MlDriftDelegateOptionsPtr MlDriftMetalDelegateDefaultOptionsPtr() {
 // Creates a new ML Drift Metal delegate object.
 TfLiteDelegatePtr CreateMlDriftMetalDelegate(MlDriftDelegateOptionsPtr options,
                                              LiteRtEnvironment litert_env) {
-  if (!options) {
-    ABSL_LOG(ERROR) << "Missing MLDrift delegate options";
-    return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
-  }
+  @autoreleasepool {
+    if (!options) {
+      ABSL_LOG(ERROR) << "Missing MLDrift delegate options";
+      return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
+    }
 
-  if (options->litert_benchmark_mode) {
-    ABSL_LOG(INFO) << "Benchmark mode is enabled.";
-  }
-  if (options->litert_external_tensors_mode) {
-    ABSL_LOG(INFO) << "External tensors mode is enabled.";
-  }
+    if (options->litert_benchmark_mode) {
+      ABSL_LOG(INFO) << "Benchmark mode is enabled.";
+    }
+    if (options->litert_external_tensors_mode) {
+      ABSL_LOG(INFO) << "External tensors mode is enabled.";
+    }
 
-  // Get the flag of enable op profiling and use it to set the delegate flags.
-  const bool enable_op_profiling = options->enable_op_profiling;
+    // Get the flag of enable op profiling and use it to set the delegate flags.
+    const bool enable_op_profiling = options->enable_op_profiling;
 
-  // Initialize delegate_data.
-  auto delegate_data = std::make_unique<litert::ml_drift::MlDriftDelegateData>();
-  delegate_data->options = std::move(options);
-  delegate_data->weight_loader = delegate_data->options->weight_loader;
+    // Initialize delegate_data.
+    auto delegate_data = std::make_unique<litert::ml_drift::MlDriftDelegateData>();
+    delegate_data->options = std::move(options);
+    delegate_data->weight_loader = delegate_data->options->weight_loader;
 
-  const LiteRtRuntimeContext* runtime_context = delegate_data->options->runtime_context;
-  if (runtime_context == nullptr) {
-    ABSL_LOG(ERROR) << "Missing LiteRT runtime context.";
-    return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
-  }
+    const LiteRtRuntimeContext* runtime_context = delegate_data->options->runtime_context;
+    if (runtime_context == nullptr) {
+      ABSL_LOG(ERROR) << "Missing LiteRT runtime context.";
+      return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
+    }
 
-  // Copy serialization options since they are not owned by the delegate.
-  if (delegate_data->options->serialization_dir) {
-    delegate_data->serialization_dir = delegate_data->options->serialization_dir;
-  }
-  if (delegate_data->options->model_token) {
-    delegate_data->model_token = delegate_data->options->model_token;
-  }
+    // Copy serialization options since they are not owned by the delegate.
+    if (delegate_data->options->serialization_dir) {
+      delegate_data->serialization_dir = delegate_data->options->serialization_dir;
+    }
+    if (delegate_data->options->model_token) {
+      delegate_data->model_token = delegate_data->options->model_token;
+    }
 
-  auto metal_device = GetSingletonDevice(runtime_context, litert_env);
-  if (!metal_device) {
-    ABSL_LOG(ERROR) << "Failed to get Metal device: " << metal_device.Error();
-    return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
-  }
+    auto metal_device = GetSingletonDevice(runtime_context, litert_env);
+    if (!metal_device) {
+      ABSL_LOG(ERROR) << "Failed to get Metal device: " << metal_device.Error();
+      return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
+    }
 
 #ifdef __APPLE__
-  if ((*metal_device)->device().argumentBuffersSupport == MTLArgumentBuffersTier1) {
-    if (delegate_data->options->use_metal_argument_buffers) {
-      ABSL_LOG(INFO) << "Metal argument buffers are not supported on this device, disabling "
-                        "use_metal_argument_buffers option.";
-      delegate_data->options->use_metal_argument_buffers = false;
+    if ((*metal_device)->device().argumentBuffersSupport == MTLArgumentBuffersTier1) {
+      if (delegate_data->options->use_metal_argument_buffers) {
+        ABSL_LOG(INFO) << "Metal argument buffers are not supported on this device, disabling "
+                          "use_metal_argument_buffers option.";
+        delegate_data->options->use_metal_argument_buffers = false;
+      }
     }
-  }
 #endif
 
-  LiteRtEnvironmentOptions gpu_env_options;
-  runtime_context->get_environment_options(litert_env, &gpu_env_options);
-  LiteRtAny option_value;
+    LiteRtEnvironmentOptions gpu_env_options;
+    runtime_context->get_environment_options(litert_env, &gpu_env_options);
+    LiteRtAny option_value;
 
-  auto status = runtime_context->get_environment_options_value(
-      gpu_env_options, kLiteRtEnvOptionTagMetalCommandQueue, &option_value);
-  if (status != kLiteRtStatusOk) {
-    ABSL_LOG(ERROR) << "Failed to get command queue from LiteRt environment options.";
-    return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
-  }
-  id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(option_value.ptr_value);
-  delegate_data->shared_backend = std::make_shared<GpuBackendMetalLitert>(
-      *metal_device, delegate_data->options->wait_type, command_queue, runtime_context,
-      delegate_data->options->enable_metal_residency_set);
+    auto status = runtime_context->get_environment_options_value(
+        gpu_env_options, kLiteRtEnvOptionTagMetalCommandQueue, &option_value);
+    if (status != kLiteRtStatusOk) {
+      ABSL_LOG(ERROR) << "Failed to get command queue from LiteRt environment options.";
+      return {nullptr, LiteRtDeleteMlDriftMetalDelegate};
+    }
+    id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(option_value.ptr_value);
+    delegate_data->shared_backend = std::make_shared<GpuBackendMetalLitert>(
+        *metal_device, delegate_data->options->wait_type, command_queue, runtime_context,
+        delegate_data->options->enable_metal_residency_set);
 
-  switch (delegate_data->options->precision) {
-    case kDefault:
-      delegate_data->calculation_precision =
-          delegate_data->shared_backend->GetInfo()->IsRoundToNearestSupported()
-              ? ::ml_drift::CalculationsPrecision::kF16
-              : ::ml_drift::CalculationsPrecision::kF32F16;
-      break;
-    case kFp16:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF16;
-      break;
-    case kFp32:
-      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32;
-      break;
-  }
-  if (delegate_data->options->use_f32_accum_for_fp16) {
-    delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32F16;
-  }
-  const bool hint_fully_delegated_to_single_delegate =
-      delegate_data->options->hint_fully_delegated_to_single_delegate;
+    switch (delegate_data->options->precision) {
+      case kDefault:
+        delegate_data->calculation_precision =
+            delegate_data->shared_backend->GetInfo()->IsRoundToNearestSupported()
+                ? ::ml_drift::CalculationsPrecision::kF16
+                : ::ml_drift::CalculationsPrecision::kF32F16;
+        break;
+      case kFp16:
+        delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF16;
+        break;
+      case kFp32:
+        delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32;
+        break;
+    }
+    if (delegate_data->options->use_f32_accum_for_fp16) {
+      delegate_data->calculation_precision = ::ml_drift::CalculationsPrecision::kF32F16;
+    }
+    const bool hint_fully_delegated_to_single_delegate =
+        delegate_data->options->hint_fully_delegated_to_single_delegate;
 
-  // Initialize the ml_drift Metal delegate.
-  TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
-                             LiteRtDeleteMlDriftMetalDelegate);
-  delegate->data_ = delegate_data.release();
-  delegate->Prepare = DelegatePrepare;
-  if (enable_op_profiling) {
-    delegate->flags = kTfLiteDelegateFlagsPerOperatorProfiling;
+    // Initialize the ml_drift Metal delegate.
+    TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
+                               LiteRtDeleteMlDriftMetalDelegate);
+    delegate->data_ = delegate_data.release();
+    delegate->Prepare = DelegatePrepare;
+    if (enable_op_profiling) {
+      delegate->flags = kTfLiteDelegateFlagsPerOperatorProfiling;
+    }
+    if (hint_fully_delegated_to_single_delegate) {
+      delegate->flags |= kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+    }
+    return delegate;
   }
-  if (hint_fully_delegated_to_single_delegate) {
-    delegate->flags |= kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
-  }
-  return delegate;
 }
 
 }  // namespace ml_drift
