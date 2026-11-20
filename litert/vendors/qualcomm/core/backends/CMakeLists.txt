@@ -10,6 +10,7 @@ add_library(qnn_backends STATIC)
 target_sources(qnn_backends
     PRIVATE
         backend_factory.cc
+        backend_utils.cc
         gpu_backend.cc
         dsp_backend.cc
         htp_backend.cc
@@ -33,6 +34,7 @@ target_link_libraries(qnn_backends
         absl::str_format
         absl::span
         absl::string_view
+        nlohmann_json::nlohmann_json
         qnn_soc_table
         qnn_common
     PRIVATE

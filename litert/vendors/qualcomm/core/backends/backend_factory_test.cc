@@ -73,7 +73,7 @@ void TestCreateBackend(BackendType backend_type,
     Options options;
     options.SetBackendType(backend_type);
     auto backend = CreateBackend(&api, options, soc_info,
-                                 /*is_compiler=*/true);
+                                 /*is_compiler=*/true, SdkVersion{});
     EXPECT_NE(backend.get(), nullptr);
     EXPECT_EQ(LastRegisterCall().backend, nullptr);
   }
@@ -89,7 +89,7 @@ void TestCreateBackend(BackendType backend_type,
   {
     LastRegisterCall() = {};
     auto backend = CreateBackend(&api, options, soc_info,
-                                 /*is_compiler=*/true);
+                                 /*is_compiler=*/true, SdkVersion{});
     ASSERT_NE(backend.get(), nullptr);
     const auto& call = LastRegisterCall();
     if (is_custom_op_supported) {
@@ -106,7 +106,7 @@ void TestCreateBackend(BackendType backend_type,
   {
     LastRegisterCall() = {};
     auto backend = CreateBackend(&api, options, soc_info,
-                                 /*is_compiler=*/false);
+                                 /*is_compiler=*/false, SdkVersion{});
     ASSERT_NE(backend.get(), nullptr);
     const auto& call = LastRegisterCall();
     if (is_custom_op_supported) {
@@ -124,7 +124,7 @@ void TestCreateBackend(BackendType backend_type,
     LastRegisterCall() = {};
     api.backendRegisterOpPackage = MockRegisterOpPackageFail;
     auto backend = CreateBackend(&api, options, soc_info,
-                                 /*is_compiler=*/true);
+                                 /*is_compiler=*/true, SdkVersion{});
     EXPECT_EQ(backend.get(), nullptr);
     EXPECT_EQ(LastRegisterCall().backend, nullptr);
   }
@@ -135,7 +135,7 @@ TEST(CreateBackendTest, CreateReturnsNullForUnsupportedBackend) {
   options.SetBackendType(BackendType::kUndefinedBackend);
 
   auto backend = CreateBackend(nullptr, options, kDefaultSocInfo,
-                               /*is_compiler=*/true);
+                               /*is_compiler=*/true, SdkVersion{});
   EXPECT_EQ(backend.get(), nullptr);
 }
 

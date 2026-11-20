@@ -63,8 +63,9 @@ void QnnModelTest::SetUpQnnModel(const ::qnn::Options& options,
                  << qnn_manager.Error();
     return;
   }
-  auto qnn_backend =
-      ::qnn::CreateBackend((**qnn_manager).Api(), options, soc_info, true);
+  auto qnn_backend = ::qnn::CreateBackend((**qnn_manager).Api(), options,
+                                          soc_info, true,
+                                          (**qnn_manager).GetSdkVersion());
   ASSERT_TRUE(qnn_backend);
 
   auto context_configs = QnnManager::DefaultContextConfigs();

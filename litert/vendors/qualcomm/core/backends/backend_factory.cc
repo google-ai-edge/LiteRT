@@ -29,7 +29,8 @@ namespace qnn {
 std::unique_ptr<QnnBackend> CreateBackend(const QnnApi* api,
                                           const Options& options,
                                           std::optional<SocInfo> soc_info,
-                                          bool is_compiler) {
+                                          bool is_compiler,
+                                          const SdkVersion& sdk_version) {
   std::unique_ptr<QnnBackend> backend;
   switch (options.GetBackendType()) {
     case BackendType::kGpuBackend: {
@@ -58,6 +59,7 @@ std::unique_ptr<QnnBackend> CreateBackend(const QnnApi* api,
   if (!backend->Init(options, soc_info)) {
     return nullptr;
   }
+  backend->CheckOptionsForSdkVersion(options, sdk_version);
 
   const auto& custom_op_package = options.GetCustomOpPackage();
   if (custom_op_package.name.empty()) {

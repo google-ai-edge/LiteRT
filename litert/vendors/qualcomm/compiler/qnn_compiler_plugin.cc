@@ -399,8 +399,8 @@ class LiteRtCompilerPluginT {
       }
       return qnn_backend_.get();
     }
-    auto backend =
-        ::qnn::CreateBackend(qnn_manager_->Api(), options, soc_info, true);
+    auto backend = ::qnn::CreateBackend(qnn_manager_->Api(), options, soc_info,
+                                        true, qnn_manager_->GetSdkVersion());
     if (!backend) {
       LITERT_LOG(LITERT_ERROR, "Failed to initialize QNN backend");
       return nullptr;

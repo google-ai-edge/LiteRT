@@ -6,6 +6,11 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -14,6 +19,36 @@
 
 namespace qnn {
 namespace {
+
+TEST(BackendUtilsTest, WriteTemporaryFileRoundTrips) {
+  const auto path = WriteTemporaryFile("hello world");
+  ASSERT_TRUE(path.has_value());
+
+  std::ifstream file(*path);
+  ASSERT_TRUE(file.good());
+  const std::string contents((std::istreambuf_iterator<char>(file)),
+                             std::istreambuf_iterator<char>());
+  EXPECT_EQ(contents, "hello world");
+
+  std::filesystem::remove(*path);
+}
+
+#if !defined(_WIN32)
+TEST(BackendUtilsTest, WriteTemporaryFileFailsWhenTempDirMissing) {
+  const char* old_tmpdir = std::getenv("TMPDIR");
+  setenv("TMPDIR", "/nonexistent_litert_backend_utils_test_dir", /*replace=*/1);
+
+  const auto path = WriteTemporaryFile("hello world");
+  EXPECT_FALSE(path.has_value());
+
+  if (old_tmpdir != nullptr) {
+    setenv("TMPDIR", old_tmpdir, /*replace=*/1);
+  } else {
+    unsetenv("TMPDIR");
+  }
+}
+#endif  // !defined(_WIN32)
+
 TEST(BackendUtilsTest, SetNullTermPtrArrayTest) {
   std::vector<int> src = {1, 2, 3};
   std::array<const int*, 5> dst{};
