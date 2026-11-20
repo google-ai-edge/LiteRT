@@ -14,7 +14,10 @@
 
 #include "litert/compiler/plugin/algo.h"
 
+#include <algorithm>
 #include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -22,6 +25,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/numeric/bits.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_layout.h"
@@ -426,6 +430,464 @@ litert::Expected<void> GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
   return {};
 }
 
+// Max quotient-DAG vertices (epoch blocks + intervening CPU ops) for bitmatrix
+// contraction; larger multi-index graphs keep epoch-layered blocks as-is.
+constexpr int kMaxContractionNodes = 1024;
+// 21-bit index cap (< 2M ops) allowing (22-bit, 21-bit, 21-bit) tuples to pack
+// into uint64_t keys so all sorts share one std::sort<uint64_t*> instantiation:
+// - `keys`: [63:42] epoch | [41:21] part_id | [20:0] topo_pos
+// - `block_spans`: [63:42] epoch | [41:21] first_pos | [20:0] key_idx
+// - `candidates`: [63:42] d_ep | [41:21] pos_a | [20:0] pos_b
+constexpr int kMaxPackedDagOps = (1 << 21) - 1;
+constexpr uint64_t kMask21 = (uint64_t{1} << 21) - 1;
+constexpr uint64_t kHigh22Mask = ~((uint64_t{1} << 42) - 1);
+
+#if defined(__clang__)
+#define LITERT_SMALL_LOOP \
+  _Pragma("clang loop vectorize(disable) unroll(disable)")
+#else
+#define LITERT_SMALL_LOOP
+#endif
+
+struct IntSlice {
+  const int* b;
+  const int* e;
+  const int* begin() const { return b; }
+  const int* end() const { return e; }
+};
+
+struct CsrView {
+  const int* off = nullptr;
+  const int* adj = nullptr;
+  IntSlice operator[](int u) const { return {adj + off[u], adj + off[u + 1]}; }
+};
+
+void SortAndUnique(std::vector<uint64_t>& v) {
+  std::sort(v.begin(), v.end());
+  v.resize(static_cast<size_t>(std::unique(v.begin(), v.end()) - v.begin()));
+}
+
+void BuildSortedCsr(int num_nodes, const std::vector<uint64_t>& sorted_edges,
+                    int* off, int* adj) {
+  LITERT_SMALL_LOOP
+  for (int i = 0; i <= num_nodes; ++i) {
+    off[i] = 0;
+  }
+  LITERT_SMALL_LOOP
+  for (size_t idx = 0; idx < sorted_edges.size(); ++idx) {
+    const uint64_t e = sorted_edges[idx];
+    ++off[static_cast<int>(e >> 32) + 1];
+    adj[idx] = static_cast<int>(e & 0xffffffffU);
+  }
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < num_nodes; ++i) {
+    off[i + 1] += off[i];
+  }
+}
+
+// Flat pointer views into a single contiguous int[] arena for the subgraph DAG
+// and epoch-block partitioning state.
+struct DagWorkspace {
+  int num_ops = 0;
+  int num_unique_indices = 0;
+  int topo_size = 0;
+  int num_blocks = 0;
+  int num_out_blocks = 0;
+
+  CsrView succs;
+  CsrView preds;
+  int* topo_order = nullptr;
+  int* topo_pos = nullptr;
+  // Dense rank in [0, num_unique_indices) for selected ops; -1 for unselected.
+  int* part_id = nullptr;
+  int* epoch = nullptr;
+  int* block_epoch = nullptr;
+  int* block_part = nullptr;
+  int* block_first_tpos = nullptr;
+  int* block_to_out = nullptr;
+  int* tpos_to_block = nullptr;
+};
+
+struct QuotientContraction {
+  size_t num_words;
+  int num_blocks;
+  uint64_t* reach;
+  uint64_t* anc;
+  int* alive;
+  int* rep;
+  int* pred_block_count;
+
+  static void SetBit(uint64_t* mat, size_t words, int row, int bit) {
+    const size_t idx = static_cast<size_t>(bit);
+    mat[static_cast<size_t>(row) * words + (idx >> 6)] |=
+        (uint64_t{1} << (idx & 63));
+  }
+
+  static void ClearBit(uint64_t* mat, size_t words, int row, int bit) {
+    const size_t idx = static_cast<size_t>(bit);
+    mat[static_cast<size_t>(row) * words + (idx >> 6)] &=
+        ~(uint64_t{1} << (idx & 63));
+  }
+
+  void OrRow(uint64_t* mat, int dst, int src) const {
+    uint64_t* d = mat + static_cast<size_t>(dst) * num_words;
+    const uint64_t* s = mat + static_cast<size_t>(src) * num_words;
+    LITERT_SMALL_LOOP
+    for (size_t w = 0; w < num_words; ++w) {
+      d[w] |= s[w];
+    }
+  }
+
+  bool RowsIntersect(int r_row, int a_row) const {
+    const uint64_t* r = reach + static_cast<size_t>(r_row) * num_words;
+    const uint64_t* a = anc + static_cast<size_t>(a_row) * num_words;
+    LITERT_SMALL_LOOP
+    for (size_t w = 0; w < num_words; ++w) {
+      if ((r[w] & a[w]) != 0) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  int FindRep(int x) const {
+    LITERT_SMALL_LOOP
+    while (rep[x] != x) {
+      rep[x] = rep[rep[x]];
+      x = rep[x];
+    }
+    return x;
+  }
+
+  void UpdateRelatives(const uint64_t* iter_mat, uint64_t* upd_mat, int keep,
+                       int drop) const {
+    const uint64_t* r = iter_mat + static_cast<size_t>(keep) * num_words;
+    LITERT_SMALL_LOOP
+    for (size_t w = 0; w < num_words; ++w) {
+      uint64_t word = r[w];
+      while (word != 0) {
+        const int node = static_cast<int>(w * 64) + absl::countr_zero(word);
+        word &= (word - 1);
+        if (alive[node]) {
+          OrRow(upd_mat, node, keep);
+          SetBit(upd_mat, num_words, node, keep);
+          ClearBit(upd_mat, num_words, node, drop);
+        }
+      }
+    }
+  }
+
+  void AddReachDeg(int src, int delta) const {
+    const uint64_t* r = reach + static_cast<size_t>(src) * num_words;
+    LITERT_SMALL_LOOP
+    for (size_t w = 0; w < num_words; ++w) {
+      uint64_t word = r[w];
+      while (word != 0) {
+        const int succ_q = static_cast<int>(w * 64) + absl::countr_zero(word);
+        word &= (word - 1);
+        if (succ_q < num_blocks && alive[succ_q]) {
+          pred_block_count[succ_q] += delta;
+        }
+      }
+    }
+  }
+};
+
+// Assigns each op its alternating-label epoch: unselected ops with no selected
+// ancestors get -1, while each transition into a selected op from a different
+// partition label (or unselected op with a selected ancestor) increments epoch.
+void ComputeEpochs(DagWorkspace& ws) {
+  for (int t = 0; t < ws.topo_size; ++t) {
+    const int node = ws.topo_order[t];
+    const int node_part = ws.part_id[node];
+    int max_epoch = (node_part < 0) ? -1 : 0;
+    LITERT_SMALL_LOOP
+    for (int pred : ws.preds[node]) {
+      const int pe = ws.epoch[pred];
+      if (node_part < 0 || ws.part_id[pred] == node_part) {
+        max_epoch = std::max(max_epoch, pe);
+      } else if (pe >= 0) {
+        max_epoch = std::max(max_epoch, pe + 1);
+      }
+    }
+    ws.epoch[node] = max_epoch;
+  }
+}
+
+// Groups selected ops by `(epoch, part_id)` in topological order. For a single
+// partition index, these epoch blocks already achieve the minimum acyclic
+// partition count.
+void BuildEpochBlocks(DagWorkspace& ws, std::vector<uint64_t>& keys,
+                      std::vector<uint64_t>& block_spans) {
+  keys.clear();
+  LITERT_SMALL_LOOP
+  for (int t = 0; t < ws.topo_size; ++t) {
+    const int node = ws.topo_order[t];
+    if (ws.part_id[node] >= 0) {
+      keys.push_back((static_cast<uint64_t>(ws.epoch[node]) << 42) |
+                     (static_cast<uint64_t>(ws.part_id[node]) << 21) |
+                     static_cast<uint64_t>(t));
+    }
+  }
+  std::sort(keys.begin(), keys.end());
+
+  block_spans.clear();
+  for (size_t i = 0; i < keys.size();) {
+    const uint64_t prefix = keys[i] >> 21;
+    const uint64_t first_tpos = keys[i] & kMask21;
+    block_spans.push_back((keys[i] & kHigh22Mask) | (first_tpos << 21) |
+                          static_cast<uint64_t>(i));
+    LITERT_SMALL_LOOP
+    while (i < keys.size() && (keys[i] >> 21) == prefix) {
+      ++i;
+    }
+  }
+  if (ws.num_unique_indices > 1) {
+    std::sort(block_spans.begin(), block_spans.end());
+  }
+
+  const int num_blocks = static_cast<int>(block_spans.size());
+  ws.num_blocks = num_blocks;
+  ws.num_out_blocks = num_blocks;
+  LITERT_SMALL_LOOP
+  for (int t = 0; t < ws.topo_size; ++t) {
+    ws.tpos_to_block[t] = -1;
+  }
+
+  LITERT_SMALL_LOOP
+  for (int b = 0; b < num_blocks; ++b) {
+    size_t idx = static_cast<size_t>(block_spans[b] & kMask21);
+    const uint64_t prefix = keys[idx] >> 21;
+    const int first_tpos = static_cast<int>(keys[idx] & kMask21);
+    const int first_node = ws.topo_order[first_tpos];
+    ws.block_epoch[b] = ws.epoch[first_node];
+    ws.block_part[b] = ws.part_id[first_node];
+    ws.block_first_tpos[b] = first_tpos;
+    ws.block_to_out[b] = b;
+    LITERT_SMALL_LOOP
+    while (idx < keys.size() && (keys[idx] >> 21) == prefix) {
+      ws.tpos_to_block[static_cast<size_t>(keys[idx] & kMask21)] = b;
+      ++idx;
+    }
+  }
+}
+
+// Contracts same-`part_id` epoch blocks across different epochs when no
+// intermediate quotient-DAG node lies on a directed path between them,
+// maintaining irreflexive transitive reachability/ancestry bitmatrices.
+void ContractMultiIndexQuotientDag(DagWorkspace& ws, int* op_scratch,
+                                   std::vector<int>& q_arena,
+                                   std::vector<uint64_t>& u64_a,
+                                   std::vector<uint64_t>& bitmat) {
+  const int num_blocks = ws.num_blocks;
+  if (num_blocks <= 1) {
+    return;
+  }
+
+  int* has_selected_desc = op_scratch;
+  int* op_to_q = has_selected_desc + ws.num_ops;
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < ws.num_ops; ++i) {
+    has_selected_desc[i] = 0;
+    op_to_q[i] = -1;
+  }
+  for (int t = ws.topo_size - 1; t >= 0; --t) {
+    const int node = ws.topo_order[t];
+    if (ws.part_id[node] >= 0) {
+      has_selected_desc[node] = 1;
+    }
+    if (!has_selected_desc[node]) {
+      continue;
+    }
+    LITERT_SMALL_LOOP
+    for (int pred : ws.preds[node]) {
+      has_selected_desc[pred] = 1;
+    }
+  }
+
+  int num_q = num_blocks;
+  LITERT_SMALL_LOOP
+  for (int t = 0; t < ws.topo_size; ++t) {
+    const int node = ws.topo_order[t];
+    int q = ws.tpos_to_block[t];
+    if (q < 0 && ws.epoch[node] >= 0 && has_selected_desc[node]) {
+      q = num_q++;
+    }
+    op_to_q[node] = q;
+  }
+  if (num_q > kMaxContractionNodes) {
+    return;
+  }
+
+  u64_a.clear();
+  for (int t = 0; t < ws.topo_size; ++t) {
+    const int u = ws.topo_order[t];
+    const int qu = op_to_q[u];
+    if (qu < 0) {
+      continue;
+    }
+    LITERT_SMALL_LOOP
+    for (int v : ws.succs[u]) {
+      const int qv = op_to_q[v];
+      if (qv >= 0 && qu != qv) {
+        u64_a.push_back((static_cast<uint64_t>(qu) << 32) |
+                        static_cast<uint32_t>(qv));
+      }
+    }
+  }
+  SortAndUnique(u64_a);
+
+  ws.succs = {};
+  ws.preds = {};
+  const size_t qstride = static_cast<size_t>(num_q + 1);
+  q_arena.assign(7 * qstride + u64_a.size(), 0);
+  int* q_succs_off = q_arena.data();
+  int* q_in_degree = q_succs_off + qstride;
+  int* q_topo = q_in_degree + qstride;
+  int* alive = q_topo + qstride;
+  int* rep = alive + qstride;
+  int* pred_block_count = rep + qstride;
+  int* root_to_out = pred_block_count + qstride;
+  int* q_succs_adj = root_to_out + qstride;
+
+  LITERT_SMALL_LOOP
+  for (uint64_t qe : u64_a) {
+    ++q_in_degree[static_cast<int>(qe & 0xffffffffU)];
+  }
+  BuildSortedCsr(num_q, u64_a, q_succs_off, q_succs_adj);
+  const CsrView q_succs{q_succs_off, q_succs_adj};
+
+  int q_topo_size = 0;
+  LITERT_SMALL_LOOP
+  for (int q = 0; q < num_q; ++q) {
+    alive[q] = 1;
+    if (q_in_degree[q] == 0) {
+      q_topo[q_topo_size++] = q;
+    }
+  }
+  for (int head = 0; head < q_topo_size; ++head) {
+    const int q = q_topo[head];
+    LITERT_SMALL_LOOP
+    for (int v : q_succs[q]) {
+      if (--q_in_degree[v] == 0) {
+        q_topo[q_topo_size++] = v;
+      }
+    }
+  }
+  if (q_topo_size != num_q) {
+    return;
+  }
+
+  const size_t num_words = static_cast<size_t>(num_q + 63) / 64;
+  const size_t mat_words = static_cast<size_t>(num_q) * num_words;
+  bitmat.assign(2 * mat_words, 0);
+  QuotientContraction qc{
+      num_words, num_blocks, bitmat.data(),   bitmat.data() + mat_words,
+      alive,     rep,        pred_block_count};
+
+  for (int i = num_q - 1; i >= 0; --i) {
+    const int q = q_topo[i];
+    LITERT_SMALL_LOOP
+    for (int v : q_succs[q]) {
+      qc.OrRow(qc.reach, q, v);
+      QuotientContraction::SetBit(qc.reach, num_words, q, v);
+    }
+  }
+  for (int i = 0; i < num_q; ++i) {
+    const int q = q_topo[i];
+    LITERT_SMALL_LOOP
+    for (int v : q_succs[q]) {
+      qc.OrRow(qc.anc, v, q);
+      QuotientContraction::SetBit(qc.anc, num_words, v, q);
+    }
+  }
+
+  LITERT_SMALL_LOOP
+  for (int b = 0; b < num_blocks; ++b) {
+    rep[b] = b;
+  }
+
+  // Blocks are ordered by `(epoch, first_topo_pos)` with unique `(epoch,
+  // part_id)`, so `a < b` with equal `part_id` implies `block_epoch[a] <
+  // block_epoch[b]`.
+  u64_a.clear();
+  for (int a = 0; a < num_blocks; ++a) {
+    LITERT_SMALL_LOOP
+    for (int b = a + 1; b < num_blocks; ++b) {
+      if (ws.block_part[a] == ws.block_part[b]) {
+        u64_a.push_back(
+            (static_cast<uint64_t>(ws.block_epoch[b] - ws.block_epoch[a])
+             << 42) |
+            (static_cast<uint64_t>(ws.block_first_tpos[a]) << 21) |
+            static_cast<uint64_t>(ws.block_first_tpos[b]));
+      }
+    }
+  }
+  std::sort(u64_a.begin(), u64_a.end());
+
+  int num_alive = num_blocks;
+  for (uint64_t key : u64_a) {
+    int a = qc.FindRep(
+        ws.tpos_to_block[static_cast<size_t>((key >> 21) & kMask21)]);
+    int b = qc.FindRep(ws.tpos_to_block[static_cast<size_t>(key & kMask21)]);
+    if (a == b) {
+      continue;
+    }
+    if (ws.block_first_tpos[b] < ws.block_first_tpos[a]) {
+      std::swap(a, b);
+    }
+    if (qc.RowsIntersect(a, b) || qc.RowsIntersect(b, a)) {
+      continue;
+    }
+
+    qc.OrRow(qc.reach, a, b);
+    QuotientContraction::ClearBit(qc.reach, num_words, a, a);
+    QuotientContraction::ClearBit(qc.reach, num_words, a, b);
+
+    qc.OrRow(qc.anc, a, b);
+    QuotientContraction::ClearBit(qc.anc, num_words, a, a);
+    QuotientContraction::ClearBit(qc.anc, num_words, a, b);
+
+    qc.UpdateRelatives(qc.anc, qc.reach, a, b);
+    qc.UpdateRelatives(qc.reach, qc.anc, a, b);
+
+    alive[b] = 0;
+    rep[b] = a;
+    --num_alive;
+  }
+
+  for (int b = 0; b < num_blocks; ++b) {
+    if (alive[b]) {
+      qc.AddReachDeg(b, 1);
+    }
+  }
+
+  for (int step = 0; step < num_alive; ++step) {
+    int chosen = -1;
+    LITERT_SMALL_LOOP
+    for (int b = 0; b < num_blocks; ++b) {
+      if (alive[b] && pred_block_count[b] == 0 &&
+          (chosen < 0 ||
+           ws.block_first_tpos[b] < ws.block_first_tpos[chosen])) {
+        chosen = b;
+      }
+    }
+    if (chosen < 0) {
+      ABSL_DCHECK_GE(chosen, 0);
+      return;
+    }
+    alive[chosen] = 0;
+    root_to_out[chosen] = step;
+    qc.AddReachDeg(chosen, -1);
+  }
+
+  ws.num_out_blocks = num_alive;
+  LITERT_SMALL_LOOP
+  for (int b = 0; b < num_blocks; ++b) {
+    ws.block_to_out[b] = root_to_out[qc.FindRep(b)];
+  }
+}
+
 }  // namespace
 
 //===----------------------------------------------------------------------===//
@@ -444,61 +906,40 @@ litert::Expected<void> GraphSlicer::CloneInto(const LiteRtOpT& old_op) {
 std::vector<std::vector<LiteRtOp>> GetPartitionsFromFlatListV2(
     const std::vector<LiteRtOpWithPartitionIndex>& ops,
     LiteRtSubgraph subgraph) {
-  if (subgraph->Ops().empty()) {
+  if (subgraph == nullptr || subgraph->Ops().empty()) {
     LITERT_LOG(LITERT_INFO, "Found empty subgraph, skipping partitioning");
     return {};
   }
-  // Map of op to partition index.
-  absl::flat_hash_map<LiteRtOp, LiteRtParamIndex> op_to_partition_index = {};
-
-  // Determine the largest partition index `idx`, and use `idx+1` to represent
-  // the partition index for ops not selected by the plugin.
-  LiteRtParamIndex max_partition_index = 0;
-  for (LiteRtOpWithPartitionIndex op : ops) {
-    op_to_partition_index[op.first] = op.second;
-    if (op.second > max_partition_index) {
-      max_partition_index = op.second;
-    }
-  }
-  LiteRtParamIndex unselected_ops_partition_index = max_partition_index + 1;
-
-  // Retain the execution order of the ops.
-  //
-  // Note: We do not use op index to maintain execution order, because inlined
-  // ops from decomposition subgraph do not have respective index in the main
-  // subgraph. Instead, we use the op order in the subgraph to maintain the
-  // execution order.
-  std::vector<LiteRtOpWithPartitionIndex> sorted_ops;
-  sorted_ops.reserve(subgraph->Ops().size());
-  for (LiteRtOp& op : subgraph->Ops()) {
-    auto it = op_to_partition_index.find(op);
-    if (it == op_to_partition_index.end()) {
-      sorted_ops.push_back({op, unselected_ops_partition_index});
-    } else {
-      sorted_ops.push_back({op, it->second});
+  absl::flat_hash_map<LiteRtOp, LiteRtParamIndex> op_to_partition_index;
+  op_to_partition_index.reserve(ops.size());
+  for (const auto& [op, index] : ops) {
+    if (op != nullptr) {
+      op_to_partition_index[op] = index;
     }
   }
 
-  // Partition based on the execution order and partition index.
   std::vector<std::vector<LiteRtOp>> partitions;
   std::vector<LiteRtOp> current_partition;
-  ABSL_DCHECK(!sorted_ops.empty());
-  LiteRtParamIndex current_partition_index = sorted_ops.front().second;
-
-  for (const auto& [partition, index] : sorted_ops) {
-    if (index != current_partition_index) {
+  std::optional<LiteRtParamIndex> current_index;
+  for (LiteRtOp op : subgraph->Ops()) {
+    auto it = op_to_partition_index.find(op);
+    const std::optional<LiteRtParamIndex> index =
+        (it == op_to_partition_index.end())
+            ? std::nullopt
+            : std::optional<LiteRtParamIndex>(it->second);
+    if (index != current_index) {
       if (!current_partition.empty()) {
         partitions.push_back(std::move(current_partition));
         current_partition.clear();
       }
-      current_partition_index = index;
+      current_index = index;
     }
-    if (current_partition_index != unselected_ops_partition_index) {
-      current_partition.push_back(partition);
+    if (current_index.has_value()) {
+      current_partition.push_back(op);
     }
   }
   if (!current_partition.empty()) {
-    partitions.push_back(current_partition);
+    partitions.push_back(std::move(current_partition));
   }
   return partitions;
 }
@@ -514,6 +955,165 @@ std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
     LiteRtSubgraph subgraph) {
   return GetPartitionsFromFlatListV2(ops, subgraph);
 }
+
+std::vector<std::vector<LiteRtOp>> GroupPartitionsAcyclic(
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph) {
+  if (subgraph == nullptr || subgraph->Ops().empty() || ops.empty()) {
+    return {};
+  }
+
+  const auto& subgraph_ops = subgraph->Ops();
+  std::vector<LiteRtOp> id_to_op;
+  id_to_op.reserve(subgraph_ops.size());
+  absl::flat_hash_map<LiteRtOp, LiteRtParamIndex> op_to_id;
+  op_to_id.reserve(subgraph_ops.size());
+  for (LiteRtOp op : subgraph_ops) {
+    if (op != nullptr && op_to_id.emplace(op, id_to_op.size()).second) {
+      id_to_op.push_back(op);
+      if (id_to_op.size() > static_cast<size_t>(kMaxPackedDagOps)) {
+        return GetPartitionsFromFlatListV2(ops, subgraph);
+      }
+    }
+  }
+  const int num_ops = static_cast<int>(id_to_op.size());
+  if (num_ops == 0) {
+    return {};
+  }
+
+  const size_t stride = static_cast<size_t>(num_ops + 1);
+  std::vector<int> arena(13 * stride, 0);
+  int* succs_off = arena.data();
+  int* preds_off = succs_off + stride;
+  int* topo_order = preds_off + stride;
+  int* topo_pos = topo_order + stride;
+  int* part_id = topo_pos + stride;
+  int* in_degree = part_id + stride;
+  int* ready = in_degree + stride;
+
+  DagWorkspace ws;
+  ws.num_ops = num_ops;
+  ws.topo_order = topo_order;
+  ws.topo_pos = topo_pos;
+  ws.part_id = part_id;
+  ws.epoch = ready + stride;
+  ws.block_epoch = ws.epoch + stride;
+  ws.block_part = ws.block_epoch + stride;
+  ws.block_first_tpos = ws.block_part + stride;
+  ws.block_to_out = ws.block_first_tpos + stride;
+  ws.tpos_to_block = ws.block_to_out + stride;
+
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < num_ops; ++i) {
+    topo_pos[i] = -1;
+    part_id[i] = -1;
+  }
+
+  std::vector<uint64_t> u64_a;
+  std::vector<uint64_t> u64_b(static_cast<size_t>(num_ops), 0);
+  for (const auto& [op, part_idx] : ops) {
+    auto it = op_to_id.find(op);
+    if (it != op_to_id.end()) {
+      const size_t id = it->second;
+      part_id[id] = 0;
+      u64_b[id] = static_cast<uint64_t>(part_idx);
+    }
+  }
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < num_ops; ++i) {
+    if (part_id[i] >= 0) {
+      u64_a.push_back(u64_b[i]);
+    }
+  }
+  if (u64_a.empty()) {
+    return {};
+  }
+  SortAndUnique(u64_a);
+  ws.num_unique_indices = static_cast<int>(u64_a.size());
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < num_ops; ++i) {
+    if (part_id[i] >= 0) {
+      part_id[i] = static_cast<int>(
+          std::lower_bound(u64_a.begin(), u64_a.end(), u64_b[i]) -
+          u64_a.begin());
+    }
+  }
+
+  u64_a.clear();
+  for (int v = 0; v < num_ops; ++v) {
+    for (const auto* input : id_to_op[v]->Inputs()) {
+      if (input == nullptr || input->DefiningOp() == nullptr) {
+        continue;
+      }
+      auto it = op_to_id.find(input->DefiningOp());
+      if (it != op_to_id.end()) {
+        u64_a.push_back((static_cast<uint64_t>(it->second) << 32) |
+                        static_cast<uint32_t>(v));
+      }
+    }
+  }
+  SortAndUnique(u64_a);
+
+  std::vector<int> adj_buf(2 * u64_a.size(), 0);
+  int* succs_adj = adj_buf.data();
+  int* preds_adj = succs_adj + u64_a.size();
+  BuildSortedCsr(num_ops, u64_a, succs_off, succs_adj);
+  LITERT_SMALL_LOOP
+  for (uint64_t& e : u64_a) {
+    e = (e << 32) | (e >> 32);
+  }
+  std::sort(u64_a.begin(), u64_a.end());
+  BuildSortedCsr(num_ops, u64_a, preds_off, preds_adj);
+  ws.succs = {succs_off, succs_adj};
+  ws.preds = {preds_off, preds_adj};
+
+  int ready_size = 0;
+  LITERT_SMALL_LOOP
+  for (int i = 0; i < num_ops; ++i) {
+    in_degree[i] = preds_off[i + 1] - preds_off[i];
+    if (in_degree[i] == 0) {
+      ready[ready_size++] = i;
+    }
+  }
+  for (int head = 0; head < ready_size; ++head) {
+    const int u = ready[head];
+    topo_pos[u] = ws.topo_size;
+    topo_order[ws.topo_size++] = u;
+    LITERT_SMALL_LOOP
+    for (int v : ws.succs[u]) {
+      if (--in_degree[v] == 0) {
+        ready[ready_size++] = v;
+      }
+    }
+  }
+
+  ComputeEpochs(ws);
+  BuildEpochBlocks(ws, u64_a, u64_b);
+  if (ws.num_unique_indices > 1) {
+    // `in_degree` + `ready` (`2 * stride` ints) are dead after Kahn's sort,
+    // and `adj_buf` is dead once `q_edges` is extracted from `ws.succs`.
+    ContractMultiIndexQuotientDag(ws, in_degree, adj_buf, u64_a, u64_b);
+  }
+
+  std::vector<std::vector<LiteRtOp>> partitions(ws.num_out_blocks);
+  for (int t = 0; t < ws.topo_size; ++t) {
+    const int b = ws.tpos_to_block[t];
+    if (b >= 0) {
+      partitions[ws.block_to_out[b]].push_back(id_to_op[topo_order[t]]);
+    }
+  }
+
+  if (ws.topo_size < num_ops) {
+    for (int i = 0; i < num_ops; ++i) {
+      if (part_id[i] >= 0 && topo_pos[i] < 0) {
+        partitions.emplace_back(1, id_to_op[i]);
+      }
+    }
+  }
+  return partitions;
+}
+
+#undef LITERT_SMALL_LOOP
 
 Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
                                     std::vector<LiteRtOp>& partition) {
