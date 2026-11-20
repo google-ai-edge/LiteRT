@@ -304,6 +304,17 @@ class Builder {
     return {};
   }
 
+  /// @brief Returns true iff `tensor` is an output of the target subgraph.
+  Expected<bool> IsSubgraphOutput(const Tensor& tensor) const {
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, is_subgraph_output)) {
+      return Unexpected(kLiteRtStatusErrorWrongVersion);
+    }
+    bool is_output = false;
+    LITERT_RETURN_IF_ERROR(
+        ctx_->is_subgraph_output(builder_, tensor.Get(), &is_output));
+    return is_output;
+  }
+
   // --- Extended API ---
 
   /// @brief Create an Op with the given code, inputs, and output types.

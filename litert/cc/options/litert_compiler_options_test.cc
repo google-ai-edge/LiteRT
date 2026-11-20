@@ -68,6 +68,17 @@ TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
                               options.GetPartitionStrategy());
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+
+  LITERT_EXPECT_OK(options.SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyAcyclic));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto acyclic_strategy,
+                              options.GetPartitionStrategy());
+  EXPECT_EQ(acyclic_strategy, kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+
+  EXPECT_FALSE(options
+                   .SetPartitionStrategy(
+                       static_cast<LiteRtCompilerOptionsPartitionStrategy>(3))
+                   .HasValue());
 }
 
 TEST(CompilerOptionsTest, AddShapeSpecializationSerializesToToml) {

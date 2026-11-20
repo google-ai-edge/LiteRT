@@ -177,6 +177,7 @@ cc_library(
         "//litert/c:litert_op_options_impl",
         "//litert/c:litert_opaque_options_impl",
         "//litert/c:litert_options_impl",
+        "//litert/core/model",
     ],
 )
 

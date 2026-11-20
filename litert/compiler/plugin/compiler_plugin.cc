@@ -513,6 +513,7 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
         for (const auto& transformation : transformations_) {
           LiteRtBuilderT builder;
+          builder.SetTargetSubgraph(subgraph);
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
           // Call the function pointer.
@@ -589,11 +590,21 @@ LiteRtStatus PartitionSubgraph(
     size_t max_partitions = 0) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
-      const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
-      GroupPartitions;
-  if (partition_strategy_option ==
-      kLiteRtCompilerOptionsPartitionStrategyDefault) {
-    partition_strategy_func = GroupPartitionsV2;
+      const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) = nullptr;
+  switch (partition_strategy_option) {
+    case kLiteRtCompilerOptionsPartitionStrategyDefault:
+      partition_strategy_func = GroupPartitionsV2;
+      break;
+    case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
+      partition_strategy_func = GroupPartitions;
+      break;
+    case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+      partition_strategy_func = GroupPartitionsAcyclic;
+      break;
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unknown partition strategy: %d",
+                 partition_strategy_option);
+      return kLiteRtStatusErrorInvalidArgument;
   }
   LITERT_LOG(LITERT_INFO, "Partition strategy: %d", partition_strategy_option);
 
@@ -809,6 +820,9 @@ Expected<PartitionResult> PartitionModel(
     if (compiler_options.HasValue()) {
       strategy = compiler_options->partition_strategy;
       max_partitions = compiler_options->max_partitions;
+    } else if (compiler_options.Error().Status() !=
+               kLiteRtStatusErrorNotFound) {
+      return compiler_options.Error();
     }
 
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),

@@ -55,6 +55,7 @@
 #include "litert/vendors/mediatek/compiler/legalizations/operand_map.h"
 #include "litert/vendors/mediatek/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/mediatek/compiler/transformations/attention_mask_transformation.h"
+#include "litert/vendors/mediatek/compiler/transformations/bool_mask_transformation.h"
 #include "litert/vendors/mediatek/compiler/transformations/entry_embedding_transformation.h"
 #include "litert/vendors/mediatek/compiler/transformations/index_arith_transformation.h"
 #include "litert/vendors/mediatek/compiler/transformations/mlp_quant_transformation.h"
@@ -149,6 +150,7 @@ constexpr LiteRtOpCode kSupportedOps[] = {
     kLiteRtOpCodeTflTile,
     kLiteRtOpCodeTflUnpack,
     kLiteRtOpCodeTflLess,
+    kLiteRtOpCodeTflNotEqual,
     kLiteRtOpCodeShloComposite,
     kLiteRtOpCodeTflL2Normalization,
 };
@@ -791,6 +793,8 @@ struct GraphTransformFilter {
   bool attention_chunk = true;
   bool floor_div = true;
   bool one_hot_arith = true;
+  bool bool_mask = true;
+  bool output_bool_cast_not_equal = true;
 
   static GraphTransformFilter FromEnv() {
     GraphTransformFilter f;
@@ -802,7 +806,8 @@ struct GraphTransformFilter {
          absl::StrSplit(env, ',', absl::SkipWhitespace())) {
       token = absl::StripAsciiWhitespace(token);
       if (token == "no_transforms") {
-        f = {false, false, false, false, false, false, false, false};
+        f = {false, false, false, false, false,
+             false, false, false, false, false};
       } else if (token == "no_rms_norm_quant") {
         f.rms_norm_quant = false;
       } else if (token == "no_attention_mask") {
@@ -819,6 +824,11 @@ struct GraphTransformFilter {
         f.floor_div = false;
       } else if (token == "no_one_hot_arith") {
         f.one_hot_arith = false;
+      } else if (token == "no_bool_mask") {
+        f.bool_mask = false;
+        f.output_bool_cast_not_equal = false;
+      } else if (token == "no_output_not_equal") {
+        f.output_bool_cast_not_equal = false;
       }
     }
     return f;
@@ -877,6 +887,22 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
       filter.one_hot_arith) {
     list.push_back(
         {&OrphanCleanupTransformation, "OrphanCleanupTransformation", 80});
+  }
+  if (filter.bool_mask) {
+    list.push_back({&BoolMaskBypassCastTransformation,
+                    "BoolMaskBypassCastTransformation", 75});
+    list.push_back({&BoolMaskCleanupCastTransformation,
+                    "BoolMaskCleanupCastTransformation", 74});
+    list.push_back({&BoolMaskNotEqualTransformation,
+                    "BoolMaskNotEqualTransformation", 72});
+    list.push_back({&BoolMaskTileWrapTransformation,
+                    "BoolMaskTileWrapTransformation", 71});
+    list.push_back({&BoolMaskOpToFloatTransformation,
+                    "BoolMaskOpToFloatTransformation", 70});
+    if (filter.output_bool_cast_not_equal) {
+      list.push_back({&BoolMaskOutputNotEqualTransformation,
+                      "BoolMaskOutputNotEqualTransformation", 55});
+    }
   }
   *num_patterns = list.size();
   *transformations = list.data();

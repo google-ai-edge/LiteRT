@@ -46,6 +46,9 @@ TEST(ApplyPluginFlagsTest, ParsePartitionStrategySuccess) {
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
   EXPECT_EQ(AbslUnparseFlag(partition_strategy), "weakly_connected");
+  EXPECT_TRUE(AbslParseFlag("acyclic", &partition_strategy, &error));
+  EXPECT_EQ(partition_strategy, kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+  EXPECT_EQ(AbslUnparseFlag(partition_strategy), "acyclic");
 }
 
 TEST(ApplyPluginFlagsTest, UnparsePartitionStrategySuccess) {
@@ -54,6 +57,11 @@ TEST(ApplyPluginFlagsTest, UnparsePartitionStrategySuccess) {
   EXPECT_EQ(
       AbslUnparseFlag(kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected),
       "weakly_connected");
+  EXPECT_EQ(AbslUnparseFlag(kLiteRtCompilerOptionsPartitionStrategyAcyclic),
+            "acyclic");
+  EXPECT_EQ(
+      AbslUnparseFlag(static_cast<LiteRtCompilerOptionsPartitionStrategy>(3)),
+      "unknown(3)");
 }
 
 TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {
@@ -68,6 +76,16 @@ TEST(ApplyPluginFlagsTest, ParseFlagsAndGetPartitionStrategySuccess) {
                          options.Value().GetPartitionStrategy());
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+
+  absl::SetFlag(&FLAGS_partition_strategy,
+                kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+  Expected<CompilerOptions> acyclic_options = CompilerOptions::Create();
+  ASSERT_TRUE(acyclic_options.HasValue());
+  ASSERT_TRUE(
+      UpdateCompilerOptionsFromFlags(acyclic_options.Value()).HasValue());
+  LITERT_ASSIGN_OR_ABORT(auto acyclic_strategy,
+                         acyclic_options.Value().GetPartitionStrategy());
+  EXPECT_EQ(acyclic_strategy, kLiteRtCompilerOptionsPartitionStrategyAcyclic);
 }
 
 // Serializes CompilerOptions to its TOML payload.
