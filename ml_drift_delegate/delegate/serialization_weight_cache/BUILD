@@ -197,6 +197,7 @@ cc_library(
     hdrs = ["serialization_weight_cache.h"],
     visibility = [
         "//ml_drift_delegate:__subpackages__",
+        "//tensor/runners/ml_drift:__pkg__",
         "//third_party/odml/infra:__subpackages__",
     ],
     deps = [
