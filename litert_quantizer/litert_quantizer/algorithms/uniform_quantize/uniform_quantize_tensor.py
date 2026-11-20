@@ -15,12 +15,15 @@
 
 """Uniform quantize in tensor level."""
 
+from collections.abc import Sequence
 import dataclasses
-from typing import Any, Optional, Sequence
+from typing import Any
 import ml_dtypes
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.utils import tfl_flatbuffer_utils
+
+_CHUNK_BYTES = 32 * 1024 * 1024
 
 
 @dataclasses.dataclass(frozen=True)
@@ -43,6 +46,49 @@ def get_quantized_range(qtype: IntType) -> tuple[float, float]:
     qmax = (2**qtype.num_bits) - 1
     qmin = 0
   return float(qmin), float(qmax)
+
+
+def is_centered_int2_zero_point(
+    qtype: IntType, zero_points: np.ndarray
+) -> bool:
+  """Returns whether `zero_points` encodes centered signed INT2 (-0.5)."""
+  return (
+      qtype.num_bits == 2
+      and qtype.signed
+      and np.issubdtype(zero_points.dtype, np.floating)
+      and zero_points.size > 0
+      and bool(np.all(zero_points == -0.5))
+  )
+
+
+def get_centered_int2_option(
+    tensor_quant_config: qtyping.TensorQuantizationConfig,
+    is_weight: bool = True,
+) -> bool:
+  """Returns whether centered signed INT2 quantization should be used.
+
+  Args:
+    tensor_quant_config: Quantization configuration for the tensor.
+    is_weight: Whether the target tensor is a constant weight tensor.
+
+  Returns:
+    Whether centered INT2 quantization (`zero_point = -0.5`) is enabled.
+
+  Raises:
+    ValueError: If `algorithm_params["centered"]` is not a boolean, or if
+      centered quantization is requested for a non-weight tensor.
+  """
+  default_centered = False
+  centered = tensor_quant_config.algorithm_params.get(
+      "centered", default_centered
+  )
+  if not isinstance(centered, bool):
+    raise ValueError(f"centered must be a boolean, got {centered!r}.")
+  if centered and not is_weight:
+    raise ValueError(
+        "Centered quantization is only supported for weight tensors."
+    )
+  return centered
 
 
 def extract_block_size_from_granularity(
@@ -124,6 +170,10 @@ def fix_quantization_params_rank(
 
   Returns:
     quantization_params with broadcasted scales and zero_points.
+
+  Raises:
+    ValueError: If `tensor_data` is scalar and `scale` or `zero_point` has more
+      than one element.
   """
   scales, zero_points = (
       quantization_params.scale,
@@ -142,23 +192,26 @@ def fix_quantization_params_rank(
     scales = np.array(scales.item())
     zero_points = np.array(zero_points.item())
   else:
-    dims = [
+    dims = tuple(
         dim
         for dim in range(tensor_data.ndim)
         if dim != quantization_params.quantized_dimension
-    ]
-    scales = np.expand_dims(scales, axis=dims)  # pyrefly: ignore[no-matching-overload]
-    zero_points = np.expand_dims(zero_points, axis=dims)  # pyrefly: ignore[no-matching-overload]
+    )
+    if scales.ndim < tensor_data.ndim:
+      if scales.size == 1:
+        scales = scales.reshape((1,) * tensor_data.ndim)
+      else:
+        scales = np.expand_dims(scales, axis=dims)
+    if zero_points.ndim < tensor_data.ndim:
+      if zero_points.size == 1:
+        zero_points = zero_points.reshape((1,) * tensor_data.ndim)
+      else:
+        zero_points = np.expand_dims(zero_points, axis=dims)
 
-  return qtyping.UniformQuantParams(
+  return dataclasses.replace(
+      quantization_params,
       scale=scales,
       zero_point=zero_points,
-      num_bits=quantization_params.num_bits,
-      symmetric=quantization_params.symmetric,
-      quantized_dimension=quantization_params.quantized_dimension,
-      quantized_data=quantization_params.quantized_data,
-      block_size=quantization_params.block_size,
-      signed=quantization_params.signed,
   )
 
 
@@ -214,9 +267,9 @@ def reshape_data_for_blockwise(
     A tuple containing the reshaped tensor data and the new reduce dimension.
   """
   if quantized_dim is None:
-    quantized_dim = tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[
-        op_name
-    ]
+    quantized_dim = (
+        tfl_flatbuffer_utils.TFL_OP_TO_BLOCKWISE_WEIGHT_QUANTIZED_DIM[op_name]
+    )
   block_size = extract_block_size_from_granularity(granularity)
   new_shape = _get_tensor_shape_for_blockwise(
       tensor_data.shape, quantized_dim, block_size
@@ -265,6 +318,14 @@ def broadcast_scale_zp_for_blockwise(
   )
   if quant_params.zero_point is None or quant_params.zero_point.size == 0:
     expanded_zp = np.zeros_like(tensor_content, dtype=np.int32)
+  elif quant_params.zero_point.size == 1:
+    # `np.broadcast_to` returns a zero-stride read-only view (avoiding a
+    # full-size copy on large weights) and handles 1-D `(1,)` zero points that
+    # would hit `AxisError` in `np.expand_dims(..., quantized_dim + 1)`.
+    expanded_zp = np.broadcast_to(
+        quant_params.zero_point.reshape((1,) * tensor_content.ndim),
+        tensor_content.shape,
+    )
   else:
     expanded_zp = np.reshape(
         np.broadcast_to(
@@ -273,15 +334,10 @@ def broadcast_scale_zp_for_blockwise(
         ),
         tensor_content.shape,
     )
-  return qtyping.UniformQuantParams(
+  return dataclasses.replace(
+      quant_params,
       scale=expanded_scale,
       zero_point=expanded_zp,
-      num_bits=quant_params.num_bits,
-      symmetric=quant_params.symmetric,
-      quantized_dimension=quant_params.quantized_dimension,
-      quantized_dimensions=quant_params.quantized_dimensions,
-      block_size=quant_params.block_size,
-      signed=quant_params.signed,
   )
 
 
@@ -289,7 +345,7 @@ def uniform_quantize(
     tensor_data: np.ndarray,
     quantization_params: qtyping.UniformQuantParams,
     is_blockwise_quant: bool = False,
-):
+) -> np.ndarray:
   """Uniform quantize a tensor.
 
   Args:
@@ -299,6 +355,10 @@ def uniform_quantize(
 
   Returns:
     The quantized tensor.
+
+  Raises:
+    ValueError: If `zero_points` is neither integer nor `-0.5` for signed INT2,
+      or if `zero_points` falls outside the quantized range.
   """
   # The reshaping for blockwise quantization is unique hence we do this here
   # to avoid unexpected broadcast behavior downstream.
@@ -330,7 +390,9 @@ def uniform_quantize(
   narrow_range = (
       quantization_params.symmetric and quantization_params.num_bits >= 8
   )
-  if not np.issubdtype(zero_points.dtype, np.integer):
+  if not is_centered_int2_zero_point(qtype, zero_points) and not np.issubdtype(
+      zero_points.dtype, np.integer
+  ):
     raise ValueError(f"zero_points need to be integer. Got {zero_points.dtype}")
   qmin, qmax = get_quantized_range(qtype)
   if np.any(zero_points < qmin) or np.any(zero_points > qmax):
@@ -343,7 +405,7 @@ def uniform_quantize(
   # avoid creating large intermediate values.
   if (
       tensor_data.ndim > 1
-      and tensor_data.nbytes > 32 * 1024 * 1024
+      and tensor_data.nbytes > _CHUNK_BYTES
       and tensor_data.dtype.itemsize * 8 != qtype.num_bits
   ):
     # Reshape the `tensor_data`, `scales`, and `zero_points` to just two
@@ -357,14 +419,15 @@ def uniform_quantize(
     )
     ret = np.zeros(shape=tensor_data.shape, dtype=_get_numpy_dtype(qtype))
 
-    # Use a chunk size corresponding to 32 MiB of input data.
-    chunk_size = (32 * 1024 * 1024) // (
-        output_shape[-1] * tensor_data.dtype.itemsize
+    # Use a chunk size corresponding to _CHUNK_BYTES of input data.
+    chunk_size = max(
+        1,
+        _CHUNK_BYTES // max(1, output_shape[-1] * tensor_data.dtype.itemsize),
     )
 
-    # Loop over `tensor_data` in chunks.
-    for k in range(0, tensor_data.size, chunk_size):
-      end = min(k + chunk_size, tensor_data.size)
+    # Loop over `tensor_data` rows in chunks.
+    for k in range(0, tensor_data.shape[0], chunk_size):
+      end = min(k + chunk_size, tensor_data.shape[0])
 
       # Quantize the chunk.
       q = np.divide(tensor_data[k:end, :], scales[k:end, :])
@@ -514,14 +577,15 @@ def symmetric_quantize_bias_tensor(
 
 
 def tensor_zp_scale_from_min_max(
-    min_value,
-    max_value,
+    min_value: np.ndarray,
+    max_value: np.ndarray,
     num_bits: int,
     symmetric: bool,
     granularity: qtyping.QuantGranularity,
-    clipping_values: Optional[np.ndarray] = None,
+    clipping_values: np.ndarray | None = None,
     signed: bool = True,
-):
+    centered: bool = False,
+) -> tuple[np.ndarray, np.ndarray]:
   """Get zero point and scale from min and max value.
 
   Args:
@@ -537,10 +601,21 @@ def tensor_zp_scale_from_min_max(
       should be the same shape as min_value and max_value. If None, no clipping
       will be applied.
     signed: Whether the tensor is signed.
+    centered: Whether to use the centered signed INT2 grid (`zero_point = -0.5`
+      and levels `{-1.5, -0.5, 0.5, 1.5} * scale`).
 
   Returns:
     The zero point and scale of the tensor.
+
+  Raises:
+    ValueError: If `centered` is enabled without signed symmetric 2-bit
+      quantization.
   """
+  if centered and (num_bits != 2 or not symmetric or not signed):
+    raise ValueError(
+        "Centered quantization requires signed symmetric 2-bit quantization,"
+        f" got num_bits={num_bits}, symmetric={symmetric}, signed={signed}."
+    )
 
   qtype = IntType(
       num_bits,
@@ -551,11 +626,10 @@ def tensor_zp_scale_from_min_max(
   pos_clipping_values = None if clipping_values is None else clipping_values
   neg_clipping_values = None if clipping_values is None else -clipping_values
 
-  if is_blockwise(granularity):
-    # Blockwise quantization uses float16 scale,
-    # with 7 bit mantissa, so the maximum scale value is 65280 and maximum
-    # representable range is [-65280 * (2 ** num_bits),
-    # 65280 * (2 ** num_bits - 1)].
+  if is_blockwise(granularity) and not centered:
+    # Legacy 1-D blockwise quantization uses float16 scale with 7-bit mantissa,
+    # so the maximum scale value is 65280 and maximum representable range is
+    # [-65280 * (2 ** num_bits), 65280 * (2 ** num_bits - 1)].
     # Note that we have one extra value on the negative side.
     float16_max = np.broadcast_to(
         np.array(65280) * (2**num_bits - 1), max_value.shape
@@ -576,9 +650,13 @@ def tensor_zp_scale_from_min_max(
 
   if symmetric:
     bound = np.maximum(np.abs(min_value), np.abs(max_value))
-    bound = np.maximum(bound, min_bound)
     if clipping_values is not None:
       bound = np.clip(bound, neg_clipping_values, pos_clipping_values)
+    bound = np.maximum(bound, min_bound)
+    if centered:
+      scale = (bound / 1.5).astype(np.float32)
+      zp = np.full((1,) * scale.ndim, -0.5, dtype=np.float32)
+      return zp, scale
     if not qtype.signed:
       half_q = (qmax - 1) / 2
       scale = bound / half_q
@@ -592,9 +670,10 @@ def tensor_zp_scale_from_min_max(
     # This ensures bound_min <= 0 <= bound_max.
     bound_max = np.maximum(max_value, np.zeros_like(max_value))
     bound_min = np.minimum(min_value, np.zeros_like(min_value))
-    bound = np.maximum(bound_max - bound_min, min_bound)
+    bound = bound_max - bound_min
     if clipping_values is not None:
       bound = np.clip(bound, -clipping_values, clipping_values)
+    bound = np.maximum(bound, min_bound)
     scale = bound / (qmax - qmin)
     zp = qmin - bound_min / scale
     zp = np.rint(zp)
