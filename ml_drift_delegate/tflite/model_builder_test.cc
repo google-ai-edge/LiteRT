@@ -5019,17 +5019,38 @@ TEST(SoftmaxOperationParserTest, TestIsSupported) {
 }
 
 TEST(SplitOperationParserTest, TestIsSupported) {
-  // Always valid
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinSplit,
       /*op_version=*/1,
-      /*num_inputs=*/1,
+      /*num_inputs=*/2,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
   auto parser = NewOperationParser(context->node(), context->registration());
   TfLiteSplitParams* tf_options =
       static_cast<TfLiteSplitParams*>(context->node()->builtin_data);
   tf_options->num_splits = 1;
-  EXPECT_TRUE(
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 1);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(::ml_drift::OperationType::kReshape));
+  ASSERT_EQ(graph.FindInputs(graph.nodes()[0]->id).size(), 1);
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[0]->id)[0]->tensor.ref,
+            context->node()->inputs->data[1]);
+
+  // Reject when the value tensor (input 1) is constant instead of axis
+  // (input 0).
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteArenaRw);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  EXPECT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());

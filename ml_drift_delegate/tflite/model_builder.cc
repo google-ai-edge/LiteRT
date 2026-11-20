@@ -5514,9 +5514,18 @@ class SplitOperationParser : public TFLiteOperationParser {
       return absl::InvalidArgumentError("Missing TfLiteSplitParams.");
     }
     if (params->num_splits == 1) {
-      ABSL_RETURN_IF_ERROR(
-          ValidateSupport(context, tflite_node, registration, {}));
-      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+      ABSL_RETURN_IF_ERROR(ValidateSupport(
+          context, tflite_node, registration,
+          {.num_outputs = 1,
+           .required_runtime_inputs = 1,
+           .required_const_inputs = 1}));
+      const TfLiteTensor* input = nullptr;
+      ABSL_RETURN_IF_ERROR(PreGetInputTensor(context, tflite_node, 1, &input));
+      if (tflite::IsConstantTensor(input)) {
+        return absl::InvalidArgumentError(
+            "Split value input tensor must not be constant.");
+      }
+      ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
       return absl::OkStatus();
     }
     const TfLiteTensor* input = nullptr;
@@ -5543,7 +5552,7 @@ class SplitOperationParser : public TFLiteOperationParser {
       // Adding Identity reshape that will be removed.
       ::ml_drift::Node* node = graph->NewNode();
       node->operation.type = ToString(::ml_drift::OperationType::kReshape);
-      reader->AddInput(node, 0);
+      reader->AddInput(node, 1);
       reader->AddOutputs(node);
       // New shape comes from output shape.
       ::ml_drift::ReshapeAttributes attr;
