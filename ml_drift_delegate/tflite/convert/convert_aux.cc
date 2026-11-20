@@ -23,6 +23,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -33,6 +34,7 @@
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
+#include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/kernels/kernel_util.h"
 
@@ -232,10 +234,11 @@ bool MarkSharedBias(::ml_drift::ir::IrTensorId bias_id,
 bool ConfigSharedQuantizedFullyConnected(
     const TfLiteTensor& weights_tensor, const ::ml_drift::OHWI& weights_shape,
     ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32> bias,
-    ::ml_drift::ir::IrOp* fc_op) {
+    ::ml_drift::ir::IrOp* fc_op, const TfLiteContext* context,
+    bool oi_transposed) {
   // Scale is per-output-channel by default; blockwise quantization also splits
   // the input dimension into blocks (parity with GraphFloat32).
-  const ::ml_drift::OHWI scale_shape =
+  ::ml_drift::OHWI scale_shape =
       QuantizedFullyConnectedScaleShape(weights_tensor, weights_shape);
 
   const bool has_quant =
@@ -250,6 +253,19 @@ bool ConfigSharedQuantizedFullyConnected(
         reinterpret_cast<const TfLiteBlockwiseQuantization*>(
             weights_tensor.quantization.params);
     has_zero_point = block_qparams != nullptr && block_qparams->zero_point >= 0;
+  } else if (weights_tensor.quantization.type ==
+             kTfLiteBlockwiseQuantizationV2) {
+    ABSL_CHECK(context != nullptr)
+        << "TfLiteContext is required for kTfLiteBlockwiseQuantizationV2.";
+    const absl::StatusOr<::litert::ml_drift::BlockwiseV2Params> bw_params =
+        ::litert::ml_drift::GetBlockwiseV2Params(
+            context->tensors, context->tensors_size, weights_tensor);
+    ABSL_QCHECK_OK(bw_params.status());
+    ::litert::ml_drift::BlockwiseV2WeightsInfo bw_info;
+    ABSL_QCHECK_OK(::litert::ml_drift::GetBlockwiseV2WeightsInfo(
+        weights_tensor, *bw_params, &bw_info, oi_transposed));
+    scale_shape = bw_info.scale_shape;
+    has_zero_point = bw_info.has_zero_point;
   }
 
   auto populate_quant_attrs = [&](auto& attr) {

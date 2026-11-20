@@ -104,6 +104,57 @@
 namespace litert::ml_drift::ir {
 namespace {
 
+// Infers `SharedTfliteTensor::oi_transposed` for 3-D/4-D batched
+// kTfLiteBlockwiseQuantizationV2 tensors whose IR tensor descriptor has been
+// shaped to OHWI (b=O, h=H, w=1, c=I).
+// Returns true for [H, I, O] / [1, H, I, O], false for [H, O, I] /
+// [1, H, O, I], and std::nullopt when the tensor is not a batched
+// blockwise v2 weight or its layout cannot be disambiguated.
+std::optional<bool> InferOiTransposed(const TfLiteTensor& tfl_tensor,
+                                      const ::ml_drift::BHWC& ir_shape) {
+  if (tfl_tensor.quantization.type != kTfLiteBlockwiseQuantizationV2 ||
+      tfl_tensor.dims == nullptr) {
+    return std::nullopt;
+  }
+  const int rank = tfl_tensor.dims->size;
+  if (rank != 3 && !(rank == 4 && tfl_tensor.dims->data[0] == 1)) {
+    return std::nullopt;
+  }
+  const int h = tfl_tensor.dims->data[rank - 3];
+  const int d1 = tfl_tensor.dims->data[rank - 2];
+  const int d2 = tfl_tensor.dims->data[rank - 1];
+  if (ir_shape.h != h || ir_shape.w != 1) {
+    return std::nullopt;
+  }
+  if (d1 == ir_shape.c && d2 == ir_shape.b && d1 != d2) {
+    return true;
+  }
+  if (d1 == ir_shape.b && d2 == ir_shape.c && d1 != d2) {
+    return false;
+  }
+  // When O == I (square [H, D, D] weights), dims alone cannot distinguish
+  // [H, I, O] from [H, O, I]. Blockwise quantization blocks along the input
+  // (I) axis, so a block extent > 1 on the row axis (`rank - 2`) indicates
+  // [H, I, O] (`true`), while > 1 on the col axis (`rank - 1`) indicates
+  // [H, O, I] (`false`).
+  if (d1 == d2 && d1 == ir_shape.b && d2 == ir_shape.c &&
+      tfl_tensor.quantization.params != nullptr) {
+    const auto* q = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+        tfl_tensor.quantization.params);
+    if (q->block_shape != nullptr && q->block_shape->size == rank) {
+      const int b_row = q->block_shape->data[rank - 2];
+      const int b_col = q->block_shape->data[rank - 1];
+      if (b_row > 1 && b_col == 1) {
+        return true;
+      }
+      if (b_col > 1 && b_row == 1) {
+        return false;
+      }
+    }
+  }
+  return std::nullopt;
+}
+
 // Converts a custom TFLite node and appends it to the `ir_model`.
 // TODO: dlho - Add to custom op
 void ConvertCustom(
@@ -316,6 +367,18 @@ class IrModelBuilder {
         shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
         if (tensor->buffer_source.force_linear_layout) {
           shared_info.layout = ::ml_drift::Layout::kLinear;
+        }
+        if (shared_info.tflite_tensor_id >= 0 &&
+            static_cast<size_t>(shared_info.tflite_tensor_id) <
+                context_.tensors_size) {
+          // Leave `oi_transposed` at its `SharedTfliteTensor` default (`true`,
+          // ignored for 2-D / non-blockwise-v2 tensors) when not inferred.
+          if (const std::optional<bool> oi_transposed = InferOiTransposed(
+                  context_.tensors[shared_info.tflite_tensor_id],
+                  tensor->desc.GetBHWCShape());
+              oi_transposed.has_value()) {
+            shared_info.oi_transposed = *oi_transposed;
+          }
         }
         shared_tensors_->try_emplace(ir_tensor_id, shared_info);
       }
