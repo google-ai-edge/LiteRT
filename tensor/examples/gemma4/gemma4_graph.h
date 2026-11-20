@@ -53,6 +53,8 @@ struct Gemma4Inputs {
 
 template <class... Mixins>
 struct Gemma4Outputs {
+  // `[batch, seq_len, vocab_size]`, or `[batch, 1, vocab_size]` (the last
+  // position only) when the graph is built with `last_token_logits_only`.
   Tensor<Mixins...> logits;
   std::vector<Tensor<Mixins...>> key_caches;
   std::vector<Tensor<Mixins...>> value_caches;
@@ -101,10 +103,17 @@ inline std::vector<int> GetKvCacheSharingPatterns(const Config& config) {
   return patterns;
 }
 
+// Builds the Gemma 4 graph.
+//
+// - `last_token_logits_only`: only computes the logits of the last position of
+//   the input sequence. The final norm, the LM head and the logit soft capping
+//   then run on a single position instead of the whole sequence. Use it for
+//   prefill, which only needs the logits of the last prompt token to predict
+//   the next one. The KV cache outputs aren't affected.
 template <class... Mixins>
 absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
     const Gemma4Inputs<Mixins...>& inputs, TensorMapping& weights,
-    const Config& config) {
+    const Config& config, bool last_token_logits_only = false) {
   ABSL_VLOG(4) << "Building Gemma4 Graph, seq_len="
                << inputs.embedded_input.GetShape()[1];
 
@@ -193,6 +202,14 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
 
     updated_key_caches.push_back(layer_out.key_cache);
     updated_value_caches.push_back(layer_out.value_cache);
+  }
+
+  // Only keep the last position when the other ones aren't needed.
+  const Shape hidden_shape = hidden_states.GetShape();
+  if (last_token_logits_only && hidden_shape.size() == 3 &&
+      hidden_shape[1] > 1) {
+    hidden_states = Slice(hidden_states, {0, hidden_shape[1] - 1, 0},
+                          {hidden_shape[0], 1, hidden_shape[2]});
   }
 
   // Final RMSNorm

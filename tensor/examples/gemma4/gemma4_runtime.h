@@ -154,6 +154,8 @@ absl::StatusOr<Gemma4Inputs<>> CreateGemma4Inputs(const Config& config,
                                                   int kv_cache_len);
 
 // Builds the prefill and decode graphs with the `Tag` backend lowering.
+//
+// The prefill graph only computes the logits of the last prompt token.
 template <class Tag>
 absl::StatusOr<BuiltGraphs> BuildModelGraphs(const Config& config, int seq_len,
                                              TensorMapping& weights) {
@@ -164,7 +166,8 @@ absl::StatusOr<BuiltGraphs> BuildModelGraphs(const Config& config, int seq_len,
                          /*kv_cache_len=*/0));
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Gemma4Outputs<Tag> prefill_outputs,
-      BuildGemma4Graph(ChangeMixinsTo<Tag>(prefill_inputs), weights, config));
+      BuildGemma4Graph(ChangeMixinsTo<Tag>(prefill_inputs), weights, config,
+                       /*last_token_logits_only=*/true));
 
   LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Inputs<> decode_inputs,
                               CreateGemma4Inputs(config, /*input_seq_len=*/1,
