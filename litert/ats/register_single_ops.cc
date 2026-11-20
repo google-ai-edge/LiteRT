@@ -26,6 +26,7 @@
 #include "litert/ats/register_concatenation.h"
 #include "litert/ats/register_conv_2d.h"
 #include "litert/ats/register_depthwise_conv_2d.h"
+#include "litert/ats/register_dequantize.h"
 #include "litert/ats/register_fully_connected.h"
 #include "litert/ats/register_mean.h"
 #include "litert/ats/register_one_hot.h"
@@ -64,6 +65,7 @@ void RegisterSingleOpsImpl(const AtsConf& options, size_t& test_id,
   RegisterOneHot(options, test_id, /*iters=*/10, cap);
   RegisterReshape(options, test_id, /*iters=*/10, cap);
   RegisterPad(options, test_id, /*iters=*/10, cap);
+  RegisterDequantize(options, test_id, /*iters=*/10, cap);
 }
 
 }  // namespace
