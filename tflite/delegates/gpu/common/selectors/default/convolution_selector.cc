@@ -24,6 +24,7 @@ limitations under the License.
 #include "tflite/delegates/gpu/common/task/gpu_operation.h"
 #include "tflite/delegates/gpu/common/task/weights_layout.h"
 #include "tflite/delegates/gpu/common/tasks/conv_constants.h"
+#include "tflite/delegates/gpu/common/tasks/conv_coop_mat.h"
 #include "tflite/delegates/gpu/common/tasks/conv_generic.h"
 #include "tflite/delegates/gpu/common/tasks/conv_metal_simd.h"
 #include "tflite/delegates/gpu/common/tasks/conv_weights_converter.h"
@@ -79,6 +80,11 @@ std::unique_ptr<GPUOperation> SelectConvolution(
     const Convolution2DAttributes& attr, const BHWC& dst_shape,
     const GpuInfo& gpu_info, const OperationDef& op_def,
     ModelHints hints) {
+  if (IsConvCoopMatSupported(gpu_info, op_def, attr, dst_shape) &&
+      IsGoodTaskSizeForConvCoopMat(attr, dst_shape)) {
+    ConvCoopMat conv = CreateConvCoopMat(op_def, attr);
+    return std::make_unique<ConvCoopMat>(std::move(conv));
+  }
   if (gpu_info.IsApple()) {
     return SelectConvolutionApple(attr, dst_shape, gpu_info, op_def);
   } else if (gpu_info.IsAdreno()) {
