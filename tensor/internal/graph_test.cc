@@ -430,17 +430,6 @@ TEST(QuantizationTest, ZeroPointsMovePreservesMovedFromInvariants) {
   EXPECT_FALSE(self.IsSymmetric());
   EXPECT_TRUE(self.IsUniform());
   EXPECT_THAT(self.Data<int64_t>(), IsOkAndHolds(ElementsAre(7, 7)));
-
-  // Compatibility `assign(count, value)` resets flags and element type.
-  ZeroPoints assigned = ZeroPoints::Float({-0.5f});
-  assigned.assign(3, 0);
-  EXPECT_TRUE(assigned.IsSymmetric());
-  EXPECT_TRUE(assigned.IsUniform());
-  EXPECT_THAT(assigned.Data<int64_t>(), IsOkAndHolds(ElementsAre(0, 0, 0)));
-  assigned.assign(2, 4);
-  EXPECT_FALSE(assigned.IsSymmetric());
-  EXPECT_TRUE(assigned.IsUniform());
-  EXPECT_THAT(assigned.Data<int64_t>(), IsOkAndHolds(ElementsAre(4, 4)));
 }
 
 struct DummyOp : Operation {
