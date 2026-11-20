@@ -90,6 +90,8 @@ std::optional<QuantizedTensor> ReadTensor(const Tensor& t) {
   }
   uint64_t count = 1;
   auto dims = type->Layout().Dimensions();
+  // TODO(b/586703968): 5D/6D elementwise binary ops fail dispatch invocation
+  // context creation; either reject rank > 4 or flatten to <= 4D.
   if (dims.size() > 6) return std::nullopt;
   for (auto d : dims) {
     if (d <= 0 || d > 65536 || count > uint64_t{INT32_MAX} / d)

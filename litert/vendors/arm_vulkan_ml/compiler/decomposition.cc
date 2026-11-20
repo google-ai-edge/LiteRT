@@ -1897,6 +1897,9 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
                        p.output.zero_point, p.scales, p.ranges, constants);
   }
   if (code == kLiteRtOpCodeTflCast) {
+    // TODO(b/586703788): Guard against identity INT32 -> INT32 CAST ops for
+    // i1 -> i32, i32 -> i8, and i1 -> i8, which fail dispatch invocation
+    // context creation.
     if (p.data.type == type) return inputs[0];
     if (type == DataType::bool_t) {
       auto zero = p.data.type == DataType::float32_t ? floating(0) : scalar(0);

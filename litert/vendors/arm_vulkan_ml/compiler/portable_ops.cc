@@ -64,6 +64,8 @@ bool ShapeOf(const Tensor& t, Shape& shape, DataType data_type) {
     shape.push_back(dim);
   }
   if (shape.empty() && t.HasWeights()) shape.push_back(1);
+  // TODO(b/586703968): 5D/6D elementwise binary ops fail dispatch invocation
+  // context creation; either reject rank > 4 or flatten to <= 4D.
   return !shape.empty() && shape.size() <= 6;
 }
 bool Ints(const Tensor& t, std::vector<int32_t>& values) {
@@ -739,6 +741,8 @@ std::vector<ResId> EmitPortableOperation(tfsc::tosa::Graph& graph,
       break;
     }
     case kLiteRtOpCodeTflStridedSlice: {
+      // TODO(b/586703853): FP32 StridedSlice with shrink_axis_mask=1 produces
+      // incorrect values on the Arm Vulkan ML backend while i8/i16 pass.
       Shape shape = plan.shapes[0];
       // Lower all unit-stride axes together via a single contiguous SLICE first
       // so large unit-stride slices do not fan out into Slice+Concat chains.
