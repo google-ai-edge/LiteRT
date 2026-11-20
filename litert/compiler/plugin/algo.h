@@ -39,6 +39,13 @@ std::vector<std::vector<LiteRtOp>> GroupPartitionsV2(
     const std::vector<LiteRtOpWithPartitionIndex>& ops,
     LiteRtSubgraph subgraph);
 
+// Strategy 3: Epoch layering and quotient-DAG convex contraction.
+// Groups selected ops sharing the same partition index into provably acyclic
+// partitions ordered topologically within each partition.
+std::vector<std::vector<LiteRtOp>> GroupPartitionsAcyclic(
+    const std::vector<LiteRtOpWithPartitionIndex>& ops,
+    LiteRtSubgraph subgraph);
+
 // Outlines "partition" from "root" into the empty subgraph "slice". Assumes
 // the partition is a valid sub-DAG, and replaces it with a single
 // tfl.custom_op in "root". A reference to that op is returned.

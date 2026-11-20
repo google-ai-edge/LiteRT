@@ -125,8 +125,15 @@ LiteRtStatus LrtSetCompilerOptionsPartitionStrategy(
     LrtCompilerOptions* options,
     LiteRtCompilerOptionsPartitionStrategy partition_strategy) {
   if (!options) return kLiteRtStatusErrorInvalidArgument;
-  options->partition_strategy = partition_strategy;
-  return kLiteRtStatusOk;
+  switch (partition_strategy) {
+    case kLiteRtCompilerOptionsPartitionStrategyDefault:
+    case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
+    case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+      options->partition_strategy = partition_strategy;
+      return kLiteRtStatusOk;
+    default:
+      return kLiteRtStatusErrorInvalidArgument;
+  }
 }
 
 LiteRtStatus LrtGetCompilerOptionsPartitionStrategy(

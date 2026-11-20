@@ -130,8 +130,16 @@ LiteRtStatus ParseLiteRtCompilerOptions(const void* data, size_t size,
                 absl::string_view value) -> LiteRtStatus {
         if (key == "partition_strategy") {
           LITERT_ASSIGN_OR_RETURN(auto strategy, ParseTomlInt(value));
-          options->partition_strategy =
-              static_cast<LiteRtCompilerOptionsPartitionStrategy>(strategy);
+          switch (strategy) {
+            case kLiteRtCompilerOptionsPartitionStrategyDefault:
+            case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
+            case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+              options->partition_strategy =
+                  static_cast<LiteRtCompilerOptionsPartitionStrategy>(strategy);
+              break;
+            default:
+              return kLiteRtStatusErrorInvalidArgument;
+          }
         } else if (key == "dummy_option") {
           LITERT_ASSIGN_OR_RETURN(options->dummy_option, ParseTomlBool(value));
         } else if (key == "max_partitions") {
