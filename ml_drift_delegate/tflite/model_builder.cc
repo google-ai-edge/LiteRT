@@ -7752,6 +7752,9 @@ absl::Status CopyVariableTensorOutputs(
   for (int i = 0; i < tflite_node->inputs->size; i++) {
     const int tensor_idx = tflite_node->inputs->data[i];
     if (!reader.CanReadValueByTensorIdx(tensor_idx)) continue;
+    // Only variable tensors need a copy; reading other inputs via `reader`
+    // creates orphaned GPU values for shared constants added by op parsers.
+    if (!reader.GetInputTensor(i)->is_variable) continue;
     ::ml_drift::Value* value = reader.ReadValueByTensorIdx(tensor_idx);
     if (value && value->tensor.is_variable_input) {
       if (new_variable_tensor_values_copy.find(i) ==
