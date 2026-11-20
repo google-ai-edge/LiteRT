@@ -213,36 +213,41 @@ LiteRtStatus LiteRtCreateMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  absl::StatusOr<::ml_drift::TensorDescriptor> tensor_desc =
-      ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
-  if (!tensor_desc.ok()) {
-    ABSL_LOG(ERROR) << "Failed to create tensor descriptor: " << tensor_desc.status();
-    return kLiteRtStatusErrorUnsupported;
-  }
+  // Drain Objective-C autoreleased objects (e.g., id<MTLBuffer> returned by
+  // GetBufferHandle() in UpdateRawHandle()) before returning to C++ callers
+  // that may not run an NSRunLoop or outer @autoreleasepool.
+  @autoreleasepool {
+    absl::StatusOr<::ml_drift::TensorDescriptor> tensor_desc =
+        ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
+    if (!tensor_desc.ok()) {
+      ABSL_LOG(ERROR) << "Failed to create tensor descriptor: " << tensor_desc.status();
+      return kLiteRtStatusErrorUnsupported;
+    }
 
-  absl::Status absl_status = absl::OkStatus();
-  id<MTLDevice> metal_device = (__bridge id<MTLDevice>)(device_id);
-  id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(queue_id);
+    absl::Status absl_status = absl::OkStatus();
+    id<MTLDevice> metal_device = (__bridge id<MTLDevice>)(device_id);
+    id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(queue_id);
 
-  auto memory_info =
-      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
-                                                        .owns_tensor = true,
-                                                        .tensor_type = *tensor_type,
-                                                        .buffer_type = buffer_type,
-                                                        .packed_bytes = packed_bytes,
-                                                        .host_memory = nullptr,
-                                                        .lock_state = LockState::kUnlocked,
-                                                        .metal_device = metal_device,
-                                                        .command_queue = command_queue});
-  absl_status =
-      ::ml_drift::metal::CreateTensor(metal_device, *tensor_desc, &memory_info->metal_tensor);
-  if (absl_status.ok()) {
-    // Returns `SpatialTensor*` as the `memory_handle`.
-    memory_info->memory_handle = &memory_info->metal_tensor;
-    UpdateRawHandle(memory_info.get());
-    *metal_memory_info = memory_info.release();
+    auto memory_info =
+        std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
+                                                          .owns_tensor = true,
+                                                          .tensor_type = *tensor_type,
+                                                          .buffer_type = buffer_type,
+                                                          .packed_bytes = packed_bytes,
+                                                          .host_memory = nullptr,
+                                                          .lock_state = LockState::kUnlocked,
+                                                          .metal_device = metal_device,
+                                                          .command_queue = command_queue});
+    absl_status =
+        ::ml_drift::metal::CreateTensor(metal_device, *tensor_desc, &memory_info->metal_tensor);
+    if (absl_status.ok()) {
+      // Returns `SpatialTensor*` as the `memory_handle`.
+      memory_info->memory_handle = &memory_info->metal_tensor;
+      UpdateRawHandle(memory_info.get());
+      *metal_memory_info = memory_info.release();
+    }
+    LITERT_RETURN_IF_ERROR(absl_status);
   }
-  LITERT_RETURN_IF_ERROR(absl_status);
   return kLiteRtStatusOk;
 }
 
@@ -256,63 +261,66 @@ LiteRtStatus LiteRtImportMetalMemory(LiteRtGpuDeviceId device_id, LiteRtGpuQueue
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  absl::StatusOr<::ml_drift::TensorDescriptor> tensor_desc =
-      ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
-  if (!tensor_desc.ok()) {
-    ABSL_LOG(ERROR) << "Failed to create tensor descriptor for import: " << tensor_desc.status();
-    return kLiteRtStatusErrorUnsupported;
-  }
-
-  absl::Status absl_status = absl::OkStatus();
-  id<MTLDevice> metal_device = device_id ? (__bridge id<MTLDevice>)(device_id) : nil;
-  id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(queue_id);
-
-  auto memory_info =
-      std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
-                                                        .owns_tensor = false,  // Set no ownership
-                                                        .tensor_type = *tensor_type,
-                                                        .buffer_type = buffer_type,
-                                                        .packed_bytes = packed_bytes,
-                                                        .host_memory = nullptr,
-                                                        .lock_state = LockState::kUnlocked,
-                                                        .metal_device = metal_device,
-                                                        .command_queue = command_queue});
-
-  if (buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16 ||
-      buffer_type == kLiteRtTensorBufferTypeMetalTexture) {
-    id<MTLTexture> metal_texture = (__bridge id<MTLTexture>)hw_buffer_handle;
-    if (!metal_texture) {
-      ABSL_LOG(ERROR) << "Passed-in HwMemoryHandle is not a valid MTLTexture.";
-      absl_status =
-          absl::InvalidArgumentError("Passed-in HwMemoryHandle is not a valid MTLTexture");
-    } else {
-      absl_status = ::ml_drift::metal::CreateTensorSharedTexture(metal_texture, *tensor_desc,
-                                                                 &memory_info->metal_tensor);
+  @autoreleasepool {
+    absl::StatusOr<::ml_drift::TensorDescriptor> tensor_desc =
+        ::litert::ml_drift::CreateTensorDescriptor(*tensor_type, buffer_type);
+    if (!tensor_desc.ok()) {
+      ABSL_LOG(ERROR) << "Failed to create tensor descriptor for import: " << tensor_desc.status();
+      return kLiteRtStatusErrorUnsupported;
     }
-  } else if (buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
-             buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
-             buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked) {
-    id<MTLBuffer> metal_buffer = (__bridge id<MTLBuffer>)hw_buffer_handle;
-    if (metal_buffer == nil) {
-      ABSL_LOG(ERROR) << "Passed-in HwMemoryHandle is not a valid MTLBuffer.";
-      absl_status = absl::InvalidArgumentError("Passed-in HwMemoryHandle is not a valid MTLBuffer");
-    } else {
-      absl_status = ::ml_drift::metal::CreateTensorSharedBuffer(metal_buffer, *tensor_desc,
-                                                                &memory_info->metal_tensor);
-    }
-  } else {
-    ABSL_LOG(ERROR) << "Unsupported buffer type for import: "
-                    << litert::BufferTypeToString(buffer_type);
-    absl_status = absl::UnimplementedError("Unsupported buffer type for import");
-  }
 
-  if (absl_status.ok()) {
-    // Returns `SpatialTensor*` as the `memory_handle`.
-    memory_info->memory_handle = &memory_info->metal_tensor;
-    UpdateRawHandle(memory_info.get());
-    *metal_memory_info = memory_info.release();
+    absl::Status absl_status = absl::OkStatus();
+    id<MTLDevice> metal_device = device_id ? (__bridge id<MTLDevice>)(device_id) : nil;
+    id<MTLCommandQueue> command_queue = (__bridge id<MTLCommandQueue>)(queue_id);
+
+    auto memory_info =
+        std::make_unique<MetalMemoryInfo>(MetalMemoryInfo{.metal_tensor = {},
+                                                          .owns_tensor = false,  // Set no ownership
+                                                          .tensor_type = *tensor_type,
+                                                          .buffer_type = buffer_type,
+                                                          .packed_bytes = packed_bytes,
+                                                          .host_memory = nullptr,
+                                                          .lock_state = LockState::kUnlocked,
+                                                          .metal_device = metal_device,
+                                                          .command_queue = command_queue});
+
+    if (buffer_type == kLiteRtTensorBufferTypeMetalTextureFp16 ||
+        buffer_type == kLiteRtTensorBufferTypeMetalTexture) {
+      id<MTLTexture> metal_texture = (__bridge id<MTLTexture>)hw_buffer_handle;
+      if (!metal_texture) {
+        ABSL_LOG(ERROR) << "Passed-in HwMemoryHandle is not a valid MTLTexture.";
+        absl_status =
+            absl::InvalidArgumentError("Passed-in HwMemoryHandle is not a valid MTLTexture");
+      } else {
+        absl_status = ::ml_drift::metal::CreateTensorSharedTexture(metal_texture, *tensor_desc,
+                                                                   &memory_info->metal_tensor);
+      }
+    } else if (buffer_type == kLiteRtTensorBufferTypeMetalBufferFp16 ||
+               buffer_type == kLiteRtTensorBufferTypeMetalBuffer ||
+               buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked) {
+      id<MTLBuffer> metal_buffer = (__bridge id<MTLBuffer>)hw_buffer_handle;
+      if (metal_buffer == nil) {
+        ABSL_LOG(ERROR) << "Passed-in HwMemoryHandle is not a valid MTLBuffer.";
+        absl_status =
+            absl::InvalidArgumentError("Passed-in HwMemoryHandle is not a valid MTLBuffer");
+      } else {
+        absl_status = ::ml_drift::metal::CreateTensorSharedBuffer(metal_buffer, *tensor_desc,
+                                                                  &memory_info->metal_tensor);
+      }
+    } else {
+      ABSL_LOG(ERROR) << "Unsupported buffer type for import: "
+                      << litert::BufferTypeToString(buffer_type);
+      absl_status = absl::UnimplementedError("Unsupported buffer type for import");
+    }
+
+    if (absl_status.ok()) {
+      // Returns `SpatialTensor*` as the `memory_handle`.
+      memory_info->memory_handle = &memory_info->metal_tensor;
+      UpdateRawHandle(memory_info.get());
+      *metal_memory_info = memory_info.release();
+    }
+    LITERT_RETURN_IF_ERROR(absl_status);
   }
-  LITERT_RETURN_IF_ERROR(absl_status);
   return kLiteRtStatusOk;
 }
 
@@ -321,11 +329,13 @@ LiteRtStatus LiteRtDestroyMetalMemory(HwMemoryInfoPtr hw_memory_info) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
-  if (memory_info->host_memory != nullptr) {
-    litert_aligned_free(memory_info->host_memory);
+  @autoreleasepool {
+    MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
+    if (memory_info->host_memory != nullptr) {
+      litert_aligned_free(memory_info->host_memory);
+    }
+    delete memory_info;
   }
-  delete memory_info;
   return kLiteRtStatusOk;
 }
 
@@ -334,57 +344,59 @@ LiteRtStatus LiteRtUnlockMetalMemory(HwMemoryInfoPtr hw_memory_info) {
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
-  LITERT_RETURN_IF_ERROR(memory_info->lock_state != LockState::kUnlocked,
-                         litert::ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure)
-                             << "The Metal memory is already unlocked.");
-  absl::Cleanup unlock = [&memory_info] {
-    if (memory_info->host_memory != nullptr) {
-      litert_aligned_free(memory_info->host_memory);
-      memory_info->host_memory = nullptr;
+  @autoreleasepool {
+    MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
+    LITERT_RETURN_IF_ERROR(memory_info->lock_state != LockState::kUnlocked,
+                           litert::ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure)
+                               << "The Metal memory is already unlocked.");
+    absl::Cleanup unlock = [&memory_info] {
+      if (memory_info->host_memory != nullptr) {
+        litert_aligned_free(memory_info->host_memory);
+        memory_info->host_memory = nullptr;
+      }
+      memory_info->lock_state = LockState::kUnlocked;
+    };
+
+    // Don't upload data if read only.
+    if (memory_info->lock_state == LockState::kReadLocked) {
+      return kLiteRtStatusOk;
     }
-    memory_info->lock_state = LockState::kUnlocked;
-  };
 
-  // Don't upload data if read only.
-  if (memory_info->lock_state == LockState::kReadLocked) {
-    return kLiteRtStatusOk;
-  }
+    // `command_queue` is never nil: LiteRtCreateMetalMemory() and
+    // LiteRtImportMetalMemory() both reject a null `queue_id`.
+    id<MTLCommandQueue> command_queue = memory_info->command_queue;
+    ::ml_drift::metal::MetalSpatialTensor& gpu_tensor = memory_info->metal_tensor;
 
-  // `command_queue` is never nil: LiteRtCreateMetalMemory() and
-  // LiteRtImportMetalMemory() both reject a null `queue_id`.
-  id<MTLCommandQueue> command_queue = memory_info->command_queue;
-  ::ml_drift::metal::MetalSpatialTensor& gpu_tensor = memory_info->metal_tensor;
-
-  absl::Status absl_status = absl::OkStatus();
-  if (memory_info->buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked) {
-    WriteDataToBuffer(gpu_tensor.GetBufferHandle(), 0, command_queue, memory_info->host_memory,
-                      memory_info->packed_bytes, false);
-  } else {
-    // TODO: b/413431454 - Use Tensor Converter for better performance.
-    ::ml_drift::TensorDescriptor desc_with_data = gpu_tensor.GetDescriptor();
-    ::litert::ml_drift::ConvertDataToDescriptor(memory_info->host_memory, desc_with_data,
-                                                memory_info->tensor_type.element_type);
-    id<MTLBuffer> buffer = gpu_tensor.GetBufferHandle();
-    const ::ml_drift::TensorStorageType storage_type = gpu_tensor.GetStorageType();
-    const bool is_buffer_storage = storage_type == ::ml_drift::TensorStorageType::kBuffer ||
-                                   storage_type == ::ml_drift::TensorStorageType::kImageBuffer;
-    if (is_buffer_storage && buffer != nil && buffer.storageMode == MTLStorageModeShared) {
-      // The buffer is CPU-visible (e.g. unified memory on Apple silicon), so
-      // write the converted data in place. UploadDescriptorData() creates a new
-      // command queue and a temporary buffer, then blits and waits for the GPU
-      // on every unlock, which adds a GPU round trip to each input write (e.g.
-      // per LLM decode step).
-      const auto data = desc_with_data.GetData();
-      std::memcpy(gpu_tensor.GetBufferPointer(), data.data(),
-                  std::min<size_t>(data.size(), gpu_tensor.GetMemorySizeInBytes()));
+    absl::Status absl_status = absl::OkStatus();
+    if (memory_info->buffer_type == kLiteRtTensorBufferTypeMetalBufferPacked) {
+      WriteDataToBuffer(gpu_tensor.GetBufferHandle(), 0, command_queue, memory_info->host_memory,
+                        memory_info->packed_bytes, false);
     } else {
-      // Reuse the buffer's command queue instead of creating a new one per upload.
-      absl_status = gpu_tensor.UploadDescriptorData(desc_with_data, command_queue,
-                                                    /*wait_for_completion=*/true);
+      // TODO: b/413431454 - Use Tensor Converter for better performance.
+      ::ml_drift::TensorDescriptor desc_with_data = gpu_tensor.GetDescriptor();
+      ::litert::ml_drift::ConvertDataToDescriptor(memory_info->host_memory, desc_with_data,
+                                                  memory_info->tensor_type.element_type);
+      id<MTLBuffer> buffer = gpu_tensor.GetBufferHandle();
+      const ::ml_drift::TensorStorageType storage_type = gpu_tensor.GetStorageType();
+      const bool is_buffer_storage = storage_type == ::ml_drift::TensorStorageType::kBuffer ||
+                                     storage_type == ::ml_drift::TensorStorageType::kImageBuffer;
+      if (is_buffer_storage && buffer != nil && buffer.storageMode == MTLStorageModeShared) {
+        // The buffer is CPU-visible (e.g. unified memory on Apple silicon), so
+        // write the converted data in place. UploadDescriptorData() creates a new
+        // command queue and a temporary buffer, then blits and waits for the GPU
+        // on every unlock, which adds a GPU round trip to each input write (e.g.
+        // per LLM decode step).
+        const auto data = desc_with_data.GetData();
+        std::memcpy(gpu_tensor.GetBufferPointer(), data.data(),
+                    std::min<size_t>(data.size(), gpu_tensor.GetMemorySizeInBytes()));
+      } else {
+        // Reuse the buffer's command queue instead of creating a new one per upload.
+        absl_status = gpu_tensor.UploadDescriptorData(desc_with_data, command_queue,
+                                                      /*wait_for_completion=*/true);
+      }
     }
+    LITERT_RETURN_IF_ERROR(absl_status);
   }
-  LITERT_RETURN_IF_ERROR(absl_status);
   return kLiteRtStatusOk;
 }
 
@@ -394,43 +406,45 @@ LiteRtStatus LiteRtLockMetalMemory(HwMemoryInfoPtr hw_memory_info, LiteRtTensorB
     return kLiteRtStatusErrorInvalidArgument;
   }
 
-  MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
-  LITERT_RETURN_IF_ERROR(memory_info->lock_state == LockState::kUnlocked,
-                         litert::ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure)
-                             << "The Metal memory is already locked.");
+  @autoreleasepool {
+    MetalMemoryInfo* memory_info = static_cast<MetalMemoryInfo*>(hw_memory_info);
+    LITERT_RETURN_IF_ERROR(memory_info->lock_state == LockState::kUnlocked,
+                           litert::ErrorStatusBuilder(kLiteRtStatusErrorRuntimeFailure)
+                               << "The Metal memory is already locked.");
 
-  LockState new_lock_state = litert::internal::ToLockState(mode);
+    LockState new_lock_state = litert::internal::ToLockState(mode);
 
-  const bool allocated_new_shadow = memory_info->host_memory == nullptr;
-  if (allocated_new_shadow) {
-    if (memory_info->packed_bytes == 0) {
-      ABSL_LOG(ERROR) << "Packed bytes cannot be zero for host memory allocation";
-      return kLiteRtStatusErrorInvalidArgument;
+    const bool allocated_new_shadow = memory_info->host_memory == nullptr;
+    if (allocated_new_shadow) {
+      if (memory_info->packed_bytes == 0) {
+        ABSL_LOG(ERROR) << "Packed bytes cannot be zero for host memory allocation";
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      // Ensure the data is aligned.
+      if (int rc = posix_memalign(&memory_info->host_memory, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
+                                  memory_info->packed_bytes);
+          rc) {
+        ABSL_LOG(ERROR) << "Failed to allocate aligned memory";
+        return kLiteRtStatusErrorRuntimeFailure;
+      }
     }
-    // Ensure the data is aligned.
-    if (int rc = posix_memalign(&memory_info->host_memory, LITERT_HOST_MEMORY_BUFFER_ALIGNMENT,
-                                memory_info->packed_bytes);
-        rc) {
-      ABSL_LOG(ERROR) << "Failed to allocate aligned memory";
-      return kLiteRtStatusErrorRuntimeFailure;
-    }
-  }
-  *host_memory_ptr = memory_info->host_memory;
+    *host_memory_ptr = memory_info->host_memory;
 
-  // Skip the download for a write-only lock only if the host shadow already
-  // holds the buffer contents. LiteRtUnlockMetalMemory() frees the shadow, so a
-  // newly allocated one is uninitialized, and Unlock uploads the whole shadow.
-  // Callers that update only part of the buffer under a write lock (e.g.
-  // FillAttentionMask() after InitializeAttentionMask()) would otherwise
-  // overwrite the rest of the GPU buffer with garbage.
-  if (new_lock_state == LockState::kWriteLocked && !allocated_new_shadow) {
+    // Skip the download for a write-only lock only if the host shadow already
+    // holds the buffer contents. LiteRtUnlockMetalMemory() frees the shadow, so a
+    // newly allocated one is uninitialized, and Unlock uploads the whole shadow.
+    // Callers that update only part of the buffer under a write lock (e.g.
+    // FillAttentionMask() after InitializeAttentionMask()) would otherwise
+    // overwrite the rest of the GPU buffer with garbage.
+    if (new_lock_state == LockState::kWriteLocked && !allocated_new_shadow) {
+      memory_info->lock_state = new_lock_state;
+      return kLiteRtStatusOk;
+    }
+
+    LITERT_RETURN_IF_ERROR(DownloadToHostMemory(*memory_info));
+
     memory_info->lock_state = new_lock_state;
-    return kLiteRtStatusOk;
   }
-
-  LITERT_RETURN_IF_ERROR(DownloadToHostMemory(*memory_info));
-
-  memory_info->lock_state = new_lock_state;
   return kLiteRtStatusOk;
 }
 

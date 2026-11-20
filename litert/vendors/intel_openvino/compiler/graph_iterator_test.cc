@@ -5,9 +5,11 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 
+#include "openvino/core/partial_shape.hpp"
 #include "openvino/core/type/element_type.hpp"
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_compiler_context.h"
@@ -105,6 +107,42 @@ INSTANTIATE_TEST_SUITE_P(
                                           /*adjusts_zero_points=*/false},
                       ConversionTestParam{"NPU", ov::element::u2,
                                           /*adjusts_zero_points=*/true}));
+
+class GraphIteratorSplitAxisTest
+    : public ::testing::TestWithParam<std::string> {};
+
+// TFLite allows the SPLIT axis as a scalar or a 1-element vector;
+// ov::op::v1::Split only takes a scalar, so both must reach OpenVINO rank-0.
+TEST_P(GraphIteratorSplitAxisTest, PresentsConstantAxisAsScalar) {
+  auto cc_model = testing::LoadTestFileModel(GetParam());
+  const LiteRtCompilerContext* context = LrtGetCompilerContext();
+  litert::compiler::Model model(context, cc_model.Get());
+  auto graph_or = model.Subgraph(0);
+  ASSERT_TRUE(graph_or.HasValue());
+  auto graph = graph_or.Value();
+
+  GraphIteratorDelegate iterator(context, &graph, "NPU");
+  for (; !iterator.is_end(); iterator.next()) {
+    auto operation =
+        std::dynamic_pointer_cast<DecoderOperation>(iterator.get_decoder());
+    if (!operation || operation->get_op_type() != "SPLIT") {
+      continue;
+    }
+    const auto axis = operation->get_input_tensor_info(0);
+    EXPECT_EQ(axis.m_partial_shape, ov::PartialShape{});
+    ASSERT_NE(axis.m_tensor_data, nullptr);
+    int32_t axis_value = 0;
+    std::memcpy(&axis_value, axis.m_tensor_data, sizeof(axis_value));
+    EXPECT_EQ(axis_value, 3);
+    return;
+  }
+  FAIL() << "No SPLIT op found";
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    Models, GraphIteratorSplitAxisTest,
+    ::testing::Values("simple_split_op.tflite",
+                      "simple_split_op_vector_axis.tflite"));
 
 }  // namespace
 }  // namespace litert::openvino

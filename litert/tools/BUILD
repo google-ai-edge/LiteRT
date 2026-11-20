@@ -19,7 +19,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_python//python:py_library.bzl", "py_library")
 # copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
-load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "gtest_main_no_heapcheck_deps", "litert_bin")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "plugin_device_rlocation")
@@ -819,6 +819,7 @@ cc_test(
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
+    copts = commandline_flag_copts(),
     deps = NUMERICS_CHECK_DEPS + [
         ":tensor_utils",
         "//litert/cc:litert_common",

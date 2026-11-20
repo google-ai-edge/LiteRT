@@ -37,6 +37,7 @@
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/shared_memory_manager/graph_adapter.h"
+#include "ml_drift_delegate/tflite/model_builder_helper.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 // clang-format off
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
@@ -272,7 +273,8 @@ class SharedMemoryManager {
   absl::Status CreateQuantizedTensorWithScaleAndZeroPoint(
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
-      absl::flat_hash_map<ValueId, GlobalId>* external_tensors);
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      bool oi_transposed = true);
 
   // Retrieves the existing weights, scale and zero_point tensors from
   // buffer_id_to_spatial_tensor_ for the given shared_tensor_id. This logic is
@@ -339,6 +341,32 @@ class SharedMemoryManager {
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
       uint32_t fc_op_id, DataType data_type);
+
+  // Creates the weights tensor for N-D blockwise quantized batched weights
+  // ([H, I, O] / [1, H, I, O] when `oi_transposed` is true, or
+  // [H, O, I] / [1, H, O, I] when false) that a quantized FullyConnected node
+  // consumes as one weights matrix per H in (O, H, 1, I) `shape`.
+  absl::Status CreateBlockwiseV2BatchedWeightsTensor(
+      const ValueId& shared_tensor_id, uint32_t global_tensor_id,
+      const TfLiteTensor& tflite_tensor, const OHWI& shape, bool oi_transposed,
+      SharedConstTensor& shared_tensor);
+
+  // Converts a blockwise v2 scale or zero point `param` tensor to the layout
+  // expected by quantized FullyConnected kernels, uploads it, and adds it as an
+  // input of `fc_op_id`.
+  absl::Status AddBlockwiseV2QuantizationParam(
+      const TfLiteTensor& tflite_tensor, const TfLiteTensor& param,
+      const ::litert::ml_drift::BlockwiseV2WeightsInfo& info, bool is_scale,
+      uint32_t fc_op_id, DataType data_type,
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      std::optional<uint32_t>& param_global_id);
+
+  // Creates scale and zero point tensors for N-D blockwise quantized weights
+  // (kTfLiteBlockwiseQuantizationV2), whose zero points may be fractional.
+  absl::Status CreateBlockwiseV2QuantizationParams(
+      uint32_t global_tensor_id, const TfLiteTensor& tflite_tensor,
+      absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+      uint32_t fc_op_id, DataType data_type, bool oi_transposed = true);
 
   // Creates a linear tensor with a given shape, adds it to the graph and sets
   // the memory provided by the data pointer.
