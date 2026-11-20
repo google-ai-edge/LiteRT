@@ -20,6 +20,40 @@ package(
     default_visibility = ["//litert/vendors/mediatek/compiler:__subpackages__"],
 )
 
+_TRANSFORMATION_COPTS = select({
+    "//litert:windows": [],
+    "//conditions:default": [
+        "-Os",
+        "-fno-exceptions",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
+})
+
+cc_library(
+    name = "bool_mask_transformation",
+    srcs = ["bool_mask_transformation.cc"],
+    hdrs = ["bool_mask_transformation.h"],
+    copts = _TRANSFORMATION_COPTS,
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_matchers",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/compiler/cc:transformation_utils",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
 cc_library(
     name = "attention_mask_transformation",
     srcs = ["attention_mask_transformation.cc"],
@@ -279,6 +313,29 @@ cc_test(
         "//litert/compiler/cc:litert_op_options",
         "//litert/core/model",
         "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "bool_mask_transformation_test",
+    srcs = ["bool_mask_transformation_test.cc"],
+    deps = [
+        ":bool_mask_transformation",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/compiler/cc:litert_builder",
+        "//litert/compiler/cc:litert_model",
+        "//litert/compiler/cc:litert_op_options",
+        "//litert/core/model",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],

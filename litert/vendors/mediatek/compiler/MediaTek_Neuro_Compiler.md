@@ -110,6 +110,7 @@ the `VerifyCommonOp` function.
 | `kLiteRtOpCodeTflMean` | Legalized to `NEURON_MEAN`. Supports `keep_dims` attribute. |
 | `kLiteRtOpCodeTflMinimum` | Legalized to `NEURON_MINIMUM`. |
 | `kLiteRtOpCodeTflMul` | Legalized to `NEURON_MUL`. Supports fused activation. |
+| `kLiteRtOpCodeTflNotEqual` | Legalized to `NEURON_NOT_EQUAL`. Supports same-shape float inputs with boolean output. |
 | `kLiteRtOpCodeTflPad` | Legalized to `NEURON_PAD`. |
 | `kLiteRtOpCodeTflPadv2` | Legalized to `NEURON_PAD_V2`. |
 | `kLiteRtOpCodeTflPrelu` | Legalized to `NEURON_PRELU`. |

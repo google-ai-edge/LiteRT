@@ -17,6 +17,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdio>
 #include <string>
 #include <tuple>
 #include <type_traits>
@@ -132,13 +133,42 @@ bool MatchInput(const OpType& op, size_t index, const Matcher& m,
     return false;
   }
   if (tracer) {
-    std::string scope = "Input[" + std::to_string(index) + "]";
+    char scope[32];
+    std::snprintf(scope, sizeof(scope), "Input[%zu]", index);
     tracer->PushScope(scope);
-    bool res = m.Match(*input, tracer);
-    tracer->PopScope();
-    return res;
   }
-  return m.Match(*input, nullptr);
+  const bool res = m.Match(*input, tracer);
+  if (tracer) {
+    tracer->PopScope();
+  }
+  return res;
+}
+
+// Helper to match output at index I.
+template <typename OpType, typename Matcher>
+bool MatchOutput(const OpType& op, size_t index, const Matcher& m,
+                 MatchTracer* tracer = nullptr) {
+  if (op.Get() == nullptr) {
+    if (tracer)
+      tracer->LogFailure("MatchOutput", "Output index out of bounds or null");
+    return false;
+  }
+  auto output = op.Output(index);
+  if (!output || output->Get() == nullptr) {
+    if (tracer)
+      tracer->LogFailure("MatchOutput", "Output index out of bounds or null");
+    return false;
+  }
+  if (tracer) {
+    char scope[32];
+    std::snprintf(scope, sizeof(scope), "Output[%zu]", index);
+    tracer->PushScope(scope);
+  }
+  const bool res = m.Match(*output, tracer);
+  if (tracer) {
+    tracer->PopScope();
+  }
+  return res;
 }
 
 // --- Helpers for optional label parsing ---
@@ -791,6 +821,10 @@ inline auto m_Any() { return AnyTensorMatcher{}; }
 struct AnyOpMatcher {
   bool Match(const Op&, MatchTracer* tracer = nullptr) const { return true; }
   bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tensor.Get() == nullptr) {
+      if (tracer) tracer->LogFailure("AnyOpMatcher", "Tensor is null");
+      return false;
+    }
     auto def_op = tensor.GetDefiningOp();
     if (!def_op) {
       if (tracer)
@@ -1126,6 +1160,10 @@ inline auto m_HasUsers(size_t count,
 
 inline auto m_HasOneUse(absl::string_view label = "HasOneUseMatcher") {
   return m_HasUsers(1, label);
+}
+
+inline auto m_HasNoUses(absl::string_view label = "HasNoUsesMatcher") {
+  return m_HasUsers(0, label);
 }
 
 // Constant Scalar matcher.
@@ -1508,6 +1546,568 @@ struct NameMatcher {
 inline auto m_Name(absl::string_view name,
                    absl::string_view label = "NameMatcher") {
   return NameMatcher(label, name);
+}
+
+// Op outputs tuple matcher (checks exact output count and each output matcher).
+template <typename... OutputMatchers>
+struct OutputsMatcher {
+  absl::string_view label;
+  std::tuple<OutputMatchers...> output_matchers;
+
+  explicit OutputsMatcher(absl::string_view l, OutputMatchers... m)
+      : label(l), output_matchers(std::move(m)...) {}
+
+  bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (op.Get() == nullptr ||
+        op.Outputs().size() != sizeof...(OutputMatchers)) {
+      if (tracer) {
+        tracer->LogFailure(label, "Output count mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res =
+        MatchOutputs(op, tracer, std::index_sequence_for<OutputMatchers...>{});
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
+ private:
+  template <size_t... I>
+  bool MatchOutputs(const Op& op, MatchTracer* tracer,
+                    std::index_sequence<I...>) const {
+    (void)op;
+    (void)tracer;
+    return (MatchOutput(op, I, std::get<I>(output_matchers), tracer) && ...);
+  }
+};
+
+namespace internal {
+template <typename Tuple, size_t... I>
+auto MakeOutputsMatcherImpl(absl::string_view label, Tuple&& tuple,
+                            std::index_sequence<I...>) {
+  return OutputsMatcher<
+      std::decay_t<std::tuple_element_t<I, std::decay_t<Tuple>>>...>(
+      label, std::get<I>(std::forward<Tuple>(tuple))...);
+}
+
+template <typename... Args>
+auto MakeOutputsMatcherHelper(std::true_type, Args&&... args) {
+  auto tuple = std::forward_as_tuple(std::forward<Args>(args)...);
+  constexpr size_t N = sizeof...(Args);
+  auto label = std::get<N - 1>(tuple);
+  return MakeOutputsMatcherImpl(absl::string_view(label), std::move(tuple),
+                                std::make_index_sequence<N - 1>{});
+}
+
+template <typename... Args>
+auto MakeOutputsMatcherHelper(std::false_type, Args&&... args) {
+  return OutputsMatcher<std::decay_t<Args>...>("OutputsMatcher",
+                                               std::forward<Args>(args)...);
+}
+struct SingleOutputMatcherFn {
+  template <typename Matcher>
+  auto operator()(Matcher&& m,
+                  absl::string_view label = "SingleOutputMatcher") const {
+    return OutputsMatcher<std::decay_t<Matcher>>(label,
+                                                 std::forward<Matcher>(m));
+  }
+};
+}  // namespace internal
+
+template <typename... Args>
+auto m_Outputs(Args&&... args) {
+  if constexpr (sizeof...(Args) == 0) {
+    return OutputsMatcher<>("OutputsMatcher");
+  } else {
+    return internal::MakeOutputsMatcherHelper(
+        std::integral_constant<bool, last_arg_is_string_like_v<Args...>>{},
+        std::forward<Args>(args)...);
+  }
+}
+
+inline constexpr internal::SingleOutputMatcherFn m_SingleOutput{};
+
+// Single indexed Op output matcher.
+template <typename SubMatcher>
+struct OutputMatcher {
+  absl::string_view label;
+  size_t index;
+  SubMatcher sub_matcher;
+
+  OutputMatcher(absl::string_view l, size_t i, SubMatcher m)
+      : label(l), index(i), sub_matcher(std::move(m)) {}
+
+  bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (op.Get() == nullptr || index >= op.Outputs().size()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Output index out of bounds");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = MatchOutput(op, index, sub_matcher, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+};
+
+template <typename Matcher>
+auto m_Output(size_t index, Matcher&& m,
+              absl::string_view label = "OutputMatcher") {
+  return OutputMatcher<std::decay_t<Matcher>>(label, index,
+                                              std::forward<Matcher>(m));
+}
+
+// Unconditional capture matcher (safe inside m_CommutativeOp / m_AnyOf /
+// loops). Runs `sub_matcher` first and assigns `*storage` iff it succeeds.
+template <typename T, typename SubMatcher>
+struct CaptureMatcher {
+  absl::string_view label;
+  T* storage;
+  SubMatcher sub_matcher;
+
+  CaptureMatcher(absl::string_view l, T* s, SubMatcher m)
+      : label(l), storage(s), sub_matcher(std::move(m)) {}
+
+  template <typename U>
+  bool Match(const U& val, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (!storage) {
+      if (tracer) {
+        tracer->LogFailure(label, "Storage is null");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if constexpr (std::is_same_v<T, Op> && std::is_same_v<U, Tensor>) {
+      if (val.Get() == nullptr) {
+        if (tracer) {
+          tracer->LogFailure(label, "Tensor has no defining op for capture");
+          tracer->PopScope();
+        }
+        return false;
+      }
+    }
+    if (!sub_matcher.Match(val, tracer)) {
+      if (tracer) tracer->PopScope();
+      return false;
+    }
+    if constexpr (std::is_same_v<T, Op> && std::is_same_v<U, Tensor>) {
+      auto def_op = val.GetDefiningOp();
+      if (!def_op) {
+        if (tracer) {
+          tracer->LogFailure(label, "Tensor has no defining op for capture");
+          tracer->PopScope();
+        }
+        return false;
+      }
+      *storage = std::move(*def_op);
+    } else if constexpr (std::is_assignable_v<T&, const U&>) {
+      *storage = val;
+    } else if constexpr (std::is_same_v<T, Op> && std::is_same_v<U, Op>) {
+      *storage = Op(val.Context(), val.Get());
+    } else if constexpr (std::is_same_v<T, Tensor> &&
+                         std::is_same_v<U, Tensor>) {
+      *storage = Tensor(val.Context(), val.Get());
+    } else {
+      static_assert(sizeof(U) == 0,
+                    "Unsupported CaptureMatcher storage/target types");
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+template <typename T, typename Matcher,
+          typename = std::enable_if_t<!is_string_like_v<Matcher>>>
+auto m_Capture(T* storage, Matcher&& inner,
+               absl::string_view label = "CaptureMatcher") {
+  return CaptureMatcher<T, std::decay_t<Matcher>>(label, storage,
+                                                  std::forward<Matcher>(inner));
+}
+
+template <typename T>
+auto m_Capture(T* storage, absl::string_view label = "CaptureMatcher") {
+  if constexpr (std::is_same_v<T, Op>) {
+    return CaptureMatcher<Op, AnyOpMatcher>(label, storage, AnyOpMatcher{});
+  } else {
+    return CaptureMatcher<T, AnyTensorMatcher>(label, storage,
+                                               AnyTensorMatcher{});
+  }
+}
+
+// Multi-opcode set matcher.
+template <LiteRtOpCode... Codes>
+struct OpCodeAnyOfMatcher {
+  absl::string_view label;
+  explicit OpCodeAnyOfMatcher(absl::string_view l) : label(l) {}
+
+  bool Match(const Op& op, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (op.Get() == nullptr || !((op.Code() == Codes) || ...)) {
+      if (tracer) {
+        tracer->LogFailure(label, "OpCode mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto def_op = tensor.GetDefiningOp();
+    if (!def_op) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor has no defining op");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    bool res = Match(*def_op, tracer);
+    if (tracer) tracer->PopScope();
+    return res;
+  }
+};
+
+template <LiteRtOpCode... Codes>
+inline auto m_OpCodeAnyOf(absl::string_view label = "OpCodeAnyOfMatcher") {
+  return OpCodeAnyOfMatcher<Codes...>(label);
+}
+
+// Unquantized tensor presence & element-type matchers.
+struct IsUnquantizedMatcher {
+  absl::string_view label;
+  explicit IsUnquantizedMatcher(absl::string_view l) : label(l) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is null");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tensor.HasQuantization()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is quantized");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_IsUnquantized(absl::string_view label = "IsUnquantizedMatcher") {
+  return IsUnquantizedMatcher(label);
+}
+
+struct UnquantizedElementTypeMatcher {
+  absl::string_view label;
+  LiteRtElementType type;
+  UnquantizedElementTypeMatcher(absl::string_view l, LiteRtElementType t)
+      : label(l), type(t) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is null");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tensor.HasQuantization()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is quantized");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (static_cast<LiteRtElementType>(tensor.ElementType()) != type) {
+      if (tracer) {
+        tracer->LogFailure(label, "Type mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_UnquantizedElementType(
+    LiteRtElementType type,
+    absl::string_view label = "UnquantizedElementTypeMatcher") {
+  return UnquantizedElementTypeMatcher(label, type);
+}
+
+// Ranked static positive shape matcher (all dims > 0; rank-0 scalar passes).
+struct HasStaticPositiveShapeMatcher {
+  absl::string_view label;
+  explicit HasStaticPositiveShapeMatcher(absl::string_view l) : label(l) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr || tensor.TypeId() != kLiteRtRankedTensorType) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto ranked_type = tensor.RankedTensorType();
+    if (!ranked_type) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    for (int32_t dim : ranked_type->Layout().Dimensions()) {
+      if (dim <= 0) {
+        if (tracer) {
+          tracer->LogFailure(label, "Non-positive or dynamic dimension");
+          tracer->PopScope();
+        }
+        return false;
+      }
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_HasStaticPositiveShape(
+    absl::string_view label = "HasStaticPositiveShapeMatcher") {
+  return HasStaticPositiveShapeMatcher(label);
+}
+
+// Minimum rank matcher.
+struct RankAtLeastMatcher {
+  absl::string_view label;
+  size_t min_rank;
+  RankAtLeastMatcher(absl::string_view l, size_t r) : label(l), min_rank(r) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr || tensor.TypeId() != kLiteRtRankedTensorType) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto ranked_type = tensor.RankedTensorType();
+    if (!ranked_type) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (ranked_type->Layout().Dimensions().size() < min_rank) {
+      if (tracer) {
+        tracer->LogFailure(label, "Rank below minimum");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_RankAtLeast(size_t min_rank,
+                          absl::string_view label = "RankAtLeastMatcher") {
+  return RankAtLeastMatcher(label, min_rank);
+}
+
+// Relational shape matcher comparing against a previously captured Tensor.
+struct SameShapeAsMatcher {
+  absl::string_view label;
+  const Tensor* other;
+  SameShapeAsMatcher(absl::string_view l, const Tensor* o)
+      : label(l), other(o) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (other == nullptr || other->Get() == nullptr) {
+      if (tracer) {
+        tracer->LogFailure(label, "Reference tensor is null");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tensor.Get() == nullptr || tensor.TypeId() != kLiteRtRankedTensorType ||
+        other->TypeId() != kLiteRtRankedTensorType) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto lhs_type = tensor.RankedTensorType();
+    auto rhs_type = other->RankedTensorType();
+    if (!lhs_type || !rhs_type) {
+      if (tracer) {
+        tracer->LogFailure(label, "Not a ranked tensor");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (lhs_type->Layout().Dimensions() != rhs_type->Layout().Dimensions()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Shape mismatch");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_SameShapeAs(const Tensor* other,
+                          absl::string_view label = "SameShapeAsMatcher") {
+  return SameShapeAsMatcher(label, other);
+}
+
+// Subgraph output matcher.
+struct IsSubgraphOutputMatcher {
+  absl::string_view label;
+  explicit IsSubgraphOutputMatcher(absl::string_view l) : label(l) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr || !tensor.IsSubgraphOutput()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is not subgraph output");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+inline auto m_IsSubgraphOutput(
+    absl::string_view label = "IsSubgraphOutputMatcher") {
+  return IsSubgraphOutputMatcher(label);
+}
+
+// Constant element-wise predicate matcher.
+template <typename T, typename Pred>
+struct ConstantElementsMatcher {
+  absl::string_view label;
+  Pred pred;
+
+  ConstantElementsMatcher(absl::string_view l, Pred p)
+      : label(l), pred(std::move(p)) {}
+
+  bool Match(const Tensor& tensor, MatchTracer* tracer = nullptr) const {
+    if (tracer) tracer->PushScope(label);
+    if (tensor.Get() == nullptr || !tensor.IsConstant()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Tensor is not constant");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto weights_data_res = tensor.WeightsData<T>();
+    if (!weights_data_res) {
+      if (tracer) {
+        tracer->LogFailure(label, "Failed to get weights");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    auto weights_data = *weights_data_res;
+    if (weights_data.empty()) {
+      if (tracer) {
+        tracer->LogFailure(label, "Weights empty");
+        tracer->PopScope();
+      }
+      return false;
+    }
+    for (const auto& elem : weights_data) {
+      if (!pred(elem)) {
+        if (tracer) {
+          tracer->LogFailure(label, "Element predicate returned false");
+          tracer->PopScope();
+        }
+        return false;
+      }
+    }
+    if (tracer) tracer->PopScope();
+    return true;
+  }
+};
+
+template <typename T, typename Pred>
+auto m_ConstantElements(Pred&& pred,
+                        absl::string_view label = "ConstantElementsMatcher") {
+  return ConstantElementsMatcher<T, std::decay_t<Pred>>(
+      label, std::forward<Pred>(pred));
 }
 
 }  // namespace litert::compiler

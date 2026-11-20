@@ -17,6 +17,7 @@ cmake_minimum_required(VERSION 3.20)
 
 # Compiler plugin library
 add_library(litert_compiler_plugin STATIC
+    cc/transformation_utils.cc
     plugin/algo.cc
     plugin/compiler_plugin.cc
     plugin/litert_compiler_options.cc
@@ -36,6 +37,8 @@ target_link_libraries(litert_compiler_plugin
         litert_core
         litert_core_model
         litert_c_api
+        absl::absl_check
+        absl::bits
         absl::status
         absl::statusor
         absl::strings

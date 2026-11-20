@@ -13,23 +13,22 @@
 // limitations under the License.
 
 #include <cstddef>
+#include <cstdint>
 #include <cstdlib>
 #include <string>
+#include <vector>
 
 #include <gtest/gtest.h>
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_compiler_context.h"
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_model.h"
+#include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/litert_expected.h"
-#include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
-#include "litert/test/common.h"
 #include "litert/test/load_test_model.h"
 #include "litert/test/matchers.h"
-#include "litert/test/test_models.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
 
@@ -96,7 +95,7 @@ TEST(TestMediatekPlugin, RegisterAllTransformations) {
   ASSERT_EQ(plugin.Api()->register_all_transformations(
                 plugin.Get(), &transformations, &num_patterns),
             kLiteRtStatusOk);
-  ASSERT_EQ(num_patterns, 10);
+  ASSERT_EQ(num_patterns, 16);
   ASSERT_NE(transformations, nullptr);
   EXPECT_STREQ(transformations[0].name, "RmsNormQuantTransformation");
   EXPECT_EQ(transformations[0].benefit, 100);
@@ -119,6 +118,74 @@ TEST(TestMediatekPlugin, PartitionAdd) {
 
   ASSERT_EQ(selected_ops.size(), 1);
   EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeTflAdd);
+}
+
+TEST(TestMediatekPlugin, PartitionNotEqualGuards) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto plugin, StaticallyLinkedPlugin::Create(LrtGetCompilerContext()));
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  auto make_tensor = [&](LiteRtElementType elem_type,
+                         const std::vector<int32_t>& dims) -> LiteRtTensor {
+    LiteRtTensorT& t = subgraph.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(elem_type, dims));
+    return &t;
+  };
+  auto add_ne = [&](LiteRtTensor lhs, LiteRtTensor rhs,
+                    LiteRtTensor out) -> LiteRtOp {
+    LiteRtOpT& op = subgraph.EmplaceOp();
+    op.SetOpCode(kLiteRtOpCodeTflNotEqual);
+    internal::AttachInput(lhs, op);
+    internal::AttachInput(rhs, op);
+    internal::AttachOutput(out, op);
+    subgraph.Outputs().push_back(out);
+    return &op;
+  };
+
+  LiteRtTensor f32_a = make_tensor(kLiteRtElementTypeFloat32, {1, 4});
+  LiteRtTensor f32_b = make_tensor(kLiteRtElementTypeFloat32, {1, 4});
+  LiteRtTensor f16_b = make_tensor(kLiteRtElementTypeFloat16, {1, 4});
+  LiteRtTensor f32_scalar = make_tensor(kLiteRtElementTypeFloat32, {1});
+  LiteRtTensor f32_rank0 = make_tensor(kLiteRtElementTypeFloat32, {});
+  LiteRtTensor f32_zero_dim = make_tensor(kLiteRtElementTypeFloat32, {0, 4});
+  LiteRtTensor f32_dyn = make_tensor(kLiteRtElementTypeFloat32, {-1, 4});
+  LiteRtTensor i32_a = make_tensor(kLiteRtElementTypeInt32, {1, 4});
+  LiteRtTensor f32_quant = make_tensor(kLiteRtElementTypeFloat32, {1, 4});
+  f32_quant->SetQarams(MakePerTensorQuantization(0.5f, 0));
+  subgraph.Inputs().insert(subgraph.Inputs().end(),
+                           {f32_a, f32_b, f16_b, f32_scalar, f32_rank0,
+                            f32_zero_dim, f32_dyn, i32_a, f32_quant});
+
+  // 1. Valid same-type, same-shape Float32 -> Bool.
+  LiteRtOp valid_ne =
+      add_ne(f32_a, f32_b, make_tensor(kLiteRtElementTypeBool, {1, 4}));
+  // 2. Rejected: mixed Float32 and Float16 inputs.
+  add_ne(f32_a, f16_b, make_tensor(kLiteRtElementTypeBool, {1, 4}));
+  // 3. Rejected: broadcasted RHS shape.
+  add_ne(f32_a, f32_scalar, make_tensor(kLiteRtElementTypeBool, {1, 4}));
+  // 4. Rejected: mismatched output shape.
+  add_ne(f32_a, f32_b, make_tensor(kLiteRtElementTypeBool, {1, 5}));
+  // 5. Rejected: rank-0 scalar NotEqual.
+  add_ne(f32_rank0, f32_rank0, make_tensor(kLiteRtElementTypeBool, {}));
+  // 6. Rejected: zero-sized dimension.
+  add_ne(f32_zero_dim, f32_zero_dim,
+         make_tensor(kLiteRtElementTypeBool, {0, 4}));
+  // 7. Rejected: dynamic dimension.
+  add_ne(f32_dyn, f32_dyn, make_tensor(kLiteRtElementTypeBool, {-1, 4}));
+  // 8. Rejected: integer inputs.
+  add_ne(i32_a, i32_a, make_tensor(kLiteRtElementTypeBool, {1, 4}));
+  // 9. Rejected: quantized Float32 input.
+  add_ne(f32_quant, f32_b, make_tensor(kLiteRtElementTypeBool, {1, 4}));
+
+  LiteRtOpListT selected_op_list;
+  ASSERT_EQ(
+      plugin.Api()->compiler_plugin_partition(
+          plugin.Get(), /*soc_model=*/"mt6989", &subgraph, &selected_op_list),
+      kLiteRtStatusOk);
+  const auto selected_ops = selected_op_list.Values();
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first, valid_ne);
 }
 
 TEST(TestMediatekPlugin, PartitionGroupNorm) {
