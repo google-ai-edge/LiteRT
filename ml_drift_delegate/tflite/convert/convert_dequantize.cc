@@ -18,8 +18,10 @@
 #include <utility>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
@@ -51,10 +53,19 @@ void ConvertDequantize(
     return;
   }
 
+  const ::ml_drift::ir::IrTensorId input_ir_id =
+      tensor_map[node.inputs->data[0]];
+  const ::ml_drift::ir::IrTensorId output_ir_id =
+      tensor_map[node.outputs->data[0]];
+  const ::ml_drift::DataType input_dtype =
+      ir_model.tensor(input_ir_id)->desc.GetDataType();
+  const ::ml_drift::DataType output_dtype =
+      ir_model.tensor(output_ir_id)->desc.GetDataType();
+
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
 
-  ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
+  ir_model.AddConsumer(input_ir_id, op->id);
 
   ::ml_drift::ir::IrQuantParams params;
   PopulateQuantParams(*input_tensor, &params);
@@ -65,7 +76,23 @@ void ConvertDequantize(
   attr.scale = params.scale;
   op->attr = std::move(attr);
 
-  ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);
+  if (output_dtype == input_dtype) {
+    ir_model.SetProducer(output_ir_id, op->id);
+    return;
+  }
+
+  // The output (e.g. FLOAT16) has another type than the float version of the
+  // quantized input: QuantizeAndDequantize keeps the input type and a Cast
+  // produces the output.
+  const ::ml_drift::BHWDC output_shape =
+      ir_model.tensor(output_ir_id)->desc.GetBHWDCShape();
+  const ::ml_drift::ir::IrTensor* dequantized =
+      ir_model.add_tensor(input_dtype, output_shape);
+  ir_model.SetProducer(dequantized->id, op->id);
+  ::ml_drift::ir::IrOp* cast_op = ir_model.add_op();
+  cast_op->name = ToString(::ml_drift::OperationType::kCast);
+  ir_model.AddConsumer(dequantized->id, cast_op->id);
+  ir_model.SetProducer(output_ir_id, cast_op->id);
 }
 
 }  // namespace litert::ml_drift::ir
