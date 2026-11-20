@@ -480,6 +480,202 @@ TEST(VerifyModel, StringTensorIsLargerThanRequired) {
                   "String tensor input buffer last offset must be 19"));
 }
 
+namespace {
+
+// Builds the raw buffer of a string tensor that holds `count` empty strings:
+// the count, then count + 1 offsets that all point just past the header.
+std::vector<uint8_t> EmptyStringsBuffer(uint8_t count) {
+  const uint8_t header = 4 * (count + 2);
+  std::vector<uint8_t> buffer = {count, 0, 0, 0};
+  for (int i = 0; i <= count; ++i) {
+    buffer.insert(buffer.end(), {header, 0, 0, 0});
+  }
+  return buffer;
+}
+
+}  // namespace
+
+TEST(VerifyModel, StringTensorValidOffsetsAndShapeAccepted) {
+  // Two strings, "A" and "B", with increasing offsets and a matching shape.
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor({2}, TensorType_STRING,
+                    {2, 0, 0, 0, 16, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 65, 66},
+                    "input");
+  builder.FinishModel({}, {});
+  ASSERT_TRUE(builder.Verify());
+  ASSERT_TRUE(builder.VerifyWithOpResolver());
+}
+
+TEST(VerifyModel, StringTensorEqualOffsetsAccepted) {
+  // Equal adjacent offsets are empty strings, not a decreasing sequence.
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor({2}, TensorType_STRING,
+                    {2, 0, 0, 0, 16, 0, 0, 0, 16, 0, 0, 0, 16, 0, 0, 0},
+                    "empty_strs");
+  builder.FinishModel({}, {});
+  ASSERT_TRUE(builder.Verify());
+  ASSERT_TRUE(builder.VerifyWithOpResolver());
+}
+
+TEST(VerifyModel, StringTensorDecreasingOffsetsRejected) {
+  // Every offset lies between the header and the end of the buffer, but
+  // offset 2 (20) is smaller than offset 1 (24).
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor({3}, TensorType_STRING,
+                    {3,  0, 0, 0, 20, 0, 0, 0, 24,  0,   0,   0,
+                     20, 0, 0, 0, 24, 0, 0, 0, 'A', 'B', 'C', 'D'},
+                    "input");
+  builder.FinishModel({}, {});
+  ASSERT_FALSE(builder.Verify());
+  ASSERT_FALSE(builder.VerifyWithOpResolver());
+  EXPECT_THAT(builder.GetErrorString(),
+              ::testing::ContainsRegex(
+                  "String tensor input buffer is invalid: index 2"));
+}
+
+TEST(VerifyModel, StringTensorOffsetsWithHighBitRejected) {
+  // Offset 1 is 0x80000010, far past the end of the buffer.
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor(
+      {2}, TensorType_STRING,
+      {2, 0, 0, 0, 16, 0, 0, 0, 0x10, 0, 0, 0x80, 18, 0, 0, 0, 'A', 'B'},
+      "input");
+  builder.FinishModel({}, {});
+  ASSERT_FALSE(builder.Verify());
+  ASSERT_FALSE(builder.VerifyWithOpResolver());
+  EXPECT_THAT(builder.GetErrorString(),
+              ::testing::ContainsRegex(
+                  "String tensor input buffer is invalid: index 1"));
+}
+
+TEST(VerifyModel, StringTensorCountMismatchWithStaticShapeRejected) {
+  {
+    // Fewer strings than the shape holds.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor(
+        {4}, TensorType_STRING,
+        {1, 0, 0, 0, 12, 0, 0, 0, 16, 0, 0, 0, 'T', 'E', 'S', 'T'}, "input");
+    builder.FinishModel({}, {});
+    ASSERT_FALSE(builder.Verify());
+    ASSERT_FALSE(builder.VerifyWithOpResolver());
+    EXPECT_THAT(
+        builder.GetErrorString(),
+        ::testing::ContainsRegex(
+            "String tensor input buffer has 1 strings, but shape requires 4"));
+  }
+  {
+    // More strings than the shape holds.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor(
+        {1}, TensorType_STRING,
+        {2, 0, 0, 0, 16, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 'A', 'B'}, "input");
+    builder.FinishModel({}, {});
+    ASSERT_FALSE(builder.Verify());
+    EXPECT_THAT(
+        builder.GetErrorString(),
+        ::testing::ContainsRegex(
+            "String tensor input buffer has 2 strings, but shape requires 1"));
+  }
+  {
+    // The element count is the product of the dimensions: 2 * 3 = 6.
+    TfLiteFlatbufferModelBuilder fewer;
+    fewer.AddTensor({2, 3}, TensorType_STRING, EmptyStringsBuffer(5), "input");
+    fewer.FinishModel({}, {});
+    ASSERT_FALSE(fewer.Verify());
+    EXPECT_THAT(
+        fewer.GetErrorString(),
+        ::testing::ContainsRegex(
+            "String tensor input buffer has 5 strings, but shape requires 6"));
+
+    TfLiteFlatbufferModelBuilder exact;
+    exact.AddTensor({2, 3}, TensorType_STRING, EmptyStringsBuffer(6), "input");
+    exact.FinishModel({}, {});
+    ASSERT_TRUE(exact.Verify());
+  }
+}
+
+TEST(VerifyModel, StringTensorWithoutShapeIsNotCheckedAgainstCount) {
+  // A shape of {} is stored as a missing shape vector, so the count is
+  // unconstrained.
+  TfLiteFlatbufferModelBuilder builder;
+  builder.AddTensor(
+      {}, TensorType_STRING,
+      {2, 0, 0, 0, 16, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 'A', 'B'}, "input");
+  builder.FinishModel({}, {});
+  ASSERT_TRUE(builder.Verify());
+}
+
+TEST(VerifyModel, StringTensorZeroDimensionRequiresNoStrings) {
+  {
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({0}, TensorType_STRING, {0, 0, 0, 0, 8, 0, 0, 0},
+                      "zero_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+    ASSERT_TRUE(builder.VerifyWithOpResolver());
+  }
+  {
+    // A zero anywhere in the shape makes the element count zero.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({3, 0, 5}, TensorType_STRING, {0, 0, 0, 0, 8, 0, 0, 0},
+                      "zero_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+  }
+  {
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({0}, TensorType_STRING,
+                      {1, 0, 0, 0, 12, 0, 0, 0, 13, 0, 0, 0, 'A'}, "zero_str");
+    builder.FinishModel({}, {});
+    ASSERT_FALSE(builder.Verify());
+    EXPECT_THAT(
+        builder.GetErrorString(),
+        ::testing::ContainsRegex(
+            "String tensor zero_str buffer has 1 strings, but shape requires "
+            "0"));
+  }
+}
+
+TEST(VerifyModel, StringTensorDynamicDimensionLeavesCountOpen) {
+  {
+    // A dynamic dimension without a zero dimension accepts any count.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor(
+        {-1, 2}, TensorType_STRING,
+        {2, 0, 0, 0, 16, 0, 0, 0, 17, 0, 0, 0, 18, 0, 0, 0, 'A', 'B'},
+        "dyn_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+  }
+  {
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({-1}, TensorType_STRING, {0, 0, 0, 0, 8, 0, 0, 0},
+                      "dyn_str");
+    builder.FinishModel({}, {});
+    ASSERT_TRUE(builder.Verify());
+  }
+  {
+    // A zero dimension next to a dynamic one still requires zero strings.
+    TfLiteFlatbufferModelBuilder builder;
+    builder.AddTensor({0, -1}, TensorType_STRING,
+                      {1, 0, 0, 0, 12, 0, 0, 0, 13, 0, 0, 0, 'A'},
+                      "zero_dyn_str");
+    builder.FinishModel({}, {});
+    ASSERT_FALSE(builder.Verify());
+    EXPECT_THAT(
+        builder.GetErrorString(),
+        ::testing::ContainsRegex(
+            "String tensor zero_dyn_str buffer has 1 strings, but shape "
+            "requires 0"));
+
+    TfLiteFlatbufferModelBuilder no_strings;
+    no_strings.AddTensor({-1, 0}, TensorType_STRING, {0, 0, 0, 0, 8, 0, 0, 0},
+                         "zero_dyn_str");
+    no_strings.FinishModel({}, {});
+    ASSERT_TRUE(no_strings.Verify());
+  }
+}
+
 TEST(VerifyModel, AllOpsAreSupported) {
   TfLiteFlatbufferModelBuilder builder({BuiltinOperator_ADD}, {"CustomOp"});
   builder.AddTensor({2, 2}, TensorType_UINT8, {1, 2, 3, 4}, "input1");
