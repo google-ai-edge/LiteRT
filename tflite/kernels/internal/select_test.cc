@@ -13,6 +13,7 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include "tflite/kernels/internal/reference/process_broadcast_shapes.h"
 #include "tflite/kernels/internal/reference/select.h"
 
 #include <cstddef>
@@ -111,6 +112,28 @@ TEST(SelectTest, RankGreaterThanMaxRankDies) {
                "");
 }
 #endif  // GTEST_HAS_DEATH_TEST
+
+TEST(SelectTest, NoIntegerOverflowWithLargeDimensions) {
+  const RuntimeShape shape0({65536, 32768, 2});
+  const RuntimeShape shape1({65536, 32768, 1});
+  ArithmeticParams params;
+  EXPECT_TRUE(ProcessBroadcastShapes(shape0, shape1, &params));
+  EXPECT_EQ(params.broadcast_category,
+            BroadcastableOpCategory::kSecondInputBroadcastsFast);
+  EXPECT_EQ(params.broadcast_shape[2], 2147483648LL);
+  EXPECT_GT(params.broadcast_shape[2], 0);
+}
+
+TEST(SelectTest, NoIntegerOverflowOuterDimension) {
+  const RuntimeShape shape0({8, 0x20000000, 2});
+  const RuntimeShape shape1({8, 0x20000000, 1});
+  ArithmeticParams params;
+  EXPECT_TRUE(ProcessBroadcastShapes(shape0, shape1, &params));
+  EXPECT_EQ(params.broadcast_category,
+            BroadcastableOpCategory::kSecondInputBroadcastsFast);
+  EXPECT_EQ(params.broadcast_shape[2], 4294967296LL);
+  EXPECT_GT(params.broadcast_shape[2], 0);
+}
 
 }  // namespace
 }  // namespace reference_ops
