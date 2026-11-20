@@ -18,7 +18,7 @@
 from collections.abc import Mapping, MutableMapping, Sequence
 import dataclasses
 import enum
-from typing import Any, Optional
+from typing import Any
 from absl import logging
 import numpy as np
 from litert_quantizer import qtyping
@@ -166,19 +166,28 @@ def _get_histogram_range(
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Get the quantization parameters for a tensor.
 
   Args:
     op_info: Aggregated information about the op (e.g., quantization config).
-    tensor_quant_config: The quantization config for the tensor.
+    tensor_quant_config: The quantization config for the tensor. For signed
+      symmetric 2-bit weight tensors, `algorithm_params['centered']` defaults to
+      `True` (`{-2, -1, 0, 1}` with `zero_point = -0.5`); pass
+      `algorithm_params={'centered': False}` to opt out for legacy mid-tread
+      quantization (`zero_point = 0`).
     tensor_content: The content of the tensor.
-    tensor_qsv: A dictionary containingthe min/max of the tensor.
+    tensor_qsv: A dictionary containing the min/max of the tensor.
 
   Returns:
     The quantization parameters for the tensor.
+
+  Raises:
+    ValueError: If calibration min/max values are missing, or if `centered` is
+      invalid (e.g. non-boolean, used on a non-weight tensor, or used without
+      signed symmetric 2-bit quantization).
   """
   # Get quant params.
   # Use tensor_content if QSV lacks min/max (e.g., including GPTQ case).
@@ -214,6 +223,9 @@ def get_tensor_quant_params(
     )
   clipping_values = None
   signed = tensor_quant_config.dtype != qtyping.TensorDataType.UINT
+  centered = uniform_quantize_tensor.get_centered_int2_option(
+      tensor_quant_config, is_weight=tensor_content is not None
+  )
   zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
       tensor_min_max["min"],
       tensor_min_max["max"],
@@ -222,6 +234,7 @@ def get_tensor_quant_params(
       tensor_quant_config.granularity,
       clipping_values,
       signed=signed,
+      centered=centered,
   )
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity  # pyrefly: ignore[bad-argument-type]
@@ -249,13 +262,6 @@ def get_tensor_quant_params(
   )
   # Update with quantized values.
   return dataclasses.replace(quant_params, quantized_data=quantized_vars)
-
-
-def check_if_quantized(tensor: Any) -> bool:
-  """Checks if the tensor is quantized."""
-  return (
-      tensor.quantization is not None and tensor.quantization.scale is not None
-  )
 
 
 # TODO: b/333731147 - Use named tuple to store min/max.
@@ -287,7 +293,9 @@ def init_qsvs(
   quantized_inputs_to_ignore = [
       opr_idx
       for opr_idx, tensor_idx in enumerate(op_info.op.inputs)
-      if check_if_quantized(graph_info.subgraph_tensors[tensor_idx])
+      if common_quantize.check_if_quantized(
+          graph_info.subgraph_tensors[tensor_idx]
+      )
   ]
   inputs_to_ignore_list.extend(quantized_inputs_to_ignore)
 
@@ -342,10 +350,12 @@ def min_max_calibrate(
       with `padv2` where a bfloat16 -inf padding constant can cause problems.
       Values exceeding this range can lead to quantization issues and are
       therefore excluded from min/max calibration.
+    **kwargs: Optional algorithm-specific keyword parameters.
 
   Returns:
     A dictionary with key as tensor name and value as the collected QSV.
   """
+  del kwargs
   op_qsvs = {}
   min_val, max_val = valid_range
 
