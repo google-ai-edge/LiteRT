@@ -22,10 +22,19 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include <cstdarg>
+#include <cstdio>
+#include <functional>
+#include <limits>
+#include <memory>
+#include <string>
+
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "flatbuffers/flatbuffers.h"  // from @flatbuffers
 #include "tflite/core/interpreter.h"
+#include "tflite/core/c/common.h"
+#include "tflite/core/subgraph.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -1463,6 +1472,8 @@ class LSTMIntegerOpModel : public SingleOpModel {
                      /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
   }
 
+  Interpreter* interpreter() { return interpreter_.get(); }
+
   void PerformAllocateAndDelegate() { AllocateAndDelegate(true); }
 
   void SetInputToInputWeights(const std::vector<float>& f) {
@@ -2765,6 +2776,438 @@ INSTANTIATE_TEST_SUITE_P(
     ::testing::Combine(::testing::Values(TensorType_FLOAT32, TensorType_UINT8,
                                          TensorType_INT8),
                        ::testing::Bool(), ::testing::Bool()));
+
+class InvalidLSTMOpModel : public SingleOpModel {
+ public:
+  InvalidLSTMOpModel(const std::vector<std::vector<int>>& input_shapes,
+                     bool omit_input_gate_bias = false) {
+    AddInput(TensorType_FLOAT32);  // input
+    AddInput(TensorType_FLOAT32);  // input_to_input_weights
+    AddInput(TensorType_FLOAT32);  // input_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // input_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // input_to_output_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_input_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_forget_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_cell_weights
+    AddInput(TensorType_FLOAT32);  // recurrent_to_output_weights
+    AddNullInput();                // cell_to_input_weights
+    AddNullInput();                // cell_to_forget_weights
+    AddNullInput();                // cell_to_output_weights
+    if (omit_input_gate_bias) {
+      AddNullInput();
+    } else {
+      AddInput(TensorType_FLOAT32);  // input_gate_bias
+    }
+    AddInput(TensorType_FLOAT32);  // forget_gate_bias
+    AddInput(TensorType_FLOAT32);  // cell_gate_bias
+    AddInput(TensorType_FLOAT32);  // output_gate_bias
+    AddNullInput();                // projection_weights
+    AddNullInput();                // projection_bias
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // output_state
+    AddVariableInput(TensorData{TensorType_FLOAT32, {2, 4}});  // cell_state
+    AddOutput(TensorType_FLOAT32);
+
+    SetBuiltinOp(BuiltinOperator_LSTM, BuiltinOptions_LSTMOptions,
+                 CreateLSTMOptions(builder_, ActivationFunctionType_TANH, 0.0f,
+                                   0.0f, LSTMKernelType_FULL, false)
+                     .Union());
+    BuildInterpreter(input_shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/true, /*allocate_and_delegate=*/false);
+  }
+  Interpreter* interpreter() { return interpreter_.get(); }
+};
+
+TEST(LstmValidationTest, RejectsInvalidInputRankAndMissingInputGateBias) {
+  auto valid_shapes = []() {
+    return std::vector<std::vector<int>>{
+        {2, 2},  // input
+        {4, 2},  // input_to_input_weights
+        {4, 2},  // input_to_forget_weights
+        {4, 2},  // input_to_cell_weights
+        {4, 2},  // input_to_output_weights
+        {4, 4},  // recurrent_to_input_weights
+        {4, 4},  // recurrent_to_forget_weights
+        {4, 4},  // recurrent_to_cell_weights
+        {4, 4},  // recurrent_to_output_weights
+        {0},     // cell_to_input_weights
+        {0},     // cell_to_forget_weights
+        {0},     // cell_to_output_weights
+        {4},     // input_gate_bias
+        {4},     // forget_gate_bias
+        {4},     // cell_gate_bias
+        {4},     // output_gate_bias
+        {0},     // projection_weights
+        {0},     // projection_bias
+        {2, 4},  // output_state
+        {2, 4},  // cell_state
+    };
+  };
+
+  auto rank3_input_shapes = valid_shapes();
+  rank3_input_shapes[0] = {2, 2, 4};
+  InvalidLSTMOpModel rank3_input(rank3_input_shapes);
+  ASSERT_EQ(rank3_input.AllocateTensors(), kTfLiteError);
+
+  auto rank0_output_weights_shapes = valid_shapes();
+  rank0_output_weights_shapes[4] = {};
+  InvalidLSTMOpModel rank0_output_weights(rank0_output_weights_shapes);
+  EXPECT_EQ(rank0_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto rank1_output_weights_shapes = valid_shapes();
+  rank1_output_weights_shapes[4] = {4};
+  InvalidLSTMOpModel rank1_output_weights(rank1_output_weights_shapes);
+  EXPECT_EQ(rank1_output_weights.AllocateTensors(), kTfLiteError);
+
+  auto missing_bias_shapes = valid_shapes();
+  missing_bias_shapes[12] = {0};
+  InvalidLSTMOpModel missing_bias(missing_bias_shapes,
+                                  /*omit_input_gate_bias=*/true);
+  EXPECT_EQ(missing_bias.AllocateTensors(), kTfLiteError);
+}
+
+// Exercise the registered kernel Prepare callback directly so malformed runtime
+// metadata is tested at the kernel boundary rather than in model construction.
+class LstmPrepareProbe {
+ public:
+  explicit LstmPrepareProbe(Interpreter* interpreter)
+      : interpreter_(interpreter),
+        registration_(interpreter->node_and_registration(0)),
+        node_(const_cast<TfLiteNode*>(&registration_->first)),
+        real_context_(interpreter->primary_subgraph().context()) {
+    if (node_->temporaries != nullptr && node_->temporaries->size > 0) {
+      scratch_index_ = node_->temporaries->data[0];
+    }
+  }
+
+  TfLiteNode* node() { return node_; }
+  TfLiteTensor* Input(int index) {
+    return interpreter_->tensor(node_->inputs->data[index]);
+  }
+  TfLiteTensor* Output() {
+    return interpreter_->tensor(node_->outputs->data[0]);
+  }
+  TfLiteTensor* Intermediate(int index) {
+    return interpreter_->tensor(node_->intermediates->data[index]);
+  }
+  const std::string& error() const { return error_; }
+  bool hook_fired() const { return hook_fired_; }
+  int scratch_resizes = 0;
+  int scratch_width = 0;
+  bool suppress_resize = false;
+
+  TfLiteStatus Prepare(std::function<void()> on_scratch = {},
+                       std::function<void()> on_second_input = {}) {
+    error_.clear();
+    hook_fired_ = false;
+    input_reads_ = 0;
+    on_scratch_ = std::move(on_scratch);
+    on_second_input_ = std::move(on_second_input);
+    if (on_scratch_) {
+      // Force the first scratch tensor through ResizeTensor after quantization
+      // population and before zero-point precomputation.
+      interpreter_->tensor(scratch_index_)->dims->data[0] = 0;
+    }
+    TfLiteContext context = *real_context_;
+    context.ReportError = ReportError;
+    context.ResizeTensor = ResizeTensor;
+    if (on_second_input_) {
+      context.tensors = nullptr;
+      context.GetTensor = GetTensor;
+    }
+    active_ = this;
+    const TfLiteStatus status = registration_->second.prepare(&context, node_);
+    active_ = nullptr;
+    return status;
+  }
+
+  // Each mutation leaves every other quantization field valid. Restore
+  // ownership before the model is destroyed, including on a rejected Prepare
+  // call.
+  TfLiteStatus QuantizationFault(TfLiteTensor* tensor, int fault,
+                                 bool after_population = false) {
+    const TfLiteQuantization original = tensor->quantization;
+    auto affine = *static_cast<TfLiteAffineQuantization*>(original.params);
+    TfLiteQuantization damaged = original;
+    damaged.params = &affine;
+    auto* empty_scale = TfLiteFloatArrayCreate(0);
+    auto* empty_zero_point = TfLiteIntArrayCreate(0);
+    switch (fault) {
+      case 0:
+        damaged.type = kTfLiteBlockwiseQuantization;
+        break;
+      case 1:
+        damaged.params = nullptr;
+        break;
+      case 2:
+        affine.scale = nullptr;
+        break;
+      case 3:
+        affine.scale = empty_scale;
+        break;
+      case 4:
+        affine.zero_point = nullptr;
+        break;
+      case 5:
+        affine.zero_point = empty_zero_point;
+        break;
+    }
+    auto mutate = [&] { tensor->quantization = damaged; };
+    if (!after_population) mutate();
+    const TfLiteStatus status = after_population ? Prepare(mutate) : Prepare();
+    tensor->quantization = original;
+    TfLiteFloatArrayFree(empty_scale);
+    TfLiteIntArrayFree(empty_zero_point);
+    return status;
+  }
+
+ private:
+  static void ReportError(TfLiteContext*, const char* format, ...) {
+    char message[4096];
+    va_list args;
+    va_start(args, format);
+    vsnprintf(message, sizeof(message), format, args);
+    va_end(args);
+    active_->error_ += std::string(message) + '\n';
+    active_->real_context_->ReportError(active_->real_context_, "%s", message);
+  }
+  static TfLiteTensor* GetTensor(const TfLiteContext*, int index) {
+    auto* probe = active_;
+    if (index == probe->node_->inputs->data[0] && ++probe->input_reads_ == 2) {
+      probe->on_second_input_();
+      probe->hook_fired_ = true;
+    }
+    return probe->interpreter_->tensor(index);
+  }
+  static TfLiteStatus ResizeTensor(TfLiteContext*, TfLiteTensor* tensor,
+                                   TfLiteIntArray* dimensions) {
+    auto* probe = active_;
+    if (probe->suppress_resize) {
+      const bool scratch = tensor != probe->Output();
+      if (scratch) {
+        ++probe->scratch_resizes;
+        probe->scratch_width = dimensions->data[1];
+      }
+      TfLiteIntArrayFree(dimensions);
+      return scratch ? kTfLiteError : kTfLiteOk;
+    }
+    const auto status = probe->real_context_->ResizeTensor(probe->real_context_,
+                                                           tensor, dimensions);
+    if (status == kTfLiteOk && probe->on_scratch_ &&
+        tensor == probe->interpreter_->tensor(probe->scratch_index_)) {
+      auto mutate = std::move(probe->on_scratch_);
+      probe->on_scratch_ = {};
+      mutate();
+      probe->hook_fired_ = true;
+    }
+    return status;
+  }
+  inline static LstmPrepareProbe* active_ = nullptr;
+  Interpreter* interpreter_;
+  const std::pair<TfLiteNode, TfLiteRegistration>* registration_;
+  TfLiteNode* node_;
+  TfLiteContext* real_context_;
+  std::function<void()> on_scratch_;
+  std::function<void()> on_second_input_;
+  int scratch_index_ = -1;
+  int input_reads_ = 0;
+  bool hook_fired_ = false;
+  std::string error_;
+};
+
+std::vector<std::pair<float, float>> ValidationRanges() {
+  return {
+      {-1.0, 127.0 / 128},  // input tensor
+      {-1.0, 1.0},          // input_to_input_weight tensor
+      {-1.0, 1.0},          // input_to_forget_weight tensor
+      {-1.0, 1.0},          // input_to_cell_weight tensor
+      {-1.0, 1.0},          // input_to_output_weight tensor
+
+      {-1.0, 1.0},  // recurrent_to_input_weight tensor
+      {-1.0, 1.0},  // recurrent_to_forget_weight tensor
+      {-1.0, 1.0},  // recurrent_to_cell_weight tensor
+      {-1.0, 1.0},  // recurrent_to_output_weight tensor
+
+      {-1, 1},  // cell_to_input_weight tensor
+      {-1, 1},  // cell_to_forget_weight tensor
+      {-1, 1},  // cell_to_output_weight tensor
+
+      {-100, 100},  // input_gate_bias tensor
+      {-100, 100},  // forget_gate_bias tensor
+      {-100, 100},  // cell_gate_bias tensor
+      {-100, 100},  // output_gate_bias tensor
+
+      {-0.5, 0.5},  // projection_weight tensor
+      {-1, 1},      // projection_bias tensor
+
+      {-1.0, 32767.0 / 32768},  // output_state tensor
+      {-1, 1},                  // cell_state tensor
+
+      {-1.00001, 1.0},  // input_layer_norm_coefficient tensor
+      {-1.00001, 1.0},  // forget_layer_norm_coefficient tensor
+      {-1.00001, 1.0},  // cell_layer_norm_coefficient tensor
+      {-1.00001, 1.0},  // output_layer_norm_coefficient tensor
+      // Output scale is the same as output_state scale and only output_state
+      // scale is used in the op, so this is only provided for clarity.
+      {-1.0, 32767.0 / 32768},  // output tensor.
+  };
+}
+
+std::unique_ptr<LSTMIntegerOpModel> MakeValidationModel(bool use_8x8_8) {
+  const bool eight_bit = use_8x8_8;
+  const std::vector<std::pair<float, int>> intermediates(eight_bit ? 12 : 5,
+                                                         {0.0078125f, 0});
+  auto ranges = ValidationRanges();
+  if (eight_bit) ranges[19] = {-1.0f, 32767.0f / 32768.0f};
+  return std::make_unique<LSTMIntegerOpModel>(
+      2, 5, 4, 3, /*use_cifg=*/eight_bit, /*use_peephole=*/false,
+      /*use_projection_weights=*/true, /*use_projection_bias=*/false,
+      /*use_layer_norm=*/true, /*use_8x8_8_implementation=*/eight_bit, ranges,
+      intermediates);
+}
+
+class QuantizedLstmValidationTest : public ::testing::TestWithParam<bool> {};
+
+TEST_P(QuantizedLstmValidationTest, RejectsMalformedAffineQuantization) {
+  auto model = MakeValidationModel(GetParam());
+  ASSERT_EQ(model->AllocateTensors(), kTfLiteOk);
+  LstmPrepareProbe probe(model->interpreter());
+  // A non-affine tag with valid storage is safe even on older kernels. Require
+  // this rejection before exercising malformed pointer storage in this test.
+  ASSERT_EQ(probe.QuantizationFault(probe.Input(19), 0), kTfLiteError);
+  const std::vector<TfLiteTensor*> tensors = {probe.Input(19), probe.Output(),
+                                              probe.Intermediate(0),
+                                              probe.Intermediate(4)};
+  for (int location = 0; location < tensors.size(); ++location) {
+    for (int fault = 0; fault < 6; ++fault) {
+      if (location < 2 && fault >= 4) continue;  // Only scale is consumed.
+      SCOPED_TRACE(::testing::Message()
+                   << "location=" << location << " fault=" << fault);
+      ASSERT_EQ(probe.QuantizationFault(tensors[location], fault),
+                kTfLiteError);
+      const char* guard = fault == 0   ? "quantization.type"
+                          : fault == 1 ? "params != nullptr"
+                          : fault == 2 ? "scale != nullptr"
+                          : fault == 3 ? "scale->size > 0"
+                          : fault == 4 ? "zero_point != nullptr"
+                                       : "zero_point->size > 0";
+      EXPECT_THAT(probe.error(), ::testing::HasSubstr(guard));
+    }
+  }
+}
+
+TEST_P(QuantizedLstmValidationTest, RejectsInvalidIntermediateReferences) {
+  auto model = MakeValidationModel(GetParam());
+  ASSERT_EQ(model->AllocateTensors(), kTfLiteOk);
+  LstmPrepareProbe probe(model->interpreter());
+  ASSERT_EQ(probe.QuantizationFault(probe.Input(19), 0), kTfLiteError);
+  auto* intermediates = probe.node()->intermediates;
+  const int count = intermediates->size;
+  auto status = probe.Prepare({}, [&] { intermediates->size = count - 1; });
+  intermediates->size = count;
+  EXPECT_TRUE(probe.hook_fired());
+  EXPECT_EQ(status, kTfLiteError);
+  EXPECT_THAT(probe.error(), ::testing::HasSubstr("Invalid tensor index"));
+  const int last = intermediates->data[count - 1];
+  intermediates->data[count - 1] = kTfLiteOptionalTensor;
+  status = probe.Prepare();
+  intermediates->data[count - 1] = last;
+  EXPECT_EQ(status, kTfLiteError);
+  EXPECT_THAT(probe.error(), ::testing::HasSubstr("was optional"));
+}
+
+TEST(QuantizedLstmPrecomputedValidationTest, RejectsMalformedPrecomputedZeroPoint) {
+  auto model = MakeValidationModel(false);
+  ASSERT_EQ(model->AllocateTensors(), kTfLiteOk);
+  LstmPrepareProbe probe(model->interpreter());
+  ASSERT_EQ(probe.QuantizationFault(probe.Input(19), 0), kTfLiteError);
+  // Mutate only after the quantization population has succeeded. This isolates
+  // the checks in PopulatePrecomputedZPTimesWeightsWithBias.
+  for (int fault : {0, 1, 4, 5}) {
+    SCOPED_TRACE(fault);
+    EXPECT_EQ(probe.QuantizationFault(probe.Intermediate(4), fault, true),
+              kTfLiteError);
+    EXPECT_TRUE(probe.hook_fired());
+    EXPECT_THAT(probe.error(),
+                ::testing::HasSubstr(fault == 0   ? "quantization.type"
+                                     : fault == 1 ? "params != nullptr"
+                                     : fault == 4 ? "zero_point != nullptr"
+                                                  : "zero_point->size > 0"));
+  }
+  auto* intermediates = probe.node()->intermediates;
+  const int count = intermediates->size;
+  auto status = probe.Prepare([&] { intermediates->size = 4; });
+  intermediates->size = count;
+  EXPECT_TRUE(probe.hook_fired());
+  EXPECT_EQ(status, kTfLiteError);
+  EXPECT_THAT(probe.error(), ::testing::HasSubstr("Invalid tensor index 4"));
+  const int hidden = intermediates->data[4];
+  status =
+      probe.Prepare([&] { intermediates->data[4] = kTfLiteOptionalTensor; });
+  intermediates->data[4] = hidden;
+  EXPECT_TRUE(probe.hook_fired());
+  EXPECT_EQ(status, kTfLiteError);
+  EXPECT_THAT(probe.error(), ::testing::HasSubstr("was optional"));
+}
+
+TEST_P(QuantizedLstmValidationTest, PropagatesQuantizationPopulationFailure) {
+  auto model = MakeValidationModel(GetParam());
+  ASSERT_EQ(model->AllocateTensors(), kTfLiteOk);
+  LstmPrepareProbe probe(model->interpreter());
+  auto* cell = probe.Input(19);
+  const auto original = cell->params;
+  auto* affine =
+      static_cast<TfLiteAffineQuantization*>(cell->quantization.params);
+  const float scale = affine->scale->data[0];
+  cell->params.scale = 0.3f;
+  affine->scale->data[0] = 0.3f;
+  const auto status = probe.Prepare();
+  cell->params = original;
+  affine->scale->data[0] = scale;
+  EXPECT_EQ(status, kTfLiteError);
+  EXPECT_THAT(probe.error(),
+              ::testing::HasSubstr(GetParam() ? "1.0 / 32768" : "CheckedLog2"));
+}
+
+INSTANTIATE_TEST_SUITE_P(IntegerPaths, QuantizedLstmValidationTest,
+                         ::testing::Bool());
+
+TEST(LstmValidationTest, BoundsScratchWidthBeforeResize) {
+  for (bool cifg : {false, true}) {
+    const int gates = cifg ? 4 : 5;
+    const int largest = std::numeric_limits<int>::max() / gates;
+    for (int cells : {-1, largest, largest + 1}) {
+      SCOPED_TRACE(::testing::Message()
+                   << "cifg=" << cifg << " cells=" << cells);
+      std::vector<std::vector<int>> shapes = {
+          {2, 2}, {4, 2}, {4, 2}, {4, 2}, {4, 2}, {4, 4}, {4, 4},
+          {4, 4}, {4, 4}, {0},    {0},    {0},    {4},    {4},
+          {4},    {4},    {0},    {0},    {2, 4}, {2, 4}};
+      InvalidLSTMOpModel model(shapes);
+      LstmPrepareProbe probe(model.interpreter());
+      // Change dimensions in place without allocating weights or state buffers.
+      probe.Input(0)->dims->data[0] = 0;
+      for (int i = 1; i <= 8; ++i) probe.Input(i)->dims->data[0] = cells;
+      for (int i = 12; i <= 15; ++i) probe.Input(i)->dims->data[0] = cells;
+      probe.Input(18)->dims->data[0] = 0;
+      probe.Input(19)->dims->data[0] = 0;
+      probe.Input(19)->dims->data[1] = cells;
+      if (cifg) {
+        for (int i : {1, 5, 12})
+          probe.node()->inputs->data[i] = kTfLiteOptionalTensor;
+      }
+      probe.suppress_resize = true;
+      EXPECT_EQ(probe.Prepare(), kTfLiteError);
+      if (cells == largest) {
+        EXPECT_EQ(probe.scratch_resizes, 1);
+        EXPECT_EQ(probe.scratch_width, cells * gates);
+      } else {
+        EXPECT_EQ(probe.scratch_resizes, 0);
+        EXPECT_THAT(probe.error(), ::testing::HasSubstr("scratch_width >= 0"));
+      }
+    }
+  }
+}
 
 }  // namespace
 }  // namespace tflite
