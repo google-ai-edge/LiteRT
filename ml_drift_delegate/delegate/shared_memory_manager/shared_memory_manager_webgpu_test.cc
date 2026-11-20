@@ -487,11 +487,11 @@ TEST_F(SharedMemoryManagerTest, CreateQuantizedTensorMixedPrecision) {
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
 
-void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
-                                  TfLiteType zp_type, int zp_size,
-                                  const std::vector<int>& expected_zp_values,
-                                  bool use_invalid_zp = false,
-                                  bool expect_failure = false) {
+void RunBlockwiseQuantizationTest(
+    const webgpu::ExecutionEnvironment& env, TfLiteType zp_type, int zp_size,
+    const std::vector<int>& expected_zp_values, bool use_invalid_zp = false,
+    bool expect_failure = false, absl::Span<const float> custom_scales = {},
+    bool verify_denormals_clamped_on_gpu = false) {
   ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
   ValueIdToSharedTensorMap quant_param_tensors;
 
@@ -532,6 +532,11 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   tensors[1].dims->data[0] = 100;
   tensors[1].dims->data[1] = 2;
   std::vector<float> scale_data(100 * 2, 0.5f);
+  if (!custom_scales.empty()) {
+    ASSERT_EQ(custom_scales.size(), scale_data.size());
+    scale_data.assign(custom_scales.begin(), custom_scales.end());
+  }
+  const std::vector<float> expected_scales = scale_data;
   tensors[1].data.f = scale_data.data();
 
   // 2: zero point
@@ -609,6 +614,9 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
   const size_t expected_params = use_invalid_zp ? 1 : 2;
   EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
   EXPECT_EQ(quant_param_tensors.size(), expected_params);
+  // The original TFLite scale buffer must remain untouched even when fp16
+  // denormal rewriting runs (e.g. if the model view is read-only).
+  EXPECT_THAT(scale_data, ::testing::ElementsAreArray(expected_scales));
 
   int params_found = 0;
   for (auto& [_, global_id] : local_to_global_id_map) {
@@ -621,6 +629,33 @@ void RunBlockwiseQuantizationTest(const webgpu::ExecutionEnvironment& env,
                 DataType::kFloat16);
       EXPECT_EQ(external_tensor->GetDescriptor().GetBHWCShape(),
                 BHWC(1, 1, 25, 8));
+      if (verify_denormals_clamped_on_gpu && params_found == 1) {
+        TensorDescriptor readback;
+        ASSERT_OK(static_cast<webgpu::SpatialTensor*>(external_tensor)
+                      ->ToDescriptor(env.device(), &readback));
+        std::vector<float> gpu_scales(
+            readback.GetBHWCShape().DimensionsProduct());
+        readback.DownloadData(gpu_scales.data());
+        int clamped_pos = 0;
+        int clamped_neg = 0;
+        int zeros = 0;
+        int normal_half = 0;
+        for (float val : gpu_scales) {
+          if (val > 5.0e-5f && val < 1.0e-4f) {
+            ++clamped_pos;
+          } else if (val < -5.0e-5f && val > -1.0e-4f) {
+            ++clamped_neg;
+          } else if (val == 0.0f) {
+            ++zeros;
+          } else if (val == 0.5f) {
+            ++normal_half;
+          }
+        }
+        EXPECT_EQ(clamped_pos, 50);
+        EXPECT_EQ(clamped_neg, 50);
+        EXPECT_EQ(zeros, 50);
+        EXPECT_EQ(normal_half, 50);
+      }
     }
   }
   EXPECT_EQ(params_found, static_cast<int>(expected_params));
@@ -667,6 +702,32 @@ TEST_F(SharedMemoryManagerTest, CreateBlockwiseQuantizedTensorSymmetric) {
   std::vector<int> expected_zp(200, 0);
   RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
                                expected_zp, /*use_invalid_zp=*/true);
+}
+
+TEST_F(SharedMemoryManagerTest,
+       CreateBlockwiseQuantizedTensorDoesNotMutateDenormalFp32Scales) {
+  std::vector<int> expected_zp(200, 0);
+  std::vector<float> custom_scales(200);
+  for (int i = 0; i < 200; ++i) {
+    switch (i % 4) {
+      case 0:
+        custom_scales[i] = 1.0e-6f;
+        break;
+      case 1:
+        custom_scales[i] = -2.0e-6f;
+        break;
+      case 2:
+        custom_scales[i] = 0.0f;
+        break;
+      default:
+        custom_scales[i] = 0.5f;
+        break;
+    }
+  }
+  RunBlockwiseQuantizationTest(exec_env_.GetEnv(), kTfLiteInt32, 200,
+                               expected_zp, /*use_invalid_zp=*/true,
+                               /*expect_failure=*/false, custom_scales,
+                               /*verify_denormals_clamped_on_gpu=*/true);
 }
 
 // Integration coverage for the IR path: build an ir::IrModel, drive the unified

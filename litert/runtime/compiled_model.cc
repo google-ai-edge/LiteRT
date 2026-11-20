@@ -1100,9 +1100,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
   // Windows charges a copy-on-write view of the model file in full; the model
-  // is written to only through MakeModelBufferWritable. Only a model for NPU
-  // has its view made read-only, because that costs initialization time.
-  if (hw_accelerators & kLiteRtHwAcceleratorNpu) {
+  // is written to only through MakeModelBufferWritable. A model for NPU or GPU
+  // has its view made read-only: their weights are copied out (to the NPU or
+  // the GPU), so the view would otherwise hold a commit charge as large as the
+  // inline weights for nothing. A CPU-only model keeps the copy-on-write view,
+  // because making it read-only costs initialization time.
+  if (hw_accelerators & (kLiteRtHwAcceleratorNpu | kLiteRtHwAcceleratorGpu)) {
     litert::internal::KeepModelBufferReadOnlyUntilWritten(
         litert::internal::GetTflFlatbuffer(model).Buf().Data());
   }

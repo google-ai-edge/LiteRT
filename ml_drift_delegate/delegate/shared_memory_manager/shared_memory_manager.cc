@@ -897,12 +897,16 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
   int num_blocks = tflite_tensor.dims->data[1] / quant_params->blocksize;
   size_t scale_size = num_channels * num_blocks;
 
-  // Prepare scale data.
+  // Prepare scale data. The scales are copied, never rewritten in place: the
+  // tensor data is the model buffer, which may be a read-only file view
+  // (KeepModelBufferReadOnlyUntilWritten on Windows).
   float* scale_data = nullptr;
   TfLiteTensor* scale_tensor = &context_->tensors[quant_params->scale];
   std::vector<float> converted_scales;
   if (scale_tensor->type == kTfLiteFloat32) {
-    scale_data = scale_tensor->data.f;
+    converted_scales.assign(scale_tensor->data.f,
+                            scale_tensor->data.f + scale_size);
+    scale_data = converted_scales.data();
   } else if (scale_tensor->type == kTfLiteFloat16) {
     const auto* scale_f16 =
         reinterpret_cast<TfLiteFloat16*>(scale_tensor->data.f16);
