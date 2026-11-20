@@ -104,6 +104,51 @@
 namespace litert::ml_drift::ir {
 namespace {
 
+// Infers `SharedTfliteTensor::oi_transposed` for 3-D/4-D batched
+// kTfLiteBlockwiseQuantizationV2 tensors whose IR tensor descriptor has been
+// shaped to OHWI (b=O, h=H, w=1, c=I).
+// Returns true for [H, I, O] / [1, H, I, O] and false for [H, O, I] /
+// [1, H, O, I].
+bool InferOiTransposed(const TfLiteTensor& tfl_tensor,
+                       const ::ml_drift::BHWC& ir_shape) {
+  if (tfl_tensor.quantization.type != kTfLiteBlockwiseQuantizationV2 ||
+      tfl_tensor.dims == nullptr) {
+    return true;
+  }
+  const int rank = tfl_tensor.dims->size;
+  if (rank != 3 && !(rank == 4 && tfl_tensor.dims->data[0] == 1)) {
+    return true;
+  }
+  const int h = tfl_tensor.dims->data[rank - 3];
+  const int d1 = tfl_tensor.dims->data[rank - 2];
+  const int d2 = tfl_tensor.dims->data[rank - 1];
+  if (ir_shape.h != h || ir_shape.w != 1) {
+    return true;
+  }
+  if (d1 == ir_shape.c && d2 == ir_shape.b && d1 != d2) {
+    return true;
+  }
+  if (d1 == ir_shape.b && d2 == ir_shape.c && d1 != d2) {
+    return false;
+  }
+  if (d1 == d2 && d1 == ir_shape.b && d2 == ir_shape.c &&
+      tfl_tensor.quantization.params != nullptr) {
+    const auto* q = static_cast<const TfLiteBlockwiseQuantizationV2*>(
+        tfl_tensor.quantization.params);
+    if (q->block_shape != nullptr && q->block_shape->size == rank) {
+      const int b_row = q->block_shape->data[rank - 2];
+      const int b_col = q->block_shape->data[rank - 1];
+      if (b_row > 1 && b_col == 1) {
+        return true;
+      }
+      if (b_col > 1 && b_row == 1) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
 // Converts a custom TFLite node and appends it to the `ir_model`.
 // TODO: dlho - Add to custom op
 void ConvertCustom(
@@ -316,6 +361,13 @@ class IrModelBuilder {
         shared_info.dequant_forced = tensor->buffer_source.dequant_forced;
         if (tensor->buffer_source.force_linear_layout) {
           shared_info.layout = ::ml_drift::Layout::kLinear;
+        }
+        if (shared_info.tflite_tensor_id >= 0 &&
+            static_cast<size_t>(shared_info.tflite_tensor_id) <
+                context_.tensors_size) {
+          shared_info.oi_transposed = InferOiTransposed(
+              context_.tensors[shared_info.tflite_tensor_id],
+              tensor->desc.GetBHWCShape());
         }
         shared_tensors_->try_emplace(ir_tensor_id, shared_info);
       }

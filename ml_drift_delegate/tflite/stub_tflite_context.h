@@ -144,6 +144,9 @@ class StubTfLiteContext : public TfLiteContext {
     tensors_[id].quantization.type = kTfLiteAffineQuantization;
     TfLiteAffineQuantization* quant_params = new TfLiteAffineQuantization();
     quant_params->scale = TfLiteFloatArrayCreate(1);
+    quant_params->scale->data[0] = 1.0f;
+    quant_params->zero_point = TfLiteIntArrayCreate(1);
+    quant_params->zero_point->data[0] = 0;
     tensors_[id].quantization.params = reinterpret_cast<void*>(quant_params);
   }
 
@@ -177,6 +180,7 @@ class StubTfLiteContext : public TfLiteContext {
               reinterpret_cast<TfLiteAffineQuantization*>(
                   tensor.quantization.params);
           TfLiteFloatArrayFree(quant_params->scale);
+          TfLiteIntArrayFree(quant_params->zero_point);
           delete quant_params;
         } else if (tensor.quantization.type == kTfLiteBlockwiseQuantization) {
           TfLiteBlockwiseQuantization* quant_params =

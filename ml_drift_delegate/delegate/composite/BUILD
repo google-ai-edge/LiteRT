@@ -1259,6 +1259,52 @@ cc_test(
 )
 
 cc_library(
+    name = "block_ffw_parser",
+    srcs = ["block_ffw_parser.cc"],
+    hdrs = ["block_ffw_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:operation_parser",
+        "//tflite:builtin_ops",
+        "//tflite/c:common",
+        "//tflite/kernels:kernel_util",
+        "@FP16",
+        "@XNNPACK",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+    ],
+)
+
+cc_test(
+    name = "block_ffw_parser_test",
+    srcs = ["block_ffw_parser_test.cc"],
+    deps = [
+        ":block_ffw_parser",
+        "//ml_drift_delegate/tflite:object_reader",
+        "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//tflite:builtin_ops",
+        "//tflite/c:common",
+        "@XNNPACK",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
