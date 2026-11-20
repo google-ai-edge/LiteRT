@@ -85,6 +85,8 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
         } else if (key == "enable_ynnpack") {
           LITERT_ASSIGN_OR_RETURN(options->enable_ynnpack,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "ynnpack_allowed_ops") {
+          options->ynn.allowed_ops = std::string(StripQuotes(value));
         } else if (key == "num_threads") {
           LITERT_ASSIGN_OR_RETURN(auto num_threads,
                                   litert::internal::ParseTomlInt(value));
@@ -95,11 +97,8 @@ LiteRtStatus ParseLiteRtCpuOptions(const void* data, size_t size,
                                   litert::internal::ParseTomlInt(value));
           options->xnn.flags = val;
         } else if (key == "weight_cache_file_path") {
-          absl::string_view path = value;
-          if (path.size() >= 2 && path.front() == '"' && path.back() == '"') {
-            path = path.substr(1, path.size() - 2);
-          }
-          options->weight_cache_file_path_buffer = std::string(path);
+          options->weight_cache_file_path_buffer =
+              std::string(StripQuotes(value));
           options->xnn.weight_cache_file_path =
               options->weight_cache_file_path_buffer.c_str();
 
