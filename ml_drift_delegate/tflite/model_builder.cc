@@ -4801,11 +4801,14 @@ class ReLUOperationParser : public TFLiteOperationParser {
   absl::Status IsSupported(const TfLiteContext* context,
                            const TfLiteNode* tflite_node,
                            const TfLiteRegistration* registration) final {
-    ABSL_RETURN_IF_ERROR(ValidateSupport(context, tflite_node, registration,
-                                         {.max_version = 2,
-                                          .num_outputs = 1,
-                                          .required_runtime_inputs = 1,
-                                          .required_const_inputs = 0}));
+    ABSL_RETURN_IF_ERROR(ValidateSupport(
+        context, tflite_node, registration,
+        {.max_version = 2,
+         .num_outputs = 1,
+         .required_runtime_inputs = 1,
+         .required_const_inputs = 0,
+         .check_gpu_compatibility =
+             registration->builtin_code != kTfLiteBuiltinRelu0To1}));
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     return absl::OkStatus();
   }
