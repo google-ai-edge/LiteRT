@@ -19,6 +19,7 @@
 #include <optional>
 #include <string>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/options/litert_mediatek_options.h"
 #include "litert/cc/internal/litert_shared_library.h"
@@ -97,11 +98,24 @@ const NeuronRuntimeVersion kNeuronFeatureMinVersion[NEURON_FEATURE_COUNT] = {
     {8, 2, 28},   // NEURON_FEATURE_EXT_QUANT4_INT32_PER_CHANNEL
 };
 
-using NeuronModelPtr = std::unique_ptr<NeuronModel, void (*)(NeuronModel*)>;
+template <typename T>
+struct NeuronDeleter {
+  using FreeFn = void (*)(T*);
+  FreeFn free_fn = nullptr;
+  NeuronDeleter() = default;
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  NeuronDeleter(FreeFn fn) : free_fn(fn) {}
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI void operator()(T* ptr) const {
+    if (free_fn != nullptr) free_fn(ptr);
+  }
+};
+
+using NeuronModelPtr =
+    std::unique_ptr<NeuronModel, NeuronDeleter<NeuronModel>>;
 using NeuronCompilationPtr =
-    std::unique_ptr<NeuronCompilation, void (*)(NeuronCompilation*)>;
+    std::unique_ptr<NeuronCompilation, NeuronDeleter<NeuronCompilation>>;
 using NeuronExecutionPtr =
-    std::unique_ptr<NeuronExecution, void (*)(NeuronExecution*)>;
+    std::unique_ptr<NeuronExecution, NeuronDeleter<NeuronExecution>>;
 
 class NeuronAdapterApi {
  public:

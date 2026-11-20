@@ -49,6 +49,7 @@ cc_library(
         "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core/schema:soc_table",
         "//litert/vendors/qualcomm/core/utils:log",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@qairt//:qnn_lib_headers",

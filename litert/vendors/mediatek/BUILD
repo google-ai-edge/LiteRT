@@ -38,6 +38,7 @@ litert_cc_lib_with_mtk(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc/internal:litert_shared_library",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@neuro_pilot//:neuron_host_headers",

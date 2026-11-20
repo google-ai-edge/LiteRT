@@ -13,6 +13,7 @@
 #include "QnnCommon.h"  // from @qairt
 #include "QnnDevice.h"  // from @qairt
 #include "QnnInterface.h"  // from @qairt
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/vendors/qualcomm/core/backends/graph_config_builder.h"
@@ -20,6 +21,18 @@
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace qnn {
+
+template <typename FreeFn>
+struct QnnHandleDeleter {
+  FreeFn free_fn = nullptr;
+  QnnHandleDeleter() = default;
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  QnnHandleDeleter(FreeFn fn) : free_fn(fn) {}
+  template <typename T>
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI void operator()(T* ptr) const {
+    if (free_fn != nullptr) free_fn(ptr);
+  }
+};
 
 struct GraphConfigContext {
   Qnn_GraphHandle_t graph;
@@ -30,14 +43,14 @@ struct GraphConfigContext {
 class QnnBackend {
  public:
   using QnnLogHandle =
-      std::unique_ptr<std::remove_pointer<Qnn_LogHandle_t>::type,
-                      QnnLog_FreeFn_t>;
+      std::unique_ptr<std::remove_pointer_t<Qnn_LogHandle_t>,
+                      QnnHandleDeleter<QnnLog_FreeFn_t>>;
   using QnnBackendHandle =
-      std::unique_ptr<std::remove_pointer<Qnn_BackendHandle_t>::type,
-                      QnnBackend_FreeFn_t>;
+      std::unique_ptr<std::remove_pointer_t<Qnn_BackendHandle_t>,
+                      QnnHandleDeleter<QnnBackend_FreeFn_t>>;
   using QnnDeviceHandle =
-      std::unique_ptr<std::remove_pointer<Qnn_DeviceHandle_t>::type,
-                      QnnDevice_FreeFn_t>;
+      std::unique_ptr<std::remove_pointer_t<Qnn_DeviceHandle_t>,
+                      QnnHandleDeleter<QnnDevice_FreeFn_t>>;
 
   explicit QnnBackend(const QNN_INTERFACE_VER_TYPE* qnn_api);
 
