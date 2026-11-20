@@ -4,7 +4,8 @@
   "entryPoints": [
     "packages/core",
     "packages/tfjs_interop",
-    "packages/wasm_utils"
+    "packages/wasm_utils",
+    "packages/webgpu_utils"
   ],
   "entryPointStrategy": "packages",
   "includeVersion": true,

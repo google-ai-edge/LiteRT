@@ -1,0 +1,42 @@
+{
+  "name": "@litertjs/webgpu-utils",
+  "version": "2.5.3",
+  "description": "WebGPU utils for LiteRT.js and LiteRT-LM.js",
+  "publishConfig": {
+    "access": "public"
+  },
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "type": "module",
+  "files": [
+    "dist/**"
+  ],
+  "author": "",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/google-ai-edge/LiteRT.git",
+    "directory": "litert/js/packages/webgpu_utils"
+  },
+  "license": "Apache-2.0",
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --sourcemap --metafile",
+    "lint": "eslint .",
+    "typecheck": "tsc",
+    "bundle-tests": "esbuild --bundle src/*_test.ts --format=esm --sourcemap --outdir=spec_dist",
+    "test": "npm run bundle-tests && jasmine \"spec_dist/**/*_test.js\"",
+    "clean": "rimraf .turbo node_modules dist spec_dist",
+    "pack": "npm pack"
+  },
+  "devDependencies": {
+    "@litertjs/eslint-config": "^2.5.3",
+    "@litertjs/tsconfig": "^2.5.3",
+    "@types/jasmine": "^5.1.8",
+    "@webgpu/types": "^0.1.54",
+    "esbuild": "^0.23.0",
+    "eslint": "^9.8.0",
+    "jasmine": "^5.8.0",
+    "rimraf": "^6.0.1",
+    "tsup": "^8.2.3",
+    "typescript": "^5.5.4"
+  }
+}
