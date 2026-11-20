@@ -224,6 +224,19 @@ TfLiteStatus QuantizeFromFloat(TfLiteContext* context,
     const auto* quantization_params =
         reinterpret_cast<const TfLiteAffineQuantization*>(
             output->quantization.params);
+    TF_LITE_ENSURE(context, quantization_params->zero_point != nullptr);
+    TF_LITE_ENSURE(context, quantization_params->zero_point->size == 1 ||
+                                quantization_params->zero_point->size ==
+                                    quantization_params->scale->size);
+    TF_LITE_ENSURE(context, quantization_params->quantized_dimension >= 0 &&
+                                quantization_params->quantized_dimension <
+                                    output_shape.DimensionsCount());
+    TF_LITE_ENSURE_EQ(
+        context, quantization_params->scale->size,
+        output_shape.Dims(quantization_params->quantized_dimension));
+    if (MatchingFlatSize(input_shape, output_shape) == 0) {
+      return kTfLiteOk;
+    }
     PerChannelQuantizationParams per_channel_op_params;
     per_channel_op_params.quantized_dimension =
         quantization_params->quantized_dimension;

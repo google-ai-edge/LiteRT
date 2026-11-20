@@ -302,6 +302,128 @@ TEST(QuantizePerChannelOpTest, Float16ToINT8) {
       ElementsAreArray({-128, -127, -126, -125, -124, 8, 10, 12, 14, 16}));
 }
 
+class ResizableQuantizePerChannelOpModel : public QuantizePerChannelOpModel {
+ public:
+  using QuantizePerChannelOpModel::QuantizePerChannelOpModel;
+
+  TfLiteStatus ResizeInput(const std::vector<int>& new_shape) {
+    return interpreter_->ResizeInputTensor(input_, new_shape);
+  }
+  TfLiteStatus Allocate() { return interpreter_->AllocateTensors(); }
+
+  TfLiteAffineQuantization* OutputQuantization() {
+    return reinterpret_cast<TfLiteAffineQuantization*>(
+        interpreter_->tensor(output_)->quantization.params);
+  }
+};
+
+TEST(QuantizeOpTest, PerChannelRuntimeResizePreservingChannelCountSucceeds) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  ASSERT_EQ(m.ResizeInput({2, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInput({1.0f, 2.0f, 3.0f, 4.0f});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput<int8_t>(), ElementsAreArray({2, 2, 6, 4}));
+}
+
+TEST(QuantizeOpTest, PerChannelSingleZeroPointSucceeds) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  auto* params = m.OutputQuantization();
+  const int original_size = params->zero_point->size;
+  params->zero_point->size = 1;
+  m.SetInput({1.0f, 2.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput<int8_t>(), ElementsAreArray({2, 2}));
+  params->zero_point->size = original_size;
+}
+
+TEST(QuantizeOpTest, PerChannelNullZeroPointRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  m.SetInput({1.0f, 2.0f});
+  auto* params = m.OutputQuantization();
+  auto* original_zero_point = params->zero_point;
+  params->zero_point = nullptr;
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  params->zero_point = original_zero_point;
+}
+
+TEST(QuantizeOpTest, PerChannelInvalidZeroPointCountRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  m.SetInput({1.0f, 2.0f});
+  auto* params = m.OutputQuantization();
+  const int original_size = params->zero_point->size;
+  for (const int invalid_size : {0, 3}) {
+    SCOPED_TRACE(invalid_size);
+    params->zero_point->size = invalid_size;
+    EXPECT_EQ(m.Invoke(), kTfLiteError);
+  }
+  params->zero_point->size = original_size;
+}
+
+TEST(QuantizeOpTest, PerChannelNegativeQuantizedDimensionRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  m.SetInput({1.0f, 2.0f});
+  auto* params = m.OutputQuantization();
+  const int original_dimension = params->quantized_dimension;
+  params->quantized_dimension = -1;
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  params->quantized_dimension = original_dimension;
+}
+
+TEST(QuantizeOpTest, PerChannelQuantizedDimensionAtRuntimeRankRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  m.SetInput({1.0f, 2.0f});
+  auto* params = m.OutputQuantization();
+  const int original_dimension = params->quantized_dimension;
+  params->quantized_dimension = 2;
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+  params->quantized_dimension = original_dimension;
+}
+
+TEST(QuantizeOpTest, PerChannelRuntimeChannelCountMismatchRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT32, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  ASSERT_EQ(m.ResizeInput({1, 4}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInput({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+
+  // Valid resize preserving the quantized channel dimension succeeds, including
+  // a zero-element batch dimension {0, 2}.
+  ASSERT_EQ(m.ResizeInput({2, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInput({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteOk);
+
+  ASSERT_EQ(m.ResizeInput({0, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  EXPECT_EQ(m.Invoke(), kTfLiteOk);
+}
+
+// The float16 input path widens to float32 and shares the per-channel
+// validation with the float32 path.
+TEST(QuantizeOpTest, PerChannelFloat16RuntimeChannelCountMismatchRejected) {
+  ResizableQuantizePerChannelOpModel m(TensorType_FLOAT16, TensorType_INT8,
+                                       {1, 2}, {0.5f, 1.0f}, {0, 0}, 1);
+  ASSERT_EQ(m.ResizeInput({1, 4}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInputFloat16({1.0f, 2.0f, 3.0f, 4.0f});
+  EXPECT_EQ(m.Invoke(), kTfLiteError);
+
+  // A resize that preserves the quantized channel dimension still quantizes.
+  ASSERT_EQ(m.ResizeInput({2, 2}), kTfLiteOk);
+  ASSERT_EQ(m.Allocate(), kTfLiteOk);
+  m.SetInputFloat16({1.0f, 2.0f, 3.0f, 4.0f});
+  ASSERT_EQ(m.Invoke(), kTfLiteOk);
+  EXPECT_THAT(m.GetOutput<int8_t>(), ElementsAreArray({2, 2, 6, 4}));
+}
+
 // Requantization tests.
 // Input scale 1.000000, output scale 0.500000, input zeropoint 0, output
 // zeropoint 0
