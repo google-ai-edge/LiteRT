@@ -115,6 +115,7 @@
 #endif  // !defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/metrics.h"
 #include "litert/runtime/model_buffer_writes.h"
+#include "litert/runtime/stub_op_resolver.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
 #include "litert/runtime/tensor_identifier.h"
@@ -136,7 +137,6 @@
 #include "tflite/schema/schema_generated.h"
 
 #if defined(LITERT_NO_BUILTIN_OPS)
-#include "litert/runtime/stub_op_resolver.h"
 #include "litert/tflite_support/op_resolver/selected_ops_registry.h"
 #endif  // LITERT_NO_BUILTIN_OPS
 
@@ -319,32 +319,178 @@ class CApiOpResolver : public tflite::MutableOpResolver {
  public:
   CApiOpResolver(
       const LiteRtOptionsT::OpResolverCallbacks& callbacks,
-      std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations)
-      : c_api_forwarder_(callbacks, owned_registrations) {
+      std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations,
+      std::unique_ptr<tflite::OpResolver> fallback_resolver = nullptr)
+      : c_api_forwarder_(callbacks, owned_registrations),
+        fallback_resolver_(std::move(fallback_resolver)) {
     ChainOpResolver(&c_api_forwarder_);
+    if (fallback_resolver_ != nullptr) {
+      ChainOpResolver(fallback_resolver_.get());
+    }
     may_directly_contain_user_defined_ops_ = true;
   }
 
  private:
   CApiForwardingOpResolver c_api_forwarder_;
+  std::unique_ptr<tflite::OpResolver> fallback_resolver_;
 };
 #endif  // !defined(LITERT_DISABLE_CPU)
 
-// Creates an op resolver forwarding lookups to C API callbacks. Omitted in
-// minimal CPU builds (`LITERT_DISABLE_CPU`), which are always statically linked
-// and pass an in-process `tflite::MutableOpResolver` directly.
-Expected<std::unique_ptr<tflite::MutableOpResolver>> CreateCApiOpResolver(
+using OpResolverPtr = std::unique_ptr<tflite::MutableOpResolver>;
+
+// Creates an op resolver forwarding lookups to C API callbacks, chained ahead
+// of `fallback_resolver` when non-null. Omitted in minimal CPU builds
+// (`LITERT_DISABLE_CPU`), which are always statically linked and pass an
+// in-process `tflite::MutableOpResolver` directly.
+Expected<OpResolverPtr> CreateCApiOpResolver(
     [[maybe_unused]] const LiteRtOptionsT::OpResolverCallbacks& callbacks,
     [[maybe_unused]] std::vector<std::unique_ptr<TfLiteRegistration>>&
-        owned_registrations) {
+        owned_registrations,
+    [[maybe_unused]] OpResolverPtr fallback_resolver) {
 #if !defined(LITERT_DISABLE_CPU)
-  return std::unique_ptr<tflite::MutableOpResolver>(
-      std::make_unique<CApiOpResolver>(callbacks, owned_registrations));
+  return OpResolverPtr(std::make_unique<CApiOpResolver>(
+      callbacks, owned_registrations, std::move(fallback_resolver)));
 #else
   return Unexpected(
       kLiteRtStatusErrorUnsupported,
       "Op resolver callbacks are not supported in minimal CPU builds.");
 #endif  // !defined(LITERT_DISABLE_CPU)
+}
+
+// Whether a CPU accelerator (e.g. XNNPACK) can be linked into this build.
+#if defined(LITERT_DISABLE_CPU)
+constexpr bool kHasCpuAccelerator = false;
+#else
+constexpr bool kHasCpuAccelerator = true;
+#endif  // defined(LITERT_DISABLE_CPU)
+
+// Whether the TFLite builtin and reference kernels are linked into this build.
+#if defined(LITERT_NO_BUILTIN_OPS)
+constexpr bool kHasBuiltinKernels = false;
+#else
+constexpr bool kHasBuiltinKernels = true;
+#endif  // defined(LITERT_NO_BUILTIN_OPS)
+
+// Returns the TFLite builtin kernels (or the reference kernels if
+// `use_reference_kernels` is set), or nullptr if they are not linked into this
+// build.
+OpResolverPtr MaybeCreateBuiltinKernels(
+    [[maybe_unused]] bool use_reference_kernels) {
+#if !defined(LITERT_NO_BUILTIN_OPS)
+  if (use_reference_kernels) {
+    return std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
+  }
+  return std::make_unique<
+      tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
+#else
+  return nullptr;
+#endif  // !defined(LITERT_NO_BUILTIN_OPS)
+}
+
+// Returns the ops selected at build time (e.g. via `models = [...]`), or
+// nullptr if there are none.
+OpResolverPtr MaybeCreateSelectedOps() {
+#if defined(LITERT_NO_BUILTIN_OPS)
+  if (litert::tflite_support::HasSelectedOpsCallback()) {
+    auto resolver = std::make_unique<tflite::MutableOpResolver>();
+    litert::tflite_support::ApplySelectedOpsCallbacks(resolver.get());
+    return resolver;
+  }
+#endif  // defined(LITERT_NO_BUILTIN_OPS)
+  return nullptr;
+}
+
+// Creates the op resolver backed by the kernels available in the runtime.
+// Only used by `CreateOpResolver()` below.
+//
+// When `as_fallback` is false, the result is used as the only op resolver and
+// is never null. When `as_fallback` is true, the result is chained behind an
+// application-provided op resolver, and may be null if the runtime has nothing
+// to resolve builtin ops with.
+Expected<OpResolverPtr> CreateDefaultOpResolver(
+    LiteRtHwAcceleratorSet hardware_accelerators,
+    bool use_builtin_or_reference_cpu_backend, bool use_reference_cpu_kernels,
+    bool as_fallback) {
+  const bool use_cpu = (hardware_accelerators & kLiteRtHwAcceleratorCpu) != 0;
+
+  // 1. Builtin (or reference) kernels, when linked.
+  if (auto resolver =
+          MaybeCreateBuiltinKernels(use_cpu && use_reference_cpu_kernels)) {
+    return resolver;
+  }
+  // From here on, the build has no builtin or reference kernels.
+  if (use_cpu && use_reference_cpu_kernels) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Reference CPU kernel mode requires reference kernels.");
+  }
+
+  // 2. Ops selected at build time.
+  if (auto resolver = MaybeCreateSelectedOps()) {
+    return resolver;
+  }
+
+  // 3. No kernels at all: StubOpResolver provides minimal stub implementations
+  // for all builtin ops. These stubs allow the model to pass validation, but
+  // the actual operations must be handled by LiteRT's accelerator system
+  // (NPU > GPU > CPU) through their respective delegates.
+  const bool wants_cpu_kernels =
+      use_cpu && use_builtin_or_reference_cpu_backend;
+  if (as_fallback) {
+    const bool has_delegate =
+        (kHasCpuAccelerator && use_cpu && !wants_cpu_kernels) ||
+        (hardware_accelerators & ~kLiteRtHwAcceleratorCpu) != 0;
+    if (!has_delegate) {
+      return OpResolverPtr();
+    }
+  } else if (wants_cpu_kernels) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Builtin and reference CPU kernel modes require "
+                      "builtin kernels.");
+  }
+  return OpResolverPtr(std::make_unique<litert::internal::StubOpResolver>());
+}
+
+// Creates the op resolver used to build the interpreter, in order of
+// preference:
+//   1. Application-provided op resolver callbacks, with the runtime's default
+//      op resolver as fallback.
+//   2. Application-provided `tflite::MutableOpResolver`.
+//   3. The runtime's default op resolver.
+Expected<OpResolverPtr> CreateOpResolver(
+    LiteRtHwAcceleratorSet hardware_accelerators,
+    bool use_builtin_or_reference_cpu_backend, bool use_reference_cpu_kernels,
+    LiteRtOptions options,
+    std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations) {
+  if (options != nullptr && options->op_resolver_callbacks.has_value()) {
+    if (!kHasCpuAccelerator) {
+      return Unexpected(
+          kLiteRtStatusErrorUnsupported,
+          "Op resolver callbacks are not supported in minimal CPU builds.");
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        OpResolverPtr fallback_resolver,
+        CreateDefaultOpResolver(hardware_accelerators,
+                                use_builtin_or_reference_cpu_backend,
+                                use_reference_cpu_kernels,
+                                /*as_fallback=*/true));
+    return CreateCApiOpResolver(*options->op_resolver_callbacks,
+                                owned_registrations,
+                                std::move(fallback_resolver));
+  }
+  if (options != nullptr && options->op_resolver != nullptr) {
+    if (!kHasBuiltinKernels &&
+        (hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
+        use_reference_cpu_kernels) {
+      return Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "Reference CPU kernel mode requires reference kernels.");
+    }
+    return std::make_unique<tflite::MutableOpResolver>(*options->op_resolver);
+  }
+  return CreateDefaultOpResolver(hardware_accelerators,
+                                 use_builtin_or_reference_cpu_backend,
+                                 use_reference_cpu_kernels,
+                                 /*as_fallback=*/false);
 }
 
 #if !defined(LITERT_DISABLE_NPU)
@@ -496,69 +642,13 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
   }
 #endif  // !defined(LITERT_DISABLE_CPU)
 
-  const bool has_user_op_resolver =
-      jit_compilation_options &&
-      (jit_compilation_options->op_resolver != nullptr ||
-       jit_compilation_options->op_resolver_callbacks.has_value());
-  std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
-  tflite::MutableOpResolver* resolver = nullptr;
-  if (has_user_op_resolver) {
-#ifdef LITERT_NO_BUILTIN_OPS
-    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-        use_reference_cpu_kernels) {
-      return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                        "Reference CPU kernel mode requires reference "
-                        "kernels.");
-    }
-#endif  // LITERT_NO_BUILTIN_OPS
-    if (jit_compilation_options->op_resolver_callbacks.has_value()) {
-      LITERT_ASSIGN_OR_RETURN(
-          resolver_storage,
-          CreateCApiOpResolver(*jit_compilation_options->op_resolver_callbacks,
-                               owned_tflite_registrations_));
-    } else {
-      resolver_storage = std::make_unique<tflite::MutableOpResolver>(
-          *jit_compilation_options->op_resolver);
-    }
-    resolver = resolver_storage.get();
-  } else {
-#ifdef LITERT_NO_BUILTIN_OPS
-    if (litert::tflite_support::HasSelectedOpsCallback()) {
-      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-          use_reference_cpu_kernels) {
-        return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                          "Reference CPU kernel mode requires reference "
-                          "kernels.");
-      }
-      resolver_storage = std::make_unique<tflite::MutableOpResolver>();
-      litert::tflite_support::ApplySelectedOpsCallbacks(resolver_storage.get());
-      resolver = resolver_storage.get();
-    } else {
-      if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-          use_builtin_or_reference_cpu_backend) {
-        return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                          "Builtin and reference CPU kernel modes require "
-                          "builtin kernels.");
-      }
-      // Use StubOpResolver which provides minimal stub implementations for all
-      // builtin ops. These stubs allow the model to pass validation, but the
-      // actual operations will be handled by LiteRT's accelerator system
-      // (NPU > GPU > CPU) through their respective delegates.
-      resolver_storage = std::make_unique<litert::internal::StubOpResolver>();
-      resolver = resolver_storage.get();
-    }
-#else
-    if ((hardware_accelerators & kLiteRtHwAcceleratorCpu) &&
-        use_reference_cpu_kernels) {
-      resolver_storage =
-          std::make_unique<tflite::ops::builtin::BuiltinRefOpResolver>();
-    } else {
-      resolver_storage = std::make_unique<
-          tflite::ops::builtin::BuiltinOpResolverWithoutDefaultDelegates>();
-    }
-    resolver = resolver_storage.get();
-#endif  // LITERT_NO_BUILTIN_OPS
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      std::unique_ptr<tflite::MutableOpResolver> resolver_storage,
+      CreateOpResolver(hardware_accelerators,
+                       use_builtin_or_reference_cpu_backend,
+                       use_reference_cpu_kernels, jit_compilation_options,
+                       owned_tflite_registrations_));
+  tflite::MutableOpResolver* resolver = resolver_storage.get();
 
   // Apply custom ops.
   if (jit_compilation_options) {

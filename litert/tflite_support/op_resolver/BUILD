@@ -100,10 +100,14 @@ cc_test(
             "//litert/c:litert_common",
         ],
         "//conditions:default": [
+            "//litert/cc:litert_buffer_ref",
+            "//litert/cc:litert_expected",
             "//tflite:builtin_ops",
             "//tflite/core/c:private_c_api_opaque_without_op_resolver",
             "//tflite/core/c:private_common",
+            "//tflite/schema:schema_fbs",
             "@com_google_absl//absl/cleanup",
+            "@flatbuffers",
         ],
     }),
 )
@@ -150,10 +154,14 @@ litert_cc_test(
             "//litert/c:litert_common",
         ],
         "//conditions:default": [
+            "//litert/cc:litert_buffer_ref",
+            "//litert/cc:litert_expected",
             "//tflite:builtin_ops",
             "//tflite/core/c:private_c_api_opaque_without_op_resolver",
             "//tflite/core/c:private_common",
+            "//tflite/schema:schema_fbs",
             "@com_google_absl//absl/cleanup",
+            "@flatbuffers",
         ],
     }),
 )
