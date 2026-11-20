@@ -138,6 +138,11 @@ class CompilerPlugin {
   // Get list of unique soc models targetable by this plugin.
   const std::vector<std::string>& SocModels() const { return soc_models_; }
 
+  // True if the plugin reports kLiteRtCompilerPluginCapabilityRegionSubgraphs,
+  // i.e. it can compile ops that reference other subgraphs when those
+  // subgraphs are passed as private helpers after the entry subgraphs.
+  bool SupportsRegionSubgraphs() const;
+
   // Selects ops for the plugin to compile.
   Expected<std::vector<LiteRtOpWithPartitionIndex>> Partition(
       LiteRtSubgraph subgraph, absl::string_view soc_model = "");
@@ -214,12 +219,18 @@ class CompilerPlugin {
 //===---------------------------------------------------------------------------
 
 // Dispatch op references and their subgraph to be compiled contained within a
-// new model. op[i]'s body is models ith subgraph.
+// new model. op[i]'s body is the model's ith subgraph, for i below
+// `NumEntrySubgraphs()`. Any further subgraphs are private helpers referenced
+// by ops in the entry subgraphs.
 using PartitionResult = std::pair<std::vector<LiteRtOp>, LiteRtModelT>;
 
 // Applies just the partition phase of the plugin on the model. Returns
 // references newly allocated subgraphs removed from input and their
-// corresponding dispatch ops in the input.
+// corresponding dispatch ops in the input. If `subgraphs_to_partition` is not
+// empty, only the CPU roots (signature subgraphs, the main subgraph, or
+// unreferenced subgraphs) with those indices are partitioned, together with
+// the bodies of control flow that stays on CPU in them; other CPU roots and
+// everything they reference are left unchanged.
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model = "",
@@ -241,6 +252,12 @@ struct ApplyPluginsResult {
   size_t num_applied_plugins;
   std::string success_message;
   std::string error_message;
+
+  // Set by ApplyPlugins() if a plugin failed after it had started modifying
+  // the model (transformation, partitioning and compilation work in place and
+  // are not undone). The model is then in an unspecified state and must not
+  // be used or serialized; callers should fall back to the original model.
+  bool model_invalidated = false;
 
   // Keep the compiler plugins (and their loaded DLLs) alive.
   // MUST be declared before compiled_results so it is destroyed
