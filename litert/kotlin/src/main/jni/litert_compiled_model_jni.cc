@@ -1051,6 +1051,38 @@ Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanos
   return *duration;
 }
 
+JNIEXPORT jboolean JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeIsFullyAccelerated(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto is_fully_accelerated = compiled_model.IsFullyAccelerated();
+  if (!is_fully_accelerated) {
+    LITERT_LOG(LITERT_ERROR, "Failed to check if fully accelerated: %s",
+               is_fully_accelerated.Error().Message().c_str());
+    ThrowLiteRtException(env, is_fully_accelerated.Error().Status(),
+                         is_fully_accelerated.Error().Message());
+    return false;
+  }
+  return *is_fully_accelerated;
+}
+
+JNIEXPORT jboolean JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeIsNonCpuFullyAccelerated(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle) {
+  auto& compiled_model = GetCompiledModel(compiled_model_handle);
+  auto is_non_cpu_fully_accelerated =
+      compiled_model.IsNonCpuFullyAccelerated();
+  if (!is_non_cpu_fully_accelerated) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to check if non-cpu fully accelerated: %s",
+               is_non_cpu_fully_accelerated.Error().Message().c_str());
+    ThrowLiteRtException(env, is_non_cpu_fully_accelerated.Error().Status(),
+                         is_non_cpu_fully_accelerated.Error().Message());
+    return false;
+  }
+  return *is_non_cpu_fully_accelerated;
+}
+
 JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeDestroy(JNIEnv* env,
                                                            jclass clazz,

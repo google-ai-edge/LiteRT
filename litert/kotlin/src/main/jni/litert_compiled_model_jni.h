@@ -146,6 +146,14 @@ JNIEXPORT jlong JNICALL
 Java_com_google_ai_edge_litert_CompiledModel_nativeGetLastInferenceDurationNanoseconds(
     JNIEnv* env, jclass clazz, jlong compiled_model_handle);
 
+JNIEXPORT jboolean JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeIsFullyAccelerated(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle);
+
+JNIEXPORT jboolean JNICALL
+Java_com_google_ai_edge_litert_CompiledModel_nativeIsNonCpuFullyAccelerated(
+    JNIEnv* env, jclass clazz, jlong compiled_model_handle);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus
