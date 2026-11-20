@@ -880,6 +880,7 @@ cc_test(
     name = "compiled_model_test",
     srcs = ["compiled_model_test.cc"],
     data = [
+        "//litert/test:testdata/cos_mul.tflite",
         "//litert/test:testdata/simple_add_dynamic_shape.tflite",
         "//litert/test:testdata/simple_model.tflite",
         "//litert/vendors/examples:example_dispatch_so",
