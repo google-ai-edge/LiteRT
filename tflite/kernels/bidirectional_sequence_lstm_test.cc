@@ -40,7 +40,8 @@ class BidirectionalLSTMOpModel : public SingleOpModel {
                            bool quantize_weights, bool time_major,
                            const std::vector<std::vector<int>>& input_shapes,
                            bool asymmetric_quantize_inputs = false,
-                           bool use_aux_input_weights = true)
+                           bool use_aux_input_weights = true,
+                           bool omit_fw_input_gate_bias = false)
       : n_batch_(n_batch),
         n_input_(n_input),
         n_fw_cell_(n_cell),
@@ -87,7 +88,7 @@ class BidirectionalLSTMOpModel : public SingleOpModel {
       fw_cell_to_output_weights_ = AddNullInput();
     }
 
-    if (use_cifg) {
+    if (use_cifg || omit_fw_input_gate_bias) {
       fw_input_gate_bias_ = AddNullInput();
     } else {
       fw_input_gate_bias_ = AddInput(TensorType_FLOAT32);
@@ -3731,6 +3732,20 @@ TEST(LSTMOpTest, RankZeroInputToOutputWeightsFailsPrepare) {
             /*time_major=*/true, input_shapes),
         "Cannot allocate tensors");
   }
+
+  // Without CIFG, the input gate bias is required.
+  EXPECT_DEATH_IF_SUPPORTED(
+      BidirectionalLSTMOpModel(
+          n_batch, n_input, n_cell, n_output, sequence_length,
+          /*use_cifg=*/false, /*use_peephole=*/false,
+          /*use_projection_weights=*/false, /*use_projection_bias=*/false,
+          /*merge_outputs=*/false, /*use_aux_input=*/false,
+          /*cell_clip=*/0.0, /*proj_clip=*/0.0, /*quantize_weights=*/false,
+          /*time_major=*/true, valid_input_shapes,
+          /*asymmetric_quantize_inputs=*/false,
+          /*use_aux_input_weights=*/true,
+          /*omit_fw_input_gate_bias=*/true),
+      "Cannot allocate tensors");
 }
 
 }  // namespace
