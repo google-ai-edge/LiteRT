@@ -79,9 +79,11 @@ cc_library(
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/kernels:elementwise",
         "@ml_drift//ml_drift/common/kernels:embedding_lookup",
+        "@ml_drift//ml_drift/common/kernels:fully_connected",
         "@ml_drift//ml_drift/common/kernels:one_hot",
         "@ml_drift//ml_drift/common/kernels:prelu",
         "@ml_drift//ml_drift/common/kernels:reduce",
+        "@ml_drift//ml_drift/common/selectors:convolution_selector",
         "@ml_drift//ml_drift/common/selectors:simple_selectors",
         "@ml_drift//ml_drift/common/task:gpu_operation",
         "@ml_drift//ml_drift/common/task:tensor_desc",
@@ -131,9 +133,11 @@ cc_library(
         "//tensor/internal:graph_traversal",
         "//tensor/utils:macros",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/time",
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:gpu_model_builder",
     ],
@@ -266,8 +270,23 @@ cc_library(
         "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:model_hints",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "ml_drift_helpers_test",
+    srcs = ["ml_drift_helpers_test.cc"],
+    # ml_drift/common/op_attrs.h fails to compile under OSS Linux's libstdc++ 8 sysroot.
+    tags = ["no_oss"],
+    deps = [
+        ":ml_drift_helpers",
+        "//tensor/internal:graph",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_googletest//:gtest_main",
     ],
 )
