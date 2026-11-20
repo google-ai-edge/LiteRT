@@ -60,6 +60,7 @@ cc_test(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
         "//litert/cc/options:litert_gpu_options",
         "//tflite:version",
         "//tflite/schema:schema_fbs",

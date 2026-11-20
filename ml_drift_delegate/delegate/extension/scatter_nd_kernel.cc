@@ -87,7 +87,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateScatterNdOp(
   } else {
     // Bool updates.
     init = "  args.updates::type acc = args.updates::zero_value;\n";
-    combine = R"(          args.updates::type v = args.updates.Read(iw, ih, S, ib);
+    combine =
+        R"(          args.updates::type v = args.updates.Read(iw, ih, S, ib);
           acc.x = acc.x || v.x;
           acc.y = acc.y || v.y;
           acc.z = acc.z || v.z;

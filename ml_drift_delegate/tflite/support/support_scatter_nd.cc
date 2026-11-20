@@ -49,8 +49,8 @@ bool IsScatterNdSupported(const TfLiteContext* absl_nonnull context,
   // Updates and output share a type. Float updates are summed on duplicate
   // indices, bool updates are OR-ed.
   if (!CheckTensorDtype(indices, {kTfLiteInt32}, "inputs[0]", *error) ||
-      !CheckTensorDtype(updates, {kTfLiteFloat32, kTfLiteBool},
-                        "inputs[1]", *error) ||
+      !CheckTensorDtype(updates, {kTfLiteFloat32, kTfLiteBool}, "inputs[1]",
+                        *error) ||
       !CheckTensorDtype(shape, {kTfLiteInt32}, "inputs[2]", *error) ||
       !CheckTensorDtype(output, {updates.type}, "outputs[0]", *error)) {
     return false;

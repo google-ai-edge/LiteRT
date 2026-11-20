@@ -15,7 +15,7 @@
 #include "ml_drift_delegate/tflite/convert/convert_scatter_nd.h"
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
-#include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"      // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_aux.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/kernel_util.h"
@@ -27,13 +27,18 @@ void ConvertScatterNd(
     const TfLiteRegistration& registration,
     absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
     ::ml_drift::ir::IrModel& ir_model) {
-  // The updates may be a constant, which needs a CONSTANT op to produce it.
-  // Create it first so that it precedes the scatter_nd op.
+  // The updates may be a constant, which needs a CONSTANT op to produce it,
+  // unless it shares a buffer (or is external), in which case it already has
+  // an IR tensor. Create the op first so that it precedes the scatter_nd op.
   const int updates_id = node.inputs->data[1];
+  const auto updates_it = tensor_map.find(updates_id);
+  const bool needs_const_op =
+      ::tflite::IsConstantTensor(context.tensors + updates_id) &&
+      (updates_it == tensor_map.end() ||
+       !ir_model.tensor(updates_it->second)->buffer_source.is_shared);
   const ::ml_drift::ir::IrTensorId updates_tensor =
-      ::tflite::IsConstantTensor(context.tensors + updates_id)
-          ? AddConstInput(context, updates_id, ir_model, {})->id
-          : tensor_map.at(updates_id);
+      needs_const_op ? AddConstInput(context, updates_id, ir_model, {})->id
+                     : tensor_map.at(updates_id);
 
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = "scatter_nd";

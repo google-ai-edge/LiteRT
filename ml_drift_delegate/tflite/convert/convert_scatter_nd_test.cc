@@ -17,11 +17,11 @@
 #include <memory>
 #include <vector>
 
-#include "testing/base/public/gunit.h"
-#include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"    // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
+#include "testing/base/public/gunit.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/common.h"
 #include "tflite/interpreter.h"
@@ -44,8 +44,8 @@ class ConvertScatterNdTest : public ::testing::Test {
 TEST_F(ConvertScatterNdTest, ConvertsToOneOpWithTwoRuntimeInputs) {
   SingleOpInterpreterBuilder model(kTfLiteBuiltinScatterNd, /*version=*/1);
 
-  model.AddInput(kTfLiteInt32, {3, 3});          // indices
-  model.AddInput(kTfLiteFloat32, {3, 5});           // updates
+  model.AddInput(kTfLiteInt32, {3, 3});    // indices
+  model.AddInput(kTfLiteFloat32, {3, 5});  // updates
 
   const std::vector<int32_t> shape = {4, 2, 3, 5};
   std::vector<uint8_t> shape_data(shape.size() * sizeof(int32_t));

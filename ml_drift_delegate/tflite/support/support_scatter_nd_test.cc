@@ -15,10 +15,10 @@
 #include <array>
 #include <vector>
 
-#include "testing/base/public/gmock.h"
-#include "testing/base/public/gunit.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/support/stub_context.h"
+#include "testing/base/public/gmock.h"
+#include "testing/base/public/gunit.h"
 #include "tflite/builtin_ops.h"
 #include "tflite/c/c_api_types.h"
 #include "tflite/c/common.h"
