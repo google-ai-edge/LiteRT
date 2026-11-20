@@ -127,20 +127,31 @@ class ZeroPoints {
 
   ZeroPoints() = default;
   ZeroPoints(const ZeroPoints&) = default;
+// GCC 12.4 to 14 report false `-Warray-bounds` and `-Wstringop-overflow`
+// errors in the inlined `std::variant` copy assignment of `data_`
+// (https://gcc.gnu.org/PR113239).
+#if defined(__GNUC__) && !defined(__clang__) && \
+    (__GNUC__ * 100 + __GNUC_MINOR__) >= 1204 && __GNUC__ < 15
+#define LRT_TENSOR_GCC_PR113239_WORKAROUND 1
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Warray-bounds"
+#pragma GCC diagnostic ignored "-Wstringop-overflow"
+#endif
   ZeroPoints& operator=(const ZeroPoints&) = default;
+#ifdef LRT_TENSOR_GCC_PR113239_WORKAROUND
+#pragma GCC diagnostic pop
+#undef LRT_TENSOR_GCC_PR113239_WORKAROUND
+#endif
 
+  // Moved-from objects are left empty (symmetric) and store integers.
   ZeroPoints(ZeroPoints&& other) noexcept
-      : int_values_(std::move(other.int_values_)),
-        float_values_(std::move(other.float_values_)),
-        is_float_(std::exchange(other.is_float_, false)),
+      : data_(std::exchange(other.data_, {})),
         is_symmetric_(std::exchange(other.is_symmetric_, true)),
         is_uniform_(std::exchange(other.is_uniform_, true)) {}
 
   ZeroPoints& operator=(ZeroPoints&& other) noexcept {
     if (this != &other) {
-      int_values_ = std::move(other.int_values_);
-      float_values_ = std::move(other.float_values_);
-      is_float_ = std::exchange(other.is_float_, false);
+      data_ = std::exchange(other.data_, {});
       is_symmetric_ = std::exchange(other.is_symmetric_, true);
       is_uniform_ = std::exchange(other.is_uniform_, true);
     }
@@ -176,20 +187,16 @@ class ZeroPoints {
   bool IsUniform() const { return is_uniform_; }
 
   size_t size() const {
-    return is_float_ ? float_values_.size() : int_values_.size();
+    return std::visit([](const auto& zps) { return zps.size(); }, data_);
   }
 
   // Returns the underlying vector if stored as `T` (`int64_t` or `float`), or
   // `absl::NotFoundError` otherwise.
   template <class T>
   absl::StatusOr<const std::vector<T>&> Data() const {
-    if constexpr (std::is_same_v<T, int64_t>) {
-      if (!is_float_) {
-        return int_values_;
-      }
-    } else if constexpr (std::is_same_v<T, float>) {
-      if (is_float_) {
-        return float_values_;
+    if constexpr (std::is_same_v<T, int64_t> || std::is_same_v<T, float>) {
+      if (const auto* values = std::get_if<std::vector<T>>(&data_)) {
+        return *values;
       }
     }
     return absl::NotFoundError(
@@ -330,33 +337,20 @@ class ZeroPoints {
   // Gives read-only access to the underlying vector for advanced operations.
   template <class F>
   decltype(auto) Visit(F&& func) const {
-    if (is_float_) {
-      return std::forward<F>(func)(float_values_);
-    }
-    return std::forward<F>(func)(int_values_);
+    return std::visit(std::forward<F>(func), data_);
   }
 
   bool operator==(const ZeroPoints& other) const {
-    if (is_float_ != other.is_float_) {
-      return false;
-    }
-    return is_float_ ? float_values_ == other.float_values_
-                     : int_values_ == other.int_values_;
+    return data_ == other.data_;
   }
   bool operator!=(const ZeroPoints& other) const {
     return !(*this == other);
   }
 
  private:
-  ZeroPoints(std::vector<int64_t> values, bool is_symmetric, bool is_uniform)
-      : int_values_(std::move(values)),
-        is_float_(false),
-        is_symmetric_(is_symmetric),
-        is_uniform_(is_uniform) {}
-
-  ZeroPoints(std::vector<float> values, bool is_symmetric, bool is_uniform)
-      : float_values_(std::move(values)),
-        is_float_(true),
+  template <class T>
+  ZeroPoints(std::vector<T> values, bool is_symmetric, bool is_uniform)
+      : data_(std::move(values)),
         is_symmetric_(is_symmetric),
         is_uniform_(is_uniform) {}
 
@@ -434,12 +428,7 @@ class ZeroPoints {
     }
   }
 
-  // Stored as two separate vectors rather than `std::variant` to avoid a
-  // GCC 13 `-Wmaybe-uninitialized` false positive in libstdc++'s
-  // `std::variant` move constructor under `-O2 -Wall -Werror`.
-  std::vector<int64_t> int_values_;
-  std::vector<float> float_values_;
-  bool is_float_ = false;
+  std::variant<std::vector<int64_t>, std::vector<float>> data_;
   bool is_symmetric_ = true;
   bool is_uniform_ = true;
 };
