@@ -13,6 +13,7 @@
 # limitations under the License.
 
 load("@bazel_skylib//lib:selects.bzl", "selects")
+load("@bazel_skylib//rules:common_settings.bzl", "bool_flag")
 load("//litert/build_common:litert_build_defs.bzl", "if_google", "if_oss")
 load("//litert/build_common:special_rule.bzl", "litert_friends")
 
@@ -449,12 +450,35 @@ config_setting(
     visibility = ["//visibility:public"],
 )
 
-# Configuration for Microdroid guest VM builds.
+# Set by Starlark transitions that build a Microdroid guest payload inside a
+# regular Android app build, where `--define=microdroid=1` cannot be set.
+bool_flag(
+    name = "microdroid_flag",
+    build_setting_default = False,
+    visibility = ["//visibility:public"],
+)
+
 config_setting(
-    name = "microdroid",
+    name = "microdroid_define",
     constraint_values = ["@platforms//os:android"],
     values = {
         "define": "microdroid=1",
     },
+)
+
+config_setting(
+    name = "microdroid_flag_setting",
+    constraint_values = ["@platforms//os:android"],
+    flag_values = {":microdroid_flag": "true"},
+)
+
+# Configuration for Microdroid guest VM builds. Matches either
+# `--define=microdroid=1` or `--//litert:microdroid_flag`.
+selects.config_setting_group(
+    name = "microdroid",
+    match_any = [
+        ":microdroid_define",
+        ":microdroid_flag_setting",
+    ],
     visibility = ["//visibility:public"],
 )
