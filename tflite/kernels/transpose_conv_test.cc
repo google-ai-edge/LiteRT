@@ -154,6 +154,24 @@ class PrepareOnlyTransposeConvOpModel : public SingleOpModel {
         /*allocate_and_delegate=*/false);
   }
 
+  void SetFilterQuantizedDimension(int quantized_dimension) {
+    TfLiteTensor* tensor = interpreter_->tensor(filter_);
+    auto* affine = reinterpret_cast<TfLiteAffineQuantization*>(
+        tensor->quantization.params);
+    if (affine != nullptr) {
+      affine->quantized_dimension = quantized_dimension;
+    }
+  }
+
+  void SetFilterScaleSize(int scale_size) {
+    TfLiteTensor* tensor = interpreter_->tensor(filter_);
+    auto* affine = reinterpret_cast<TfLiteAffineQuantization*>(
+        tensor->quantization.params);
+    if (affine != nullptr && affine->scale != nullptr) {
+      affine->scale->size = scale_size;
+    }
+  }
+
  private:
   int output_shape_;
   int filter_;
@@ -240,6 +258,98 @@ TEST(TransposeConvPrepareSecurityTest, RejectsHybridInputOverflow) {
       /*stride_h=*/1, ActivationFunctionType_NONE);
 
   EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+TEST(TransposeConvPrepareSecurityTest,
+     RejectsHybridOutOfBoundsQuantizedDimension) {
+  // Negative test: out-of-bounds quantized_dimension (4, -1) and non-zero
+  // quantized_dimension (1) must be rejected with kTfLiteError during Prepare.
+  for (int bad_quantized_dim : {4, -1, 1}) {
+    PrepareOnlyTransposeConvOpModel<float> m(
+        ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 2, 2, 2},
+        {TensorType_INT8,
+         /*shape=*/{2, 1, 1, 1},
+         /*min=*/0,
+         /*max=*/0,
+         /*scale=*/0,
+         /*zero_point=*/0,
+         /*per_channel_quantization=*/true,
+         /*per_channel_quantization_scales=*/{1.0f, 1.0f},
+         /*per_channel_quantization_offsets=*/{0, 0},
+         /*channel_index=*/0},
+        {TensorType_FLOAT32, {1, 2, 2, 1}}, {TensorType_FLOAT32, {}},
+        Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+        ActivationFunctionType_NONE);
+    m.SetFilterQuantizedDimension(bad_quantized_dim);
+
+    EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+  }
+}
+
+TEST(TransposeConvPrepareSecurityTest,
+     RejectsHybridNonZeroQuantizedDimension) {
+  PrepareOnlyTransposeConvOpModel<float> m(
+      ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 2, 2, 2},
+      {TensorType_INT8,
+       /*shape=*/{2, 1, 1, 1},
+       /*min=*/0,
+       /*max=*/0,
+       /*scale=*/0,
+       /*zero_point=*/0,
+       /*per_channel_quantization=*/true,
+       /*per_channel_quantization_scales=*/{1.0f},
+       /*per_channel_quantization_offsets=*/{0},
+       /*channel_index=*/1},
+      {TensorType_FLOAT32, {1, 2, 2, 1}}, {TensorType_FLOAT32, {}},
+      Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+      ActivationFunctionType_NONE);
+
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+TEST(TransposeConvPrepareSecurityTest,
+     RejectsHybridMismatchedPerChannelScaleSize) {
+  PrepareOnlyTransposeConvOpModel<float> m(
+      ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 2, 2, 3},
+      {TensorType_INT8,
+       /*shape=*/{3, 1, 1, 1},
+       /*min=*/0,
+       /*max=*/0,
+       /*scale=*/0,
+       /*zero_point=*/0,
+       /*per_channel_quantization=*/true,
+       /*per_channel_quantization_scales=*/{1.0f, 1.0f, 1.0f},
+       /*per_channel_quantization_offsets=*/{0, 0, 0},
+       /*channel_index=*/0},
+      {TensorType_FLOAT32, {1, 2, 2, 1}}, {TensorType_FLOAT32, {}},
+      Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+      ActivationFunctionType_NONE);
+  m.SetFilterScaleSize(2);
+
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteError);
+}
+
+TEST(TransposeConvPrepareSecurityTest,
+     AcceptsValidHybridPerChannelQuantizedDimensionZeroControl) {
+  // Positive control: valid hybrid per-channel quantized_dimension 0 with
+  // matching scale count succeeds with kTfLiteOk.
+  PrepareOnlyTransposeConvOpModel<float> m(
+      ops::builtin::Register_TRANSPOSECONV_GENERIC_OPT(), {1, 2, 2, 2},
+      {TensorType_INT8,
+       /*shape=*/{2, 1, 1, 1},
+       /*min=*/0,
+       /*max=*/0,
+       /*scale=*/0,
+       /*zero_point=*/0,
+       /*per_channel_quantization=*/true,
+       /*per_channel_quantization_scales=*/{1.0f, 1.0f},
+       /*per_channel_quantization_offsets=*/{0, 0},
+       /*channel_index=*/0},
+      {TensorType_FLOAT32, {1, 2, 2, 1}}, {TensorType_FLOAT32, {}},
+      Padding_SAME, /*stride_w=*/1, /*stride_h=*/1,
+      ActivationFunctionType_NONE);
+
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteOk);
 }
 
 TEST(TransposeConvPrepareSecurityTest, RejectsUnsupportedWeightsType) {
