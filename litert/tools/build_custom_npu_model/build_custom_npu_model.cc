@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
@@ -35,6 +36,7 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
 
 namespace litert::tools {
@@ -69,6 +71,77 @@ Expected<void> WriteFile(absl::string_view path, BufferRef<uint8_t> data) {
                       absl::StrCat("Failed to write to output file: ", path));
   }
   return {};
+}
+
+// Wraps every subgraph and SignatureDef of `src_model`, a compiled custom-op
+// TFLite model (e.g. a DarwiNN `*-graph-custom_op.tflite` with several
+// signatures), into a DISPATCH_OP model. `bytecode_data` (the serialized
+// `src_model`) is embedded once as the NPU bytecode. Each DISPATCH_OP uses its
+// subgraph name as the entry point, and each signature keeps its key and its
+// input and output names.
+Expected<OwningBufferRef<uint8_t>> WrapCompiledTfliteModel(
+    LiteRtModelT& src_model, BufferRef<uint8_t> bytecode_data) {
+  ::LiteRtModelT dst_model;
+  OwningBufferRef<uint8_t> bytecode_copy(bytecode_data.Data(),
+                                         bytecode_data.Size());
+  auto buf_id =
+      dst_model.Buffers()->RegisterOwnedBuffer(std::move(bytecode_copy));
+
+  absl::flat_hash_map<const LiteRtSubgraphT*, LiteRtSubgraphT*> sg_map;
+  absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
+
+  for (LiteRtSubgraph src_sg : src_model.Subgraphs()) {
+    auto& dst_sg = dst_model.EmplaceSubgraph();
+    dst_sg.SetName(std::string(src_sg->Name()));
+    sg_map[src_sg] = &dst_sg;
+
+    for (LiteRtTensor in_t : src_sg->Inputs()) {
+      auto& dst_t = dst_sg.EmplaceTensor();
+      dst_t.SetName(std::string(in_t->Name()));
+      dst_t.SetType(in_t->Type());
+      dst_t.SetQarams(in_t->Qparams());
+      dst_sg.Inputs().push_back(&dst_t);
+      tensor_map[in_t] = &dst_t;
+    }
+    for (LiteRtTensor out_t : src_sg->Outputs()) {
+      auto& dst_t = dst_sg.EmplaceTensor();
+      dst_t.SetName(std::string(out_t->Name()));
+      dst_t.SetType(out_t->Type());
+      dst_t.SetQarams(out_t->Qparams());
+      dst_sg.Outputs().push_back(&dst_t);
+      tensor_map[out_t] = &dst_t;
+    }
+
+    auto& dispatch_op = dst_sg.EmplaceOp();
+    ::MakeDispatchOp(dispatch_op);
+    dispatch_op.Inputs() = dst_sg.Inputs();
+    dispatch_op.Outputs() = dst_sg.Outputs();
+    std::string entry_point =
+        src_sg->Name().empty() ? "main" : std::string(src_sg->Name());
+    dst_model.AttachAssetToOp(&dispatch_op, buf_id, entry_point);
+  }
+
+  for (LiteRtSignature src_sig : src_model.Signatures()) {
+    LiteRtSubgraphT* dst_sg = sg_map.at(&src_sig->GetSubgraph());
+    std::vector<std::string> in_names = src_sig->InputNames();
+    std::vector<LiteRtTensor> in_tensors;
+    in_tensors.reserve(in_names.size());
+    for (size_t i = 0; i < in_names.size(); ++i) {
+      in_tensors.push_back(tensor_map.at(src_sig->GetInputTensor(i)));
+    }
+    std::vector<std::string> out_names = src_sig->OutputNames();
+    std::vector<LiteRtTensor> out_tensors;
+    out_tensors.reserve(out_names.size());
+    for (size_t i = 0; i < out_names.size(); ++i) {
+      out_tensors.push_back(tensor_map.at(src_sig->GetOutputTensor(i)));
+    }
+    dst_model.EmplaceSignature(dst_sg, std::move(in_names),
+                               std::move(in_tensors), std::move(out_names),
+                               std::move(out_tensors),
+                               std::string(src_sig->Key()));
+  }
+  return litert::internal::SerializeModel(std::move(dst_model),
+                                          /*bytecode_alignment=*/4096);
 }
 
 }  // namespace
@@ -171,6 +244,19 @@ Expected<OwningBufferRef<uint8_t>> BuildCustomNpuModelMemory(
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "NPU bytecode buffer is empty.");
   }
+  if (options.input_tensors.empty() && options.output_tensors.empty()) {
+    // Without explicit tensor specs, the bytecode must be a compiled TFLite
+    // model. Its subgraphs and signatures define the wrapper model.
+    auto src_model = litert::internal::LoadModelFromBuffer(bytecode_data);
+    if (!src_model) {
+      return Unexpected(
+          kLiteRtStatusErrorInvalidArgument,
+          "Input and output tensor specifications must be provided via "
+          "--input_shapes and --output_shapes when the NPU bytecode is not a "
+          "TFLite model.");
+    }
+    return WrapCompiledTfliteModel(**src_model, bytecode_data);
+  }
   if (options.input_tensors.empty() || options.output_tensors.empty()) {
     return Unexpected(
         kLiteRtStatusErrorInvalidArgument,
@@ -241,13 +327,6 @@ Expected<void> BuildCustomNpuModel(const BuildCustomNpuModelOptions& options) {
 
   LITERT_ASSIGN_OR_RETURN(auto bytecode_buf,
                           ReadFile(options.npu_bytecode_path));
-
-  if (options.input_tensors.empty() || options.output_tensors.empty()) {
-    return Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        "Input and output tensor specifications must be provided via "
-        "--input_shapes and --output_shapes.");
-  }
 
   LITERT_ASSIGN_OR_RETURN(auto serialized_model,
                           BuildCustomNpuModelMemory(options, bytecode_buf));
