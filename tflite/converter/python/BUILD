@@ -207,6 +207,7 @@ cc_library(
         "//tflite/converter:types_proto_cc",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:FuncDialect",
@@ -254,6 +255,7 @@ tf_cc_test(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:vhlo_ops",
         "@xla//xla/tsl/platform:env",
     ],
 )
