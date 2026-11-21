@@ -15,6 +15,8 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_
 
+#include <unistd.h>
+
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -107,6 +109,9 @@ class LiteRtDispatchInvocationContextT {
   std::vector<std::unique_ptr<IoRequirementsBuilder>>
       output_requirements_builders_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
+  // Shared weight NeuronMemory, deduped through the device context. The
+  // deleter frees the memory and closes its DMA-BUF fd.
+  std::vector<std::shared_ptr<NeuronMemory>> shared_weights_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

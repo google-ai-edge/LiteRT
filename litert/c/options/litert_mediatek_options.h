@@ -208,6 +208,15 @@ LiteRtStatus LrtSetMediatekOptionsAotCompilationOptions(
 LiteRtStatus LrtGetMediatekOptionsAotCompilationOptions(
     const LrtMediatekOptions* options, const char** aot_compilation_options);
 
+// enable_weight_share --------------------------------------------------------
+// Controls whether shared weight extraction is used when compiling multiple
+// partitions. Requires Neuron SDK >= 11.0.0. Defaults to false.
+LiteRtStatus LrtSetMediatekOptionsEnableWeightShare(
+    LrtMediatekOptions* options, bool enable_weight_share);
+
+LiteRtStatus LrtGetMediatekOptionsEnableWeightShare(
+    const LrtMediatekOptions* options, bool* enable_weight_share);
+
 #ifdef __cplusplus
 
 }  // extern "C"

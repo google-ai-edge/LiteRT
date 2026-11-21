@@ -238,6 +238,18 @@ class MediatekOptions : public ConcreteOptionsBase {
     return StringView(aot_compilation_options);
   }
 
+  void SetEnableWeightShare(bool enable_weight_share) {
+    internal::AssertOk(LrtSetMediatekOptionsEnableWeightShare, Get(),
+                       enable_weight_share);
+  }
+
+  bool GetEnableWeightShare() {
+    bool enable_weight_share;
+    internal::AssertOk(LrtGetMediatekOptionsEnableWeightShare, Get(),
+                       &enable_weight_share);
+    return enable_weight_share;
+  }
+
  private:
   std::unique_ptr<LrtMediatekOptions, void (*)(LrtMediatekOptions*)> options_;
 };

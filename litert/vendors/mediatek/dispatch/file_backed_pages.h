@@ -62,6 +62,17 @@ void AdviseNoHugePages(int fd, const void* addr, size_t size);
 // or if `madvise` failed, in which case `errno` is set.
 bool ReleaseFileBackedPages(int fd, const void* addr, size_t size);
 
+// Copies `size` bytes from the region at `src` to `dst` in chunks of
+// `chunk_size` bytes (the whole region at once if `chunk_size` is zero). After
+// each chunk is copied, the whole source pages that it completes are released
+// as in `ReleaseFileBackedPages`, so a large copy does not keep the whole
+// source resident at once. `dst` must not overlap the source region.
+//
+// Returns the number of source bytes that were released; this is 0 if `fd` is
+// negative, in which case the source is left untouched.
+size_t CopyAndReleaseFileBackedPages(int fd, const void* src, void* dst,
+                                     size_t size, size_t chunk_size);
+
 }  // namespace litert::mediatek
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_FILE_BACKED_PAGES_H_

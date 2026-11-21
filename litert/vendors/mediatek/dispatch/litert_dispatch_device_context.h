@@ -15,6 +15,7 @@
 #ifndef ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 #define ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
 
+#include <cstddef>
 #include <memory>
 
 #include "neuron/api/NeuronAdapter.h"
@@ -22,6 +23,7 @@
 #include "litert/c/litert_tensor_buffer.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/c/litert_dispatch.h"
+#include "litert/vendors/mediatek/dispatch/shared_weight_cache.h"
 #include "litert/vendors/mediatek/neuron_adapter_api.h"
 
 class LiteRtDispatchDeviceContextT {
@@ -61,6 +63,13 @@ class LiteRtDispatchDeviceContextT {
     return runtime_context_;
   }
 
+  // One NeuronMemory per shared-weight blob of the mapped model. The device
+  // context is shared by every subgraph of the model, so one copy serves all
+  // partitions.
+  litert::mediatek::SharedWeightCache<NeuronMemory>& shared_weights() {
+    return shared_weights_;
+  }
+
  private:
   class NeuronMemoryRegistry {
    public:
@@ -90,6 +99,7 @@ class LiteRtDispatchDeviceContextT {
   const LiteRtRuntimeContext* runtime_context_;
   const litert::mediatek::NeuronAdapterApi& neuron_adapter_api_;
   NeuronMemoryRegistry neuron_memory_registry_;
+  litert::mediatek::SharedWeightCache<NeuronMemory> shared_weights_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_MEDIATEK_DISPATCH_LITERT_DISPATCH_DEVICE_CONTEXT_H_
