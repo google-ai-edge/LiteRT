@@ -111,6 +111,11 @@ def _device_script_lib_impl(ctx):
         data_files.extend(files)
     subs.add("@@data@@", _fmt_location(data_files))
 
+    for v in ctx.attr.host_tools:
+        forwarded_runfiles.extend(v.files.to_list())
+        if v.files_to_run.executable:
+            forwarded_runfiles.append(v.files_to_run.executable)
+
     subs.add("@@exec_env_vars@@", "\"{}\"".format(" ".join(ctx.attr.exec_env_vars)))
 
     runfiles = ctx.runfiles(files = forwarded_runfiles)
@@ -118,6 +123,7 @@ def _device_script_lib_impl(ctx):
         ([ctx.attr.host_bin] if ctx.attr.host_bin else []) +
         ctx.attr.host_libs +
         ctx.attr.extra_host_libs +
+        ctx.attr.host_tools +
         ctx.attr.data +
         ctx.attr.model_providers
     ):
@@ -188,6 +194,15 @@ _device_script_lib = rule(
             # cfg = "exec",
             # copybara:uncomment_end
             doc = "The pre-compiled host shared libraries to package with the script (e.g. vendor sdk).",
+        ),
+        "host_tools": attr.label_list(
+            mandatory = False,
+            default = [],
+            allow_files = True,
+            # copybara:uncomment_begin(google-only)
+            # cfg = "exec",
+            # copybara:uncomment_end
+            doc = "Additional host tool binaries to package with the script.",
         ),
         "device_libs": attr.label_list(
             mandatory = False,
@@ -494,56 +509,56 @@ def litert_aot_compile(
         tags = tags,
     )
 
-def make_download_model_provider(name, url, testonly = True):
-    """Generates a shell script and runfiles for downloading a model from a URL.
+def make_model_provider_script(
+        name,
+        template,
+        subs = {},
+        host_tools = [],
+        testonly = True,
+        tags = [],
+        visibility = None):
+    """Generates a shell script and runfiles for providing models to litert_device_scripts.
 
-    This can be depended on by litert_device_scripts to add more models to the data dependencies.
+    Args:
+      name: The name of the generated sh_binary target.
+      template: Label of the shell script template to expand.
+      subs: Dictionary of template substitutions.
+      host_tools: Additional host tool binaries to package with the provider script.
+      testonly: If True, the generated targets are marked as testonly.
+      tags: Optional list of Bazel tags applied to the generated targets.
+      visibility: Target visibility.
     """
-
     _device_script_lib(
         name = name + "_expanded",
-        template = "//litert/integration_test:download_model_provider.sh",
+        template = template,
         out = name + ".sh",
-        subs = {
-            "@@url@@": url,
-        },
+        host_tools = host_tools,
+        subs = subs,
         executable = True,
+        tags = tags,
+        visibility = visibility,
     )
 
     sh_binary(
         name = name,
         srcs = [":" + name + "_expanded"],
+        data = [":" + name + "_expanded"],
+        deps = ["//litert/integration_test:device_script_common"],
         testonly = testonly,
+        tags = tags,
+        visibility = visibility,
     )
 
-# copybara:uncomment_begin(google-only)
-# def make_cns_pull_model_provider(name, cns_paths, testonly = True, visibility = None):
-#     """Generates a shell script and runfiles for downloading model(s) from CNS paths.
-#
-#     This can be depended on by litert_device_scripts to add more models to the data dependencies.
-#     Args:
-#       name: The name of the generated sh_binary target.
-#       cns_paths: A list of CNS paths to download the model(s) from. Each entry can be a file or a
-#                  directory. If a directory, all .tflite files in the directory will be downloaded.
-#       testonly: If True, the generated targets are marked as testonly.
-#       visibility: Target visibility.
-#     """
-#     _device_script_lib(
-#         name = name + "_expanded",
-#         template = "//litert/integration_test:cns_pull_model_provider.sh",
-#         out = name + ".sh",
-#         subs = {
-#             "@@cns_paths@@": " ".join(cns_paths),
-#         },
-#         executable = True,
-#         visibility = visibility,
-#     )
-#
-#     sh_binary(
-#         name = name,
-#         srcs = [":" + name + "_expanded"],
-#         testonly = testonly,
-#         visibility = visibility,
-#     )
-#
-# copybara:uncomment_end
+def make_download_model_provider(name, url, testonly = True):
+    """Generates a shell script and runfiles for downloading a model from a URL.
+
+    This can be depended on by litert_device_scripts to add more models to the data dependencies.
+    """
+    make_model_provider_script(
+        name = name,
+        template = "//litert/integration_test:download_model_provider.sh",
+        subs = {
+            "@@url@@": url,
+        },
+        testonly = testonly,
+    )

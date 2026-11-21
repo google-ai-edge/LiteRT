@@ -22,11 +22,12 @@ load(
     "//litert/integration_test:litert_device_script.bzl",
     "litert_aot_compile",
     "litert_device_script",
-    # copybara:uncomment_begin(google-only)
-    # "make_cns_pull_model_provider",
-    # copybara:uncomment_end
     "make_download_model_provider",
 )
+
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:cns_models.bzl", "make_cns_pull_model_provider")
+# copybara:uncomment_end
 
 def _make_ats_args(init = [], **kwargs):
     def _fmt_re(re):

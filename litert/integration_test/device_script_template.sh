@@ -190,7 +190,7 @@ function get_provided_models() {
     echo ""
   else
     for provider in ${model_providers[@]}; do
-      $provider
+      "${provider}" || return $?
     done
   fi
 }
