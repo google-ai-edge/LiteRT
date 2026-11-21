@@ -473,6 +473,36 @@ class DispatchTest(googletest.TestCase):
     self.assertEqual(error.exception.status, "kLiteRtStatusErrorAlreadyExists")
     self.assertIn(ir.BUILD_STAMP_METADATA_KEY, model.metadata_keys())
 
+  def test_build_stamp_overwrite(self):
+    model = ir.Model.load_from_file(_path("add_simple.tflite"))
+    model.set_build_stamp("TestVendor", "TestSocModel", overwrite=True)
+    self.assertEqual(model.build_stamp(), ("TestVendor", "TestSocModel"))
+
+    with self.assertRaises(ir.LiteRtError) as error:
+      model.set_build_stamp("TestVendor", "x" * 200, overwrite=True)
+    self.assertEqual(
+        error.exception.status, "kLiteRtStatusErrorInvalidArgument"
+    )
+    self.assertEqual(model.build_stamp(), ("TestVendor", "TestSocModel"))
+
+    model.set_build_stamp("TestVendor", "UpdatedSocModel", overwrite=True)
+    self.assertEqual(model.build_stamp(), ("TestVendor", "UpdatedSocModel"))
+    serialized = model.serialize()
+    reloaded = ir.Model.load_from_bytes(serialized)
+    self.assertEqual(reloaded.build_stamp(), ("TestVendor", "UpdatedSocModel"))
+    schema_model = _schema_model(serialized)
+    stamps = [
+        schema_model.buffers[m.buffer].data
+        for m in schema_model.metadata
+        if m.name == ir.BUILD_STAMP_METADATA_KEY.encode()
+    ]
+    self.assertLen(stamps, 1)
+    manufacturer, soc_model = struct.unpack(
+        f"{_STAMP_FIELD_SIZE}s{_STAMP_FIELD_SIZE}s", bytes(stamps[0])
+    )
+    self.assertEqual(manufacturer.rstrip(b"\x00"), b"TestVendor")
+    self.assertEqual(soc_model.rstrip(b"\x00"), b"UpdatedSocModel")
+
 
 if __name__ == "__main__":
   googletest.main()

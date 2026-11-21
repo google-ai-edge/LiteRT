@@ -762,10 +762,21 @@ struct PyModel {
   }
 
   void SetBuildStamp(const std::string& soc_manufacturer,
-                     const std::string& soc_model) const {
+                     const std::string& soc_model, bool overwrite) const {
     LiteRtModelT& model = Get();
     auto stamp =
         ValueOrThrow(internal::MakeBuildStamp(soc_manufacturer, soc_model));
+    for (auto it = model.MetadataBegin(); it != model.MetadataEnd(); ++it) {
+      if (it->first == kLiteRtBuildStampKey) {
+        if (!overwrite) {
+          throw IrError(kLiteRtStatusErrorAlreadyExists,
+                        "the model already has a build stamp");
+        }
+        it->second = model.Buffers()->RegisterNonOwnedBuffer(
+            state->KeepBuffer(std::move(stamp)));
+        return;
+      }
+    }
     const LiteRtStatus status =
         model.PushMetadata(kLiteRtBuildStampKey, std::move(stamp));
     if (status != kLiteRtStatusOk) {
@@ -1238,7 +1249,8 @@ PYBIND11_MODULE(_pywrap_litert_model, m) {
       .def("attach_asset", &PyModel::AttachAssetToOp, py::arg("op"),
            py::arg("buffer_id"), py::arg("name"))
       .def("set_build_stamp", &PyModel::SetBuildStamp,
-           py::arg("soc_manufacturer"), py::arg("soc_model"))
+           py::arg("soc_manufacturer"), py::arg("soc_model"),
+           py::arg("overwrite") = false)
       .def("build_stamp", &PyModel::BuildStamp);
 
   py::class_<PySubgraph>(m, "Subgraph")
