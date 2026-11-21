@@ -40,12 +40,17 @@ namespace call_once_kernel {
 struct OpData {
   // Subgraph index to be invoked once in a life cycle by this CallOnce op.
   int init_subgraph_index;
+  // True while Eval() runs the initialization subgraph. It is still set if a
+  // cycle of CALL_ONCE ops leads back to this node before initialization is
+  // marked done, which would otherwise recurse without bound.
+  bool initializing;
 };
 
 void* Init(TfLiteContext* context, const char* buffer, size_t length) {
   auto* op_data = new OpData;
   const auto* params = reinterpret_cast<const TfLiteCallOnceParams*>(buffer);
   op_data->init_subgraph_index = params->init_subgraph_index;
+  op_data->initializing = false;
   return op_data;
 }
 
@@ -95,13 +100,17 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   resource::InitializationStatus* status =
       resource::GetInitializationStatus(map, op_data->init_subgraph_index);
   if (status->IsInitialized()) return kTfLiteOk;
+  TF_LITE_ENSURE(context, !op_data->initializing);
 
   auto* subgraphs = this_subgraph->GetSubgraphs();
   Subgraph& init_subgraph = *(*subgraphs)[op_data->init_subgraph_index];
 
-  TF_LITE_ENSURE_OK(context, init_subgraph.AllocateTensors());
-  TF_LITE_ENSURE_OK(context, init_subgraph.Invoke());
-  TF_LITE_ENSURE_OK(context, init_subgraph.ReleaseNonPersistentMemory());
+  op_data->initializing = true;
+  TfLiteStatus result = init_subgraph.AllocateTensors();
+  if (result == kTfLiteOk) result = init_subgraph.Invoke();
+  if (result == kTfLiteOk) result = init_subgraph.ReleaseNonPersistentMemory();
+  op_data->initializing = false;
+  TF_LITE_ENSURE_OK(context, result);
 
   // Mark the invocation completed.
   status->MarkInitializationIsDone();
