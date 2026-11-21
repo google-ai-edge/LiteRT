@@ -15,11 +15,27 @@
 #include "litert/c/internal/litert_compiler_context.h"
 
 #include "litert/c/litert_builder.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/core/model/model.h"
+
+namespace {
+
+LiteRtStatus LiteRtBuilderIsSubgraphOutputImpl(LiteRtBuilder builder,
+                                               LiteRtTensor tensor,
+                                               bool* is_output) {
+  if (builder == nullptr || tensor == nullptr || is_output == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *is_output = builder->IsSubgraphOutput(tensor);
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
 
 LiteRtCompilerContext* LrtGetCompilerContext() {
   static LiteRtCompilerContext ctx = {
@@ -28,7 +44,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 5,
+              .minor_version = 6,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -315,6 +331,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
           LiteRtGetConv3dTransposeDilationHOption,
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
+      .is_subgraph_output = LiteRtBuilderIsSubgraphOutputImpl,
   };
   return &ctx;
 }

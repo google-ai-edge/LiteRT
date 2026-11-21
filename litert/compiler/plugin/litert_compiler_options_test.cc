@@ -44,6 +44,35 @@ TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptions) {
   EXPECT_EQ(options.max_partitions, 3);
 }
 
+TEST(LiteRtCompilerOptionsTest, ParseAcyclicPartitionStrategy) {
+  auto toml_string = R"(
+    partition_strategy = 2
+  )";
+
+  LiteRtCompilerOptionsT options;
+  ASSERT_EQ(ParseLiteRtCompilerOptions(
+                toml_string, std::string(toml_string).size(), &options),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(options.partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+}
+
+TEST(LiteRtCompilerOptionsTest, ParseRejectsUnknownPartitionStrategy) {
+  for (const char* toml : {
+           R"(partition_strategy = -1)",
+           R"(partition_strategy = 3)",
+           R"(partition_strategy = 99)",
+           R"(partition_strategy = "acyclic")",
+       }) {
+    LiteRtCompilerOptionsT options;
+    EXPECT_EQ(
+        ParseLiteRtCompilerOptions(toml, std::string(toml).size(), &options),
+        kLiteRtStatusErrorInvalidArgument)
+        << "toml: " << toml;
+  }
+}
+
 TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptionsDefaults) {
   auto toml_string = "";
   LiteRtCompilerOptionsT options;

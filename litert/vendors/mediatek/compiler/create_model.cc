@@ -315,6 +315,10 @@ Expected<void> CreateModel(const LiteRtCompilerContext* ctx,
         status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
                                   NEURON_LESS);
         break;
+      case kLiteRtOpCodeTflNotEqual:
+        status = LegalizeCommonOp(neuron_adapter_api, model, *operand_map, op,
+                                  NEURON_NOT_EQUAL);
+        break;
       case kLiteRtOpCodeShloComposite: {
         using ::litert::compiler::CompositeOptions;
         using ::litert::compiler::GetOptionsAs;

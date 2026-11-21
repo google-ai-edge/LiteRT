@@ -946,10 +946,27 @@ class LiteRtBuilderT {
   // API, to avoid users from accidentally applying changes mid-computation.
   void ApplyChanges(LiteRtSubgraphT* subgraph_to_apply);
 
+  // Records the target subgraph being transformed so patterns can query
+  // subgraph output membership without exposing subgraph mutation.
+  void SetTargetSubgraph(const LiteRtSubgraphT* target_subgraph) {
+    target_subgraph_ = target_subgraph;
+  }
+
+  // Returns true iff `tensor` is an output of the target subgraph being
+  // transformed (false when no target subgraph is set).
+  bool IsSubgraphOutput(LiteRtTensor tensor) const {
+    if (target_subgraph_ == nullptr || tensor == nullptr) {
+      return false;
+    }
+    const auto& outputs = target_subgraph_->Outputs();
+    return std::find(outputs.begin(), outputs.end(), tensor) != outputs.end();
+  }
+
  private:
   // Subgraph to hold the IR.
   litert::internal::BufferManager buffer_manager_;
   LiteRtSubgraphT subgraph_ = LiteRtSubgraphT(&buffer_manager_);
+  const LiteRtSubgraphT* target_subgraph_ = nullptr;
 
   // Records of transactions.
   absl::flat_hash_set<LiteRtOp> erases_;

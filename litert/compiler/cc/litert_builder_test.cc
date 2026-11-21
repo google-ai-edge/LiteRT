@@ -165,6 +165,10 @@ TEST(CcBuilderTest, BuilderApisRequireFunctionsInContext) {
   auto erased = cc_builder.EraseOp(op);
   ASSERT_FALSE(erased.HasValue());
   EXPECT_EQ(erased.Error().Status(), kLiteRtStatusErrorWrongVersion);
+
+  auto is_output = cc_builder.IsSubgraphOutput(tensor);
+  ASSERT_FALSE(is_output.HasValue());
+  EXPECT_EQ(is_output.Error().Status(), kLiteRtStatusErrorWrongVersion);
 }
 
 TEST(CcBuilderTest, BuildOpRequiresNonNullFunction) {
@@ -1584,6 +1588,59 @@ TEST_F(BuilderExtendedTest, PatternMatchReplace) {
   } else {
     FAIL() << "Pattern not matched";
   }
+}
+
+TEST_F(BuilderExtendedTest, IsSubgraphOutputChecksTargetSubgraph) {
+  LiteRtSubgraphT subgraph;
+  auto& non_out = subgraph.EmplaceTensor();
+  auto& out = subgraph.EmplaceTensor();
+  auto& out2 = subgraph.EmplaceTensor();
+  subgraph.Outputs().push_back(&out);
+  subgraph.Outputs().push_back(&out2);
+
+  LiteRtBuilderT builder_typed;
+  Builder b(ctx_, &builder_typed);
+
+  Tensor null_t(ctx_, nullptr);
+  Tensor non_out_t(ctx_, &non_out);
+  Tensor out_t(ctx_, &out);
+  Tensor out2_t(ctx_, &out2);
+
+  // Rejects null C ABI arguments cleanly.
+  bool raw_flag = false;
+  EXPECT_EQ(ctx_->is_subgraph_output(nullptr, &out, &raw_flag),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ctx_->is_subgraph_output(&builder_typed, nullptr, &raw_flag),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(ctx_->is_subgraph_output(&builder_typed, &out, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  auto null_res = b.IsSubgraphOutput(null_t);
+  ASSERT_FALSE(null_res.HasValue());
+  EXPECT_EQ(null_res.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+
+  // Returns false when no target subgraph has been attached.
+  auto unset_res = b.IsSubgraphOutput(out_t);
+  ASSERT_TRUE(unset_res.HasValue());
+  EXPECT_FALSE(*unset_res);
+
+  builder_typed.SetTargetSubgraph(&subgraph);
+  auto non_out_res = b.IsSubgraphOutput(non_out_t);
+  ASSERT_TRUE(non_out_res.HasValue());
+  EXPECT_FALSE(*non_out_res);
+
+  auto out_res = b.IsSubgraphOutput(out_t);
+  ASSERT_TRUE(out_res.HasValue());
+  EXPECT_TRUE(*out_res);
+
+  auto out2_res = b.IsSubgraphOutput(out2_t);
+  ASSERT_TRUE(out2_res.HasValue());
+  EXPECT_TRUE(*out2_res);
+
+  builder_typed.SetTargetSubgraph(nullptr);
+  auto cleared_res = b.IsSubgraphOutput(out_t);
+  ASSERT_TRUE(cleared_res.HasValue());
+  EXPECT_FALSE(*cleared_res);
 }
 
 }  // namespace

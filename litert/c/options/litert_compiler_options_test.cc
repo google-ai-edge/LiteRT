@@ -154,6 +154,29 @@ TEST(LiteRtCompilerOptionsTest, SetAndGetWCPartitionStrategy) {
       LrtGetCompilerOptionsPartitionStrategy(options, &partition_strategy));
   EXPECT_EQ(partition_strategy,
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
+
+  LITERT_ASSERT_OK(LrtSetCompilerOptionsPartitionStrategy(
+      options, kLiteRtCompilerOptionsPartitionStrategyAcyclic));
+  LITERT_ASSERT_OK(
+      LrtGetCompilerOptionsPartitionStrategy(options, &partition_strategy));
+  EXPECT_EQ(partition_strategy, kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+
+  const char* id = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_ASSERT_OK(LrtGetOpaqueCompilerOptionsData(options, &id, &payload,
+                                                   &payload_deleter));
+  EXPECT_STREQ(static_cast<const char*>(payload), "partition_strategy = 2\n");
+  payload_deleter(payload);
+
+  // Unknown enum value (within underlying 2-bit enum range [0, 3]) is rejected.
+  EXPECT_EQ(
+      LrtSetCompilerOptionsPartitionStrategy(
+          options, static_cast<LiteRtCompilerOptionsPartitionStrategy>(3)),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtSetCompilerOptionsPartitionStrategy(
+                nullptr, kLiteRtCompilerOptionsPartitionStrategyAcyclic),
+            kLiteRtStatusErrorInvalidArgument);
 }
 
 TEST(LiteRtCompilerOptionsTest, AddInputShapesSerializesToToml) {

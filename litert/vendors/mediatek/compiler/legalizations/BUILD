@@ -280,6 +280,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
