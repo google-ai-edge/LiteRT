@@ -15,7 +15,6 @@ limitations under the License.
 
 #include "tflite/converter/utils/const_tensor_utils.h"
 
-#include <algorithm>
 #include <cassert>
 #include <climits>
 #include <cstddef>
