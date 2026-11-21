@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/examples/utils/tensor_mapping.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -34,7 +35,7 @@ namespace litert::tensor::examples {
 LazyTensorMapping::LazyTensorMapping(
     const absl::flat_hash_map<std::string, std::string>& name_mapping,
     SafetensorLoader&& loader)
-    : loader_(std::move(loader)) {
+    : loader_(std::move(loader)), has_loader_(true) {
   for (const auto& [checkpoint_name, model_name] : name_mapping) {
     name_mapping_.emplace(model_name, checkpoint_name);
   }
@@ -44,7 +45,7 @@ LazyTensorMapping::LazyTensorMapping(
     const absl::flat_hash_map<std::string, std::string>& name_mapping,
     absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
         loader_fn)
-    : loader_fn_(std::move(loader_fn)) {
+    : loader_fn_(std::move(loader_fn)), has_loader_(loader_fn_ != nullptr) {
   for (const auto& [checkpoint_name, model_name] : name_mapping) {
     name_mapping_.emplace(model_name, checkpoint_name);
   }
@@ -74,8 +75,25 @@ absl::StatusOr<TensorHandle> LazyTensorMapping::Get(
 
 absl::Status LazyTensorMapping::Set(absl::string_view model_name,
                                     TensorHandle tensor) {
+  pinned_names_.insert(std::string(model_name));
   tensors_.insert_or_assign(model_name, std::move(tensor));
   return absl::OkStatus();
+}
+
+size_t LazyTensorMapping::ReleaseCachedLoaderTensors() {
+  if (!has_loader_ || tensors_.empty()) {
+    return 0;
+  }
+  size_t released = 0;
+  for (auto it = tensors_.begin(); it != tensors_.end();) {
+    if (pinned_names_.contains(it->first)) {
+      ++it;
+    } else {
+      tensors_.erase(it++);
+      ++released;
+    }
+  }
+  return released;
 }
 
 absl::StatusOr<TensorHandle> LazyTensorMapping::Load(
