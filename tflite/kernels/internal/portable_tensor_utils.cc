@@ -37,6 +37,19 @@ class CpuBackendContext;
 
 namespace tensor_utils {
 
+namespace {
+
+template <int BitWidth>
+int8_t SignExtend(uint8_t value) {
+  static_assert(BitWidth > 0 && BitWidth < 8);
+  constexpr uint8_t kMask = (uint8_t{1} << BitWidth) - 1;
+  constexpr uint8_t kSignBit = uint8_t{1} << (BitWidth - 1);
+  value &= kMask;
+  return static_cast<int8_t>((value ^ kSignBit) - kSignBit);
+}
+
+}  // namespace
+
 // Apply Rectified Linear to elements of a vector.
 void ApplyReluToVector(const float* __restrict__ vector, int v_size,
                        float* __restrict__ result) {
@@ -78,18 +91,17 @@ void UnpackDenseInt4IntoInt8(const int8_t* src_buffer, int num_elements,
   //   2) Unpacked: 3 int8's = 3 bytes.
   //.     stored in dst_buffer[0], dst_buffer[1] and dst_buffer[2] (j = 0..2)
   for (int i = 0; i < num_elements / 2; i++) {
-    int8_t byte = src_buffer[i];
-    // Shift left first so that sign is properly extended when shifted right
-    int8_t lower = static_cast<int8_t>(byte << 4) >> 4;
-    int8_t higher = byte >> 4;
+    const uint8_t byte = static_cast<uint8_t>(src_buffer[i]);
+    const int8_t lower = SignExtend<4>(byte);
+    const int8_t higher = SignExtend<4>(byte >> 4);
     dst_buffer[2 * i] = lower;
     dst_buffer[2 * i + 1] = higher;
   }
 
   // If the buffer size is odd, extract the final lower nibble.
   if (num_elements % 2 != 0) {
-    dst_buffer[num_elements - 1] =
-        static_cast<int8_t>(src_buffer[num_elements / 2] << 4) >> 4;
+    dst_buffer[num_elements - 1] = SignExtend<4>(
+        static_cast<uint8_t>(src_buffer[num_elements / 2]));
   }
 }
 
@@ -105,15 +117,14 @@ void UnpackPackedIntToInt8(const int8_t* src_buffer, int num_elements,
     //   2) Unpacked: 3 int8's = 3 bytes.
     //.     stored in dst_buffer[0], dst_buffer[1] and dst_buffer[2] (j = 0..2)
     for (int i = 0; i < num_elements / 2; i++) {
-      int8_t byte = src_buffer[i];
+      const uint8_t byte = static_cast<uint8_t>(src_buffer[i]);
       int8_t lower, higher;
       if (unpack_unsigned) {
         lower = byte & 0x0F;
         higher = (byte >> 4) & 0x0F;
       } else {
-        // Shift left first so that sign is properly extended when shifted right
-        lower = static_cast<int8_t>(byte << 4) >> 4;
-        higher = byte >> 4;
+        lower = SignExtend<4>(byte);
+        higher = SignExtend<4>(byte >> 4);
       }
       dst_buffer[2 * i] = lower;
       dst_buffer[2 * i + 1] = higher;
@@ -121,24 +132,24 @@ void UnpackPackedIntToInt8(const int8_t* src_buffer, int num_elements,
 
     // If the buffer size is odd, extract the final lower nibble.
     if (num_elements % 2 != 0) {
-      int8_t byte = src_buffer[num_elements / 2];
+      const uint8_t byte =
+          static_cast<uint8_t>(src_buffer[num_elements / 2]);
       dst_buffer[num_elements - 1] =
-          unpack_unsigned ? (byte & 0x0F) : static_cast<int8_t>(byte << 4) >> 4;
+          unpack_unsigned ? (byte & 0x0F) : SignExtend<4>(byte);
     }
   } else if (bit_width == 2) {
     for (int i = 0; i < num_elements / 4; i++) {
-      int8_t byte = src_buffer[i];
+      const uint8_t byte = static_cast<uint8_t>(src_buffer[i]);
       if (unpack_unsigned) {
         dst_buffer[4 * i] = byte & 0x03;
         dst_buffer[4 * i + 1] = (byte >> 2) & 0x03;
         dst_buffer[4 * i + 2] = (byte >> 4) & 0x03;
         dst_buffer[4 * i + 3] = (byte >> 6) & 0x03;
       } else {
-        // Shift left first so that sign is properly extended when shifted right
-        int8_t val1 = static_cast<int8_t>(byte << 6) >> 6;
-        int8_t val2 = static_cast<int8_t>((byte << 4) & 0xFF) >> 6;
-        int8_t val3 = static_cast<int8_t>((byte << 2) & 0xFF) >> 6;
-        int8_t val4 = byte >> 6;
+        const int8_t val1 = SignExtend<2>(byte);
+        const int8_t val2 = SignExtend<2>(byte >> 2);
+        const int8_t val3 = SignExtend<2>(byte >> 4);
+        const int8_t val4 = SignExtend<2>(byte >> 6);
         dst_buffer[4 * i] = val1;
         dst_buffer[4 * i + 1] = val2;
         dst_buffer[4 * i + 2] = val3;
@@ -149,14 +160,15 @@ void UnpackPackedIntToInt8(const int8_t* src_buffer, int num_elements,
     // Handle the remaining elements.
     int remaining_elements = num_elements % 4;
     if (remaining_elements > 0) {
-      int8_t byte = src_buffer[num_elements / 4];
+      const uint8_t byte =
+          static_cast<uint8_t>(src_buffer[num_elements / 4]);
       for (int i = 0; i < remaining_elements; i++) {
         if (unpack_unsigned) {
           dst_buffer[num_elements - remaining_elements + i] =
               (byte >> (2 * i)) & 0x03;
         } else {
           dst_buffer[num_elements - remaining_elements + i] =
-              static_cast<int8_t>((byte << (6 - 2 * i)) & 0xFF) >> 6;
+              SignExtend<2>(byte >> (2 * i));
         }
       }
     }
@@ -174,28 +186,36 @@ void PackInt8IntoDenseInt(const int8_t* src_buffer, int num_elements,
     //   2) Packed: 3 int4's = 12 bit -> 16 bits (padded) = 2 bytes.
     //      stored in dst_buffer[0] and dst_buffer[1] (i = 0..1)
     for (int i = 0; i < num_elements / 2; ++i) {
-      dst_buffer[i] = (src_buffer[2 * i] & 0x0F) | (src_buffer[2 * i + 1] << 4);
+      const uint8_t low = static_cast<uint8_t>(src_buffer[2 * i]) & 0x0F;
+      const uint8_t high =
+          (static_cast<uint8_t>(src_buffer[2 * i + 1]) & 0x0F) << 4;
+      dst_buffer[i] = static_cast<int8_t>(low | high);
     }
     // If the buffer size is odd, pack the final nibble.
     if (num_elements % 2 != 0) {
-      dst_buffer[num_elements / 2] = src_buffer[num_elements - 1] & 0x0F;
+      dst_buffer[num_elements / 2] = static_cast<int8_t>(
+          static_cast<uint8_t>(src_buffer[num_elements - 1]) & 0x0F);
     }
   } else if (bit_width == 2) {
     for (int i = 0; i < num_elements / 4; ++i) {
-      dst_buffer[i] = (src_buffer[4 * i] & 0x03) |
-                      ((src_buffer[4 * i + 1] & 0x03) << 2) |
-                      ((src_buffer[4 * i + 2] & 0x03) << 4) |
-                      ((src_buffer[4 * i + 3] & 0x03) << 6);
+      const uint8_t packed =
+          (static_cast<uint8_t>(src_buffer[4 * i]) & 0x03) |
+          ((static_cast<uint8_t>(src_buffer[4 * i + 1]) & 0x03) << 2) |
+          ((static_cast<uint8_t>(src_buffer[4 * i + 2]) & 0x03) << 4) |
+          ((static_cast<uint8_t>(src_buffer[4 * i + 3]) & 0x03) << 6);
+      dst_buffer[i] = static_cast<int8_t>(packed);
     }
     // Handle the remaining elements.
     int remaining_elements = num_elements % 4;
     if (remaining_elements > 0) {
-      int8_t packed_val = 0;
+      uint8_t packed_val = 0;
       for (int i = 0; i < remaining_elements; ++i) {
-        packed_val |= (src_buffer[num_elements - remaining_elements + i] & 0x03)
-                      << (i * 2);
+        packed_val |=
+            (static_cast<uint8_t>(src_buffer[num_elements - remaining_elements + i]) &
+             0x03)
+            << (i * 2);
       }
-      dst_buffer[num_elements / 4] = packed_val;
+      dst_buffer[num_elements / 4] = static_cast<int8_t>(packed_val);
     }
   }
 }
