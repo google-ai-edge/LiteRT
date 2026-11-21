@@ -546,6 +546,9 @@ typedef struct LiteRtCompilerContext {
                                LiteRtTensor new_tensor);
   LiteRtStatus (*is_subgraph_output)(LiteRtBuilder builder, LiteRtTensor tensor,
                                      bool* is_subgraph_output);
+  // Added in version 1.7.0
+  LiteRtStatus (*get_tensor_subgraph)(LiteRtTensor tensor,
+                                      LiteRtSubgraph* subgraph);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -555,7 +558,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1528,
+static_assert(sizeof(LiteRtCompilerContext) == 1536,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1238,13 +1241,14 @@ static_assert(
     "LiteRtCompilerContext get_conv_3d_transpose_dilation_h_option offset "
     "mismatch");
 static_assert(
-    offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) ==
-        1504,
+    offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) == 1504,
     "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
 static_assert(offsetof(LiteRtCompilerContext, set_op_input) == 1512,
               "LiteRtCompilerContext set_op_input offset mismatch");
 static_assert(offsetof(LiteRtCompilerContext, is_subgraph_output) == 1520,
               "LiteRtCompilerContext is_subgraph_output offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_tensor_subgraph) == 1528,
+              "LiteRtCompilerContext get_tensor_subgraph offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();
