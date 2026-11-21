@@ -1,2 +1,3 @@
 graft ai_edge_litert_sdk_intel/data
+graft ai_edge_litert_sdk_intel/vendors
 include ai_edge_litert_sdk_intel/__init__.py

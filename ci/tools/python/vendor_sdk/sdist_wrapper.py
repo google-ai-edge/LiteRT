@@ -17,10 +17,182 @@
 
 import argparse
 import glob
+import io
 import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
+import urllib.error
+import urllib.request
+import zipfile
+
+
+# BEGIN_LITERT_PREBUILTS_HELPER
+_LITERT_PREBUILTS_GCS_BASE = "https://storage.googleapis.com/litert/binaries"
+
+
+class _HttpRangeFile(io.RawIOBase):
+  """Seekable HTTP file using Range requests so zipfile reads only needed entries."""
+
+  def __init__(self, url: str):
+    self._url = url
+    self._pos = 0
+    req = urllib.request.Request(url, headers={"Range": "bytes=0-0"})
+    with urllib.request.urlopen(req) as resp:
+      if resp.status != 206:
+        raise OSError(
+            f"HTTP Range not supported for {url} (status {resp.status})"
+        )
+      content_range = resp.headers.get("Content-Range", "")
+      self._size = int(content_range.rpartition("/")[-1])
+    tail_len = min(self._size, 65536)
+    self._tail_offset = self._size - tail_len
+    self._tail = self._fetch(self._tail_offset, self._size)
+
+  def _fetch(self, start: int, end: int) -> bytes:
+    req = urllib.request.Request(
+        self._url, headers={"Range": f"bytes={start}-{end - 1}"}
+    )
+    with urllib.request.urlopen(req) as resp:
+      return resp.read()
+
+  def seekable(self) -> bool:
+    return True
+
+  def readable(self) -> bool:
+    return True
+
+  def seek(self, offset: int, whence: int = io.SEEK_SET) -> int:
+    if whence == io.SEEK_SET:
+      self._pos = offset
+    elif whence == io.SEEK_CUR:
+      self._pos += offset
+    elif whence == io.SEEK_END:
+      self._pos = self._size + offset
+    return self._pos
+
+  def tell(self) -> int:
+    return self._pos
+
+  def readinto(self, b) -> int:
+    if self._pos >= self._size or not b:
+      return 0
+    end = min(self._pos + len(b), self._size)
+    if self._pos >= self._tail_offset:
+      start = self._pos - self._tail_offset
+      data = self._tail[start : start + (end - self._pos)]
+    else:
+      data = self._fetch(self._pos, end)
+    n = len(data)
+    b[:n] = data
+    self._pos += n
+    return n
+
+
+def _candidate_prebuilt_urls(package_version: str) -> list[str]:
+  """Returns candidate GCS URLs (or local override path) in priority order."""
+  override = os.environ.get("LITERT_PREBUILTS_URL", "").strip()
+  if override:
+    return [override]
+  base = _LITERT_PREBUILTS_GCS_BASE
+  nightly_match = re.search(r"\.dev(\d{8})$", package_version)
+  if nightly_match:
+    date = nightly_match.group(1)
+    return [
+        f"{base}/nightly/archive/litert_prebuilts_{date}.zip",
+        f"{base}/nightly/litert_prebuilts.zip",
+    ]
+  return [f"{base}/{package_version}/litert_prebuilts.zip"]
+
+
+def _extract_members_from_zip(
+    zf: zipfile.ZipFile, members: dict[str, str]
+) -> bool:
+  """Extracts `members` ({zip_entry: dest_path}) if all exist in `zf`."""
+  names = set(zf.namelist())
+  if not all(entry in names for entry in members):
+    return False
+  for entry, dest_path in members.items():
+    os.makedirs(os.path.dirname(dest_path), exist_ok=True)
+    with zf.open(entry) as src, open(dest_path, "wb") as dst:
+      dst.write(src.read())
+    os.chmod(dest_path, 0o755)
+    print(f"Extracted {entry} -> {dest_path}")
+  return True
+
+
+def _download_litert_prebuilts(
+    package_version: str,
+    members: dict[str, str],
+) -> bool:
+  """Downloads and extracts LiteRT vendor prebuilts for the current host."""
+  if not members:
+    return False
+  for url in _candidate_prebuilt_urls(package_version):
+    print(f"Fetching LiteRT prebuilts from {url}...")
+    try:
+      if os.path.isfile(url):
+        with zipfile.ZipFile(url, "r") as zf:
+          if _extract_members_from_zip(zf, members):
+            return True
+        continue
+      try:
+        raw = _HttpRangeFile(url)
+        with zipfile.ZipFile(
+            io.BufferedReader(raw, buffer_size=262144), "r"
+        ) as zf:
+          if _extract_members_from_zip(zf, members):
+            return True
+          continue
+      except urllib.error.HTTPError:
+        raise
+      except Exception:  # pylint: disable=broad-exception-caught
+        pass
+      with tempfile.TemporaryDirectory() as tmpdir:
+        archive_path = os.path.join(tmpdir, "litert_prebuilts.zip")
+        urllib.request.urlretrieve(url, archive_path)
+        with zipfile.ZipFile(archive_path, "r") as zf:
+          if _extract_members_from_zip(zf, members):
+            return True
+    except Exception as e:  # pylint: disable=broad-exception-caught
+      print(
+          f"WARNING: Could not fetch prebuilts from {url}: {e}", file=sys.stderr
+      )
+  print(
+      f"ERROR: Failed to download LiteRT prebuilts: {sorted(members)}",
+      file=sys.stderr,
+  )
+  if os.environ.get("LITERT_PREBUILTS_OPTIONAL", "").strip().lower() in (
+      "1",
+      "true",
+      "yes",
+  ):
+    return False
+  raise SystemExit(
+      "Failed to download LiteRT vendor prebuilts. Set LITERT_PREBUILTS_URL to"
+      " a local litert_prebuilts zip, or LITERT_PREBUILTS_OPTIONAL=1 to"
+      " install without them."
+  )
+# END_LITERT_PREBUILTS_HELPER
+
+_PREBUILTS_HELPER_STUB = (
+    f"def {_download_litert_prebuilts.__name__}(*unused_args):"
+    "  # {{ LITERT_PREBUILTS_HELPER }}\n"
+    "  raise NotImplementedError\n"
+)
+
+
+def _load_prebuilts_helper_source() -> str:
+  with open(__file__, "rt", encoding="utf-8") as f:
+    source = f.read()
+  start_marker = "# BEGIN_LITERT_PREBUILTS_HELPER\n"
+  end_marker = "# END_LITERT_PREBUILTS_HELPER\n"
+  start = source.index(start_marker) + len(start_marker)
+  end = source.index(end_marker, start)
+  imports = "import io\nimport re\nimport urllib.error\n\n"
+  return imports + source[start:end]
 
 
 def _get_python_subprocess_env():
@@ -122,6 +294,10 @@ def main():
     )
     for key, value in substitutions.items():
       setup_py_content = setup_py_content.replace("{{ " + key + " }}", value)
+    if _PREBUILTS_HELPER_STUB in setup_py_content:
+      setup_py_content = setup_py_content.replace(
+          _PREBUILTS_HELPER_STUB, _load_prebuilts_helper_source()
+      )
     tmp_setup_py_path = os.path.join(build_dir, "setup.py")
     with open(tmp_setup_py_path, "wt") as f:
       f.write(setup_py_content)
