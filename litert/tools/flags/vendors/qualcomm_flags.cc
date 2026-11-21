@@ -601,6 +601,14 @@ ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
           "FastRPC. If not set, falls back to qualcomm_qnn_lib_dir, then to "
           "the plugin directory (shared_library_dir).");
 
+ABSL_FLAG(std::string, qualcomm_set_model_version, "",
+          "User-defined ASCII string to identify the model in the DLC metadata. "
+          "Only the first 64 bytes are stored. Only effective when backend is IR.");
+
+ABSL_FLAG(std::string, qualcomm_copyright, "",
+          "Copyright text to embed in the DLC metadata. "
+          "Only effective when backend is IR.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1157,6 +1165,16 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto lpai_core_selection =
       absl::GetFlag(FLAGS_qualcomm_lpai_core_selection);
   opts.SetLpaiCoreSelection(lpai_core_selection);
+
+  const auto model_version = absl::GetFlag(FLAGS_qualcomm_set_model_version);
+  if (!model_version.empty()) {
+    opts.SetModelVersion(model_version);
+  }
+
+  const auto copyright = absl::GetFlag(FLAGS_qualcomm_copyright);
+  if (!copyright.empty()) {
+    opts.SetCopyright(copyright);
+  }
 
   return {};
 }

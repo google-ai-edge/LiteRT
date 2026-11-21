@@ -69,6 +69,28 @@ GraphConfigBuilder IrBackend::BuildGraphConfigs(
   custom_config.serializationOption.outputPath = dlc_path.c_str();
   config_builder.AddCustomConfig(custom_config);
 
+#ifdef QNN_IR_GRAPH_MODEL_VERSION_OPTION_INIT
+  if (!options.GetModelVersion().empty()) {
+    auto& model_version_str = config_builder.Store<std::string>(
+        std::string(options.GetModelVersion()));
+    QnnIrGraph_CustomConfig_t version_config = QNN_IR_GRAPH_CUSTOM_CONFIG_INIT;
+    version_config.option = QNN_IR_GRAPH_CONFIG_OPTION_MODEL_VERSION;
+    version_config.modelVersionOption.modelVersion = model_version_str.c_str();
+    config_builder.AddCustomConfig(version_config);
+  }
+#endif
+
+#ifdef QNN_IR_GRAPH_COPYRIGHT_OPTION_INIT
+  if (!options.GetCopyright().empty()) {
+    auto& copyright_str = config_builder.Store<std::string>(
+        std::string(options.GetCopyright()));
+    QnnIrGraph_CustomConfig_t copyright_config = QNN_IR_GRAPH_CUSTOM_CONFIG_INIT;
+    copyright_config.option = QNN_IR_GRAPH_CONFIG_OPTION_COPYRIGHT;
+    copyright_config.copyrightOption.copyright = copyright_str.c_str();
+    config_builder.AddCustomConfig(copyright_config);
+  }
+#endif
+
   return config_builder;
 }
 }  // namespace qnn

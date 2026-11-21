@@ -135,6 +135,8 @@ struct LrtQualcommOptionsT {
   std::optional<std::uint32_t> lpai_core_selection;
   std::optional<std::string> qnn_lib_dir;
   std::optional<std::string> dsp_skel_dir;
+  std::optional<std::string> model_version;
+  std::optional<std::string> copyright;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -373,6 +375,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dsp_skel_dir") {
           status = LrtQualcommOptionsSetDspSkelDir(parsed_options,
                                                    std::string(value).c_str());
+        } else if (key == "model_version") {
+          status = LrtQualcommOptionsSetModelVersion(parsed_options,
+                                                     std::string(value).c_str());
+        } else if (key == "copyright") {
+          status = LrtQualcommOptionsSetCopyright(parsed_options,
+                                                  std::string(value).c_str());
         }
 
         return status;
@@ -601,6 +609,14 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_skel_dir.has_value()) {
     LITERT_RETURN_IF_ERROR(
         encoder.EncodeString("dsp_skel_dir", *options->dsp_skel_dir));
+  }
+  if (options->model_version.has_value()) {
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("model_version", *options->model_version));
+  }
+  if (options->copyright.has_value()) {
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("copyright", *options->copyright));
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
@@ -1686,5 +1702,39 @@ LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
   *dsp_skel_dir =
       options->dsp_skel_dir.has_value() ? options->dsp_skel_dir->c_str() : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetModelVersion(LrtQualcommOptions options,
+                                               const char* model_version) {
+  if (options == nullptr) return kLiteRtStatusErrorInvalidArgument;
+  options->model_version = model_version ? model_version : "";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetModelVersion(LrtQualcommOptions options,
+                                               const char** model_version) {
+  if (options == nullptr || model_version == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *model_version =
+      options->model_version.has_value() ? options->model_version->c_str() : "";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetCopyright(LrtQualcommOptions options,
+                                            const char* copyright) {
+  if (options == nullptr) return kLiteRtStatusErrorInvalidArgument;
+  options->copyright = copyright ? copyright : "";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetCopyright(LrtQualcommOptions options,
+                                            const char** copyright) {
+  if (options == nullptr || copyright == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *copyright =
+      options->copyright.has_value() ? options->copyright->c_str() : "";
   return kLiteRtStatusOk;
 }

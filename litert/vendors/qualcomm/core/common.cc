@@ -784,6 +784,18 @@ void Options::SetDspSkelDir(absl::string_view dsp_skel_dir) {
 
 absl::string_view Options::GetDspSkelDir() const { return dsp_skel_dir_; }
 
+void Options::SetModelVersion(absl::string_view model_version) {
+  model_version_ = model_version;
+}
+
+absl::string_view Options::GetModelVersion() const { return model_version_; }
+
+void Options::SetCopyright(absl::string_view copyright) {
+  copyright_ = copyright;
+}
+
+absl::string_view Options::GetCopyright() const { return copyright_; }
+
 std::string Options::Dump() const {
   // Grouped by category; append a field() line to the right section to add one.
   std::string out =

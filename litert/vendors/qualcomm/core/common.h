@@ -312,6 +312,13 @@ class Options {
   void SetDspSkelDir(absl::string_view dsp_skel_dir);
   absl::string_view GetDspSkelDir() const;
 
+  // DLC metadata (only effective when backend is kIrBackend).
+  void SetModelVersion(absl::string_view model_version);
+  absl::string_view GetModelVersion() const;
+
+  void SetCopyright(absl::string_view copyright);
+  absl::string_view GetCopyright() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -362,6 +369,8 @@ class Options {
   std::uint32_t lpai_core_selection_ = 0;
   std::string qnn_lib_dir_;
   std::string dsp_skel_dir_;
+  std::string model_version_;
+  std::string copyright_;
 };
 
 // Gets a default logger implementation to stdout.
