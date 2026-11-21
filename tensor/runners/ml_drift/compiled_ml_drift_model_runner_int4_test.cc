@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
@@ -105,11 +106,14 @@ INSTANTIATE_TEST_SUITE_P(
         Int4Case{6, 7, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
         Int4Case{5, 9, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
         Int4Case{8, 32, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int4Case{6, 12, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
         Int4Case{6, 7,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
         Int4Case{5, 9,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
         Int4Case{8, 32,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+        Int4Case{6, 12,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}),
     [](const ::testing::TestParamInfo<Int4Case>& info) {
       return absl::StrCat(
@@ -131,6 +135,29 @@ TEST(RearrangeInt4WeightsTest, RejectsAShortBuffer) {
                            ml_drift::GetTotalElementsCountForLayout(desc, ohwi),
                            /*want_sum_i=*/false),
       ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+// GPU weight conversion (`SetConvertWeightsOnGpu`) writes ML Drift's canonical
+// weight tensors (`GetTensorDescriptorsForWeightsLayout`) in place of the CPU
+// packed bytes: they must hold exactly the packed INT4 bytes.
+TEST_P(RearrangeInt4WeightsTest, CanonicalTensorHoldsThePackedBytes) {
+  const Int4Case& c = GetParam();
+  if (c.i % 4 != 0) GTEST_SKIP() << "Kept on the CPU path";
+  const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+  ml_drift::WeightsDescription desc;
+  desc.type = ml_drift::DataType::kUint4;
+  desc.layout = c.layout;
+  desc.output_group_size = ml_drift::DivideRoundUp(c.o, 4);
+  const int elements_count =
+      ml_drift::GetTotalElementsCountForLayout(desc, ohwi);
+  ASSERT_OK_AND_ASSIGN(
+      const RearrangedInt4Weights packed,
+      RearrangeInt4Weights(PackedInt4(c.o * c.i), ohwi, desc, elements_count,
+                           /*want_sum_i=*/false));
+  const std::vector<ml_drift::TensorDescriptor> tensors =
+      ml_drift::GetTensorDescriptorsForWeightsLayout(ohwi, desc);
+  ASSERT_EQ(tensors.size(), 1);
+  EXPECT_EQ(tensors[0].GetMemorySizeInBytes(), packed.data.size());
 }
 
 }  // namespace
