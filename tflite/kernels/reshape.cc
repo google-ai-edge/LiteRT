@@ -129,9 +129,12 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteNode* node) {
   TfLiteTensor* output;
   TF_LITE_ENSURE_OK(context,
                     GetOutputSafe(context, node, kOutputTensor, &output));
+  const TfLiteTensor* input;
+  TF_LITE_ENSURE_OK(context, GetInputSafe(context, node, kInputTensor, &input));
+  // The data is copied unchanged from the input to the output, so a type
+  // mismatch would make the output buffer the wrong size for the copy.
+  TF_LITE_ENSURE_TYPES_EQ(context, input->type, output->type);
   if (output->type != kTfLiteString) {
-    const TfLiteTensor* input = GetInput(context, node, kInputTensor);
-    TF_LITE_ENSURE(context, input != nullptr);
     const TfLiteTensor* shape = GetInput(context, node, kShapeTensor);
     if (NumInputs(node) == 1 || IsConstantOrPersistentTensor(shape)) {
       op_data->output_shape_known = true;
@@ -208,6 +211,7 @@ TfLiteStatus Eval(TfLiteContext* context, TfLiteNode* node) {
   }
   // Only copy data if input and output do not share a buffer.
   if (output->data.data != input->data.data) {
+    TF_LITE_ENSURE_EQ(context, input->bytes, output->bytes);
     memcpy(output->data.data, input->data.data, input->bytes);
   }
 
