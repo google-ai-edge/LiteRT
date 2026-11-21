@@ -167,8 +167,6 @@ class TensorWrapper final {
     qnn_tensor_.v2.clientBuf.data = owned_data_.data();
   }
 
-  void ConvertAxisScaleOffsetToScaleOffset();
-
   void MarkDump() {
     if (!absl::EndsWith(name_, kDumpSuffix)) {
       name_ += kDumpSuffix;

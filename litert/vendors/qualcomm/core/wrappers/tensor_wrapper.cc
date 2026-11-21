@@ -86,15 +86,6 @@ TensorWrapper::TensorWrapper(
   qnn_tensor_.v2.memType = QNN_TENSORMEMTYPE_RAW;
 }
 
-void TensorWrapper::ConvertAxisScaleOffsetToScaleOffset() {
-  if (!std::holds_alternative<AxisScaleOffsetQuantizeParamsWrapper>(
-          quantize_params_)) {
-    return;
-  }
-  quantize_params_.emplace<ScaleOffsetQuantizeParamsWrapper>(0.0, 0);
-  UpdateQnnQuantParams();
-}
-
 TensorWrapper::TensorWrapper(
     std::string name, Qnn_TensorType_t tensor_type, Qnn_DataType_t data_type,
     const QuantizeParamsWrapperVariant& quantize_params,
