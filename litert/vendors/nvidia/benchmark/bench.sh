@@ -148,7 +148,7 @@ invoke() {
   local prefix=$run/${name:+$name.}
   local args=("$engine" "${base_args[@]}" "--backend=$backend" "--max_num_tokens=$context"
     "--cache_dir=$pool/$([[ $backend == cpu ]] && echo cpu || echo compiler)")
-  [[ $backend == cpu ]] || args+=("${selected[@]}" "--enable_speculative_decoding=$mtp")
+  [[ $backend == cpu ]] || args+=("${selected[@]}" "--speculative_decoding_mode=$([[ $mtp == true ]] && echo always || echo off)")
   args+=("$@" "${extra[@]}")  # --cli-arg flags last, so they override the workload's
   export LITERT_NVIDIA_MEMORY_PROFILE=$([[ $sample == 1 ]] && echo 1 || echo 0)
   local baseline; baseline=$("$smi" --query-gpu=memory.used --format=csv,noheader,nounits | head -1 | tr -d ' ')
@@ -234,7 +234,7 @@ case "$metric" in
     verify_tokens=$("$NB_PYTHON" -c 'import json, sys; print(json.load(open(sys.argv[1])).get(sys.argv[2], {}).get("verify_output_tokens", 16))' "$here/models.json" "$profile" 2>/dev/null) || verify_tokens=16
     answer=(--benchmark=false "--max_output_tokens=${verify_tokens:-16}" '--input_prompt=Answer with only the capital city: What is the capital of France?' --expected_output=Paris)
     invoke npu npu 0 "${answer[@]}" || rc=$?
-    invoke cpu cpu 0 "${answer[@]}" --enable_speculative_decoding=false || rc=$? ;;
+    invoke cpu cpu 0 "${answer[@]}" --speculative_decoding_mode=off || rc=$? ;;
 esac
 echo "Run: $run (exit $rc)"
 exit $rc
