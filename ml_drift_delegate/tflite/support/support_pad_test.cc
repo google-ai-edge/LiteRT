@@ -98,6 +98,23 @@ TEST(PadSupportTest, PadV2NoConstantValue) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+TEST(PadSupportTest, PadV2Int64Paddings) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kTfLiteFloat32, {1, 2, 2, 1});
+  const int paddings = context_builder.AddConstTensor(kTfLiteInt64, {4, 2});
+  float const_val = 0.0f;
+  const int const_val_tensor =
+      context_builder.AddScalarConstTensor(kTfLiteFloat32, &const_val);
+  const int output = context_builder.AddTensor(kTfLiteFloat32, {1, 4, 4, 1});
+  context_builder.SetOp(kTfLiteBuiltinPadv2, /*version=*/1,
+                        /*params=*/nullptr,
+                        /*inputs=*/{input, paddings, const_val_tensor},
+                        /*outputs=*/{output});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_NE(context, nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
 TEST(PadSupportTest, NonConstPadding) {
   StubContextBuilder context_builder;
   const int input = context_builder.AddTensor(kTfLiteFloat32, {1, 2, 2, 1});
