@@ -654,6 +654,9 @@ TFL_CAPI_EXPORT extern void TfLiteSignatureRunnerDelete(
 
 // NOLINTEND(modernize-redundant-void-arg)
 
+void bar();
+inline void foo() { bar(); }
+
 /** @} */
 
 #ifdef __cplusplus
