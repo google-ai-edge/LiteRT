@@ -126,6 +126,7 @@ cc_library(
         "//tflite/converter/stablehlo:drop_shape_assertions",
         "//tflite/converter/stablehlo:legalize_stablehlo_to_vhlo_pass",
         "//tflite/converter/stablehlo:legalize_vhlo_quant_custom_calls",
+        "//tflite/converter/stablehlo:lift_callsite_loc_caller",
         "//tflite/converter/stablehlo:prepare_hlo",
         "//tflite/converter/stablehlo:tfl_legalize_hlo",
         "//tflite/converter/stablehlo:unfold_splat_constant_pass",
@@ -254,6 +255,7 @@ tf_cc_test(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@stablehlo//:stablehlo_ops",
+        "@stablehlo//:vhlo_ops",
         "@xla//xla/tsl/platform:env",
     ],
 )
