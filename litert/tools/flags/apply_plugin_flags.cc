@@ -77,6 +77,10 @@ bool AbslParseFlag(absl::string_view text,
         kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected;
     return true;
   }
+  if (text == "acyclic") {
+    *partition_strategy = kLiteRtCompilerOptionsPartitionStrategyAcyclic;
+    return true;
+  }
   *error = "Unknown partition strategy";
   return false;
 }
@@ -88,7 +92,10 @@ std::string AbslUnparseFlag(
       return "default";
     case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
       return "weakly_connected";
+    case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+      return "acyclic";
   }
+  return absl::StrCat("unknown(", static_cast<int>(partition_strategy), ")");
 }
 // NOLINTEND(*alien-types*)
 
