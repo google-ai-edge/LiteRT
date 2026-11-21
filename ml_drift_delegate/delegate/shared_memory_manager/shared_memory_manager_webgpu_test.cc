@@ -44,6 +44,7 @@
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/webgpu/testing/webgpu_test.h"  // from @ml_drift
+#include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -882,5 +883,50 @@ INSTANTIATE_TEST_SUITE_P(FloatTypes, CreateSharedWebGpuTensorTest,
                          ::testing::Values(DataType::kFloat16,
                                            DataType::kFloat32));
 #endif  // !defined(_WIN32)
+
+// Regression test: uploading a kTexture2D + kUint16 tensor via
+// UploadPrepackedTensor when bytes_per_row is not a multiple of 256 must repack
+// rows with bytes_per_row_aligned stride so rows r >= 1 are not corrupted.
+TEST(SharedMemoryManagerWebGpuTest, UploadPrepackedTexture2DUnalignedRowWidth) {
+  wgpu::BackendType backend_type = wgpu::BackendType::Vulkan;
+#if defined(__APPLE__)
+  backend_type = wgpu::BackendType::Metal;
+#elif defined(_WIN32)
+  backend_type = wgpu::BackendType::DX12;
+#endif
+  webgpu::ExecutionEnvironment env(backend_type);
+  ASSERT_OK(env.Initialize({.enable_host_mapped_pointer = true}));
+  if (!env.device().HasFeature(wgpu::FeatureName::HostMappedPointer)) {
+    GTEST_SKIP() << "HostMappedPointer feature not supported on this device.";
+  }
+
+  // region.x = 12 -> bytes_per_row = 12 * 8 = 96 (not a multiple of 256),
+  // region.y = 4 (> 1) so rows 1..3 exercise aligned row stride repacking.
+  TensorDescriptor desc(DataType::kUint16, TensorStorageType::kTexture2D,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 4, 12, 4));
+  const size_t size = desc.GetMemorySizeInBytes();
+  std::vector<uint8_t> expected(size);
+  for (size_t i = 0; i < size; ++i) {
+    expected[i] = static_cast<uint8_t>((i * 13 + 7) & 0xFF);
+  }
+
+  for (bool has_prepacked_tflite_tensors : {false, true}) {
+    ::litert::ml_drift::UnownedDataTensorDescriptor unowned_desc(
+        desc, absl::MakeConstSpan(expected));
+    std::unique_ptr<GpuSpatialTensor> tensor;
+    ASSERT_OK(webgpu_internal::CreateSharedWebGpuTensor(
+        env, unowned_desc, /*page_adjusted_offset=*/0,
+        /*release_data_callback=*/nullptr, has_prepacked_tflite_tensors,
+        /*upload_executor=*/nullptr,
+        webgpu_internal::UploadScheduling::kAllowInline, tensor));
+    ASSERT_NE(tensor, nullptr);
+
+    TensorDescriptor readback;
+    ASSERT_OK(static_cast<webgpu::SpatialTensor*>(tensor.get())
+                  ->ToDescriptor(env.device(), &readback));
+    EXPECT_THAT(readback.GetData(), ::testing::ElementsAreArray(expected));
+  }
+}
 
 }  // namespace ml_drift
