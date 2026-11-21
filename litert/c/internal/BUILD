@@ -667,6 +667,12 @@ filegroup(
 )
 
 cc_library(
+    name = "litert_platform_support_internal",
+    hdrs = ["litert_platform_support_internal.h"],
+    compatible_with = get_compatible_with_portable(),
+)
+
+cc_library(
     name = "litert_runtime_builtin_header",
     hdrs = ["litert_runtime_builtin.h"],
     visibility = [
@@ -743,6 +749,7 @@ filegroup(
         "litert_logging.cc",
         "litert_logging.h",
         "litert_options_helper.h",
+        "litert_platform_support_internal.h",
         "litert_runtime_api_export.h",
         "litert_runtime_builtin.cc",
         "litert_runtime_builtin.h",
