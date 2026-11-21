@@ -136,6 +136,19 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
     return true;
   }
 
+  if (!CheckTensorDims(*input, /*min_dims=*/0, /*max_dims=*/4, "input",
+                       *error) ||
+      !CheckTensorDims(*output, /*min_dims=*/0, /*max_dims=*/4, "output",
+                       *error)) {
+    return false;
+  }
+
+  // Unquantized runtime FP16 -> FP32 is lowered to kCast in ConvertDequantize.
+  if (input->type == kTfLiteFloat16 && output->type == kTfLiteFloat32 &&
+      input->quantization.type == kTfLiteNoQuantization) {
+    return true;
+  }
+
   if (!CheckTensorDtype(
           *input,
           {kTfLiteInt8, kTfLiteUInt8, kTfLiteInt4, kTfLiteUInt4, kTfLiteInt2},
@@ -156,8 +169,8 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
   if (quantization_data->scale == nullptr ||
       quantization_data->scale->size != 1 ||
       quantization_data->zero_point == nullptr ||
-      quantization_data->zero_point->size < 1) {
-    *error = "Unsupported quantization scale size";
+      quantization_data->zero_point->size != 1) {
+    *error = "Unsupported quantization scale or zero_point size";
     return false;
   }
 

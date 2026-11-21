@@ -57,11 +57,19 @@ void ConvertDequantize(
       tensor_map[node.inputs->data[0]];
   const ::ml_drift::ir::IrTensorId output_ir_id =
       tensor_map[node.outputs->data[0]];
+
+  if (input_tensor->type == kTfLiteFloat16) {
+    ::ml_drift::ir::IrOp* op = ir_model.add_op();
+    op->name = ToString(::ml_drift::OperationType::kCast);
+    ir_model.AddConsumer(input_ir_id, op->id);
+    ir_model.SetProducer(output_ir_id, op->id);
+    return;
+  }
+
   const ::ml_drift::DataType input_dtype =
       ir_model.tensor(input_ir_id)->desc.GetDataType();
   const ::ml_drift::DataType output_dtype =
       ir_model.tensor(output_ir_id)->desc.GetDataType();
-
   ::ml_drift::ir::IrOp* op = ir_model.add_op();
   op->name = ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
 
