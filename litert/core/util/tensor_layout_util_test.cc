@@ -17,13 +17,17 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <iterator>
 #include <limits>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -37,6 +41,10 @@ using ::testing::ElementsAreArray;
 using ::testing::HasSubstr;
 using ::testing::litert::IsError;
 using ::testing::litert::IsOk;
+
+std::string FormatShape(absl::Span<const int32_t> dims) {
+  return absl::StrCat("[", absl::StrJoin(dims, ","), "]");
+}
 
 TEST(TensorLayoutUtilTest, CheckedByteCountReturnsProductForValidInputs) {
   LITERT_ASSERT_OK_AND_ASSIGN(size_t bytes,
@@ -925,6 +933,446 @@ TEST(TensorLayoutUtilTest,
       ComputeConcreteBroadcastShape(
           absl::Span<const absl::Span<const int32_t>>{}));
   EXPECT_TRUE(out.empty());
+}
+
+// Independent, deliberately naive oracle mapping a flat output index to a flat
+// input index via explicit output->input coordinate conversion (shares no
+// stride or coalescing code with `BroadcastPlan` / `BroadcastCursor`).
+size_t NaiveBroadcastFlatIndex(size_t flat_out_idx,
+                               absl::Span<const int32_t> out_dims,
+                               absl::Span<const int32_t> in_dims) {
+  std::vector<size_t> out_coords(out_dims.size(), 0);
+  size_t rem = flat_out_idx;
+  for (size_t i = out_dims.size(); i > 0; --i) {
+    const size_t d = i - 1;
+    const size_t dim = static_cast<size_t>(out_dims[d]);
+    out_coords[d] = rem % dim;
+    rem /= dim;
+  }
+  const size_t rank_diff = out_dims.size() - in_dims.size();
+  size_t flat_in_idx = 0;
+  for (size_t d = 0; d < in_dims.size(); ++d) {
+    const size_t in_dim = static_cast<size_t>(in_dims[d]);
+    const size_t coord = (in_dim == 1) ? 0 : out_coords[d + rank_diff];
+    flat_in_idx = flat_in_idx * in_dim + coord;
+  }
+  return flat_in_idx;
+}
+
+std::vector<std::vector<int32_t>> EnumerateSmallShapes() {
+  std::vector<std::vector<int32_t>> shapes;
+  shapes.push_back({});  // Rank 0 scalar.
+  for (int32_t d0 = 0; d0 <= 3; ++d0) {
+    shapes.push_back({d0});
+    for (int32_t d1 = 0; d1 <= 3; ++d1) {
+      shapes.push_back({d0, d1});
+      for (int32_t d2 = 0; d2 <= 3; ++d2) {
+        shapes.push_back({d0, d1, d2});
+      }
+    }
+  }
+  return shapes;
+}
+
+template <typename T, typename = void>
+struct HasSpans : std::false_type {};
+
+template <typename T>
+struct HasSpans<T, std::void_t<decltype(std::declval<T>().Spans())>>
+    : std::true_type {};
+
+template <size_t N>
+void VerifyBroadcastPlanAgainstNaiveOracle(
+    const BroadcastPlan<N>& plan,
+    const std::array<absl::Span<const int32_t>, N>& in_shapes,
+    absl::Span<const int32_t> out_dims) {
+  EXPECT_THAT(plan.output_shape, ElementsAreArray(out_dims));
+  size_t visited_elements = 0;
+  size_t visited_spans = 0;
+  for (const BroadcastSpan<N>& span : plan.Spans()) {
+    ++visited_spans;
+    EXPECT_GT(span.count, 0u);
+    if (span.count == 0) {
+      return;
+    }
+    EXPECT_EQ(span.output_offset, visited_elements);
+    for (size_t k = 0; k < N; ++k) {
+      EXPECT_LE(span.input_steps[k], 1u);
+    }
+    for (size_t i = 0; i < span.count; ++i) {
+      const size_t out_idx = span.output_offset + i;
+      for (size_t k = 0; k < N; ++k) {
+        const size_t actual_in =
+            span.input_offsets[k] + i * span.input_steps[k];
+        const size_t expected_in =
+            NaiveBroadcastFlatIndex(out_idx, out_dims, in_shapes[k]);
+        EXPECT_EQ(actual_in, expected_in)
+            << "Mismatch at output index " << out_idx << " operand " << k;
+      }
+    }
+    visited_elements += span.count;
+  }
+  EXPECT_EQ(visited_elements, plan.output_num_elements);
+  EXPECT_EQ(visited_spans, plan.NumSpans());
+}
+
+TEST(BroadcastPlanTest, MatchesExpectedSpansForAlternatingBroadcastAxes) {
+  // Exact 6-span layout for [2,1,4] + [1,3,1] -> [2,3,4].
+  const int32_t in0[] = {2, 1, 4};
+  const int32_t in1[] = {1, 3, 1};
+  const int32_t out[] = {2, 3, 4};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<2> plan,
+      PrepareBroadcastPlan<2>({in0, in1}, {sizeof(int16_t), sizeof(int32_t)},
+                              out, sizeof(double)));
+
+  EXPECT_THAT(plan.output_shape, ElementsAre(2, 3, 4));
+  EXPECT_EQ(plan.output_num_elements, 24u);
+  EXPECT_EQ(plan.output_num_bytes, 24u * sizeof(double));
+  EXPECT_THAT(plan.input_num_elements, ElementsAre(8u, 3u));
+  EXPECT_THAT(plan.input_num_bytes,
+              ElementsAre(8u * sizeof(int16_t), 3u * sizeof(int32_t)));
+  ASSERT_EQ(plan.NumSpans(), 6u);
+  std::vector<BroadcastSpan<2>> spans;
+  for (const BroadcastSpan<2>& span : plan.Spans()) {
+    spans.push_back(span);
+  }
+  ASSERT_EQ(spans.size(), 6u);
+  const size_t expected_out[] = {0, 4, 8, 12, 16, 20};
+  const size_t expected_in0[] = {0, 0, 0, 4, 4, 4};
+  const size_t expected_in1[] = {0, 1, 2, 0, 1, 2};
+  for (size_t i = 0; i < 6; ++i) {
+    EXPECT_EQ(spans[i].output_offset, expected_out[i]);
+    EXPECT_EQ(spans[i].input_offsets[0], expected_in0[i]);
+    EXPECT_EQ(spans[i].input_offsets[1], expected_in1[i]);
+    EXPECT_EQ(spans[i].count, 4u);
+    EXPECT_EQ(spans[i].input_steps[0], 1u);
+    EXPECT_EQ(spans[i].input_steps[1], 0u);
+  }
+}
+
+TEST(BroadcastPlanTest, CoalescesCompatibleAdjacentDimensions) {
+  const int32_t a[] = {2, 3, 4};
+  const int32_t scalar_like[] = {1, 1, 1};
+  const int32_t trailing_bcast[] = {2, 3, 1};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<2> full_coalesce,
+      PrepareBroadcastPlan<2>({a, scalar_like}, {4, 4}, a, 4));
+  EXPECT_EQ(full_coalesce.NumSpans(), 1u);
+  EXPECT_EQ(full_coalesce.span_count, 24u);
+  EXPECT_THAT(full_coalesce.span_steps, ElementsAre(1u, 0u));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<2> outer_coalesce,
+      PrepareBroadcastPlan<2>({a, trailing_bcast}, {4, 4}, a, 4));
+  EXPECT_EQ(outer_coalesce.NumSpans(), 6u);
+  EXPECT_EQ(outer_coalesce.span_count, 4u);
+  EXPECT_THAT(outer_coalesce.outer_extents, ElementsAre(6u));
+  EXPECT_THAT(outer_coalesce.span_steps, ElementsAre(1u, 0u));
+}
+
+TEST(BroadcastPlanTest, UnaryExhaustiveSmallShapesMatchNaiveOracle) {
+  const std::vector<std::vector<int32_t>> shapes = EnumerateSmallShapes();
+  for (const std::vector<int32_t>& in_dims : shapes) {
+    for (const std::vector<int32_t>& out_dims : shapes) {
+      SCOPED_TRACE(absl::StrCat("in=", FormatShape(in_dims),
+                                " out=", FormatShape(out_dims)));
+      bool expected_valid = in_dims.size() <= out_dims.size();
+      if (expected_valid) {
+        const size_t diff = out_dims.size() - in_dims.size();
+        for (size_t d = 0; d < in_dims.size(); ++d) {
+          if (in_dims[d] != 1 && in_dims[d] != out_dims[d + diff]) {
+            expected_valid = false;
+            break;
+          }
+        }
+      }
+      Expected<BroadcastPlan<1>> plan = PrepareBroadcastPlan<1>(
+          {in_dims}, {sizeof(int32_t)}, out_dims, sizeof(int32_t),
+          BroadcastOutputMode::kTargetShape);
+      ASSERT_EQ(plan.HasValue(), expected_valid);
+      if (expected_valid) {
+        VerifyBroadcastPlanAgainstNaiveOracle<1>(*plan, {in_dims}, out_dims);
+      }
+    }
+  }
+}
+
+TEST(BroadcastPlanTest, BinaryExhaustiveSmallShapesMatchNaiveOracle) {
+  const std::vector<std::vector<int32_t>> shapes = EnumerateSmallShapes();
+  for (const std::vector<int32_t>& a_dims : shapes) {
+    for (const std::vector<int32_t>& b_dims : shapes) {
+      SCOPED_TRACE(
+          absl::StrCat("a=", FormatShape(a_dims), " b=", FormatShape(b_dims)));
+      Expected<std::vector<int32_t>> expected_out =
+          ComputeConcreteBroadcastShape(a_dims, b_dims);
+      if (!expected_out) {
+        EXPECT_THAT(
+            PrepareBroadcastPlan<2>({a_dims, b_dims}, {4, 4}, a_dims, 4),
+            IsError(kLiteRtStatusErrorInvalidArgument));
+        continue;
+      }
+      LITERT_ASSERT_OK_AND_ASSIGN(
+          BroadcastPlan<2> plan,
+          PrepareBroadcastPlan<2>({a_dims, b_dims}, {4, 4}, *expected_out, 4));
+      VerifyBroadcastPlanAgainstNaiveOracle<2>(plan, {a_dims, b_dims},
+                                               *expected_out);
+    }
+  }
+}
+
+TEST(BroadcastPlanTest, TernaryBroadcastMatrixMatchesNaiveOracle) {
+  const std::vector<std::vector<int32_t>> shapes = {
+      {},        {0},       {1},       {2},       {3},
+      {0, 1},    {1, 0},    {1, 1},    {1, 2},    {2, 1},
+      {2, 3},    {0, 2},    {2, 0},    {1, 1, 1}, {2, 1, 3},
+      {1, 2, 1}, {1, 1, 3}, {2, 1, 1}, {2, 2, 3}, {0, 1, 3},
+  };
+  for (const std::vector<int32_t>& c_dims : shapes) {
+    for (const std::vector<int32_t>& a_dims : shapes) {
+      for (const std::vector<int32_t>& b_dims : shapes) {
+        SCOPED_TRACE(absl::StrCat("c=", FormatShape(c_dims),
+                                  " a=", FormatShape(a_dims),
+                                  " b=", FormatShape(b_dims)));
+        const std::array<absl::Span<const int32_t>, 3> in_shapes = {
+            c_dims, a_dims, b_dims};
+        Expected<std::vector<int32_t>> expected_out =
+            ComputeConcreteBroadcastShape(in_shapes);
+        if (!expected_out) {
+          EXPECT_THAT(PrepareBroadcastPlan<3>(in_shapes, {1, 4, 4}, a_dims, 4),
+                      IsError(kLiteRtStatusErrorInvalidArgument));
+          continue;
+        }
+        LITERT_ASSERT_OK_AND_ASSIGN(
+            BroadcastPlan<3> plan,
+            PrepareBroadcastPlan<3>(in_shapes, {1, 4, 4}, *expected_out, 4));
+        VerifyBroadcastPlanAgainstNaiveOracle<3>(plan, in_shapes,
+                                                 *expected_out);
+      }
+    }
+  }
+}
+
+TEST(BroadcastPlanTest, InferredExactRejectsOverExpandedOutputTargetAccepts) {
+  const int32_t one[] = {1};
+  const int32_t target[] = {2, 3};
+
+  EXPECT_THAT(PrepareBroadcastPlan<2>({one, one}, {4, 4}, target, 4,
+                                      BroadcastOutputMode::kInferredExact),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Same-rank mismatch where inferred broadcast shape is {2} but output is {3}.
+  const int32_t two[] = {2};
+  const int32_t three[] = {3};
+  EXPECT_THAT(PrepareBroadcastPlan<2>({two, two}, {4, 4}, three, 4,
+                                      BroadcastOutputMode::kInferredExact),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<1> target_plan,
+      PrepareBroadcastPlan<1>({one}, {4}, target, 4,
+                              BroadcastOutputMode::kTargetShape));
+  EXPECT_THAT(target_plan.output_shape, ElementsAre(2, 3));
+  EXPECT_EQ(target_plan.output_num_elements, 6u);
+  EXPECT_EQ(target_plan.output_num_bytes, 24u);
+  EXPECT_EQ(target_plan.NumSpans(), 1u);
+}
+
+TEST(BroadcastPlanTest, RejectsIncompatibleDimsEvenWhenAnotherDimIsZero) {
+  const int32_t a[] = {0, 2};
+  const int32_t b[] = {0, 3};
+  const int32_t out[] = {0, 3};
+
+  EXPECT_THAT(PrepareBroadcastPlan<2>({a, b}, {4, 4}, out, 4),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(BroadcastPlanTest, HighRankAboveEightMatchesNaiveOracle) {
+  const std::vector<int32_t> a = {2, 1, 2, 1, 2, 1, 2, 1, 2, 1};
+  const std::vector<int32_t> b = {1, 2, 1, 2, 1, 2, 1, 2, 1, 2};
+  const std::vector<int32_t> out = {2, 2, 2, 2, 2, 2, 2, 2, 2, 2};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(BroadcastPlan<2> plan,
+                              PrepareBroadcastPlan<2>({a, b}, {4, 4}, out, 4));
+  VerifyBroadcastPlanAgainstNaiveOracle<2>(plan, {a, b}, out);
+}
+
+TEST(BroadcastPlanTest, RejectsElementAndByteCountOverflowWithoutAllocation) {
+  const int32_t huge_elems[] = {std::numeric_limits<int32_t>::max(),
+                                std::numeric_limits<int32_t>::max(),
+                                std::numeric_limits<int32_t>::max()};
+  const int32_t huge_bytes[] = {1 << 30, 1 << 30, 4};
+  const int32_t small_shape[] = {1};
+
+  // Output element and byte count overflows.
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_elems}, {1}, huge_elems, 1),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_bytes}, {8}, huge_bytes, 8),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Input-only element count overflow with a valid output shape.
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_elems}, {1}, small_shape, 1,
+                                      BroadcastOutputMode::kInferredExact),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_elems}, {1}, small_shape, 1,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Input-only byte count overflow with a valid output byte count.
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_bytes}, {8}, huge_bytes, 1,
+                                      BroadcastOutputMode::kInferredExact),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(PrepareBroadcastPlan<1>({huge_bytes}, {8}, huge_bytes, 1,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(BroadcastPlanTest, TargetShapeMultiInputAndInvalidArgs) {
+  const int32_t a[] = {1, 3};
+  const int32_t b[] = {2, 1};
+  const int32_t target[] = {4, 2, 3};
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<2> plan,
+      PrepareBroadcastPlan<2>({a, b}, {sizeof(int8_t), sizeof(int16_t)}, target,
+                              sizeof(float),
+                              BroadcastOutputMode::kTargetShape));
+  EXPECT_THAT(plan.output_shape, ElementsAre(4, 2, 3));
+  EXPECT_EQ(plan.output_num_elements, 24u);
+  EXPECT_EQ(plan.output_num_bytes, 24u * sizeof(float));
+  EXPECT_THAT(plan.input_num_elements, ElementsAre(3u, 2u));
+  EXPECT_THAT(plan.input_num_bytes,
+              ElementsAre(3u * sizeof(int8_t), 2u * sizeof(int16_t)));
+  VerifyBroadcastPlanAgainstNaiveOracle<2>(plan, {a, b}, target);
+
+  // Empty target shape with non-empty singleton input preserves input counts.
+  const int32_t one[] = {1};
+  const int32_t empty_target[] = {2, 0};
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      BroadcastPlan<1> empty_plan,
+      PrepareBroadcastPlan<1>({one}, {sizeof(int16_t)}, empty_target,
+                              sizeof(float),
+                              BroadcastOutputMode::kTargetShape));
+  EXPECT_TRUE(empty_plan.IsEmpty());
+  EXPECT_EQ(empty_plan.NumSpans(), 0u);
+  EXPECT_THAT(empty_plan.output_shape, ElementsAre(2, 0));
+  EXPECT_EQ(empty_plan.output_num_elements, 0u);
+  EXPECT_EQ(empty_plan.output_num_bytes, 0u);
+  EXPECT_THAT(empty_plan.input_num_elements, ElementsAre(1u));
+  EXPECT_THAT(empty_plan.input_num_bytes, ElementsAre(sizeof(int16_t)));
+  EXPECT_EQ(empty_plan.Spans().begin(), empty_plan.Spans().end());
+
+  // Incompatible multi-input zero-dim shapes under kTargetShape.
+  const int32_t z2[] = {2, 0};
+  const int32_t z3[] = {3, 0};
+  EXPECT_THAT(PrepareBroadcastPlan<2>({z2, z3}, {4, 4}, z2, 4,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Input rank exceeding target rank under kTargetShape.
+  const int32_t rank3[] = {1, 2, 3};
+  const int32_t rank2[] = {2, 3};
+  EXPECT_THAT(PrepareBroadcastPlan<1>({rank3}, {4}, rank2, 4,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Negative output dimension.
+  const int32_t neg_out[] = {2, -1};
+  EXPECT_THAT(PrepareBroadcastPlan<1>({a}, {4}, neg_out, 4,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Negative input dimension with a valid output shape.
+  const int32_t neg_in[] = {-1, 3};
+  EXPECT_THAT(PrepareBroadcastPlan<1>({neg_in}, {4}, target, 4,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(PrepareBroadcastPlan<1>({neg_in}, {4}, target, 4,
+                                      BroadcastOutputMode::kInferredExact),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  // Zero element sizes for input or output.
+  EXPECT_THAT(PrepareBroadcastPlan<2>({a, b}, {0, 4}, target, 4,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(PrepareBroadcastPlan<2>({a, b}, {4, 4}, target, 0,
+                                      BroadcastOutputMode::kTargetShape),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+}
+
+TEST(BroadcastPlanTest, BroadcastCursorDirectOperationsAndIteratorTraits) {
+  static_assert(std::is_same_v<
+                std::iterator_traits<BroadcastCursor<2>>::iterator_category,
+                std::input_iterator_tag>);
+  static_assert(
+      std::is_same_v<std::iterator_traits<BroadcastCursor<2>>::value_type,
+                     BroadcastSpan<2>>);
+  static_assert(
+      std::is_same_v<std::iterator_traits<BroadcastCursor<2>>::difference_type,
+                     std::ptrdiff_t>);
+  static_assert(
+      std::is_same_v<std::iterator_traits<BroadcastCursor<2>>::pointer, void>);
+  static_assert(
+      std::is_same_v<std::iterator_traits<BroadcastCursor<2>>::reference,
+                     BroadcastSpan<2>>);
+  static_assert(
+      !std::is_constructible_v<BroadcastCursor<2>, BroadcastPlan<2>&&>);
+  static_assert(
+      !std::is_constructible_v<BroadcastCursor<2>, const BroadcastPlan<2>&&>);
+  static_assert(HasSpans<BroadcastPlan<2>&>::value);
+  static_assert(HasSpans<const BroadcastPlan<2>&>::value);
+  static_assert(!HasSpans<BroadcastPlan<2>&&>::value);
+  static_assert(!HasSpans<const BroadcastPlan<2>&&>::value);
+
+  // Default-constructed cursor and SpanRange are done and safely yield empty.
+  BroadcastCursor<2> default_cursor;
+  EXPECT_TRUE(default_cursor.Done());
+  EXPECT_EQ(default_cursor.Current().count, 0u);
+  default_cursor.Advance();
+  EXPECT_TRUE(default_cursor.Done());
+
+  BroadcastPlan<2>::SpanRange empty_range;
+  EXPECT_EQ(empty_range.plan, nullptr);
+  EXPECT_EQ(empty_range.begin(), empty_range.end());
+  EXPECT_TRUE(empty_range.begin().Done());
+
+  const int32_t a[] = {2, 1};
+  const int32_t b[] = {1, 3};
+  const int32_t out[] = {2, 3};
+  LITERT_ASSERT_OK_AND_ASSIGN(BroadcastPlan<2> plan,
+                              PrepareBroadcastPlan<2>({a, b}, {4, 4}, out, 4));
+  BroadcastCursor<2> c1(plan);
+  BroadcastCursor<2> c2(plan);
+  BroadcastCursor<2> end_cursor;
+
+  EXPECT_FALSE(c1.Done());
+  EXPECT_TRUE(c1 == c2);
+  EXPECT_TRUE(c1 != end_cursor);
+
+  BroadcastCursor<2> prev = c1++;
+  EXPECT_EQ(prev.Current().output_offset, 0u);
+  EXPECT_EQ(c1.Current().output_offset, 3u);
+  EXPECT_TRUE(c1 != prev);
+
+  c1.Advance();
+  EXPECT_TRUE(c1.Done());
+  EXPECT_TRUE(c1 == end_cursor);
+  EXPECT_EQ(c1.Current().count, 0u);
+
+  // Advance after completion is idempotent.
+  c1.Advance();
+  EXPECT_TRUE(c1.Done());
+  EXPECT_EQ(c1.Current().count, 0u);
+
+  // NumSpans and BroadcastCursor both guard against zero `span_count`.
+  BroadcastPlan<1> mutated;
+  mutated.output_num_elements = 4;
+  mutated.span_count = 0;
+  EXPECT_EQ(mutated.NumSpans(), 0u);
+  EXPECT_TRUE(BroadcastCursor<1>(mutated).Done());
+  EXPECT_EQ(mutated.Spans().begin(), mutated.Spans().end());
 }
 
 }  // namespace

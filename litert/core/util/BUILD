@@ -140,6 +140,7 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/test:matchers",
+        "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
     ],
