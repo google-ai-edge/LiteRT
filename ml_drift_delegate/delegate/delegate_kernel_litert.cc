@@ -193,6 +193,17 @@ bool DelegateKernelLiteRt::IsAhwbTensorBuffer(
          buffer_type == kLiteRtTensorBufferTypeAhwb;
 }
 
+TfLiteTensor* DelegateKernelLiteRt::GetEffectiveTensor(TfLiteContext* context,
+                                                       int tensor_idx) const {
+  if (HasQuantizedTensors()) {
+    auto it = quant_conversion_map().find(tensor_idx);
+    if (it != quant_conversion_map().end()) {
+      return &context->tensors[it->second];
+    }
+  }
+  return &context->tensors[tensor_idx];
+}
+
 // Create internal SpatialTensor from I/O TensorBuffers and bind them to the
 // inference context. The created SpatialTensors are stored in
 // input_tensors_ and output_tensors_.
@@ -205,7 +216,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
       continue;
     }
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
     auto tensor_buffer =
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor);
     if (!tensor_buffer) {
@@ -232,7 +244,8 @@ absl::Status DelegateKernelLiteRt::BindExternalTensorBuffers(
   }
 
   for (int i = 0; i < output_indices_.size(); ++i) {
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
     auto tensor_buffer =
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor);
     if (!tensor_buffer) {
@@ -275,7 +288,8 @@ absl::Status DelegateKernelLiteRt::ConvertNonExternalInputTensorsToGpuMemory(
       continue;
     }
 
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
     LITERT_ASSIGN_OR_RETURN(
         auto tensor_buffer,
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
@@ -311,7 +325,8 @@ absl::Status DelegateKernelLiteRt::ConvertGpuMemoryToNonExternalOutputTensors(
       continue;
     }
 
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
     LITERT_ASSIGN_OR_RETURN(
         auto tensor_buffer,
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
@@ -414,6 +429,13 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
     ABSL_RETURN_IF_ERROR(ProcessTensor(
         &context->tensors[input_indices_[i]], input_ids_[i], proc_context,
         input_tensor_descriptors_[i], graph_tensor_ref));
+    TfLiteTensor* effective_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
+    if (effective_tensor != &context->tensors[input_indices_[i]]) {
+      ABSL_RETURN_IF_ERROR(
+          RegisterLiteRtBufferRequirementsNonImmutableExternalTensorsMode(
+              proc_context.buffer_context, effective_tensor));
+    }
   }
 
   // Process output tensors using the graph's canonical shape/dtype.
@@ -423,6 +445,13 @@ absl::Status DelegateKernelLiteRt::UpdateCreateInfoWithExternalTensors(
     ABSL_RETURN_IF_ERROR(ProcessTensor(
         &context->tensors[output_indices_[i]], output_ids_[i], proc_context,
         output_tensor_descriptors_[i], graph_tensor_ref));
+    TfLiteTensor* effective_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
+    if (effective_tensor != &context->tensors[output_indices_[i]]) {
+      ABSL_RETURN_IF_ERROR(
+          RegisterLiteRtBufferRequirementsNonImmutableExternalTensorsMode(
+              proc_context.buffer_context, effective_tensor));
+    }
   }
 
   return absl::OkStatus();
@@ -488,7 +517,8 @@ absl::Status DelegateKernelLiteRt::HandleInputEvents(TfLiteContext* context) {
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
       continue;
     }
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
     LITERT_ASSIGN_OR_RETURN(
         auto tensor_buffer,
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
@@ -567,7 +597,8 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
   LITERT_ASSIGN_OR_RETURN(auto env,
                           GetEnvironment(runtime_context_, buffer_context_));
   for (int i = 0; i < output_indices_.size(); ++i) {
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
     LITERT_ASSIGN_OR_RETURN(
         auto tensor_buffer,
         GetTensorBuffer(runtime_context_, buffer_context_, tflite_tensor),
@@ -585,7 +616,8 @@ absl::Status DelegateKernelLiteRt::UploadIntermediateCpuTensorsToGpuMemory(
     if (IsExternalSharedConstantTensor(input_ids_[i])) {
       continue;
     }
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
     // External tensors are normally bound directly to GPU memory and need no
     // upload. However, when the user binds a CPU-synced buffer (e.g.
     // kLiteRtTensorBufferTypeHostMemory) to an external tensor, the compiled
@@ -628,7 +660,8 @@ absl::Status DelegateKernelLiteRt::UploadIntermediateCpuTensorsToGpuMemory(
 absl::Status DelegateKernelLiteRt::DownloadGpuMemoryToIntermediateCpuTensors(
     TfLiteContext* context) {
   for (int i = 0; i < output_ids_.size(); ++i) {
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
     // External tensors bound to a CPU-synced buffer are kTfLiteCustom CPU
     // allocations (see UploadIntermediateCpuTensorsToGpuMemory()), so the
     // result must be downloaded into that allocation.
@@ -731,7 +764,8 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     }
     ABSL_ASSIGN_OR_RETURN(auto gpu_tensor,
                           ctx_->GetSpatialTensor(input_ids_[i]));
-    TfLiteTensor* tflite_tensor = &context->tensors[input_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, input_indices_[i]);
     ::ml_drift::BufferDescriptor src_desc;
     src_desc.element_type = ToDataType(tflite_tensor->type);
     if (src_desc.element_type == ::ml_drift::DataType::kUnknown) {
@@ -751,7 +785,8 @@ absl::Status DelegateKernelLiteRt::InitTensorConverters(
     }
     ABSL_ASSIGN_OR_RETURN(auto gpu_tensor,
                           ctx_->GetSpatialTensor(output_ids_[i]));
-    TfLiteTensor* tflite_tensor = &context->tensors[output_indices_[i]];
+    TfLiteTensor* tflite_tensor =
+        GetEffectiveTensor(context, output_indices_[i]);
     ::ml_drift::BufferDescriptor dst_desc;
     dst_desc.element_type = ToDataType(tflite_tensor->type);
     if (dst_desc.element_type == ::ml_drift::DataType::kUnknown) {

@@ -59,6 +59,18 @@ class DelegateKernel {
   // Returns true if there are any quantized tensors in the model.
   bool HasQuantizedTensors() const { return !quant_conversion_map_.empty(); }
 
+  // Returns mapping between dequantized float tensors and original quantized
+  // tensors.
+  const absl::flat_hash_map<int, int>& quant_conversion_map() const {
+    return quant_conversion_map_;
+  }
+
+  // Sets the mapping between dequantized float tensors and original quantized
+  // tensors. Useful for testing.
+  void set_quant_conversion_map(absl::flat_hash_map<int, int> map) {
+    quant_conversion_map_ = std::move(map);
+  }
+
   // Calls the delegate to get the list of tensors that need to be temporarily
   // storage. It's usually needed for quantized tensors. And it's eventually
   // stored in TfLiteNode::temporaries.
@@ -236,7 +248,7 @@ class DelegateKernel {
 
  protected:
   // MlDriftDelegateData referenced by delegate->data_.
-  MlDriftDelegateData* delegate_data_;
+  MlDriftDelegateData* delegate_data_ = nullptr;
 
   std::vector<int64_t> input_indices_;
   std::vector<int64_t> output_indices_;
@@ -250,6 +262,9 @@ class DelegateKernel {
   // Set of external tensor ids. It's updated by
   // InitializeExternalSharedConstantTensors().
   absl::flat_hash_set<::ml_drift::ValueId> external_tensor_ids_;
+  // Map the tensor index of each originally quantized (8-bit) tensor to its
+  // float version added in model_builder.
+  absl::flat_hash_map<int, int> quant_conversion_map_;
 
  private:
   // Ordered set of external shared constant tensor ids.
@@ -262,9 +277,6 @@ class DelegateKernel {
   // Object needed for the model serialization. It is initialized in
   // InitInferenceContext().
   std::unique_ptr<tflite::delegates::Serialization> serialization_;
-  // Map the tensor index of each originally quantized (8-bit) tensor to its
-  // float version added in model_builder.
-  absl::flat_hash_map<int, int> quant_conversion_map_;
 };
 
 }  // namespace litert::ml_drift
