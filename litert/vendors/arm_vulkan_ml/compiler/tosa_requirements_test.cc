@@ -16,10 +16,17 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <memory>
+#include <string>
+#include <utility>
 #include <vector>
 
 #include "TosaForSpirvCodegen.hpp"
 #include <gtest/gtest.h>
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "tosa-for-spirv-codegen/spirv/Instruction.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/spirv/Module.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/spirv/Operand.hpp"  // from @tosa_for_spirv_codegen
 #include "tosa-for-spirv-codegen/tosa/OperatorEnum.hpp"  // from @tosa_for_spirv_codegen
 #include "tosa-for-spirv-codegen/tosa/Tensor.hpp"  // from @tosa_for_spirv_codegen
 #include "litert/c/litert_op_code.h"
@@ -50,6 +57,31 @@ OperationPlan FloatConvolution(bool depthwise) {
   p.padding = {0, 0, 0, 0};
   p.cropped_shape = p.inputs[0].shape;
   return p;
+}
+
+struct MinimalModule {
+  std::shared_ptr<tfsc::spirv::Module> module;
+  const tfsc::spirv::Instruction* tosa_import = nullptr;
+  const tfsc::spirv::Instruction* tensor_type = nullptr;
+  tfsc::tosa::ResId input = nullptr;
+};
+
+// Builds a minimal finalized single-input INT32 graph for SPIR-V validation
+// tests.
+MinimalModule CreateMinimalValidModule() {
+  MinimalModule result;
+  result.module = tfsc::CreateModule();
+  tfsc::tosa::Graph graph(result.module, "main");
+  result.input = graph.AddInput(Tensor(DataType::int32_t, {2, 3}), 0);
+  graph.AddOutput(result.input, 1);
+  graph.FinalizeGraph();
+  tfsc::spirv::Module::InstructionRange imports =
+      result.module->GetInstructionsOfType(spv::Op::OpExtInstImport);
+  if (imports.first != imports.second) result.tosa_import = &*imports.first;
+  tfsc::spirv::Module::InstructionRange tensors =
+      result.module->GetInstructionsOfType(spv::Op::OpTypeTensorARM);
+  if (tensors.first != tensors.second) result.tensor_type = &*tensors.first;
+  return result;
 }
 
 TEST(TosaRequirementsTest, FloatingZeroPointsHaveTheSpecificationElementType) {
@@ -202,6 +234,344 @@ TEST(TosaRequirementsTest, ComputesResizeScaleRatioRatherThanRawNumerator) {
   std::string reason;
   ASSERT_TRUE(CollectTosaLevelRequirements(*module, r, reason)) << reason;
   EXPECT_EQ(r.max_scale, 257);
+}
+
+TEST(TosaRequirementsTest, RejectsSameTypeCastOperators) {
+  static constexpr DataType kTypes[] = {
+      DataType::int32_t,   DataType::int8_t,     DataType::float32_t,
+      DataType::float16_t, DataType::bfloat16_t, DataType::bool_t,
+  };
+  for (DataType dtype : kTypes) {
+    SCOPED_TRACE(tfsc::tosa::GetDataTypeName(dtype));
+    std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    tfsc::tosa::ResId input = graph.AddInput(Tensor(dtype, {2, 3}), 0);
+    tfsc::tosa::ResId output =
+        graph.AddCastOperator(input, Tensor(dtype, {2, 3}));
+    if (output == nullptr || tfsc::IsError(output)) {
+      ADD_FAILURE() << "Failed to emit CAST operator";
+      continue;
+    }
+    graph.AddOutput(output, 1);
+    graph.FinalizeGraph();
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(CollectTosaLevelRequirements(*module, requirements, reason));
+    EXPECT_EQ(reason,
+              "TOSA CAST requires distinct input and output element types");
+  }
+}
+
+TEST(TosaRequirementsTest, AcceptsCrossTypeCastOperators) {
+  static constexpr std::pair<DataType, DataType> kPairs[] = {
+      {DataType::int32_t, DataType::int8_t},
+      {DataType::int8_t, DataType::int32_t},
+      {DataType::float32_t, DataType::int32_t},
+      {DataType::int8_t, DataType::bool_t},
+      {DataType::float32_t, DataType::float16_t},
+      {DataType::float16_t, DataType::bfloat16_t},
+  };
+  for (const auto& [in_type, out_type] : kPairs) {
+    SCOPED_TRACE(absl::StrCat(tfsc::tosa::GetDataTypeName(in_type), "->",
+                              tfsc::tosa::GetDataTypeName(out_type)));
+    std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    tfsc::tosa::ResId input = graph.AddInput(Tensor(in_type, {2, 3}), 0);
+    tfsc::tosa::ResId output =
+        graph.AddCastOperator(input, Tensor(out_type, {2, 3}));
+    if (output == nullptr || tfsc::IsError(output)) {
+      ADD_FAILURE() << "Failed to emit CAST operator";
+      continue;
+    }
+    graph.AddOutput(output, 1);
+    graph.FinalizeGraph();
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_TRUE(CollectTosaLevelRequirements(*module, requirements, reason))
+        << reason;
+    EXPECT_TRUE(requirements.checked);
+  }
+}
+
+TEST(TosaRequirementsTest, RejectsMalformedCastOperator) {
+  // Missing input operand (4 operands instead of 5).
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    ASSERT_NE(base.tensor_type, nullptr);
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(base.tensor_type),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+
+  // Non-instruction input operand.
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    ASSERT_NE(base.tensor_type, nullptr);
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(base.tensor_type),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(0u),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+
+  // Input operand points to an instruction with empty operands.
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    ASSERT_NE(base.tensor_type, nullptr);
+    tfsc::spirv::Instruction empty_input(spv::Op::OpNop, {});
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(base.tensor_type),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(&empty_input),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+
+  // Non-instruction output type operand.
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(0u),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(base.input),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+
+  // Output type operand points to a 4-operand non-OpTypeTensorARM instruction
+  // carrying a valid distinct element type at operand 1.
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    tfsc::spirv::Instruction int8_type(
+        spv::Op::OpTypeInt, {tfsc::spirv::RESID, tfsc::spirv::Operand(8u),
+                             tfsc::spirv::Operand(0u)});
+    tfsc::spirv::Instruction non_tensor(
+        spv::Op::OpNop,
+        {tfsc::spirv::RESID, tfsc::spirv::Operand(&int8_type),
+         tfsc::spirv::Operand(0u), tfsc::spirv::Operand(0u)});
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(&non_tensor),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(base.input),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+
+  // Output type operand points to a truncated OpTypeTensorARM (2 operands)
+  // carrying a valid distinct element type at operand 1.
+  {
+    MinimalModule base = CreateMinimalValidModule();
+    ASSERT_NE(base.tosa_import, nullptr);
+    tfsc::spirv::Instruction int8_type(
+        spv::Op::OpTypeInt, {tfsc::spirv::RESID, tfsc::spirv::Operand(8u),
+                             tfsc::spirv::Operand(0u)});
+    tfsc::spirv::Instruction truncated_tensor(
+        spv::Op::OpTypeTensorARM,
+        {tfsc::spirv::RESID, tfsc::spirv::Operand(&int8_type)});
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(&truncated_tensor),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(base.input),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+}
+
+TEST(TosaRequirementsTest, RejectsInvalidTensorElementTypes) {
+  struct InvalidElementCase {
+    const char* name;
+    spv::Op opcode;
+    std::vector<tfsc::spirv::Operand> operands;
+    bool use_literal_element_operand = false;
+  };
+  const std::vector<InvalidElementCase> cases = {
+      {"NonInstructionElementOperand", spv::Op::OpNop, {}, true},
+      {"UnsupportedOpcodeVoid", spv::Op::OpTypeVoid, {tfsc::spirv::RESID}},
+      {"TruncatedIntType", spv::Op::OpTypeInt, {tfsc::spirv::RESID}},
+      {"OverlongIntType",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(0u), tfsc::spirv::Operand(0u)}},
+      {"NonLiteralIntBitWidth",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::RESID, tfsc::spirv::Operand(0u)}},
+      {"NonLiteralFloatExtraOperand",
+       spv::Op::OpTypeFloat,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(16u), tfsc::spirv::RESID}},
+  };
+  for (const InvalidElementCase& tc : cases) {
+    SCOPED_TRACE(tc.name);
+    MinimalModule base = CreateMinimalValidModule();
+    if (base.tensor_type == nullptr) {
+      ADD_FAILURE() << "Missing OpTypeTensorARM in baseline graph";
+      continue;
+    }
+    tfsc::spirv::Instruction bad_element(tc.opcode, tc.operands);
+    tfsc::spirv::Operand element_operand =
+        tc.use_literal_element_operand ? tfsc::spirv::Operand(0u)
+                                       : tfsc::spirv::Operand(&bad_element);
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpTypeTensorARM,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::RESID,
+            element_operand,
+            base.tensor_type->m_Operands[2],
+            base.tensor_type->m_Operands[3],
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    EXPECT_FALSE(
+        CollectTosaLevelRequirements(*base.module, requirements, reason));
+    EXPECT_EQ(reason, "Cannot determine emitted TOSA level requirements");
+  }
+}
+
+TEST(TosaRequirementsTest, DistinguishesCastElementTypesByOpcodeAndExtra) {
+  struct CastTypePairCase {
+    const char* name;
+    spv::Op in_opcode;
+    std::vector<tfsc::spirv::Operand> in_operands;
+    spv::Op out_opcode;
+    std::vector<tfsc::spirv::Operand> out_operands;
+    bool expect_valid;
+  };
+  const std::vector<CastTypePairCase> cases = {
+      {"IntSignednessMismatch",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(0u)},
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(1u)},
+       true},
+      {"IntSameSignednessRejected",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(1u)},
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(1u)},
+       false},
+      {"IntExtraPresenceMismatch",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u)},
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u),
+        tfsc::spirv::Operand(0u)},
+       true},
+      {"IntVsFloatSameWidthAndNoExtra",
+       spv::Op::OpTypeInt,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u)},
+       spv::Op::OpTypeFloat,
+       {tfsc::spirv::RESID, tfsc::spirv::Operand(32u)},
+       true},
+  };
+  for (const CastTypePairCase& tc : cases) {
+    SCOPED_TRACE(tc.name);
+    MinimalModule base = CreateMinimalValidModule();
+    if (base.tosa_import == nullptr || base.tensor_type == nullptr) {
+      ADD_FAILURE() << "Missing baseline SPIR-V instructions";
+      continue;
+    }
+    tfsc::spirv::Instruction in_elem(tc.in_opcode, tc.in_operands);
+    tfsc::spirv::Instruction out_elem(tc.out_opcode, tc.out_operands);
+    tfsc::spirv::Instruction in_tensor(
+        spv::Op::OpTypeTensorARM,
+        {tfsc::spirv::RESID, tfsc::spirv::Operand(&in_elem),
+         base.tensor_type->m_Operands[2], base.tensor_type->m_Operands[3]});
+    tfsc::spirv::Instruction out_tensor(
+        spv::Op::OpTypeTensorARM,
+        {tfsc::spirv::RESID, tfsc::spirv::Operand(&out_elem),
+         base.tensor_type->m_Operands[2], base.tensor_type->m_Operands[3]});
+    tfsc::spirv::Instruction cast_input(
+        spv::Op::OpUndef,
+        {tfsc::spirv::Operand(&in_tensor), tfsc::spirv::RESID});
+    base.module->EmplaceInstructionNonUnique(
+        spv::Op::OpExtInst,
+        std::vector<tfsc::spirv::Operand>{
+            tfsc::spirv::Operand(&out_tensor),
+            tfsc::spirv::RESID,
+            tfsc::spirv::Operand(base.tosa_import),
+            tfsc::spirv::Operand(
+                static_cast<uint32_t>(tfsc::tosa::OperatorEnum::Cast)),
+            tfsc::spirv::Operand(&cast_input),
+        });
+    TosaLevelRequirements requirements;
+    std::string reason;
+    if (tc.expect_valid) {
+      EXPECT_TRUE(
+          CollectTosaLevelRequirements(*base.module, requirements, reason))
+          << reason;
+      EXPECT_TRUE(requirements.checked);
+    } else {
+      EXPECT_FALSE(
+          CollectTosaLevelRequirements(*base.module, requirements, reason));
+      EXPECT_EQ(reason,
+                "TOSA CAST requires distinct input and output element types");
+    }
+  }
 }
 }  // namespace
 }  // namespace litert::arm_vulkan_ml

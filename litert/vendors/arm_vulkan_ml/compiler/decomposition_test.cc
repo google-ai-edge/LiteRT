@@ -14,6 +14,7 @@
 
 #include "litert/vendors/arm_vulkan_ml/compiler/decomposition.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <limits>
@@ -22,19 +23,33 @@
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "tosa-for-spirv-codegen/TosaForSpirvCodegen.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/spirv/Instruction.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/spirv/Module.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/spirv/Operand.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/tosa/Graph.hpp"  // from @tosa_for_spirv_codegen
 #include "tosa-for-spirv-codegen/tosa/OperatorEnum.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/tosa/Tensor.hpp"  // from @tosa_for_spirv_codegen
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_extended_model.h"
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_expected.h"
+#include "litert/vendors/arm_vulkan_ml/common/arm_vulkan_ml_jit_executable.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 #include "litert/vendors/arm_vulkan_ml/compiler/partition.h"
+#include "spirv/unified1/spirv.hpp"  // from @arm_vulkan_ml_dep_spirv_headers
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::arm_vulkan_ml {
 namespace {
+using ::testing::ElementsAre;
+using ::tfsc::tosa::OperatorEnum;
 Subgraph FirstSubgraph(Expected<ExtendedModel>& model) {
   auto sg = model->Subgraph(0);
   return std::move(*sg);
@@ -1164,36 +1179,6 @@ TEST(DecompositionTest,
     EXPECT_EQ(compiled->extensions, (std::vector<std::string>{"EXT-FFT"}));
   }
 
-  // CAST type matrix.
-  const std::pair<tflite::TensorType, tflite::TensorType> casts[] = {
-      {tflite::TensorType_FLOAT32, tflite::TensorType_FLOAT32},
-      {tflite::TensorType_FLOAT32, tflite::TensorType_BOOL},
-      {tflite::TensorType_INT8, tflite::TensorType_BOOL},
-      {tflite::TensorType_INT32, tflite::TensorType_BOOL},
-      {tflite::TensorType_BOOL, tflite::TensorType_BOOL},
-      {tflite::TensorType_BOOL, tflite::TensorType_FLOAT32},
-      {tflite::TensorType_BOOL, tflite::TensorType_INT32},
-      {tflite::TensorType_BOOL, tflite::TensorType_INT8},
-      {tflite::TensorType_FLOAT32, tflite::TensorType_INT32},
-      {tflite::TensorType_FLOAT32, tflite::TensorType_INT8},
-      {tflite::TensorType_INT32, tflite::TensorType_INT8},
-      {tflite::TensorType_INT8, tflite::TensorType_FLOAT32},
-  };
-  for (size_t i = 0; i < std::size(casts); ++i) {
-    SCOPED_TRACE(i);
-    Fixture f(tflite::BuiltinOperator_CAST);
-    const int in = f.Tensor(casts[i].first, {2, 3}, .125f, -2);
-    const int out = f.Tensor(casts[i].second, {2, 3}, .125f, 3);
-    f.op->inputs = {in};
-    f.op->outputs = {out};
-    f.graph->inputs = {in};
-    f.graph->outputs = {out};
-    auto model = f.Load();
-    ASSERT_TRUE(model);
-    std::string reason;
-    EXPECT_TRUE(CompilePartition(FirstSubgraph(model), reason)) << reason;
-  }
-
   // ARG_MIN (1D -> 0D and 2D -> 1D across FP32, INT8, INT32).
   for (auto dt : {tflite::TensorType_FLOAT32, tflite::TensorType_INT8,
                   tflite::TensorType_INT32}) {
@@ -1554,6 +1539,206 @@ TEST(DecompositionTest, QuantizedEqualAndOneHot10240Compile) {
     std::string reason;
     auto compiled = CompilePartition(FirstSubgraph(model), reason);
     ASSERT_NE(compiled, nullptr) << reason;
+  }
+}
+
+struct CastCase {
+  const char* name;
+  tflite::TensorType in;
+  tflite::TensorType out;
+  size_t expected_casts;
+  size_t expected_selects;
+};
+
+class CastLoweringTest : public ::testing::TestWithParam<CastCase> {};
+
+TEST_P(CastLoweringTest, AvoidsIdentityCastAcrossRanks) {
+  const CastCase& tc = GetParam();
+  const std::vector<std::vector<int32_t>> shapes = {
+      {}, {4}, {2, 3}, {2, 1, 3}, {1, 2, 2, 3}, {1, 2, 1, 2, 2},
+  };
+  for (const std::vector<int32_t>& shape : shapes) {
+    SCOPED_TRACE(absl::StrCat("rank=", shape.size()));
+    Fixture f(tflite::BuiltinOperator_CAST);
+    const int in = f.Tensor(tc.in, shape, .125f, -2);
+    const int out = f.Tensor(tc.out, shape, .125f, 3);
+    f.op->inputs = {in};
+    f.op->outputs = {out};
+    f.graph->inputs = {in};
+    f.graph->outputs = {out};
+    Expected<ExtendedModel> model = f.Load();
+    if (!model) {
+      ADD_FAILURE() << "Failed to load CAST model";
+      continue;
+    }
+    std::string reason;
+    std::shared_ptr<const CompiledPartition> compiled =
+        CompilePartition(FirstSubgraph(model), reason);
+    if (!compiled) {
+      ADD_FAILURE() << reason;
+      continue;
+    }
+    auto op_count = [&](OperatorEnum op) -> size_t {
+      auto it = compiled->metrics.operators.find(static_cast<uint32_t>(op));
+      return it == compiled->metrics.operators.end() ? 0 : it->second;
+    };
+    EXPECT_EQ(op_count(OperatorEnum::Cast), tc.expected_casts);
+    EXPECT_EQ(op_count(OperatorEnum::Select), tc.expected_selects);
+    if (tc.in == tflite::TensorType_INT32 &&
+        tc.out == tflite::TensorType_INT8) {
+      EXPECT_EQ(op_count(OperatorEnum::BitwiseAnd), 1);
+    }
+    if (tc.in == tflite::TensorType_BOOL && tc.out == tflite::TensorType_INT8) {
+      EXPECT_EQ(op_count(OperatorEnum::BitwiseAnd), 0);
+    }
+    const bool uses_fp = tc.in == tflite::TensorType_FLOAT32 ||
+                         tc.out == tflite::TensorType_FLOAT32;
+    if (uses_fp) {
+      EXPECT_THAT(compiled->profiles, ElementsAre("PRO-INT", "PRO-FP"));
+    } else {
+      EXPECT_THAT(compiled->profiles, ElementsAre("PRO-INT"));
+    }
+    EXPECT_EQ(compiled->outputs[0].logical_scalar, shape.empty());
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    CastMatrix, CastLoweringTest,
+    ::testing::Values(
+        CastCase{"Int8ToInt8", tflite::TensorType_INT8,
+                 tflite::TensorType_INT8, 0, 0},
+        CastCase{"Int8ToFloat32", tflite::TensorType_INT8,
+                 tflite::TensorType_FLOAT32, 1, 0},
+        CastCase{"Int8ToInt32", tflite::TensorType_INT8,
+                 tflite::TensorType_INT32, 1, 0},
+        CastCase{"Int8ToBool", tflite::TensorType_INT8,
+                 tflite::TensorType_BOOL, 1, 1},
+        CastCase{"Float32ToInt8", tflite::TensorType_FLOAT32,
+                 tflite::TensorType_INT8, 2, 2},
+        CastCase{"Float32ToFloat32", tflite::TensorType_FLOAT32,
+                 tflite::TensorType_FLOAT32, 0, 0},
+        CastCase{"Float32ToInt32", tflite::TensorType_FLOAT32,
+                 tflite::TensorType_INT32, 1, 1},
+        CastCase{"Float32ToBool", tflite::TensorType_FLOAT32,
+                 tflite::TensorType_BOOL, 0, 1},
+        CastCase{"Int32ToInt8", tflite::TensorType_INT32,
+                 tflite::TensorType_INT8, 1, 1},
+        CastCase{"Int32ToFloat32", tflite::TensorType_INT32,
+                 tflite::TensorType_FLOAT32, 1, 0},
+        CastCase{"Int32ToInt32", tflite::TensorType_INT32,
+                 tflite::TensorType_INT32, 0, 0},
+        CastCase{"Int32ToBool", tflite::TensorType_INT32,
+                 tflite::TensorType_BOOL, 0, 1},
+        CastCase{"BoolToInt8", tflite::TensorType_BOOL,
+                 tflite::TensorType_INT8, 1, 1},
+        CastCase{"BoolToFloat32", tflite::TensorType_BOOL,
+                 tflite::TensorType_FLOAT32, 1, 1},
+        CastCase{"BoolToInt32", tflite::TensorType_BOOL,
+                 tflite::TensorType_INT32, 1, 1},
+        CastCase{"BoolToBool", tflite::TensorType_BOOL,
+                 tflite::TensorType_BOOL, 1, 1}),
+    [](const ::testing::TestParamInfo<CastCase>& info) {
+      return std::string(info.param.name);
+    });
+
+TEST(DecompositionTest, CastRejectsUnsupportedElementTypes) {
+  static constexpr std::pair<tfsc::tosa::DataType, tfsc::tosa::DataType>
+      kUnsupportedPairs[] = {
+          {tfsc::tosa::DataType::float16_t, tfsc::tosa::DataType::int32_t},
+          {tfsc::tosa::DataType::int16_t, tfsc::tosa::DataType::int32_t},
+          {tfsc::tosa::DataType::int32_t, tfsc::tosa::DataType::float16_t},
+          {tfsc::tosa::DataType::bool_t, tfsc::tosa::DataType::int16_t},
+      };
+  for (const auto& [in_type, out_type] : kUnsupportedPairs) {
+    SCOPED_TRACE(absl::StrCat(tfsc::tosa::GetDataTypeName(in_type), "->",
+                              tfsc::tosa::GetDataTypeName(out_type)));
+    std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    tfsc::tosa::ResId input =
+        graph.AddInput(tfsc::tosa::Tensor(in_type, {2, 3}), 0);
+    DecompositionPlan plan{};
+    plan.code = kLiteRtOpCodeTflCast;
+    plan.data.type = in_type;
+    plan.data.shape = {2, 3};
+    plan.output.type = out_type;
+    plan.output.shape = {2, 3};
+    plan.inputs = {plan.data};
+    GraphConstantPool constants;
+    EXPECT_EQ(EmitDecomposition(graph, {input}, plan, constants), nullptr);
+  }
+}
+
+TEST(DecompositionTest, CastFromBoolEmitsSelectWithTargetElementType) {
+  struct BoolCastCase {
+    tfsc::tosa::DataType out_type;
+    spv::Op expected_opcode;
+    uint32_t expected_bit_width;
+  };
+  static constexpr BoolCastCase kCases[] = {
+      {tfsc::tosa::DataType::int8_t, spv::Op::OpTypeInt, 8},
+      {tfsc::tosa::DataType::float32_t, spv::Op::OpTypeFloat, 32},
+      {tfsc::tosa::DataType::int32_t, spv::Op::OpTypeInt, 32},
+  };
+  for (const BoolCastCase& tc : kCases) {
+    SCOPED_TRACE(tfsc::tosa::GetDataTypeName(tc.out_type));
+    std::shared_ptr<tfsc::spirv::Module> module = tfsc::CreateModule();
+    tfsc::tosa::Graph graph(module, "main");
+    tfsc::tosa::ResId input = graph.AddInput(
+        tfsc::tosa::Tensor(tfsc::tosa::DataType::bool_t, {2, 3}), 0);
+    DecompositionPlan plan{};
+    plan.code = kLiteRtOpCodeTflCast;
+    plan.data.type = tfsc::tosa::DataType::bool_t;
+    plan.data.shape = {2, 3};
+    plan.output.type = tc.out_type;
+    plan.output.shape = {2, 3};
+    plan.inputs = {plan.data};
+    GraphConstantPool constants;
+    tfsc::tosa::ResId output =
+        EmitDecomposition(graph, {input}, plan, constants);
+    if (output == nullptr || tfsc::IsError(output)) {
+      ADD_FAILURE() << "Failed to emit bool CAST";
+      continue;
+    }
+    graph.AddOutput(output, 1);
+    graph.FinalizeGraph();
+
+    size_t select_count = 0;
+    for (const tfsc::spirv::Instruction& instruction :
+         module->GetSpirvGraph()) {
+      const std::vector<tfsc::spirv::Operand>& operands =
+          instruction.m_Operands;
+      if (instruction.m_Opcode != spv::Op::OpExtInst || operands.size() < 7 ||
+          operands[3].m_LiteralWord !=
+              static_cast<uint32_t>(OperatorEnum::Select)) {
+        continue;
+      }
+      ++select_count;
+      for (size_t idx : {size_t{5}, size_t{6}}) {
+        const tfsc::spirv::Instruction* value = operands[idx].m_InstructionPtr;
+        if (value == nullptr || value->m_Operands.empty()) {
+          ADD_FAILURE() << "Missing SELECT operand " << idx;
+          continue;
+        }
+        const tfsc::spirv::Instruction* tensor_type =
+            value->m_Operands[0].m_InstructionPtr;
+        if (tensor_type == nullptr ||
+            tensor_type->m_Opcode != spv::Op::OpTypeTensorARM ||
+            tensor_type->m_Operands.size() < 2) {
+          ADD_FAILURE() << "Invalid tensor type for SELECT operand " << idx;
+          continue;
+        }
+        const tfsc::spirv::Instruction* element_type =
+            tensor_type->m_Operands[1].m_InstructionPtr;
+        if (element_type == nullptr || element_type->m_Operands.size() < 2) {
+          ADD_FAILURE() << "Invalid element type for SELECT operand " << idx;
+          continue;
+        }
+        EXPECT_EQ(element_type->m_Opcode, tc.expected_opcode);
+        EXPECT_EQ(element_type->m_Operands[1].m_LiteralWord,
+                  tc.expected_bit_width);
+      }
+    }
+    EXPECT_EQ(select_count, 1);
   }
 }
 }  // namespace

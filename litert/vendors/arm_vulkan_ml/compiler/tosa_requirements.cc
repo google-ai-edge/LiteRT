@@ -18,6 +18,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -129,6 +130,46 @@ bool Maximum(const Operand& operand, size_t count, uint64_t& maximum,
   }
   return true;
 }
+
+struct ScalarType {
+  spv::Op opcode = spv::Op::OpNop;
+  uint32_t bit_width = 0;
+  // Signedness (`OpTypeInt`) or floating-point encoding (`OpTypeFloat`).
+  std::optional<uint32_t> extra;
+
+  bool operator==(const ScalarType& other) const {
+    return opcode == other.opcode && bit_width == other.bit_width &&
+           extra == other.extra;
+  }
+};
+
+// Parses and validates the scalar element type of an `OpTypeTensorARM`.
+std::optional<ScalarType> ParseElementType(const Instruction* tensor) {
+  if (!tensor || tensor->m_Opcode != spv::Op::OpTypeTensorARM ||
+      tensor->m_Operands.size() != 4) {
+    return std::nullopt;
+  }
+  const Instruction* element = Reference(tensor->m_Operands[1]);
+  if (!element) return std::nullopt;
+  if (element->m_Opcode == spv::Op::OpTypeBool) {
+    return ScalarType{spv::Op::OpTypeBool};
+  }
+  if ((element->m_Opcode != spv::Op::OpTypeInt &&
+       element->m_Opcode != spv::Op::OpTypeFloat) ||
+      element->m_Operands.size() < 2 || element->m_Operands.size() > 3 ||
+      element->m_Operands[1].m_Type != tfsc::spirv::LITERAL_WORD) {
+    return std::nullopt;
+  }
+  std::optional<uint32_t> extra;
+  if (element->m_Operands.size() == 3) {
+    if (element->m_Operands[2].m_Type != tfsc::spirv::LITERAL_WORD) {
+      return std::nullopt;
+    }
+    extra = element->m_Operands[2].m_LiteralWord;
+  }
+  return ScalarType{element->m_Opcode, element->m_Operands[1].m_LiteralWord,
+                    extra};
+}
 }  // namespace
 
 GraphMetrics CollectGraphMetrics(const tfsc::spirv::Module& module) {
@@ -180,25 +221,16 @@ bool CollectTosaLevelRequirements(const tfsc::spirv::Module& module,
   };
   size_t graphs = 0;
   for (const Instruction& instruction : module.GetSpirvGraph()) {
-    const std::vector<Operand>& operands = instruction.m_Operands;
     if (instruction.m_Opcode == spv::Op::OpGraphARM) ++graphs;
     if (instruction.m_Opcode != spv::Op::OpTypeTensorARM) continue;
     std::vector<uint32_t> shape;
     if (!Shape(&instruction, shape)) return reject();
-    const Instruction* element = Reference(operands[1]);
+    std::optional<ScalarType> element = ParseElementType(&instruction);
     if (!element) return reject();
-    uint64_t bytes = 1;
-    if (element->m_Opcode != spv::Op::OpTypeBool) {
-      if ((element->m_Opcode != spv::Op::OpTypeInt &&
-           element->m_Opcode != spv::Op::OpTypeFloat) ||
-          element->m_Operands.size() < 2 ||
-          element->m_Operands[1].m_Type != tfsc::spirv::LITERAL_WORD) {
-        return reject();
-      }
-      bytes =
-          std::max(uint64_t{1},
-                   (uint64_t{element->m_Operands[1].m_LiteralWord} + 7) / 8);
-    }
+    uint64_t bytes =
+        element->opcode == spv::Op::OpTypeBool
+            ? 1
+            : std::max(uint64_t{1}, (uint64_t{element->bit_width} + 7) / 8);
     for (uint32_t dimension : shape) {
       if (bytes > std::numeric_limits<uint64_t>::max() / dimension) {
         return reject();
@@ -299,6 +331,22 @@ bool CollectTosaLevelRequirements(const tfsc::spirv::Module& module,
             std::max(result.max_tensor_list_size,
                      static_cast<uint64_t>(operands.size() - 5));
         break;
+      case OperatorEnum::Cast: {
+        const Instruction* input =
+            operands.size() == 5 ? Reference(operands[4]) : nullptr;
+        std::optional<ScalarType> input_element =
+            input && !input->m_Operands.empty()
+                ? ParseElementType(Reference(input->m_Operands[0]))
+                : std::nullopt;
+        std::optional<ScalarType> output_element =
+            ParseElementType(Reference(operands[0]));
+        if (!input_element || !output_element) return reject();
+        if (*input_element == *output_element) {
+          reason = "TOSA CAST requires distinct input and output element types";
+          return false;
+        }
+        break;
+      }
       case OperatorEnum::Fft2d:
       case OperatorEnum::Rfft2d: {
         const bool real =

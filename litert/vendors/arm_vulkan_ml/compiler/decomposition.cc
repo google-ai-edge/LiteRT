@@ -55,6 +55,10 @@ uint64_t Count(const Shape& shape) {
   return std::accumulate(shape.begin(), shape.end(), uint64_t{1},
                          std::multiplies<uint64_t>());
 }
+bool IsSupportedCastType(DataType dtype) {
+  return dtype == DataType::int8_t || dtype == DataType::int32_t ||
+         dtype == DataType::float32_t || dtype == DataType::bool_t;
+}
 bool Read(const Tensor& tensor, DecompositionTensor& info, bool raw = false) {
   const auto type = tensor.RankedTensorType();
   if (!type || type->Layout().HasStrides()) return false;
@@ -1897,27 +1901,32 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
                        p.output.zero_point, p.scales, p.ranges, constants);
   }
   if (code == kLiteRtOpCodeTflCast) {
-    // TODO(b/586703788): Guard against identity INT32 -> INT32 CAST ops for
-    // i1 -> i32, i32 -> i8, and i1 -> i8, which fail dispatch invocation
-    // context creation.
+    if (!IsSupportedCastType(p.data.type) || !IsSupportedCastType(type)) {
+      return nullptr;
+    }
     if (p.data.type == type) return inputs[0];
     if (type == DataType::bool_t) {
       auto zero = p.data.type == DataType::float32_t ? floating(0) : scalar(0);
       auto source = v[0];
       if (p.data.type == DataType::int8_t)
         source = g.AddCastOperator(source, wide);
-      if (p.data.type == DataType::bool_t) return source;
       return g.AddLogicalNotOperator(g.AddEqualOperator(source, zero, boolean),
                                      boolean);
     }
     auto source = v[0];
     if (p.data.type == DataType::bool_t) {
-      // SELECT also avoids requiring a dedicated BOOL-to-floating cast shader.
-      if (type == DataType::float32_t)
+      // SELECT avoids identity INT32 casts and BOOL-to-numeric cast shaders.
+      if (type == DataType::float32_t) {
         return g.AddSelectOperator(source, floating(1), floating(0), output);
-      source = g.AddSelectOperator(source, scalar(1), scalar(0), wide);
+      }
+      if (type == DataType::int8_t) {
+        return g.AddSelectOperator(
+            source, Scalar(g, int8_t{1}, rank, constants),
+            Scalar(g, int8_t{0}, rank, constants), output);
+      }
+      return g.AddSelectOperator(source, scalar(1), scalar(0), output);
     }
-    if (p.data.type == DataType::float32_t && type != DataType::float32_t) {
+    if (p.data.type == DataType::float32_t) {
       auto negative = g.AddGreaterOperator(floating(0), source, boolean);
       auto absolute = g.AddAbsOperator(source, fp);
       auto integer = g.AddFloorOperator(absolute, fp);
@@ -1928,7 +1937,9 @@ ResId EmitDecomposition(tfsc::tosa::Graph& g, const std::vector<ResId>& inputs,
           integer, fp);
     }
     if (type == DataType::int8_t) {
-      source = g.AddCastOperator(source, wide);
+      if (p.data.type != DataType::int32_t) {
+        source = g.AddCastOperator(source, wide);
+      }
       auto low = g.AddBitwiseAndOperator(source, scalar(255), wide);
       auto sign = g.AddGreaterOperator(low, scalar(127), boolean);
       source = g.AddSelectOperator(
