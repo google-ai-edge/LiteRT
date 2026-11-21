@@ -20,7 +20,7 @@ load("//litert/ats:ats.bzl", "litert_define_ats")
 # copybara:uncomment load("//litert/ats:models.bzl", "CLASSICAL_ALL_MODELS")
 load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "if_oss", "litert_test")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
-# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_exynos_mh_guitar_test", "litert_intel_openvino_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test", "litert_windows_mh_guitar_test")
+# copybara:uncomment load("//litert/integration_test/google:litert_device_guitar.bzl", "litert_aot_models_cns_glob", "litert_exynos_mh_guitar_test", "litert_intel_openvino_mh_guitar_test", "litert_macos_mh_guitar_test", "litert_mediatek_mh_guitar_test", "litert_models_aot_compile_guitar_test", "litert_npu_aot_guitar_test", "litert_perfgate_upload_guitar_test", "litert_pixel_9_mh_guitar_test", "litert_pixel_mh_guitar_test", "litert_qualcomm_mh_guitar_test", "litert_windows_mh_guitar_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -566,6 +566,26 @@ QUALCOMM_MODELS_DONT_REGISTER = [
 ]
 
 litert_define_ats(
+    name = "qualcomm_models_compile_ats",
+    aot_shard_count = 24,
+    # copybara:uncomment_begin(google-only)
+    # aot_tags = [
+    # "external",
+    # "guitar",
+    # "manual",
+    # "notap",
+    # ],
+    # copybara:uncomment_end
+    backend = "qualcomm",
+    do_register = ["ExtraModel"],
+    dont_register = QUALCOMM_MODELS_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS,
+    extra_models = ["@ats_models//:ats_models"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "compile_only",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
     name = "qualcomm_models_jit_ats",
     backend = "qualcomm",
     do_register = ["ExtraModel"],
@@ -576,6 +596,21 @@ litert_define_ats(
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     mode = "jit",
+    soc_models = QUALCOMM_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "qualcomm_models_aot_ats",
+    aot_shard_count = 24,
+    backend = "qualcomm",
+    do_register = ["ExtraModel"],
+    dont_register = QUALCOMM_MODELS_DONT_REGISTER,
+    extra_flags = QUALCOMM_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["@ats_models//:ats_models"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "aot",
     soc_models = QUALCOMM_SOC_MODELS,
 )
 
@@ -721,6 +756,23 @@ litert_define_ats(
 # ]
 #
 # litert_define_ats(
+#     name = "google_tensor_models_compile_ats",
+#     aot_shard_count = 24,
+#     aot_tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+#     backend = "google_tensor",
+#     do_register = ["ExtraModel"],
+#     dont_register = GOOGLE_TENSOR_MODELS_DONT_REGISTER,
+#     extra_models = CLASSICAL_ALL_MODELS,
+#     mode = "compile_only",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
 #     name = "google_tensor_models_jit_ats",
 #     backend = "google_tensor",
 #     do_register = ["ExtraModel"],
@@ -731,6 +783,20 @@ litert_define_ats(
 #     ],
 #     extra_models = CLASSICAL_ALL_MODELS,
 #     mode = "jit",
+#     soc_models = GOOGLE_TENSOR_SOC_MODELS,
+# )
+#
+# litert_define_ats(
+#     name = "google_tensor_models_aot_ats",
+#     backend = "google_tensor",
+#     do_register = ["ExtraModel"],
+#     dont_register = GOOGLE_TENSOR_MODELS_DONT_REGISTER,
+#     extra_flags = [
+#         "--iters_per_test=10",
+#         "--max_ms_per_test=20000",
+#     ],
+#     extra_models = CLASSICAL_ALL_MODELS,
+#     mode = "aot",
 #     soc_models = GOOGLE_TENSOR_SOC_MODELS,
 # )
 #
@@ -911,6 +977,26 @@ MEDIATEK_MODELS_RUN_DONT_REGISTER = [
 ]
 
 litert_define_ats(
+    name = "mediatek_models_compile_ats",
+    aot_shard_count = 24,
+    # copybara:uncomment_begin(google-only)
+    # aot_tags = [
+    # "external",
+    # "guitar",
+    # "manual",
+    # "notap",
+    # ],
+    # copybara:uncomment_end
+    backend = "mediatek",
+    do_register = ["ExtraModel"],
+    dont_register = MEDIATEK_MODELS_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS,
+    extra_models = ["@ats_models//:ats_models"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "compile_only",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
     name = "mediatek_models_jit_ats",
     backend = "mediatek",
     do_register = ["ExtraModel"],
@@ -921,6 +1007,21 @@ litert_define_ats(
     ],
     extra_models = ["https://storage.googleapis.com/litert/ats_models.tar.gz"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
     mode = "jit",
+    soc_models = MEDIATEK_SOC_MODELS,
+)
+
+litert_define_ats(
+    name = "mediatek_models_aot_ats",
+    aot_shard_count = 24,
+    backend = "mediatek",
+    do_register = ["ExtraModel"],
+    dont_register = MEDIATEK_MODELS_DONT_REGISTER + MEDIATEK_MODELS_RUN_DONT_REGISTER,
+    extra_flags = MEDIATEK_EXTRA_FLAGS + [
+        "--iters_per_test=10",
+        "--max_ms_per_test=20000",
+    ],
+    extra_models = ["@ats_models//:ats_models"],  # copybara:comment_replace extra_models = CLASSICAL_ALL_MODELS,
+    mode = "aot",
     soc_models = MEDIATEK_SOC_MODELS,
 )
 
@@ -2978,13 +3079,32 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 name = "compile_models",
+#                 soc_key = "g6",
+#                 targets = [":google_tensor_models_g6_compile_ats"],
+#             ),
 #             litert_pixel_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_model = "pixel 11",
 #                 targets = PIXEL_11_ATS_MODELS_GUITAR_TARGETS,
 #             ),
+#             litert_pixel_mh_guitar_test(
+#                 name = "aot_model_tests",
+#                 dimension_model = "pixel 11",
+#                 envs = ["COMPILE_SPONGE_ID={compile_models.sponge_invocation_id}"],
+#                 extra_args = [
+#                     "--file_aot_models={}".format(litert_aot_models_cns_glob("g6")),
+#                 ],
+#                 targets = [":google_tensor_models_g6_aot_ats_remote"],
+#             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "pixel_11",
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 name = "upload_aot_results",
+#                 device = "pixel_11",
+#                 deps = ["aot_model_tests"],
 #             ),
 #         ],
 #     ),
@@ -2996,6 +3116,8 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S22_DIMENSION_MODEL = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1"
+#
 # QUALCOMM_S22_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
 #     ":qualcomm_models_sm8450_jit_ats_remote",
 # ]
@@ -3006,13 +3128,32 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 name = "compile_models",
+#                 soc_key = "sm8450",
+#                 targets = [":qualcomm_models_sm8450_compile_ats"],
+#             ),
 #             litert_qualcomm_mh_guitar_test(
 #                 name = "model_tests",
-#                 dimension_model = "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
+#                 dimension_model = QUALCOMM_S22_DIMENSION_MODEL,
 #                 targets = QUALCOMM_S22_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_qualcomm_mh_guitar_test(
+#                 name = "aot_model_tests",
+#                 dimension_model = QUALCOMM_S22_DIMENSION_MODEL,
+#                 envs = ["COMPILE_SPONGE_ID={compile_models.sponge_invocation_id}"],
+#                 extra_args = [
+#                     "--file_aot_models={}".format(litert_aot_models_cns_glob("sm8450")),
+#                 ],
+#                 targets = [":qualcomm_models_sm8450_aot_ats_remote"],
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "qualcomm_s22",
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 name = "upload_aot_results",
+#                 device = "qualcomm_s22",
+#                 deps = ["aot_model_tests"],
 #             ),
 #         ],
 #     ),
@@ -3034,12 +3175,30 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 name = "compile_models",
+#                 soc_key = "sm8650",
+#                 targets = [":qualcomm_models_sm8650_compile_ats"],
+#             ),
 #             litert_qualcomm_mh_guitar_test(
 #                 name = "model_tests",
 #                 targets = QUALCOMM_S24_ATS_MODELS_GUITAR_TARGETS,
 #             ),
+#             litert_qualcomm_mh_guitar_test(
+#                 name = "aot_model_tests",
+#                 envs = ["COMPILE_SPONGE_ID={compile_models.sponge_invocation_id}"],
+#                 extra_args = [
+#                     "--file_aot_models={}".format(litert_aot_models_cns_glob("sm8650")),
+#                 ],
+#                 targets = [":qualcomm_models_sm8650_aot_ats_remote"],
+#             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "qualcomm_s24",
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 name = "upload_aot_results",
+#                 device = "qualcomm_s24",
+#                 deps = ["aot_model_tests"],
 #             ),
 #         ],
 #     ),
@@ -3051,6 +3210,8 @@ cc_library(
 #     ],
 # )
 #
+# QUALCOMM_S26_DIMENSION_MODEL = "regex:sm-s942u1|sm-s947u1|sm-s948u1"
+#
 # QUALCOMM_S26_ATS_MODELS_GUITAR_TARGETS = ANDROID_ATS_MODELS_GUITAR_TARGETS + [
 #     ":qualcomm_models_sm8850_jit_ats_remote",
 # ]
@@ -3061,13 +3222,32 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 name = "compile_models",
+#                 soc_key = "sm8850",
+#                 targets = [":qualcomm_models_sm8850_compile_ats"],
+#             ),
 #             litert_qualcomm_mh_guitar_test(
 #                 name = "model_tests",
-#                 dimension_model = "regex:sm-s942u1|sm-s947u1|sm-s948u1",
+#                 dimension_model = QUALCOMM_S26_DIMENSION_MODEL,
 #                 targets = QUALCOMM_S26_ATS_MODELS_GUITAR_TARGETS,
+#             ),
+#             litert_qualcomm_mh_guitar_test(
+#                 name = "aot_model_tests",
+#                 dimension_model = QUALCOMM_S26_DIMENSION_MODEL,
+#                 envs = ["COMPILE_SPONGE_ID={compile_models.sponge_invocation_id}"],
+#                 extra_args = [
+#                     "--file_aot_models={}".format(litert_aot_models_cns_glob("sm8850")),
+#                 ],
+#                 targets = [":qualcomm_models_sm8850_aot_ats_remote"],
 #             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "qualcomm_s26",
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 name = "upload_aot_results",
+#                 device = "qualcomm_s26",
+#                 deps = ["aot_model_tests"],
 #             ),
 #         ],
 #     ),
@@ -3109,13 +3289,32 @@ cc_library(
 #     extract_deps = True,
 #     integration_test = guitar.IntegrationTest(
 #         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 name = "compile_models",
+#                 soc_key = "mt6989",
+#                 targets = [":mediatek_models_mt6989_compile_ats"],
+#             ),
 #             litert_mediatek_mh_guitar_test(
 #                 name = "model_tests",
 #                 dimension_hardware = "mt6989",
 #                 targets = ANDROID_ATS_MODELS_GUITAR_TARGETS,
 #             ),
+#             litert_mediatek_mh_guitar_test(
+#                 name = "aot_model_tests",
+#                 dimension_hardware = "mt6989",
+#                 envs = ["COMPILE_SPONGE_ID={compile_models.sponge_invocation_id}"],
+#                 extra_args = [
+#                     "--file_aot_models={}".format(litert_aot_models_cns_glob("mt6989")),
+#                 ],
+#                 targets = [":mediatek_models_mt6989_aot_ats_remote"],
+#             ),
 #             litert_perfgate_upload_guitar_test(
 #                 device = "mediatek_mt6989",
+#             ),
+#             litert_perfgate_upload_guitar_test(
+#                 name = "upload_aot_results",
+#                 device = "mediatek_mt6989",
+#                 deps = ["aot_model_tests"],
 #             ),
 #         ],
 #     ),
@@ -3317,6 +3516,31 @@ cc_library(
 #         tests = [
 #             litert_npu_aot_guitar_test(
 #                 targets = NPU_AOT_ATS_GUITAR_TARGETS,
+#             ),
+#         ],
+#     ),
+#     tags = [
+#         "external",
+#         "guitar",
+#         "manual",
+#         "notap",
+#     ],
+# )
+#
+# NPU_AOT_ATS_MODELS_GUITAR_TARGETS = [
+#     ":google_tensor_models_compile_ats",
+#     ":qualcomm_models_compile_ats",
+#     ":mediatek_models_compile_ats",
+# ]
+#
+# guitar_workflow_test(
+#     name = "litert_ats_models_guitar_npu_aot",
+#     # This flag is required by guitar::update_culprit_finding_config and shard_count.
+#     extract_deps = True,
+#     integration_test = guitar.IntegrationTest(
+#         tests = [
+#             litert_models_aot_compile_guitar_test(
+#                 targets = NPU_AOT_ATS_MODELS_GUITAR_TARGETS,
 #             ),
 #         ],
 #     ),
