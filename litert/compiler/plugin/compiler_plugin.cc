@@ -513,6 +513,7 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
         LITERT_LOG(LITERT_DEBUG, "Matching pattern for op: %d", op->OpCode());
         for (const auto& transformation : transformations_) {
           LiteRtBuilderT builder;
+          builder.SetTargetSubgraph(subgraph);
           LITERT_LOG(LITERT_DEBUG, "Matching pattern '%s'",
                      transformation.name);
           // Call the function pointer.

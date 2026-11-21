@@ -904,6 +904,14 @@ class LiteRtBuilderT {
   // Get the subgraph that is being rewritten.
   LiteRtSubgraphT& Subgraph() { return subgraph_; }
 
+  // Sets the subgraph that this builder's changes will be applied to. Used to
+  // answer queries about the target graph (e.g. whether a tensor is one of its
+  // outputs). Not owned.
+  void SetTargetSubgraph(const LiteRtSubgraphT* target) {
+    target_subgraph_ = target;
+  }
+  const LiteRtSubgraphT* TargetSubgraph() const { return target_subgraph_; }
+
   // Returns the set of ops that are marked for erases.
   absl::flat_hash_set<LiteRtOp> Erases() const { return erases_; }
 
@@ -939,6 +947,13 @@ class LiteRtBuilderT {
   // is called.
   void EraseOp(LiteRtOp opToErase);
 
+  // Transactionally replaces the tensor at `input_index` of `op` with
+  // `new_tensor`. The update is staged and only takes effect, in call order,
+  // when ApplyChanges is called. `op` and `new_tensor` must outlive the
+  // builder's ApplyChanges call; `new_tensor` may be owned by the builder.
+  void SetOpInput(LiteRtOp op, LiteRtParamIndex input_index,
+                  LiteRtTensor new_tensor);
+
   // Applies all changes to the given subgraph, that was recorded by the
   // builder.
   //
@@ -950,9 +965,16 @@ class LiteRtBuilderT {
   // Subgraph to hold the IR.
   litert::internal::BufferManager buffer_manager_;
   LiteRtSubgraphT subgraph_ = LiteRtSubgraphT(&buffer_manager_);
+  const LiteRtSubgraphT* target_subgraph_ = nullptr;
 
   // Records of transactions.
   absl::flat_hash_set<LiteRtOp> erases_;
+  struct InputUpdate {
+    LiteRtOp op;
+    LiteRtParamIndex input_index;
+    LiteRtTensor new_tensor;
+  };
+  std::vector<InputUpdate> input_updates_;
   absl::flat_hash_set<LiteRtTensor> allocated_tensors_;
   absl::flat_hash_set<LiteRtOp> allocated_ops_;
 };
