@@ -90,6 +90,8 @@
 #include "litert/test/testdata/simple_model_test_vectors.h"
 #include "ml_drift_delegate/delegate/buffer_handler_opencl.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/c/c_api_opaque.h"
+#include "tflite/c/common.h"
 #include "tflite/interpreter.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -504,6 +506,150 @@ TEST(CompiledModelTest,
     LiteRtDestroyModel(model);
     LiteRtDestroyEnvironment(env_ptr);
   }
+}
+
+// The data of a delegate created with the fully-delegated hint that takes only
+// the MUL op of cos_mul.tflite (COS, then MUL): ModifyGraphWithDelegate fails
+// with kTfLiteApplicationError and leaves the delegate's kernel in the graph.
+// As in real delegates, the kernel uses the delegate's data when it is freed.
+struct PartialHintDelegateData {
+  bool* kernels_freed_before_delete;
+  int created_kernels = 0;
+  int live_kernels = 0;
+};
+
+TfLiteStatus PartialHintDelegatePrepare(TfLiteOpaqueContext* context,
+                                        TfLiteOpaqueDelegate* delegate,
+                                        void* data) {
+  TfLiteIntArray* execution_plan;
+  TF_LITE_ENSURE_STATUS(
+      TfLiteOpaqueContextGetExecutionPlan(context, &execution_plan));
+  std::vector<int> mul_nodes;
+  for (int i = 0; i < execution_plan->size; ++i) {
+    TfLiteOpaqueNode* node;
+    TfLiteOperator* op;
+    TF_LITE_ENSURE_STATUS(TfLiteOpaqueContextGetNodeAndRegistration(
+        context, execution_plan->data[i], &node, &op));
+    if (TfLiteOperatorGetBuiltInCode(op) == kTfLiteBuiltinMul) {
+      mul_nodes.push_back(execution_plan->data[i]);
+    }
+  }
+  TfLiteOperator* kernel =
+      TfLiteOperatorCreate(kTfLiteBuiltinDelegate, "PartialHintDelegate",
+                           /*version=*/1, /*user_data=*/nullptr);
+  TfLiteOperatorSetInitWithData(
+      kernel,
+      [](void* user_data, TfLiteOpaqueContext* context, const char* buffer,
+         size_t length) -> void* {
+        const auto* params =
+            reinterpret_cast<const TfLiteOpaqueDelegateParams*>(buffer);
+        auto* delegate_data =
+            static_cast<PartialHintDelegateData*>(params->delegate_data);
+        ++delegate_data->created_kernels;
+        ++delegate_data->live_kernels;
+        return delegate_data;
+      });
+  TfLiteOperatorSetFreeWithData(
+      kernel, [](void* user_data, TfLiteOpaqueContext* context, void* buffer) {
+        --static_cast<PartialHintDelegateData*>(buffer)->live_kernels;
+      });
+  TfLiteIntArray* nodes = TfLiteIntArrayCreate(mul_nodes.size());
+  for (int i = 0; i < nodes->size; ++i) {
+    nodes->data[i] = mul_nodes[i];
+  }
+  // Transfers the ownership of `kernel` to the context.
+  const TfLiteStatus status =
+      TfLiteOpaqueContextReplaceNodeSubsetsWithDelegateKernels(context, kernel,
+                                                               nodes, delegate);
+  TfLiteIntArrayFree(nodes);
+  return status;
+}
+
+void DeletePartialHintDelegate(TfLiteOpaqueDelegate* delegate) {
+  auto* data = static_cast<PartialHintDelegateData*>(
+      TfLiteOpaqueDelegateGetData(delegate));
+  *data->kernels_freed_before_delete =
+      data->created_kernels > 0 && data->live_kernels == 0;
+  delete data;
+  TfLiteOpaqueDelegateDelete(delegate);
+}
+
+LiteRtStatus PartialHintGpuCreateDelegate(LiteRtRuntimeContext* runtime_context,
+                                          LiteRtEnvironment,
+                                          LiteRtAcceleratorConst accelerator,
+                                          LiteRtOptions,
+                                          LiteRtDelegateWrapper* delegate) {
+  TfLiteOpaqueDelegateBuilder builder{};
+  builder.data =
+      new PartialHintDelegateData{static_cast<bool*>(accelerator->data)};
+  builder.Prepare = PartialHintDelegatePrepare;
+  builder.flags = kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
+  return runtime_context->wrap_delegate(TfLiteOpaqueDelegateCreate(&builder),
+                                        DeletePartialHintDelegate, delegate);
+}
+
+void RegisterPartialHintGpuAccelerator(LiteRtEnvironment env,
+                                       bool* kernels_freed_before_delete) {
+  LiteRtAccelerator accelerator;
+  ASSERT_EQ(LiteRtCreateAccelerator(&accelerator), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetName(accelerator, FakeGpuGetName),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetVersion(accelerator, FakeGpuGetVersion),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetAcceleratorGetHardwareSupport(accelerator,
+                                                   FakeGpuGetHardwareSupport),
+            kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtSetDelegateFunction(accelerator, PartialHintGpuCreateDelegate),
+      kLiteRtStatusOk);
+  ASSERT_EQ(
+      LiteRtRegisterAccelerator(env, accelerator, kernels_freed_before_delete,
+                                /*ReleaseData=*/nullptr),
+      kLiteRtStatusOk);
+}
+
+// When a delegate fails to apply but leaves its kernels in the graph, the
+// compiled model keeps the delegate until the interpreter, and with it the
+// delegate's kernels, is destroyed.
+TEST(CompiledModelTest, DelegateOutlivesInterpreterWhenDelegationFails) {
+  LiteRtAny none;
+  none.type = kLiteRtAnyTypeInt;
+  none.int_value = kLiteRtHwAcceleratorNone;
+  const LiteRtEnvOption env_options[] = {
+      LiteRtEnvOption{
+          /*.tag=*/kLiteRtEnvOptionTagAutoRegisterAccelerators,
+          /*.value=*/none,
+      },
+  };
+  LiteRtEnvironment env_ptr = nullptr;
+  ASSERT_EQ(LiteRtCreateEnvironment(/*num_options=*/1, env_options, &env_ptr),
+            kLiteRtStatusOk);
+  bool kernels_freed_before_delete = false;
+  RegisterPartialHintGpuAccelerator(env_ptr, &kernels_freed_before_delete);
+
+  std::string path = testing::GetTestFilePath("cos_mul.tflite");
+  LiteRtModel model;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LiteRtOptions jit_compilation_options;
+  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
+  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
+                                                 kLiteRtHwAcceleratorGpu),
+            kLiteRtStatusOk);
+  auto compiled_model =
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options);
+  EXPECT_THAT(compiled_model, IsError(kLiteRtStatusErrorRuntimeFailure));
+  if (!compiled_model) {
+    EXPECT_THAT(compiled_model.Error().Message(),
+                HasSubstr("Failed to modify graph with delegate"));
+  }
+  // Create destroyed the compiled model and the delegate before it returned.
+  EXPECT_TRUE(kernels_freed_before_delete);
+
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
 }
 
 TEST(CompiledModelTest, UseAhwbBuffer) {
