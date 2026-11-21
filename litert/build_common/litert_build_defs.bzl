@@ -749,6 +749,7 @@ def litert_accelerator_library(
             visibility = [
                 "//third_party/odml/litert:__subpackages__",
                 "//litert:__subpackages__",
+                "//litert:litert_internal_users",
             ],
         )
 
