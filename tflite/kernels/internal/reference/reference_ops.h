@@ -28,7 +28,6 @@ limitations under the License.
 
 #include "Eigen/Core"  // from @eigen_archive
 #include "fixedpoint/fixedpoint.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/c_api_types.h"
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/common.h"

@@ -24,7 +24,6 @@ limitations under the License.
 #include <memory>
 #include <type_traits>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/common.h"
 #include "tflite/kernels/internal/compatibility.h"

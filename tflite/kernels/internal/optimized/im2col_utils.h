@@ -18,7 +18,6 @@ limitations under the License.
 #include <algorithm>
 #include <cassert>
 
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/kernels/internal/types.h"
 
 namespace tflite {

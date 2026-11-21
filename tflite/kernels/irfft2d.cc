@@ -22,8 +22,8 @@ limitations under the License.
 #include <complex>
 
 #include "third_party/fft2d/fft2d.h"
-#include "ruy/profiler/instrumentation.h"  // from @ruy
 #include "tflite/core/c/common.h"
+#include "tflite/kernels/internal/compatibility.h"
 #include "tflite/kernels/internal/tensor.h"
 #include "tflite/kernels/internal/tensor_ctypes.h"
 #include "tflite/kernels/internal/types.h"
