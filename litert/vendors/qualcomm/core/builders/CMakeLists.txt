@@ -18,6 +18,7 @@ target_sources(qnn_builders
         arg_min_max_op_builder.cc
         broadcast_to_op_builder.cc
         cast_op_builder.cc
+        color_transform_op_builder.cc
         concatenation_op_builder.cc
         conv2d_op_builder.cc
         conv3d_op_builder.cc

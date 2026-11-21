@@ -600,6 +600,24 @@ LiteRtStatus LrtQualcommOptionsSetDspSkelDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
                                              const char** dsp_skel_dir);
 
+// desired_input_color_encoding
+// Each entry is a colon-separated string "tensor_name:encoding_in:encoding_out"
+// where encoding_in is one of "nv21", "nv12", "argb32", "rgba" and
+// encoding_out is one of "rgb", "bgr".
+// Example: "data:nv21:bgr"
+// Multiple entries may be provided by passing a comma-separated list via the
+// command-line flag or as an array here.
+//
+// The strings are copied into the `options` object.
+LiteRtStatus LrtQualcommOptionsSetDesiredInputColorEncodings(
+    LrtQualcommOptions options, const char** entries, size_t count);
+
+// Returns the number of entries via `count` and a pointer to the internal
+// array of C strings via `entries`. Both are valid until the option is
+// overwritten or `options` is destroyed.
+LiteRtStatus LrtQualcommOptionsGetDesiredInputColorEncodings(
+    LrtQualcommOptions options, const char*** entries, size_t* count);
+
 #ifdef __cplusplus
 }  // extern "C"
 #endif  // __cplusplus

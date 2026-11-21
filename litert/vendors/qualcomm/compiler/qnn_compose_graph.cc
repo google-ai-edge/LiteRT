@@ -57,6 +57,7 @@
 #include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/broadcast_to_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/cast_op_builder.h"
+#include "litert/vendors/qualcomm/core/builders/color_transform_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/concatenation_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/conv3d_op_builder.h"
@@ -1929,6 +1930,58 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
   }
 
+  // Save the graph-input wrappers before any color-transform remapping.
+  // The "Create input tensors" loop below must register these raw-format
+  // wrappers as the QNN graph inputs (not the intermediate color_out tensors).
+  absl::flat_hash_map<LiteRtTensor, ::qnn::TensorWrapper*>
+      graph_input_wrappers;
+  for (const auto& subgraph_input : subgraph_inputs) {
+    graph_input_wrappers.emplace(subgraph_input.Get(),
+                                 litert_tensor_to_wrapper[subgraph_input.Get()]);
+  }
+
+  // Prepend color-transform ops for inputs declared via
+  // --qualcomm_desired_input_color_encoding "tensor_name:encoding_in:encoding_out".
+  //
+  // We create a brand-new APP_WRITE tensor with the raw encoding shape (e.g.
+  // [B, H*W*3/2] for NV21) rather than mutating the existing input tensor.
+  // The original tensor is kept as the color-transform output (NATIVE type),
+  // so downstream ops require no changes.
+  std::vector<::qnn::OpWrapper> color_transform_op_wrappers;
+  for (const auto& entry : options.GetDesiredInputColorEncodings()) {
+    for (const auto& subgraph_input : subgraph_inputs) {
+      auto* original_wrapper = litert_tensor_to_wrapper[subgraph_input.Get()];
+      if (original_wrapper == nullptr ||
+          original_wrapper->GetName() != entry.tensor_name) {
+        continue;
+      }
+
+      // Create a new APP_WRITE input tensor with the raw encoding shape.
+      const auto raw_dims = ::qnn::ColorTransformInputDims(
+          original_wrapper->GetDimensions(), entry.encoding_in);
+      auto& raw_input = tensor_pool.CreateInputTensorWithName(
+          original_wrapper->GetName() + "_raw", QNN_DATATYPE_UINT_8,
+          ::qnn::UndefinedQuantizeParamsWrapper{}, raw_dims);
+
+      // Create a NATIVE intermediate tensor with the original model shape for
+      // the color-transform output.
+      auto& color_out = tensor_pool.CreateNativeTensorWithSuffix(
+          original_wrapper->GetDataType(), original_wrapper->GetQuantParams(),
+          original_wrapper->GetDimensions(), "_color_transform_out");
+
+      // Build the color-transform op: raw_input → color_out.
+      color_transform_op_wrappers.push_back(
+          ::qnn::BuildColorTransformOp(raw_input, color_out, entry));
+
+      // graph_input_wrappers must point to the new raw input (not the original).
+      graph_input_wrappers[subgraph_input.Get()] = &raw_input;
+
+      // Remap: downstream ops will see color_out instead of the original input.
+      litert_tensor_to_wrapper[subgraph_input.Get()] = &color_out;
+      break;
+    }
+  }
+
   for (const auto& subgraph_output : graph_mapper.Graph().Outputs()) {
     graph_mapper.RegisterOutput(subgraph_output.Get());
   }
@@ -1982,6 +2035,14 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
+  // Prepend color-transform ops so they execute before any model ops.
+  if (!color_transform_op_wrappers.empty()) {
+    graph_op_wrappers.insert(
+        graph_op_wrappers.begin(),
+        std::make_move_iterator(color_transform_op_wrappers.begin()),
+        std::make_move_iterator(color_transform_op_wrappers.end()));
+  }
+
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,
@@ -2001,9 +2062,13 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   }
 
   // Create input tensors.
+  // Use graph_input_wrappers (saved before color-transform remapping) so that
+  // the raw-format tensor (e.g. NV21 flat buffer) is registered as the QNN
+  // graph input, not the intermediate RGB/BGR tensor produced by the
+  // color-transform op.
   for (const auto& subgraph_input : subgraph_inputs) {
     ::qnn::TensorWrapper* tensor_wrapper =
-        litert_tensor_to_wrapper[subgraph_input.Get()];
+        graph_input_wrappers[subgraph_input.Get()];
     LITERT_RETURN_IF_ERROR(AddTensorToQnn(qnn.Api(), graph_mapper.QnnGraph(),
                                           *tensor_wrapper, created_tensors));
     if (inputs != nullptr) {
