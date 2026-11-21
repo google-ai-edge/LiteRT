@@ -25,7 +25,7 @@
 #include "litert/c/litert_model_types.h"
 #include "litert/c/litert_op_code.h"
 #include "litert/cc/internal/litert_detail.h"
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_model.h"
 #include "litert/cc/litert_api_types.h"
 #include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_ranked_tensor_type.h"

@@ -15,15 +15,15 @@
 #include "litert/test/load_test_model.h"
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_model.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/test/common.h"
 
 namespace litert::testing {
 
-ExtendedModel LoadTestFileModel(absl::string_view filename) {
-  LITERT_ASSIGN_OR_ABORT(
-      auto model, ExtendedModel::CreateFromFile(GetTestFilePath(filename)));
+Model LoadTestFileModel(absl::string_view filename) {
+  LITERT_ASSIGN_OR_ABORT(auto model,
+                         Model::CreateFromFile(GetTestFilePath(filename)));
   return model;
 }
 
