@@ -17,13 +17,21 @@
 
 #include <memory>
 
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "ml_drift_delegate/delegate/delegate_data.h"
+#include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "ml_drift_delegate/delegate/shared_tensor_maps.h"
 #include "tflite/core/c/common.h"
 
 namespace litert::ml_drift {
+
+// Resolves the ML Drift calculation precision for the OpenGL delegate from
+// `gpu_info` and `options`.
+::ml_drift::CalculationsPrecision ResolveOpenGlCalculationPrecision(
+    const ::ml_drift::GpuInfo& gpu_info, const MlDriftDelegateOptions& options);
 
 bool IsAsyncExecutionMode(TfLiteContext* context,
                           const LiteRtRuntimeContext* runtime_context);
