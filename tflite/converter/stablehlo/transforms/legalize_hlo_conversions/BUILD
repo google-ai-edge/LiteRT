@@ -39,7 +39,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -58,7 +58,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -80,7 +80,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -97,7 +97,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -112,6 +112,7 @@ cc_library(
     deps = [
         "//tflite/converter:tensorflow_lite",
         "//tflite/converter:tensorflow_lite_quantize",
+        "//tflite/converter:tfl_carrier",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:AsmParser",
@@ -119,7 +120,7 @@ cc_library(
         "@llvm-project//mlir:QuantOps",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -151,7 +152,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -166,7 +167,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@org_tensorflow//tensorflow/core/lib/math:math_util",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -183,7 +184,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -196,7 +197,7 @@ cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -212,7 +213,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -230,7 +231,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -254,7 +255,7 @@ cc_library(
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -270,7 +271,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -286,7 +287,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -302,7 +303,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -319,7 +320,7 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -335,7 +336,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -350,7 +351,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -366,7 +367,7 @@ cc_library(
         "@llvm-project//mlir:IR",
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
 
@@ -382,6 +383,6 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@llvm-project//mlir:TransformUtils",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
-        "@xla//xla/mlir_hlo",
+        "@stablehlo//:stablehlo_ops",
     ],
 )
