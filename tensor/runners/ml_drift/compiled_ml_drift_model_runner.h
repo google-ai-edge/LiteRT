@@ -953,7 +953,8 @@ class CompiledMlDriftModelRunner {
           weights_td = ml_drift::TensorDescriptor(
               desc.type, ml_drift::TensorStorageType::kBuffer,
               ml_drift::Layout::kLinear);
-          weights_td.SetBHWDCShape(ml_drift::BHWDC(1, 1, 1, 1, elements_count));
+          weights_td.SetBHWDCShape(
+              ml_drift::BHWDC(1, 1, 1, 1, static_cast<int>(elements_count)));
         } else {
           ml_drift::DataType texture_type = ml_drift::DataType::kUint32;
           if (desc.type == ml_drift::DataType::kUint4) {

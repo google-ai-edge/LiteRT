@@ -207,10 +207,13 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       }
     }
 
-    const int elements_count =
-        ml_drift::GetTotalElementsCountForLayout(desc, weights.shape);
+    const size_t elements_count = static_cast<size_t>(
+        ml_drift::GetTotalElementsCountForLayout(desc, weights.shape));
     const size_t data_size =
-        (elements_count * ml_drift::SizeInBitsOf(desc.type) + 7) / 8;
+        (elements_count *
+             static_cast<size_t>(ml_drift::SizeInBitsOf(desc.type)) +
+         7) /
+        8;
     std::unique_ptr<uint8_t, decltype(&std::free)> data_ptr(
         static_cast<uint8_t*>(std::malloc(data_size)), &std::free);
     if (!data_ptr) {
@@ -239,7 +242,8 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       weights_td = ml_drift::TensorDescriptor(
           desc.type, ml_drift::TensorStorageType::kBuffer,
           ml_drift::Layout::kLinear);
-      weights_td.SetBHWDCShape(ml_drift::BHWDC(1, 1, 1, 1, elements_count));
+      weights_td.SetBHWDCShape(
+          ml_drift::BHWDC(1, 1, 1, 1, static_cast<int>(elements_count)));
     } else {
       ml_drift::DataType texture_type = ml_drift::DataType::kUint32;
       if (desc.type == ml_drift::DataType::kUint4) {

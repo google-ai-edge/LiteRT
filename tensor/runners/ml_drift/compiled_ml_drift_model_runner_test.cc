@@ -691,5 +691,57 @@ TEST(CompiledMlDriftModelRunnerTest,
   EXPECT_EQ(shared_weights.cache_hits, 2u);
 }
 
+// Regression test for large vocabulary / projection matrices (such as
+// Qwen3.5-27B's [248320, 5120] lm_head, 1.27B elements = 5.08B INT4 bits):
+// `elements_count * SizeInBitsOf(desc.type)` exceeds INT32_MAX (and UINT32_MAX
+// for 1B+ elements) and must use 64-bit `size_t` arithmetic.
+TEST(CompiledMlDriftModelRunnerTest,
+     LargeConstantInt4FullyConnectedBitCountExceedingInt32Max) {
+  constexpr int kOut = 16777216;
+  constexpr int kIn = 32;  // 536,870,912 elements -> 2,147,483,648 bits.
+  const size_t num_elements = static_cast<size_t>(kOut) * kIn;
+  std::shared_ptr<OwningCpuBuffer> w_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(num_elements);
+  // Set row 0 to +1 across all 32 inputs and row `kOut - 1` to -2 across all
+  // 32 inputs; leave the interior rows at 0.
+  int4_t* packed = w_buf->Span<int4_t>().data();
+  for (int j = 0; j < kIn / 2; ++j) {
+    packed[j].a = 1;
+    packed[j].b = 1;
+    const size_t last_row_offset =
+        static_cast<size_t>(kOut - 1) * (kIn / 2) + j;
+    packed[last_row_offset].a = -2;
+    packed[last_row_offset].b = -2;
+  }
+  std::vector<float> scales(kOut, 0.5f);
+  std::vector<float> input(kIn, 1.0f);
+
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, 1, kIn}});
+  TensorMLD w({.name = "large_lm_head.weight",
+               .type = Type::kI4,
+               .shape = {kOut, kIn},
+               .buffer = w_buf,
+               .quantization = std::make_shared<PerChannelAffineQuantization>(
+                   scales, std::vector<int64_t>(kOut, 0),
+                   /*quantized_dimension=*/0)});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+
+  Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, 1, kIn},
+                 .buffer = input});
+  ASSERT_THAT(runner.SetInput("x", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("y"));
+  ASSERT_EQ(actual.size(), static_cast<size_t>(kOut));
+  EXPECT_NEAR(actual[0], 16.0f, 1e-3f);
+  EXPECT_NEAR(actual[kOut / 2], 0.0f, 1e-3f);
+  EXPECT_NEAR(actual[kOut - 1], -32.0f, 1e-3f);
+}
+
 }  // namespace
 }  // namespace litert::tensor
