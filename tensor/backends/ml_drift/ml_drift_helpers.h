@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 
+#include <cstddef>
 #include <cstdlib>
 #include <string>
 #include <string_view>
@@ -28,6 +29,8 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/model_hints.h"  // from @ml_drift
@@ -69,6 +72,11 @@ struct MlDriftBuildContext {
   absl::flat_hash_map<std::string, ml_drift::TensorDescriptor>*
       shared_weight_descriptors = nullptr;
 
+  // True when the weights packed into `shared_weight_descriptors` by this
+  // compilation are also persisted for later runs (a persistent weight cache
+  // being built), so that packing costs are paid once.
+  bool persists_shared_weights = false;
+
   // True when the GpuModelBuilder may run large quantized FullyConnected /
   // convolutions with dynamically INT8-quantized activations (i.e. it was
   // created without `ModelHints::kDisallow8bitConvs`).
@@ -85,6 +93,24 @@ struct MlDriftBuildContext {
   // large FullyConnected layers with INT8-quantized activations.
   absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>
       weight_sum_i;
+
+  // Host time and output bytes of packing constant weights into kernel
+  // layouts, by kind (e.g. "int4", "fp"; ops that pack their own weights add
+  // their own kinds), for compile-time breakdowns.
+  struct WeightPackStat {
+    absl::Duration time;
+    size_t bytes = 0;
+    int count = 0;
+  };
+  absl::flat_hash_map<std::string, WeightPackStat> weight_pack_stats;
+
+  void AddWeightPackStat(absl::string_view kind, absl::Duration time,
+                         size_t bytes) {
+    WeightPackStat& stat = weight_pack_stats[kind];
+    stat.time += time;
+    stat.bytes += bytes;
+    ++stat.count;
+  }
 };
 
 // `LRT_ALLOW_8BIT_CONVS=1`: let ML Drift run large quantized FullyConnected /
