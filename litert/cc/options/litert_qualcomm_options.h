@@ -690,6 +690,9 @@ class QualcommOptions : public ConcreteOptionsBase {
     std::string compile_package_path;
     std::string dispatch_package_path;
     std::string target;
+    // TFLite op name to intercept and route through this package instead of the
+    // built-in builder (e.g., "Softmax"). Empty means only custom ops are routed.
+    std::string op_type;
   };
 
   LiteRtStatus SetCustomOpPackage(const CustomOpPackage& custom_op_package) {
@@ -698,7 +701,8 @@ class QualcommOptions : public ConcreteOptionsBase {
         custom_op_package.interface_provider.c_str(),
         custom_op_package.compile_package_path.c_str(),
         custom_op_package.dispatch_package_path.c_str(),
-        custom_op_package.target.c_str());
+        custom_op_package.target.c_str(),
+        custom_op_package.op_type.c_str());
   }
 
   CustomOpPackage GetCustomOpPackage() const {
@@ -707,9 +711,10 @@ class QualcommOptions : public ConcreteOptionsBase {
     const char* compile_package_path = "";
     const char* dispatch_package_path = "";
     const char* target = "";
+    const char* op_type = "";
     auto status = LrtQualcommOptionsGetCustomOpPackage(
         options_, &name, &interface_provider, &compile_package_path,
-        &dispatch_package_path, &target);
+        &dispatch_package_path, &target, &op_type);
     if (status != kLiteRtStatusOk) {
       return {};
     }
@@ -719,6 +724,7 @@ class QualcommOptions : public ConcreteOptionsBase {
     custom_op_package.compile_package_path = compile_package_path;
     custom_op_package.dispatch_package_path = dispatch_package_path;
     custom_op_package.target = target;
+    custom_op_package.op_type = op_type;
     return custom_op_package;
   }
 

@@ -719,12 +719,14 @@ void Options::SetCustomOpPackage(absl::string_view name,
                                  absl::string_view interface_provider,
                                  absl::string_view compile_package_path,
                                  absl::string_view dispatch_package_path,
-                                 absl::string_view target) {
+                                 absl::string_view target,
+                                 absl::string_view op_type) {
   custom_op_package_.name = name;
   custom_op_package_.interface_provider = interface_provider;
   custom_op_package_.compile_package_path = compile_package_path;
   custom_op_package_.dispatch_package_path = dispatch_package_path;
   custom_op_package_.target = target;
+  custom_op_package_.op_type = op_type;
 }
 
 const CustomOpPackage& Options::GetCustomOpPackage() const {
@@ -821,6 +823,7 @@ std::string Options::Dump() const {
   field(4, "compile_package_path", custom_op_package_.compile_package_path);
   field(4, "dispatch_package_path", custom_op_package_.dispatch_package_path);
   field(4, "target", custom_op_package_.target);
+  field(4, "op_type", custom_op_package_.op_type);
   field(4, "GraphTransform", graph_transform_);
 
   // --- HTP ---

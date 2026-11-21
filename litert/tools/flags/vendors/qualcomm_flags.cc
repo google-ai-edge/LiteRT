@@ -931,6 +931,8 @@ ABSL_FLAG(
     "Custom op package settings as key:value pairs separated by ';'. "
     "Required keys: name, interface_provider, compile_package_path, "
     "dispatch_package_path, target. "
+    "Optional key: op_type — TFLite op name (e.g., 'Softmax') to intercept "
+    "and route through the custom package instead of the built-in builder. "
     "target MUST match the chosen QNN backend (e.g., 'HTP' for the HTP "
     "backend, 'GPU' for the GPU backend). "
     "For compiler plugin, name/interface_provider/compile_package_path are "
@@ -938,7 +940,10 @@ ABSL_FLAG(
     "dispatch_package_path/target are used. Example: "
     "\"name:TestPackage;interface_provider:Provider;compile_package_path:"
     "libQnnTestPackage.so;dispatch_package_path:"
-    "libQnnTestPackage.so;target:HTP;\"");
+    "libQnnTestPackage.so;target:HTP;\" "
+    "To override a built-in op: "
+    "\"op_type:Softmax;name:SoftmaxUdoPackage;compile_package_path:"
+    "libSoftmaxUdo.so;\"");
 
 namespace litert::qualcomm {
 
@@ -976,6 +981,8 @@ bool AbslParseFlag(absl::string_view text,
         options->dispatch_package_path = value;
       } else if (key == "target") {
         options->target = value;
+      } else if (key == "op_type") {
+        options->op_type = value;
       } else {
         *error = "Unsupported key in custom op package flag.";
         return false;
@@ -997,6 +1004,9 @@ std::string AbslUnparseFlag(QualcommOptions::CustomOpPackage options) {
   append_pair("compile_package_path", options.compile_package_path);
   append_pair("dispatch_package_path", options.dispatch_package_path);
   append_pair("target", options.target);
+  if (!options.op_type.empty()) {
+    append_pair("op_type", options.op_type);
+  }
   return value;
 }
 
