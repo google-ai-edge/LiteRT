@@ -259,7 +259,10 @@ PyObject* Set4BitTensor(TfLiteTensor* tensor, PyArrayObject* array,
   for (int i = 0; i < tensor->dims->size; ++i) {
     num_elements *= tensor->dims->data[i];
   }
-  size_t expected_packed_bytes = (num_elements + 1) / 2;
+  // int4/uint4 pack 2 elements per byte; use the same divide-remainder
+  // rounding as BytesRequired in util.cc so that a count near SIZE_MAX cannot
+  // wrap `(num_elements + 1) / 2` around to zero.
+  size_t expected_packed_bytes = (num_elements / 2) + (num_elements % 2);
   size_t actual_numpy_bytes = PyArray_NBYTES(array);
 
   const char* tensor_type_name = TfLiteTypeGetName(tensor->type);
