@@ -2223,12 +2223,17 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     } else {
       LITERT_ASSIGN_OR_RETURN(size_t tensor_index,
                               FindOutputIndex(signature_index, tensor_name));
+      // Rank-0 outputs in the flatbuffer can carry no static shape until an
+      // op's Prepare() runs during AllocateTensors().
+      const bool needs_allocation_update =
+          tensor_type.Layout().Rank() == 0 ||
+          internal::compiled_model_detail::HasDynamicDimensions(
+              tensor_type.Layout());
       LITERT_ASSIGN_OR_RETURN(
           std::vector<Layout> runtime_layouts,
           GetOutputTensorLayouts(
               signature_index,
-              /*update_allocation=*/internal::compiled_model_detail::
-                  HasDynamicDimensions(tensor_type.Layout())));
+              /*update_allocation=*/needs_allocation_update));
       tensor_type = RankedTensorType(tensor_type.ElementType(),
                                      std::move(runtime_layouts[tensor_index]));
       LITERT_ASSIGN_OR_RETURN(

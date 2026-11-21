@@ -1630,13 +1630,10 @@ Expected<flatbuffers::DetachedBuffer> BuildSimpleModelWithShapelessOutput() {
   return builder.Release();
 }
 
-// Regression test for querying output shapes before the first Run().
-//
-// A caller that sizes its output buffers before running the model asks for
-// the output shapes without `update_allocation`. The signature has never been
-// allocated at that point, so the compiled model must allocate it first;
-// otherwise the rank-0 output reports the declared shape instead of the
-// runtime [2] shape that ADD's Prepare() sets.
+// Tests that querying output shapes before the first Run() only allocates
+// tensors when `update_allocation=true`: a shapeless (rank-0) output returns
+// its declared rank-0 shape when `update_allocation=false` and the runtime [2]
+// shape populated by ADD's Prepare() when `update_allocation=true`.
 TEST(CompiledModelTest, OutputShapesBeforeFirstRunReflectRuntimeShapes) {
   // Environment setup.
   LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
@@ -1662,18 +1659,90 @@ TEST(CompiledModelTest, OutputShapesBeforeFirstRunReflectRuntimeShapes) {
       LiteRtCompiledModelT::Ptr compiled_model,
       LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
 
-  // Query output shapes before any Run(), without requesting an allocation
-  // update.
+  // Without `update_allocation`, never-allocated signatures return the
+  // serialized rank-0 shape without triggering AllocateTensors().
   std::vector<LiteRtLayout> output_layouts(1);
   absl::Span<LiteRtLayout> output_layouts_span = absl::MakeSpan(output_layouts);
   LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
       litert::kDefaultSignatureKey, output_layouts_span,
       /*update_allocation=*/false));
+  EXPECT_EQ(output_layouts[0].rank, 0);
 
-  // The output must carry the runtime [2] shape, not the declared rank 0.
+  // Requesting `update_allocation=true` runs AllocateTensors() and reports the
+  // runtime [2] shape.
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      litert::kDefaultSignatureKey, output_layouts_span,
+      /*update_allocation=*/true));
   ASSERT_EQ(output_layouts[0].rank, 1);
   EXPECT_EQ(output_layouts[0].dimensions[0], 2);
 
+  compiled_model.reset();
+  LiteRtDestroyOptions(jit_compilation_options);
+  LiteRtDestroyModel(model);
+  LiteRtDestroyEnvironment(env_ptr);
+}
+
+Expected<LiteRtOptions> CreateCpuOptionsWithProfiling() {
+  LiteRtOptions options = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOptions(&options));
+  LITERT_RETURN_IF_ERROR(
+      LiteRtSetOptionsHardwareAccelerators(options, kLiteRtHwAcceleratorCpu));
+  LITERT_ASSIGN_OR_RETURN(RuntimeOptions runtime_options,
+                          RuntimeOptions::Create());
+  runtime_options.SetEnableProfiling(/*enabled=*/true);
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtGetOpaqueRuntimeOptionsData(
+      runtime_options.Get(), &identifier, &payload, &payload_deleter));
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_RETURN_IF_ERROR(LiteRtCreateOpaqueOptions(
+      identifier, payload, payload_deleter, &opaque_opts));
+  litert::OpaqueOptions opaque_runtime_options =
+      litert::OpaqueOptions::WrapCObject(opaque_opts, litert::OwnHandle::kYes);
+  LITERT_RETURN_IF_ERROR(
+      LiteRtAddOpaqueOptions(options, opaque_runtime_options.Release()));
+  return options;
+}
+
+// Tests that querying output shapes before the first Run() skips eager
+// AllocateTensors() when all outputs already have static non-rank-0 shapes,
+// while still honoring an explicit `update_allocation=true` request.
+TEST(CompiledModelTest, StaticOutputShapesBeforeFirstRunSkipAllocation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
+                              LiteRtEnvironmentT::CreateWithOptions({}));
+  LiteRtEnvironmentT* const env_ptr = env.release();
+
+  const std::string path = testing::GetTestFilePath(kModelFileName);
+  LiteRtModel model = nullptr;
+  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
+            kLiteRtStatusOk);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtOptions jit_compilation_options,
+                              CreateCpuOptionsWithProfiling());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      LiteRtCompiledModelT::Ptr compiled_model,
+      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtProfiler profiler,
+                              compiled_model->GetProfiler());
+  ASSERT_EQ(LiteRtStartProfiler(profiler), kLiteRtStatusOk);
+
+  std::vector<LiteRtLayout> output_layouts(1);
+  absl::Span<LiteRtLayout> output_layouts_span = absl::MakeSpan(output_layouts);
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      litert::kDefaultSignatureKey, output_layouts_span,
+      /*update_allocation=*/false));
+  ASSERT_EQ(output_layouts[0].rank, 1);
+  EXPECT_EQ(output_layouts[0].dimensions[0], 2);
+  EXPECT_EQ(profiler->GetNumEvents(), 0);
+
+  LITERT_ASSERT_OK(compiled_model->GetOutputTensorShapes(
+      litert::kDefaultSignatureKey, output_layouts_span,
+      /*update_allocation=*/true));
+  EXPECT_GT(profiler->GetNumEvents(), 0);
+
+  ASSERT_EQ(LiteRtStopProfiler(profiler), kLiteRtStatusOk);
   compiled_model.reset();
   LiteRtDestroyOptions(jit_compilation_options);
   LiteRtDestroyModel(model);
