@@ -261,15 +261,19 @@ class FromConcreteFunctionTest(lite_v2_test_util.ModelTest):
           **converter._get_base_converter_args()
       )
 
-    off = flags()
-    self.assertFalse(off.rank_reduction)
-    self.assertFalse(off.unsafe_gpu_compatibility)
+    # Rank reduction is on by default; GPU compatibility is not.
+    default = flags()
+    self.assertTrue(default.rank_reduction)
+    self.assertFalse(default.unsafe_gpu_compatibility)
 
-    rank_only = flags(_experimental_rank_reduction=True)
-    self.assertTrue(rank_only.rank_reduction)
-    self.assertFalse(rank_only.unsafe_gpu_compatibility)
+    no_rank = flags(_experimental_rank_reduction=False)
+    self.assertFalse(no_rank.rank_reduction)
+    self.assertFalse(no_rank.unsafe_gpu_compatibility)
 
-    gpu_only = flags(_experimental_unsafe_gpu_compatibility=True)
+    gpu_only = flags(
+        _experimental_rank_reduction=False,
+        _experimental_unsafe_gpu_compatibility=True,
+    )
     self.assertFalse(gpu_only.rank_reduction)
     self.assertTrue(gpu_only.unsafe_gpu_compatibility)
 
