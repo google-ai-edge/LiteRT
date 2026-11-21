@@ -124,12 +124,18 @@ class BenchmarkLoggingListener : public ::tflite::benchmark::BenchmarkListener {
       LITERT_LOG(LITERT_INFO, "\nMemory Usage:");
       LITERT_LOG(LITERT_INFO, "Init footprint:       %.2f MB",
                  init_mem_usage.mem_footprint_kb / 1024.0);
+      LITERT_LOG(LITERT_INFO, "  (CPU: %.2f MB, GPU: %.2f MB)",
+                 results.init_cpu_rss_mb(), results.init_gpu_mem_mb());
       LITERT_LOG(LITERT_INFO, "Overall footprint:    %.2f MB",
                  overall_mem_usage.mem_footprint_kb / 1024.0);
+      LITERT_LOG(LITERT_INFO, "  (CPU: %.2f MB, GPU: %.2f MB)",
+                 results.overall_cpu_rss_mb(), results.overall_gpu_mem_mb());
 
       float peak_mem_mb = results.peak_mem_mb();
       if (peak_mem_mb > 0) {
         LITERT_LOG(LITERT_INFO, "Peak memory:          %.2f MB", peak_mem_mb);
+        LITERT_LOG(LITERT_INFO, "  (CPU peak: %.2f MB, GPU peak: %.2f MB)",
+                   results.peak_cpu_rss_mb(), results.peak_gpu_mem_mb());
       } else {
         LITERT_LOG(LITERT_INFO,
                    "Peak memory usage not available. (peak_mem_mb <= 0)");
