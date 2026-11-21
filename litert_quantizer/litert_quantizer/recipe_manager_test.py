@@ -390,6 +390,22 @@ class ConfiguratorTest(parameterized.TestCase):
         _QuantGranularity.CHANNELWISE,
     )
 
+  def test_add_dynamic_config_with_algorithm_params(self):
+    self._recipe_manager.add_dynamic_config(
+        regex='.*/Dense/.*',
+        operation_name=_TFLOpName.FULLY_CONNECTED,
+        num_bits=4,
+        granularity=_QuantGranularity.BLOCKWISE_32,
+        algorithm_params={'full_range': True},
+    )
+    _, op_config = self._recipe_manager.get_quantization_configs(
+        _TFLOpName.FULLY_CONNECTED, 'model/Dense/op'
+    )
+    weight_tensor_config = op_config.weight_tensor_config
+    assert weight_tensor_config is not None
+    self.assertEqual(weight_tensor_config.num_bits, 4)
+    self.assertTrue(weight_tensor_config.algorithm_params['full_range'])
+
   @parameterized.parameters(4, 8)
   def test_add_weight_only_config_int(self, num_bits):
     self._recipe_manager.add_weight_only_config(

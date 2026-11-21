@@ -288,6 +288,7 @@ class RecipeManager:
       num_bits: int,
       granularity: qtyping.QuantGranularity = qtyping.QuantGranularity.CHANNELWISE,
       algorithm_key: str = algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      algorithm_params: Optional[Mapping[str, object]] = None,
   ):
     """Adds a dynamic quantization configuration to the recipe.
 
@@ -305,12 +306,15 @@ class RecipeManager:
       num_bits: Number of bits for quantization.
       granularity: Granularity of quantization.
       algorithm_key: Algorithm key to be applied.
+      algorithm_params: Optional algorithm-specific weight quantization
+        parameters, e.g. `{'full_range': True}` for min-max int4.
     """
     weight_config = qtyping.TensorQuantizationConfig(
         num_bits=num_bits,
         symmetric=True,  # LiteRT kernels only support symmetric quantized
         # weights.
         granularity=granularity,
+        algorithm_params=algorithm_params or {},
     )
     self.add_quantization_config(
         regex,
