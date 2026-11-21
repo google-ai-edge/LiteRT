@@ -69,6 +69,14 @@ FindDispatchDelegateVendorOptions(
     const LiteRtRuntimeContext* absl_nonnull runtime_context,
     LiteRtOptions absl_nonnull options);
 
+// Parses `GoogleTensorOptions` from `options` into `out_options`, or sets
+// `out_options` to `std::nullopt` if absent.
+LiteRtStatus ParseGoogleTensorOptions(
+    const LiteRtRuntimeContext* absl_nonnull runtime_context,
+    absl_nullable LiteRtOptions options,
+    std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>&
+        out_options);
+
 }  // namespace litert::google_tensor
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_GOOGLE_TENSOR_DISPATCH_DISPATCH_API_UTILS_H_

@@ -25,6 +25,7 @@
 
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/nullability.h"  // from @com_google_absl
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/optional_ref.h"  // from @com_google_absl
@@ -32,6 +33,8 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -123,6 +126,106 @@ FindDispatchDelegateVendorOptions(
     return std::nullopt;
   }
   return std::move(*vendor_options);
+}
+
+LiteRtStatus ParseGoogleTensorOptions(
+    const LiteRtRuntimeContext* absl_nonnull runtime_context,
+    absl_nullable LiteRtOptions options,
+    std::optional<LiteRtDispatchDeviceContextT::GoogleTensorOptionsData>&
+        out_options) {
+  out_options = std::nullopt;
+  if (options == nullptr) {
+    return kLiteRtStatusOk;
+  }
+  GT_LOG_RETURN_IF_NULL(runtime_context);
+
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  if (runtime_context->get_opaque_options(options, &opaque_opts) !=
+          kLiteRtStatusOk ||
+      opaque_opts == nullptr) {
+    return kLiteRtStatusOk;
+  }
+
+  void* payload = nullptr;
+  if (runtime_context->find_opaque_options_data(
+          opaque_opts, LrtGoogleTensorOptionsGetIdentifier(), &payload) !=
+          kLiteRtStatusOk ||
+      payload == nullptr) {
+    return kLiteRtStatusOk;
+  }
+
+  LrtGoogleTensorOptions google_tensor_options = nullptr;
+  LiteRtStatus parse_status = LrtCreateGoogleTensorOptionsFromToml(
+      static_cast<const char*>(payload), &google_tensor_options);
+  if (parse_status != kLiteRtStatusOk) {
+    LITERT_LOG(LITERT_ERROR, "Failed to parse GoogleTensorOptions TOML");
+    return parse_status;
+  }
+  absl::Cleanup google_tensor_options_deleter = [google_tensor_options] {
+    LrtDestroyGoogleTensorOptions(google_tensor_options);
+  };
+  LITERT_LOG(LITERT_VERBOSE, "Found GoogleTensorOptions");
+
+  LiteRtDispatchDeviceContextT::GoogleTensorOptionsData
+      google_tensor_options_data;
+  LiteRtGoogleTensorOptionsPerformanceMode performance_mode;
+  if (LrtGoogleTensorOptionsGetPerformanceMode(
+          google_tensor_options, &performance_mode) == kLiteRtStatusOk) {
+    google_tensor_options_data.performance_mode = performance_mode;
+  }
+
+  int num_input_entries = 0;
+  if (LrtGoogleTensorOptionsGetNumInputCoherencyEntries(
+          google_tensor_options, &num_input_entries) == kLiteRtStatusOk) {
+    for (int i = 0; i < num_input_entries; ++i) {
+      const char* signature_name = nullptr;
+      const char* tensor_name = nullptr;
+      bool prefer_coherent = false;
+      if (LrtGoogleTensorOptionsGetInputCoherencyEntry(
+              google_tensor_options, i, &signature_name, &tensor_name,
+              &prefer_coherent) == kLiteRtStatusOk) {
+        if (signature_name == nullptr || tensor_name == nullptr) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Ignored input coherency entry %d. signature_name '%s' or"
+                     " tensor_name '%s' is null",
+                     i, signature_name ? signature_name : "<null>",
+                     tensor_name ? tensor_name : "<null>");
+          continue;
+        }
+        google_tensor_options_data.input_coherency_map[{
+            std::string(signature_name), std::string(tensor_name)}] =
+            prefer_coherent;
+      }
+    }
+  }
+
+  int num_output_entries = 0;
+  if (LrtGoogleTensorOptionsGetNumOutputCoherencyEntries(
+          google_tensor_options, &num_output_entries) == kLiteRtStatusOk) {
+    for (int i = 0; i < num_output_entries; ++i) {
+      const char* signature_name = nullptr;
+      const char* tensor_name = nullptr;
+      bool prefer_coherent = false;
+      if (LrtGoogleTensorOptionsGetOutputCoherencyEntry(
+              google_tensor_options, i, &signature_name, &tensor_name,
+              &prefer_coherent) == kLiteRtStatusOk) {
+        if (signature_name == nullptr || tensor_name == nullptr) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Ignored output coherency entry %d. signature_name '%s' or"
+                     " tensor_name '%s' is null",
+                     i, signature_name ? signature_name : "<null>",
+                     tensor_name ? tensor_name : "<null>");
+          continue;
+        }
+        google_tensor_options_data.output_coherency_map[{
+            std::string(signature_name), std::string(tensor_name)}] =
+            prefer_coherent;
+      }
+    }
+  }
+
+  out_options = std::move(google_tensor_options_data);
+  return kLiteRtStatusOk;
 }
 
 ThrNodeId ToThrNodeId(LiteRtDispatchNodeId node_id) {
