@@ -35,6 +35,8 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_kernel.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
@@ -282,6 +284,17 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateSparseSdpaTransposedFromNode(sdpa_inputs, outputs, node,
                                               model_builder);
   }
+  if (node.operation.type == kBlockFfwUnpackPartType) {
+    return CreateBlockFfwUnpackPartFromNode(op_def, inputs, outputs, node,
+                                            model_builder);
+  }
+  if (node.operation.type == kBlockFfwPackPartsType) {
+    return CreateBlockFfwPackPartsFromNode(op_def, inputs, outputs, node,
+                                           model_builder);
+  }
+  if (node.operation.type == kBlockFfwSiluType) {
+    return CreateBlockFfwSiluFromNode(op_def, inputs, outputs, model_builder);
+  }
   if (node.operation.type ==
       ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {
     // Try the custom fused Flash SDPA kernel first, and fall back to the
@@ -314,6 +327,11 @@ absl::Status LiteRtOpSelector::GPUSubgraphFromGraph(
     const std::set<::ml_drift::NodeId>& consumed_nodes,
     std::set<::ml_drift::NodeId>* new_consumed_nodes,
     ::ml_drift::GpuModelBuilder* model_builder) {
+  if (TryBlockFfwEdgeFc(create_info_, gpu_info_, graph, first_node_id,
+                        consumed_nodes, new_consumed_nodes, model_builder)
+          .ok()) {
+    return absl::OkStatus();
+  }
   return ::ml_drift::GPUSubgraphFromGraph(create_info_.hints, gpu_info_, graph,
                                           first_node_id, consumed_nodes,
                                           new_consumed_nodes, model_builder);

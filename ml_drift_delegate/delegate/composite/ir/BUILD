@@ -258,11 +258,35 @@ cc_library(
 )
 
 cc_library(
+    name = "block_ffw_parser",
+    srcs = ["block_ffw_parser.cc"],
+    hdrs = ["block_ffw_parser.h"],
+    deps = [
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite/c:common",
+        "@XNNPACK",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = ["custom_parsers.h"],
     deps = [
         ":add_values_to_cache_parser",
+        ":block_ffw_parser",
         ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_parser",
         ":glu_parser",
@@ -274,6 +298,7 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
         ":sparse_sdpa_transposed_parser",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -286,6 +311,8 @@ cc_library(
     hdrs = ["litert_op_selector.h"],
     deps = [
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
+        "//ml_drift_delegate/delegate/composite:block_ffw_kernel",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_kernel",
         "//ml_drift_delegate/delegate/composite:gated_delta_update_kernel",
         "//ml_drift_delegate/delegate/composite:glu_kernel",
@@ -324,9 +351,11 @@ cc_test(
     deps = [
         ":litert_op_selector",
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/delegate/composite:qsa_indexer_update_parser",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
         "//ml_drift_delegate/delegate/composite:sparse_sdpa_transposed_parser",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",
@@ -547,6 +576,30 @@ cc_test(
         "@flatbuffers",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_test(
+    name = "block_ffw_parser_test",
+    srcs = ["block_ffw_parser_test.cc"],
+    deps = [
+        ":block_ffw_parser",
+        ":custom_parsers",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
+        "//ml_drift_delegate/tflite:custom_ir_operation_parser",
+        "//ml_drift_delegate/tflite:ir_model_builder",
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//ml_drift_delegate/tflite:shared_const_tensor_map",
+        "//tflite:builtin_ops",
+        "//tflite/c:common",
+        "//tflite/core/c:private_common",
+        "@XNNPACK",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
     ],
 )

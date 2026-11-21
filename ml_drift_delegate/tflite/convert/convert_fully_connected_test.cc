@@ -485,5 +485,169 @@ TEST(ConvertFullyConnectedTest, ConvertsNativeBlockwiseInt4) {
   EXPECT_EQ(weights_tensor.shape.i, kInputChannels);
 }
 
+TEST(ConvertFullyConnectedTest, ConvertsNonSharedBlockwiseV2CenteredInt2) {
+  IrModelBuilderOptions options;
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(options), DeleteStubDelegate);
+  ASSERT_NE(delegate, nullptr);
+
+  constexpr int kOutputChannels = 2;
+  constexpr int kInputChannels = 4;
+  // Byte 0x4E packs (-2, -1, 0, 1) in 2-bit two's complement.
+  std::vector<uint8_t> weights_bytes = {0x4E, 0x4E};
+  auto floats_to_bytes = [](const std::vector<float>& values) {
+    const auto* raw = reinterpret_cast<const uint8_t*>(values.data());
+    return std::vector<uint8_t>(raw, raw + values.size() * sizeof(float));
+  };
+  std::vector<uint8_t> scale_bytes = floats_to_bytes({1.0f, 2.0f});
+  std::vector<uint8_t> zp_bytes = floats_to_bytes({-0.5f, -0.5f});
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinFullyConnected,
+                                   /*version=*/17);
+  model.AddInput(kTfLiteFloat32, {1, 1, 1, kInputChannels});       // id 0
+  model.AddInput(kTfLiteInt2, {kOutputChannels, kInputChannels});  // id 1
+  model.AddConstInput(kTfLiteFloat32, {kOutputChannels, 1}, scale_bytes);  // 2
+  model.AddConstInput(kTfLiteFloat32, {kOutputChannels, 1}, zp_bytes);     // 3
+  model.AddOutput(kTfLiteFloat32, {1, kOutputChannels});                   // 4
+
+  auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
+      calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build({0, 1});
+  ASSERT_TRUE(interpreter);
+
+  TfLiteTensor* weights = interpreter->tensor(1);
+  weights->allocation_type = kTfLiteMmapRo;
+  weights->data.raw = reinterpret_cast<char*>(weights_bytes.data());
+  weights->bytes = weights_bytes.size();
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* bw_params = static_cast<TfLiteBlockwiseQuantizationV2*>(
+      malloc(sizeof(TfLiteBlockwiseQuantizationV2)));
+  bw_params->scale = 2;
+  bw_params->zero_point = 3;
+  bw_params->block_shape = TfLiteIntArrayCreate(2);
+  bw_params->block_shape->data[0] = 1;
+  bw_params->block_shape->data[1] = kInputChannels;
+  weights->quantization.type = kTfLiteBlockwiseQuantizationV2;
+  weights->quantization.params = bw_params;
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+
+  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  for (const auto& op : ir_model->ops()) {
+    if (op->name == "fully_connected") {
+      fc_op = op.get();
+      break;
+    }
+  }
+  ASSERT_NE(fc_op, nullptr);
+  const auto& attr =
+      std::any_cast<const ::ml_drift::FullyConnectedAttributes&>(fc_op->attr);
+  EXPECT_EQ(attr.weights.shape,
+            ::ml_drift::OHWI(kOutputChannels, 1, 1, kInputChannels));
+  ASSERT_GE(attr.weights.data.size(),
+            static_cast<size_t>(kOutputChannels * kInputChannels));
+  // Row 0 (scale 1.0, zp -0.5): (-1.5, -0.5, 0.5, 1.5).
+  EXPECT_FLOAT_EQ(attr.weights.data[0], -1.5f);
+  EXPECT_FLOAT_EQ(attr.weights.data[1], -0.5f);
+  EXPECT_FLOAT_EQ(attr.weights.data[2], 0.5f);
+  EXPECT_FLOAT_EQ(attr.weights.data[3], 1.5f);
+  // Row 1 (scale 2.0, zp -0.5): (-3.0, -1.0, 1.0, 3.0).
+  EXPECT_FLOAT_EQ(attr.weights.data[4], -3.0f);
+  EXPECT_FLOAT_EQ(attr.weights.data[5], -1.0f);
+  EXPECT_FLOAT_EQ(attr.weights.data[6], 1.0f);
+  EXPECT_FLOAT_EQ(attr.weights.data[7], 3.0f);
+}
+
+TEST(ConvertFullyConnectedTest,
+     ConvertsNonSharedBlockwiseV2SpatialInputToConv2D) {
+  IrModelBuilderOptions options;
+  std::unique_ptr<TfLiteDelegate, void (*)(TfLiteDelegate*)> delegate(
+      CreateStubDelegate(options), DeleteStubDelegate);
+  ASSERT_NE(delegate, nullptr);
+
+  constexpr int kOutputChannels = 2;
+  constexpr int kInputChannels = 4;
+  // Byte 0x4E packs (-2, -1, 0, 1) in 2-bit two's complement.
+  std::vector<uint8_t> weights_bytes = {0x4E, 0x4E};
+  auto floats_to_bytes = [](const std::vector<float>& values) {
+    const auto* raw = reinterpret_cast<const uint8_t*>(values.data());
+    return std::vector<uint8_t>(raw, raw + values.size() * sizeof(float));
+  };
+  std::vector<uint8_t> scale_bytes = floats_to_bytes({1.0f, 2.0f});
+  std::vector<uint8_t> zp_bytes = floats_to_bytes({-0.5f, -0.5f});
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinFullyConnected,
+                                   /*version=*/17);
+  model.AddInput(kTfLiteFloat32, {1, 2, 1, kInputChannels});       // id 0
+  model.AddInput(kTfLiteInt2, {kOutputChannels, kInputChannels});  // id 1
+  model.AddConstInput(kTfLiteFloat32, {kOutputChannels, 1}, scale_bytes);  // 2
+  model.AddConstInput(kTfLiteFloat32, {kOutputChannels, 1}, zp_bytes);     // 3
+  model.AddOutput(kTfLiteFloat32, {1, 2, 1, kOutputChannels});             // 4
+
+  auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
+      calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model.SetParameters(params);
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build({0, 1});
+  ASSERT_TRUE(interpreter);
+
+  TfLiteTensor* weights = interpreter->tensor(1);
+  weights->allocation_type = kTfLiteMmapRo;
+  weights->data.raw = reinterpret_cast<char*>(weights_bytes.data());
+  weights->bytes = weights_bytes.size();
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* bw_params = static_cast<TfLiteBlockwiseQuantizationV2*>(
+      malloc(sizeof(TfLiteBlockwiseQuantizationV2)));
+  bw_params->scale = 2;
+  bw_params->zero_point = 3;
+  bw_params->block_shape = TfLiteIntArrayCreate(2);
+  bw_params->block_shape->data[0] = 1;
+  bw_params->block_shape->data[1] = kInputChannels;
+  weights->quantization.type = kTfLiteBlockwiseQuantizationV2;
+  weights->quantization.params = bw_params;
+
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate.get());
+  ASSERT_TRUE(ir_model);
+
+  const ::ml_drift::ir::IrOp* conv_op = nullptr;
+  for (const auto& op : ir_model->ops()) {
+    if (op->name == "convolution_2d") {
+      conv_op = op.get();
+      break;
+    }
+  }
+  ASSERT_NE(conv_op, nullptr);
+  const auto& attr =
+      std::any_cast<const ::ml_drift::Convolution2DAttributes&>(conv_op->attr);
+  EXPECT_EQ(attr.strides, ::ml_drift::HW(1, 1));
+  EXPECT_EQ(attr.dilations, ::ml_drift::HW(1, 1));
+  EXPECT_EQ(attr.padding.prepended, ::ml_drift::HW(0, 0));
+  EXPECT_EQ(attr.padding.appended, ::ml_drift::HW(0, 0));
+  const auto& conv_weights = std::get<
+      ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>>(
+      attr.weights);
+  EXPECT_EQ(conv_weights.shape,
+            ::ml_drift::OHWI(kOutputChannels, 1, 1, kInputChannels));
+  ASSERT_GE(conv_weights.data.size(),
+            static_cast<size_t>(kOutputChannels * kInputChannels));
+  EXPECT_FLOAT_EQ(conv_weights.data[0], -1.5f);
+  EXPECT_FLOAT_EQ(conv_weights.data[1], -0.5f);
+  EXPECT_FLOAT_EQ(conv_weights.data[2], 0.5f);
+  EXPECT_FLOAT_EQ(conv_weights.data[3], 1.5f);
+  EXPECT_FLOAT_EQ(conv_weights.data[4], -3.0f);
+  EXPECT_FLOAT_EQ(conv_weights.data[5], -1.0f);
+  EXPECT_FLOAT_EQ(conv_weights.data[6], 1.0f);
+  EXPECT_FLOAT_EQ(conv_weights.data[7], 3.0f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

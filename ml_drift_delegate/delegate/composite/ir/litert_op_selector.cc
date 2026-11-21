@@ -35,6 +35,8 @@
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_kernel.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/glu_kernel.h"
@@ -169,6 +171,14 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
         ResolveInputsWithBufferParam(param_index, inputs, model_builder);
     return CreateFusedSdpaCacheUpdateFromIrOp(sdpa_inputs, outputs, op,
                                               model_builder);
+  } else if (op.name == kBlockFfwUnpackPartType) {
+    return CreateBlockFfwUnpackPartFromIrOp(op_def, inputs, outputs, op,
+                                            model_builder);
+  } else if (op.name == kBlockFfwPackPartsType) {
+    return CreateBlockFfwPackPartsFromIrOp(op_def, inputs, outputs, op,
+                                           model_builder);
+  } else if (op.name == kBlockFfwSiluType) {
+    return CreateBlockFfwSiluFromIrOp(op_def, inputs, outputs, model_builder);
   } else if (op.name == "gated_delta_update") {
     return CreateGatedDeltaUpdateFromIrOp(op_def, inputs, outputs, op,
                                           &gpu_info_, model_builder);
@@ -243,6 +253,12 @@ absl::Status LiteRtOpSelector::GPUSubgraphFromIrModel(
     const absl::flat_hash_set<::ml_drift::ir::IrOpId>& consumed_ops,
     absl::flat_hash_set<::ml_drift::ir::IrOpId>* new_consumed_ops,
     ::ml_drift::GpuModelBuilder* model_builder) {
+  if (TryBlockFfwEdgeFcFromIrModel(create_info_, gpu_info_, ir_model,
+                                   first_op_id, consumed_ops, new_consumed_ops,
+                                   model_builder)
+          .ok()) {
+    return absl::OkStatus();
+  }
   return ::ml_drift::GPUSubgraphFromIrModel(create_info_.hints, gpu_info_,
                                             ir_model, first_op_id, consumed_ops,
                                             new_consumed_ops, model_builder);
