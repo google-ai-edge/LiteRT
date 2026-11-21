@@ -26,7 +26,7 @@ limitations under the License.
 #include "stablehlo/dialect/StablehloOps.h"  // from @stablehlo  // IWYU pragma: keep
 #include "tflite/converter/ir/tfl_ops.h"  // IWYU pragma: keep
 #include "tflite/converter/stablehlo/transforms/legalize_hlo_conversions/gelu.h"
-#include "tflite/converter/transforms/passes.h"  // IWYU pragma: keep
+#include "tflite/converter/transforms/tfl_passes.h"  // IWYU pragma: keep
 
 namespace mlir {
 namespace odml {

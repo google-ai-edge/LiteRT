@@ -41,6 +41,7 @@ limitations under the License.
 #include "tflite/converter/python/interpreter_wrapper/python_error_reporter.h"
 #include "tflite/converter/python/interpreter_wrapper/python_utils.h"
 #include "tflite/converter/python/jax_to_tfl_flatbuffer.h"
+#include "tflite/converter/python/mlir_bytecode_to_tflite.h"
 #include "tflite/converter/python/saved_model_to_tfl_flatbuffer.h"
 #include "tflite/converter/python/tf_tfl_flatbuffer_helpers.h"
 #include "tflite/converter/quantization/lite/quantize_model.h"
