@@ -96,4 +96,102 @@ Java_org_tensorflow_lite_InterpreterTest_getNativeHandleForInvalidDelegate(
   return reinterpret_cast<jlong>(&delegate);
 }
 
+namespace {
+
+struct HeapDelegateState {
+  TfLiteDelegate delegate;
+  int prepared_kernels = 0;
+  int active_kernels = 0;
+  int prepared_buffers = 0;
+  int active_buffers = 0;
+};
+
+}  // namespace
+
+JNIEXPORT jlong JNICALL
+Java_org_tensorflow_lite_NativeInterpreterWrapperTest_createHeapDelegate(
+    JNIEnv* env, jclass clazz) {
+  static TfLiteRegistration registration = {
+      .init = [](TfLiteContext* context, const char* buffer,
+                 size_t length) -> void* {
+        const TfLiteDelegateParams* params =
+            reinterpret_cast<const TfLiteDelegateParams*>(buffer);
+        auto* state = static_cast<HeapDelegateState*>(params->delegate->data_);
+        ++state->prepared_kernels;
+        ++state->active_kernels;
+        return state;
+      },
+      .free =
+          [](TfLiteContext* context, void* buffer) {
+            auto* state = static_cast<HeapDelegateState*>(buffer);
+            --state->active_kernels;
+          },
+      .prepare =
+          [](TfLiteContext* context, TfLiteNode* node) {
+            const TfLiteTensor* input;
+            TF_LITE_ENSURE_OK(context,
+                              tflite::GetInputSafe(context, node, 0, &input));
+            TfLiteTensor* output;
+            TF_LITE_ENSURE_OK(context,
+                              tflite::GetOutputSafe(context, node, 0, &output));
+            TfLiteIntArray* output_dims = TfLiteIntArrayCopy(input->dims);
+            output->type = kTfLiteFloat32;
+            return context->ResizeTensor(context, output, output_dims);
+          },
+      .invoke =
+          [](TfLiteContext* context, TfLiteNode* node) {
+            TfLiteTensor* output;
+            TF_LITE_ENSURE_OK(context,
+                              tflite::GetOutputSafe(context, node, 0, &output));
+            std::fill(output->data.f,
+                      output->data.f + tflite::NumElements(output), 7.0f);
+            return kTfLiteOk;
+          },
+      .profiling_string = nullptr,
+      .builtin_code = 0,
+      .custom_name = "",
+      .version = 1,
+  };
+
+  auto* state = new HeapDelegateState();
+  state->delegate = TfLiteDelegateCreate();
+  state->delegate.data_ = state;
+  state->delegate.Prepare = [](TfLiteContext* context,
+                               TfLiteDelegate* delegate) -> TfLiteStatus {
+    auto* state = static_cast<HeapDelegateState*>(delegate->data_);
+    TfLiteIntArray* execution_plan;
+    TF_LITE_ENSURE_STATUS(context->GetExecutionPlan(context, &execution_plan));
+    TF_LITE_ENSURE_STATUS(context->ReplaceNodeSubsetsWithDelegateKernels(
+        context, registration, execution_plan, delegate));
+    for (size_t i = 0; i < context->tensors_size; ++i) {
+      context->tensors[i].delegate = delegate;
+      context->tensors[i].buffer_handle = static_cast<int>(i);
+      ++state->prepared_buffers;
+      ++state->active_buffers;
+    }
+    return kTfLiteOk;
+  };
+  state->delegate.FreeBufferHandle = [](TfLiteContext* context,
+                                        TfLiteDelegate* delegate,
+                                        TfLiteBufferHandle* handle) {
+    auto* state = static_cast<HeapDelegateState*>(delegate->data_);
+    --state->active_buffers;
+    *handle = kTfLiteNullBufferHandle;
+  };
+  state->delegate.flags = kTfLiteDelegateFlagsAllowDynamicTensors;
+  return reinterpret_cast<jlong>(&state->delegate);
+}
+
+JNIEXPORT jboolean JNICALL
+Java_org_tensorflow_lite_NativeInterpreterWrapperTest_deleteHeapDelegate(
+    JNIEnv* env, jclass clazz, jlong delegate_handle) {
+  auto* delegate = reinterpret_cast<TfLiteDelegate*>(delegate_handle);
+  auto* state = static_cast<HeapDelegateState*>(delegate->data_);
+  bool all_released_before_delete =
+      (state->prepared_kernels > 0 && state->prepared_buffers > 0 &&
+       state->active_kernels == 0 && state->active_buffers == 0);
+  delete state;
+  return all_released_before_delete ? JNI_TRUE : JNI_FALSE;
+}
+
 }  // extern "C"
