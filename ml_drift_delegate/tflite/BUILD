@@ -332,6 +332,8 @@ cc_library(
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:model",
@@ -469,8 +471,10 @@ cc_test(
         ":model_builder_helper",
         "//tflite/core/c:private_common",
         "//tflite/testing:matchers",
+        "@com_google_absl//absl/status",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:shape",
     ],
 )
 
