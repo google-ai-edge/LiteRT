@@ -112,6 +112,7 @@ cc_library(
     deps = [
         "//tflite/converter:tensorflow_lite",
         "//tflite/converter:tensorflow_lite_quantize",
+        "//tflite/converter:tfl_carrier",
         "@llvm-project//llvm:Support",
         "@llvm-project//mlir:ArithDialect",
         "@llvm-project//mlir:AsmParser",
