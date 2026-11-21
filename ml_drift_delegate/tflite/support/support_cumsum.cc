@@ -25,6 +25,8 @@
 
 namespace litert::ml_drift::ir {
 
+constexpr int kMaxDims = 5;
+
 bool IsCumsumSupported(const TfLiteContext* absl_nonnull context,
                        const TfLiteNode* absl_nonnull node,
                        const TfLiteRegistration* absl_nonnull registration,
@@ -86,6 +88,11 @@ bool IsCumsumSupported(const TfLiteContext* absl_nonnull context,
     return false;
   }
   if (!CheckIsConstant(axis, "inputs[1]", *error)) {
+    return false;
+  }
+  // Check input shape.
+  if (!CheckTensorDims(input, /*min_dims=*/1, /*max_dims=*/kMaxDims,
+                       "inputs[0]", *error)) {
     return false;
   }
   // Check axis value.
