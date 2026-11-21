@@ -32,6 +32,36 @@ function host_bin() {
   fi
 }
 
+# Path to an optional dynamic loader for executing host_bin.
+function host_loader() {
+  local host_loader=@@host_loader@@
+  if [[ "$host_loader" == "@@"*"@@" ]]; then
+    echo ""
+  else
+    echo "$host_loader"
+  fi
+}
+
+# Colon-separated library directories required by host_loader.
+function host_loader_lib_dirs() {
+  local loader_dirs=@@host_loader_lib_dirs@@
+  if [[ "$loader_dirs" == "@@"*"@@" ]]; then
+    echo ""
+  else
+    echo "$loader_dirs"
+  fi
+}
+
+# Path to an optional remote path helper script.
+function remote_path_helper() {
+  local helper=@@remote_path_helper@@
+  if [[ "$helper" == "@@"*"@@" ]]; then
+    echo ""
+  else
+    echo "$helper"
+  fi
+}
+
 # Path to the binary built for device that is packed with this library.
 function device_bin() {
   local device_bin=@@device_bin@@

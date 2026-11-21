@@ -116,6 +116,17 @@ def _device_script_lib_impl(ctx):
         if v.files_to_run.executable:
             forwarded_runfiles.append(v.files_to_run.executable)
 
+    sysroot_files, loader = resolve_debian_sysroot(ctx)
+    forwarded_runfiles.extend(sysroot_files)
+    loader_short_path = loader.short_path if loader else ""
+    loader_lib_dirs = depset([
+        f.short_path.rsplit("/", 1)[0]
+        for f in sysroot_files
+        if "/" in f.short_path
+    ]).to_list()
+    subs.add("@@host_loader@@", "\"{}\"".format(loader_short_path))
+    subs.add("@@host_loader_lib_dirs@@", "\"{}\"".format(":".join(loader_lib_dirs)))
+
     subs.add("@@exec_env_vars@@", "\"{}\"".format(" ".join(ctx.attr.exec_env_vars)))
 
     runfiles = ctx.runfiles(files = forwarded_runfiles)
@@ -203,6 +214,13 @@ _device_script_lib = rule(
             # cfg = "exec",
             # copybara:uncomment_end
             doc = "Additional host tool binaries to package with the script.",
+        ),
+        "debian_sysroot": attr.label(
+            default = None,
+            # copybara:uncomment_begin(google-only)
+            # cfg = "exec",
+            # copybara:uncomment_end
+            doc = "Optional Debian glibc runtime sysroot for prebuilt COTS host libraries.",
         ),
         "device_libs": attr.label_list(
             mandatory = False,
@@ -321,6 +339,11 @@ def litert_device_script(
         device_libs = libs.device,
         extra_host_libs = extra_host_libs,
         extra_device_libs = extra_device_libs,
+        host_tools = _default_host_tools(build_for_host),
+        debian_sysroot = default_debian_sysroot(backend_id) if build_for_host else None,
+        subs = {
+            "@@remote_path_helper@@": "\"{}\"".format(_default_remote_path_helper()),
+        },
         testonly = testonly,
         exec_env_vars = backend.env_paths,
         model_providers = model_providers,
@@ -359,13 +382,27 @@ def litert_device_script(
         **script_kwargs
     )
 
-# copybara:comment_begin(oss-only)
-def resolve_debian_sysroot(_ctx, compile_bin):
-    return [], "\"{}\"".format(compile_bin.path)
+# copybara:uncomment_begin(google-only)
+# def _default_host_tools(build_for_host):
+#     if build_for_host:
+#         return ["//litert/integration_test/google:cns_models_helper"]
+#     return []
+#
+# def _default_remote_path_helper():
+#     return "third_party/odml/litert/litert/integration_test/google/remote_path_helper.sh"
+#
+# copybara:uncomment_end
 
-# copybara:comment_end
-
 # copybara:comment_begin(oss-only)
+def _default_host_tools(_build_for_host):
+    return []
+
+def _default_remote_path_helper():
+    return ""
+
+def resolve_debian_sysroot(_ctx):
+    return [], None
+
 def default_debian_sysroot(_backend_id):
     return None
 
@@ -380,7 +417,10 @@ def _litert_aot_compile_impl(ctx):
     if not plugin_dirs:
         fail("No compiler plugin library found in host_libs.")
 
-    sysroot_files, runner_prefix = resolve_debian_sysroot(ctx, compile_bin)
+    sysroot_files, loader = resolve_debian_sysroot(ctx)
+    runner_prefix = (
+        "\"{}\" \"{}\"".format(loader.path, compile_bin.path) if loader else "\"{}\"".format(compile_bin.path)
+    )
 
     inputs = depset(
         direct = [compile_bin] + host_libs + ctx.files.data + sysroot_files,

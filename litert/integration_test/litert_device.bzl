@@ -67,7 +67,8 @@ def hidden_test_tags():
 #         dimensions = {},
 #         platform = "android",
 #         enable_ynnpack = False,
-#         extra_models = []):
+#         extra_models = [],
+#         runtime_aot_models = False):
 #     """Wraps the mobile harness "mobile_test" macro"""
 #
 #     if platform == "macos":
@@ -198,6 +199,7 @@ def hidden_test_tags():
 #         runfiles_prefix = None,
 #         libs = libs,
 #         extra_models = extra_models,
+#         runtime_aot_models = runtime_aot_models,
 #         exec_args = exec_args,
 #         exec_env_vars = exec_env_vars,
 #         run_as = run_as,
@@ -239,6 +241,7 @@ def litert_device_exec(
         local_suffix = "_adb",
         model_providers = [],
         extra_models = [],
+        runtime_aot_models = False,
         dimensions = None,
         testonly = True,
         tags = [],
@@ -261,6 +264,8 @@ def litert_device_exec(
         local_suffix: Suffix for the target that runs locally on physical device through adb.
         model_providers: A list of tools dependencies that return tflite models when called.
         extra_models: A list of extra .tflite model paths or targets to push to the device.
+        runtime_aot_models: If True, configures the Mobile Harness target to push runtime-supplied
+            `aot_models` files (e.g., via `--file_aot_models=...`) to the device.
         dimensions: Optional Mobile Harness device dimensions dict or device target label string
             overriding backend default.
         testonly: Whether the target is testonly.
@@ -323,6 +328,7 @@ def litert_device_exec(
             platform = platform,
             enable_ynnpack = enable_ynnpack,
             extra_models = extra_models,
+            runtime_aot_models = runtime_aot_models,
         )
 
 def litert_device_test(
