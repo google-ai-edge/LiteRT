@@ -79,6 +79,7 @@ class EmbeddingLookupSparseOpModel : public SingleOpModel {
   }
 
   std::vector<float> GetOutput() { return ExtractVector<float>(output_); }
+  std::vector<int> GetOutputShape() { return GetTensorShape(output_); }
 
  private:
   int lookup_;
@@ -155,6 +156,42 @@ TEST(EmbeddingLookupSparseOpTest, Indices3DTest) {
                   0.00, 0.00, 0.00, 0.00, 0.00, 0.00, 6.00, 6.06, 6.60,
                   6.66, 7.20, 7.26, 0.00, 0.00, 0.00, 0.00, 0.00, 0.00,
               })));
+}
+
+TEST(EmbeddingLookupSparseOpTest,
+     RejectsOutOfBoundsIndicesAndInvalidDenseShape) {
+  EmbeddingLookupSparseOpModel oob_mean(CombinerType_MEAN, {3}, {3, 2}, {2},
+                                        {4, 3, 2});
+  oob_mean.SetInput({1, 3, 0}, {0, 0, 100, 0, 100, 1}, {3, 2},
+                    {1.0f, 2.0f, 4.0f});
+  oob_mean.Set3DWeightMatrix(
+      [](int i, int j, int k) { return i + j / 10.0f + k / 100.0f; });
+  EXPECT_EQ(oob_mean.Invoke(), kTfLiteError);
+
+  EmbeddingLookupSparseOpModel neg_coord(CombinerType_SQRTN, {3}, {3, 2}, {2},
+                                         {4, 3, 2});
+  neg_coord.SetInput({1, 3, 0}, {-5, 0, 2, 0, 2, 1}, {3, 2},
+                     {1.0f, 2.0f, 4.0f});
+  neg_coord.Set3DWeightMatrix(
+      [](int i, int j, int k) { return i + j / 10.0f + k / 100.0f; });
+  EXPECT_EQ(neg_coord.Invoke(), kTfLiteError);
+
+  EmbeddingLookupSparseOpModel bad_dense_shape(CombinerType_SUM, {3}, {3, 2},
+                                               {2}, {4, 3, 2});
+  bad_dense_shape.SetInput({1, 3, 0}, {0, 0, 2, 0, 2, 1}, {0, 2},
+                           {1.0f, 2.0f, 4.0f});
+  bad_dense_shape.Set3DWeightMatrix(
+      [](int i, int j, int k) { return i + j / 10.0f + k / 100.0f; });
+  EXPECT_EQ(bad_dense_shape.Invoke(), kTfLiteError);
+
+  EmbeddingLookupSparseOpModel empty_batch(CombinerType_SUM, {0}, {0, 2}, {2},
+                                           {4, 3, 2});
+  empty_batch.SetInput({}, {}, {0, 2}, {});
+  empty_batch.Set3DWeightMatrix(
+      [](int i, int j, int k) { return i + j / 10.0f + k / 100.0f; });
+  EXPECT_EQ(empty_batch.Invoke(), kTfLiteOk);
+  EXPECT_THAT(empty_batch.GetOutputShape(), ElementsAreArray({0, 3, 2}));
+  EXPECT_TRUE(empty_batch.GetOutput().empty());
 }
 
 }  // namespace
