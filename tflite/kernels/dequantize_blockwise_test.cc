@@ -37,6 +37,7 @@ limitations under the License.
 #include "tflite/core/kernels/register.h"
 #include "tflite/core/model_builder.h"
 #include "tflite/kernels/kernel_util.h"
+#include "tflite/kernels/test_delegate_providers.h"
 #include "tflite/kernels/test_util.h"
 #include "tflite/schema/schema_generated.h"
 
@@ -158,6 +159,13 @@ class BlockwiseDequantizeModel {
   bool Built() const { return interpreter_ != nullptr; }
 
   TfLiteStatus AllocateAndInvoke() {
+    for (auto& one : KernelTestDelegateProviders::Get()->CreateAllDelegates()) {
+      if (TfLiteStatus status =
+              interpreter_->ModifyGraphWithDelegate(std::move(one.delegate));
+          status != kTfLiteOk) {
+        return status;
+      }
+    }
     if (TfLiteStatus status = interpreter_->AllocateTensors();
         status != kTfLiteOk) {
       return status;
