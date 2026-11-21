@@ -1508,5 +1508,102 @@ TEST(BidirectionalRNNOpTest,
   run_closedbox_test_with_input_split(/*input_size=*/2, /*aux_input_size=*/6);
 }
 
+
+// Bidirectional RNN op (no aux input, separate outputs) with explicitly given
+// shapes for the nine regular operands, used to check that Prepare() rejects
+// operands of the wrong rank. An empty shape leaves the operand at rank 0.
+class BidirectionalRNNRankOpModel : public SingleOpModel {
+ public:
+  explicit BidirectionalRNNRankOpModel(std::vector<std::vector<int>> shapes) {
+    AddInput(TensorType_FLOAT32);          // input
+    AddInput(TensorType_FLOAT32);          // fw_weights
+    AddInput(TensorType_FLOAT32);          // fw_recurrent_weights
+    AddInput(TensorType_FLOAT32);          // fw_bias
+    AddVariableInput(TensorType_FLOAT32);  // fw_hidden_state
+    AddInput(TensorType_FLOAT32);          // bw_weights
+    AddInput(TensorType_FLOAT32);          // bw_recurrent_weights
+    AddInput(TensorType_FLOAT32);          // bw_bias
+    AddVariableInput(TensorType_FLOAT32);  // bw_hidden_state
+    AddNullInput();                        // aux_input
+    AddNullInput();                        // aux_fw_weights
+    AddNullInput();                        // aux_bw_weights
+    AddOutput(TensorType_FLOAT32);         // fw_output
+    AddOutput(TensorType_FLOAT32);         // bw_output
+    SetBuiltinOp(BuiltinOperator_BIDIRECTIONAL_SEQUENCE_RNN,
+                 BuiltinOptions_BidirectionalSequenceRNNOptions,
+                 CreateBidirectionalSequenceRNNOptions(
+                     builder_, /*time_major=*/false,
+                     ActivationFunctionType_RELU, /*merge_outputs=*/false)
+                     .Union());
+    shapes.insert(shapes.end(), {{0}, {0}, {0}});
+    BuildInterpreter(shapes, /*num_threads=*/-1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+};
+
+// batch 2, sequence 3, input size 4, 5 units in each direction.
+TEST(BidirectionalRNNOpTest, PrepareAcceptsWellFormedRanks) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_EQ(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank1FwWeights) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank3FwWeights) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4, 1}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank1FwRecurrentWeights) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank0FwBias) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank1BwWeights) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {5}, {2, 5},
+                                 {5}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank1BwRecurrentWeights) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsRank2BwBias) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5, 1}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+// Eval() reads both recurrent weight matrices as [num_units, num_units].
+TEST(BidirectionalRNNOpTest, PrepareRejectsFwRecurrentWeightsColumnMismatch) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 1}, {5}, {2, 5},
+                                 {5, 4}, {5, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
+TEST(BidirectionalRNNOpTest, PrepareRejectsBwRecurrentWeightsRowMismatch) {
+  BidirectionalRNNRankOpModel m({{2, 3, 4}, {5, 4}, {5, 5}, {5}, {2, 5},
+                                 {5, 4}, {1, 5}, {5}, {2, 5}});
+  EXPECT_NE(m.AllocateTensors(), kTfLiteOk);
+}
+
 }  // namespace
 }  // namespace tflite
