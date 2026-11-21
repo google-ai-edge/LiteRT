@@ -312,6 +312,12 @@ class Options {
   void SetDspSkelDir(absl::string_view dsp_skel_dir);
   absl::string_view GetDspSkelDir() const;
 
+  // Prefix for QNN graph names. Applies to all backends; also controls the DLC
+  // filename stem when using the IR backend.
+  // Single-partition: "{prefix}", multi-partition: "{prefix}_{idx}".
+  void SetGraphNamePrefix(absl::string_view graph_name_prefix);
+  absl::string_view GetGraphNamePrefix() const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -362,6 +368,7 @@ class Options {
   std::uint32_t lpai_core_selection_ = 0;
   std::string qnn_lib_dir_;
   std::string dsp_skel_dir_;
+  std::string graph_name_prefix_;
 };
 
 // Gets a default logger implementation to stdout.

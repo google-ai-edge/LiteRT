@@ -871,6 +871,17 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetGraphNamePrefix(const std::string& graph_name_prefix) {
+    LrtQualcommOptionsSetGraphNamePrefix(options_, graph_name_prefix.c_str());
+  }
+
+  StringView GetGraphNamePrefix() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetGraphNamePrefix(options_, &val);
+    if (status != kLiteRtStatusOk) return "";
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

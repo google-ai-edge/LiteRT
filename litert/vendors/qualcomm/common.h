@@ -186,6 +186,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetLpaiCoreSelection(qualcomm_options.GetLpaiCoreSelection());
   qnn_options.SetQnnLibDir(qualcomm_options.GetQnnLibDir());
   qnn_options.SetDspSkelDir(qualcomm_options.GetDspSkelDir());
+  qnn_options.SetGraphNamePrefix(qualcomm_options.GetGraphNamePrefix());
 
   LITERT_LOG(LITERT_INFO, "\n%s", qnn_options.Dump().data());
   return kLiteRtStatusOk;
