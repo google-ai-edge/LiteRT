@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+# <open-source-office@arm.com>
+# SPDX-License-Identifier: Apache-2.0
+
 load("@flatbuffers//:build_defs.bzl", "flatbuffer_cc_library")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
@@ -250,6 +254,20 @@ cc_test(
         "//tflite/delegates/gpu/common:shape",
         "//tflite/delegates/gpu/common:tensor",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "work_group_picking_test",
+    size = "small",
+    srcs = ["work_group_picking_test.cc"],
+    deps = [
+        ":tuning_type",
+        ":work_group_picking",
+        "//tflite/delegates/gpu/common:gpu_info",
+        "//tflite/delegates/gpu/common:kernel_info",
+        "//tflite/delegates/gpu/common:types",
         "@com_google_googletest//:gtest_main",
     ],
 )
