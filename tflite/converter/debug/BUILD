@@ -1,4 +1,5 @@
 load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_test")
+load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load(
     "@org_tensorflow//tensorflow/core/platform:build_config.bzl",
     "tf_proto_library",
@@ -65,5 +66,55 @@ tf_cc_test(
         "@tsl//tsl/platform:path",
         "@xla//xla/tsl/lib/core:status_test_util",
         "@xla//xla/tsl/platform:env",
+    ],
+)
+
+# TSL-free version of `debug` for the StableHLO to TFLite converter. Only
+# supports dump directories on the local file system.
+cc_library(
+    name = "pass_manager_debug",
+    srcs = ["pass_manager_debug.cc"],
+    hdrs = ["pass_manager_debug.h"],
+    compatible_with = get_compatible_with_portable(),
+    visibility = ["//tflite/converter:__subpackages__"],
+    deps = [
+        ":debug_options_proto_cc",
+        "//tflite/converter:file_utils",
+        "//tflite/converter/metrics:error_collector_inst",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/time",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+    ],
+)
+
+tf_cc_test(
+    name = "pass_manager_debug_test",
+    srcs = ["pass_manager_debug_test.cc"],
+    deps = [
+        ":debug_options_proto_cc",
+        ":pass_manager_debug",
+        "//tflite/converter:file_utils",
+        "//tflite/converter:tensorflow_lite_ops",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:ArithDialect",
+        "@llvm-project//mlir:FuncDialect",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Pass",
+        "@llvm-project//mlir:Support",
     ],
 )
