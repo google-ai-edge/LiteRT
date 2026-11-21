@@ -586,6 +586,10 @@ export declare interface LiteRtWasm extends WasmModule {
     axis: number,
     outputType?: string,
   ): LiteRtTensorHandle;
+  cast(
+    a: LiteRtTensorHandle,
+    dtype: EmscriptenEnumElement<ElementType>,
+  ): WasmResult<LiteRtTensorHandle>;
   resizeBilinear(
     input: LiteRtTensorHandle,
     size: number[],

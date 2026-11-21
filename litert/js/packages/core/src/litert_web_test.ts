@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, cast, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 import {unwrapWasmResult} from './wasm_binding_types';
@@ -3191,6 +3191,107 @@ describe('LiteRt', () => {
           dusModel.delete();
         });
       }
+    });
+
+    describe('authored cast graphs', () => {
+      let u8Tensor: Tensor;
+      let i32Tensor: Tensor;
+      let f32Tensor: Tensor;
+      let boolTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        u8Tensor = new Tensor(new Uint8Array([0, 128, 255, 42]), [2, 2]);
+        i32Tensor = new Tensor(new Int32Array([-3, 0, 7, 100]), [4]);
+        f32Tensor = new Tensor(new Float32Array([-2.7, 0.0, 1.9, 5.0]), [4]);
+        boolTensor = new Tensor(new Uint8Array([0, 1, 1, 0]), [4], 'bool');
+      });
+
+      afterAll(() => {
+        u8Tensor.delete();
+        i32Tensor.delete();
+        f32Tensor.delete();
+        boolTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`casts uint8 to float32 on ${accelerator}`, async () => {
+          const m = author(
+              (x: Tensor) => x.cast('float32'), {accelerator});
+          const out = await m.run(u8Tensor);
+          expect(out.dtype).toEqual('float32');
+          expect(out.shape).toEqual([2, 2]);
+          expect(Array.from(await out.data())).toEqual([0, 128, 255, 42]);
+          out.delete();
+          m.delete();
+        });
+
+        it(`casts int32 <-> float32 on ${accelerator}`, async () => {
+          const i2f = author((x: Tensor) => cast(x, 'float32'), {accelerator});
+          const fOut = await i2f.run(i32Tensor);
+          expect(fOut.dtype).toEqual('float32');
+          expect(Array.from(await fOut.data())).toEqual([-3, 0, 7, 100]);
+          fOut.delete();
+          i2f.delete();
+
+          const f2i = author((x: Tensor) => x.cast('int32'), {accelerator});
+          const iOut = await f2i.run(f32Tensor);
+          expect(iOut.dtype).toEqual('int32');
+          expect(Array.from(await iOut.data())).toEqual([-2, 0, 1, 5]);
+          iOut.delete();
+          f2i.delete();
+        });
+
+        it(`casts bool <-> float32 on ${accelerator}`, async () => {
+          const b2f = author((x: Tensor) => cast(x, 'float32'), {accelerator});
+          const fOut = await b2f.run(boolTensor);
+          expect(fOut.dtype).toEqual('float32');
+          expect(Array.from(await fOut.data())).toEqual([0, 1, 1, 0]);
+          fOut.delete();
+          b2f.delete();
+
+          const f2b = author((x: Tensor) => x.cast('bool'), {accelerator});
+          const bOut = await f2b.run(f32Tensor);
+          expect(bOut.dtype).toEqual('bool');
+          expect(Array.from(await bOut.data())).toEqual([1, 0, 1, 1]);
+          bOut.delete();
+          f2b.delete();
+        });
+
+        it(`supports identity cast on ${accelerator}`, async () => {
+          const idModel = author(
+              (x: Tensor) => x.cast('float32'), {accelerator});
+          const out = await idModel.run(f32Tensor);
+          expect(out.dtype).toEqual('float32');
+          const data = Array.from(await out.data());
+          expect(data[0]).toBeCloseTo(-2.7, 4);
+          expect(data[1]).toBeCloseTo(0.0, 4);
+          expect(data[2]).toBeCloseTo(1.9, 4);
+          expect(data[3]).toBeCloseTo(5.0, 4);
+          out.delete();
+          idModel.delete();
+        });
+      }
+
+      it('casts int32 -> int64 -> int32 on wasm', async () => {
+        const toI64 = author(
+            (x: Tensor) => cast(x, 'int64'), {accelerator: 'wasm'});
+        const out64 = await toI64.run(i32Tensor);
+        expect(out64.dtype).toEqual('int64');
+        expect(Array.from(await out64.data() as BigInt64Array))
+            .toEqual([-3n, 0n, 7n, 100n]);
+
+        const toI32 = author(
+            (x: Tensor) => x.cast('int32'), {accelerator: 'wasm'});
+        const out32 = await toI32.run(out64);
+        expect(out32.dtype).toEqual('int32');
+        expect(Array.from(await out32.data())).toEqual([-3, 0, 7, 100]);
+
+        out64.delete();
+        out32.delete();
+        toI64.delete();
+        toI32.delete();
+      });
     });
 
     it('can copy to a different environment', async () => {
