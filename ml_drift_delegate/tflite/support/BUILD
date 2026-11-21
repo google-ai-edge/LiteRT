@@ -76,6 +76,7 @@ cc_library(
         ":support_rms_norm",
         ":support_rotary_positional_embedding",
         ":support_sdpa",
+        ":support_scatter_nd",
         ":support_select",
         ":support_slice",
         ":support_softmax",
@@ -277,6 +278,18 @@ cc_library(
         "@com_google_absl//absl/strings",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_library(
+    name = "support_scatter_nd",
+    srcs = ["support_scatter_nd.cc"],
+    hdrs = ["support_scatter_nd.h"],
+    deps = [
+        ":support_aux",
+        "//tflite/c:common",
+        "@com_google_absl//absl/base:nullability",
+        "@com_google_absl//absl/strings",
     ],
 )
 
@@ -1081,6 +1094,20 @@ cc_test(
         "//tflite/schema:schema_fbs",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "support_scatter_nd_test",
+    srcs = ["support_scatter_nd_test.cc"],
+    deps = [
+        ":stub_context",
+        ":support",  # buildcleaner: keep
+        "//ml_drift_delegate/tflite:ir_model_builder_helper",
+        "//tflite:builtin_ops",
+        "//tflite/c:c_api_types",
+        "//tflite/c:common",
         "@com_google_googletest//:gtest_main",
     ],
 )
