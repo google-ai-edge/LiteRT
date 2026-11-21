@@ -16,6 +16,8 @@ limitations under the License.
 
 #include <stdint.h>
 
+#include <algorithm>
+
 #include "Eigen/Core"  // from @eigen_archive
 #include "tflite/core/c/common.h"
 #include "tflite/kernels/internal/compatibility.h"
@@ -99,14 +101,26 @@ void ComparisonQuantized(const TfLiteTensor* input1, const TfLiteTensor* input2,
       input1->type == kTfLiteInt16) {
     auto input1_offset = -input1->params.zero_point;
     auto input2_offset = -input2->params.zero_point;
-    const int left_shift = 8;
+    int left_shift = 8;
+    double input1_scale = input1->params.scale;
+    double input2_scale = input2->params.scale;
+    if (input1->type == kTfLiteInt16) {
+      // Rescale relative to the larger input scale so that adjacent int16
+      // values stay distinct regardless of the absolute scale. The offset
+      // input fits in 17 signed bits, so shifting by 14 cannot overflow.
+      left_shift = 14;
+      const double twice_max_input_scale =
+          2 * std::max(input1_scale, input2_scale);
+      input1_scale /= twice_max_input_scale;
+      input2_scale /= twice_max_input_scale;
+    }
 
     int32 input1_multiplier;
     int32 input2_multiplier;
     int input1_shift;
     int input2_shift;
-    QuantizeMultiplier(input1->params.scale, &input1_multiplier, &input1_shift);
-    QuantizeMultiplier(input2->params.scale, &input2_multiplier, &input2_shift);
+    QuantizeMultiplier(input1_scale, &input1_multiplier, &input1_shift);
+    QuantizeMultiplier(input2_scale, &input2_multiplier, &input2_shift);
 
     ComparisonParams op_params;
     op_params.left_shift = left_shift;
@@ -264,7 +278,10 @@ TfLiteStatus NotEqualEval(TfLiteContext* context, TfLiteNode* node) {
           input1, input2, output, requires_broadcast);
       break;
     case kTfLiteInt16:
-      if (input1->quantization.type != kTfLiteNoQuantization) {
+      if (input1->quantization.type == kTfLiteNoQuantization) {
+        Comparison<int16_t, reference_ops::NotEqualFn<int16_t>>(
+            input1, input2, output, requires_broadcast);
+      } else {
         ComparisonQuantized<int16_t, reference_ops::NotEqualFn<int32_t>>(
             input1, input2, output, requires_broadcast);
       }
@@ -307,8 +324,13 @@ TfLiteStatus LessEval(TfLiteContext* context, TfLiteNode* node, int lhs,
           input1, input2, output, requires_broadcast);
       break;
     case kTfLiteInt16:
-      Comparison<int16_t, reference_ops::LessFn<int16_t>>(
-          input1, input2, output, requires_broadcast);
+      if (input1->quantization.type == kTfLiteNoQuantization) {
+        Comparison<int16_t, reference_ops::LessFn<int16_t>>(
+            input1, input2, output, requires_broadcast);
+      } else {
+        ComparisonQuantized<int16_t, reference_ops::LessFn<int32_t>>(
+            input1, input2, output, requires_broadcast);
+      }
       break;
     case kTfLiteInt32:
       Comparison<int32_t, reference_ops::LessFn<int32_t>>(
@@ -355,8 +377,13 @@ TfLiteStatus LessEqualEval(TfLiteContext* context, TfLiteNode* node, int lhs,
           input1, input2, output, requires_broadcast);
       break;
     case kTfLiteInt16:
-      Comparison<int16_t, reference_ops::LessEqualFn<int16_t>>(
-          input1, input2, output, requires_broadcast);
+      if (input1->quantization.type == kTfLiteNoQuantization) {
+        Comparison<int16_t, reference_ops::LessEqualFn<int16_t>>(
+            input1, input2, output, requires_broadcast);
+      } else {
+        ComparisonQuantized<int16_t, reference_ops::LessEqualFn<int32_t>>(
+            input1, input2, output, requires_broadcast);
+      }
       break;
     case kTfLiteInt32:
       Comparison<int32_t, reference_ops::LessEqualFn<int32_t>>(
