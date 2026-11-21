@@ -125,9 +125,9 @@ http_archive(
 
 http_archive(
     name = "bazel_features",
-    sha256 = "c26b4e69cf02fea24511a108d158188b9d8174426311aac59ce803a78d107648",
-    strip_prefix = "bazel_features-1.43.0",
-    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.43.0/bazel_features-v1.43.0.tar.gz",
+    sha256 = "094367e732ece23f334eaf84089a720b861d053beeba6a6a68356d3aee1dc32b",
+    strip_prefix = "bazel_features-1.50.0",
+    url = "https://github.com/bazel-contrib/bazel_features/releases/download/v1.50.0/bazel_features-v1.50.0.tar.gz",
 )
 
 # Download coremltools of the same version of tensorflow, but with a custom patchcmd until
