@@ -63,7 +63,7 @@ flowchart TB
 | Category | Options |
 |----------|---------|
 | **General / SDK** | `log_level`, `backend`, `graph_priority`, `custom_op_package`, `enable_just_in_time`, `graph_io_tensor_mem_type`, `profiling`, `op_name_format` |
-| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_perf_ctrl_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing` |
+| **HTP** | `use_conv_hmx`, `use_fold_relu`, `htp_dlbc`, `htp_dlbc_weights`, `htp_p_point`, `htp_weight_sharing_channel_tile_size`, `htp_performance_mode`, `htp_perf_ctrl_mode`, `htp_pd_session`, `htp_context_init_acceleration`, `htp_device_id`, `optimization_level`, `vtcm_size`, `num_hvx_threads`, `use_int64_bias_as_int32`, `enable_weight_sharing`, `enable_zero_copy_context_loading` |
 | **DSP** | `dsp_performance_mode`, `dsp_perf_ctrl_mode`, `dsp_pd_session` |
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
@@ -142,6 +142,35 @@ target:HTP"
 | INT64→INT32 bias | `use_int64_bias_as_int32` | `true` | compile | Convert FullyConnected/Conv2D bias int64 → int32. |
 | Weight sharing | `enable_weight_sharing` | `false` | compile | Subgraphs share weight tensors. **x86 AOT only** — unsupported on device. |
 | Weight sharing channel tile size | `htp_weight_sharing_channel_tile_size` | `0` | compile | `0` disables this config. Positive values are passed as the QAIRT finalize config `weight_sharing_channel_tile_size`. Use a tile size that is a multiple of 32 for 16-bit weights, 64 for 8-bit weights, or 128 for 2-bit or 4-bit weights. For more details, please refer to the official QAIRT documentation. |
+| DMA-BUF context loading | `enable_zero_copy_context_loading` | `false` | dispatch | **Zero-copy context binary loading.** When the model is loaded from a file/fd, HTP imports the context binary directly from that fd via DMA-BUF instead of copying the weights into its own buffer. HTP only; falls back to the default path otherwise. See below. |
+
+### HTP DMA-BUF context loading (zero-copy)
+
+`enable_zero_copy_context_loading` changes how the HTP context binary (the
+compiled weights) is loaded. It is **off by default (`false`)**.
+
+With the default path (`QnnContext_createFromBinary`), HTP allocates its own
+RPC buffer and copies the context-binary weights into it. If the application
+also keeps the model resident, the weights end up stored twice.
+
+With this option enabled, the backend uses QAIRT's
+`QnnContext_createFromBinaryWithCallback` flow: for each context-binary range
+the runtime requests, the backend allocates a DMA buffer, loads that range
+directly from the model fd, and hands it to HTP, which imports it. The whole
+model is never held resident and HTP makes no extra copy, so the weights are
+stored once. The benefit is largest for applications that would otherwise keep
+the whole model resident in memory.
+
+Requirements and limitations (from the QAIRT HTP backend guide,
+"QnnContext_createFromBinaryWithCallback API" section:
+https://docs.qualcomm.com/nav/home/htp_backend.html?product=924033590759186372):
+
+- The model must be loaded from a file or file descriptor (so the backend has
+  an fd to read from). It falls back to the default path otherwise.
+- The context binary must be generated with qairt-2.37 or later.
+- Not supported together with the graph-switch feature, `udma64`,
+  `QNN_CONTEXT_CONFIG_OPTION_DEFER_GRAPH_INIT`, or securePD model protection.
+- HTP backend only. Linux/Android only.
 
 ### HTP file read memory budget (peak RSS reduction)
 

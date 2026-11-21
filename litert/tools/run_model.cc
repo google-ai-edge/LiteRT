@@ -24,7 +24,7 @@
 #include <utility>
 #include <vector>
 
-#if defined(__ANDROID__)
+#if defined(__linux__)
 #include <dirent.h>
 #include <sys/stat.h>
 
@@ -132,7 +132,7 @@ ABSL_FLAG(bool, report_peak_memory_footprint, true,
 namespace litert {
 namespace {
 
-#if defined(__ANDROID__)
+#if defined(__linux__)
 struct DmaBufSummary {
   uint64_t total_bytes = 0;
   struct Entry {
@@ -264,10 +264,10 @@ void ReportMemoryUsage() {
     ABSL_LOG(INFO) << "DMA-BUF usage: 0 bytes (no dmabuf fds found).";
   }
 }
-#endif  // defined(__ANDROID__)
+#endif  // defined(__linux__)
 
 void MaybeReportPeakMemoryFootprint() {
-#if defined(__ANDROID__)
+#if defined(__linux__)
   if (absl::GetFlag(FLAGS_report_peak_memory_footprint)) {
     ReportMemoryUsage();
   }
@@ -691,9 +691,15 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
   ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
+  ABSL_LOG(INFO) << "Peak memory footprint before loading model:";
+  MaybeReportPeakMemoryFootprint();
+
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+
+  ABSL_LOG(INFO) << "Peak memory footprint right after loading model:";
+  MaybeReportPeakMemoryFootprint();
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
