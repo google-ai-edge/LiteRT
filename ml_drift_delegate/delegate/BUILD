@@ -718,6 +718,8 @@ cc_library(
     hdrs = ["delegate_utils.h"],
     deps = [
         ":delegate_data",
+        ":delegate_options",
+        ":precision",
         ":shared_tensor_maps",
         "//litert/c/internal:litert_runtime_context_header",
         "//ml_drift_delegate/delegate/composite/ir:custom_parsers",
@@ -725,6 +727,20 @@ cc_library(
         "//ml_drift_delegate/tflite:ir_model_builder_helper",
         "//ml_drift_delegate/tflite/support",
         "//tflite/core/c:private_common",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:precision",
+    ],
+)
+
+cc_test(
+    name = "delegate_utils_test",
+    srcs = ["delegate_utils_test.cc"],
+    deps = [
+        ":delegate_options",
+        ":delegate_utils",
+        ":precision",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:precision",
     ],
 )
@@ -1095,8 +1111,6 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",
-        "@ml_drift//ml_drift/common:gpu_info",
-        "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/gl:egl_environment",
     ],
 )
