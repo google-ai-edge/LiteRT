@@ -242,6 +242,41 @@ typedef struct LiteRtModelSerializationOptions {
   size_t bytecode_alignment;
 } LiteRtModelSerializationOptions;
 
+// A byte range request within a model's context binary, relative to the
+// start of the file the model was loaded from.
+typedef struct LiteRtDmaContextDataRequest {
+  size_t offset;
+  size_t size;
+} LiteRtDmaContextDataRequest;
+
+// The caller-owned buffer satisfying a LiteRtDmaContextDataRequest.
+typedef struct LiteRtDmaContextDataResponse {
+  int fd;
+  void* data;
+  size_t data_start_offset;
+  size_t aligned_size;
+} LiteRtDmaContextDataResponse;
+
+// Provides the bytes for a requested range, filling in `response`. The
+// buffer described by `response` must remain valid until the matching
+// LiteRtDmaContextDataReleaseFn call.
+typedef LiteRtStatus (*LiteRtDmaContextDataProviderFn)(
+    LiteRtDmaContextDataRequest request, LiteRtDmaContextDataResponse* response,
+    void* user_data);
+
+// Releases a buffer previously returned by LiteRtDmaContextDataProviderFn.
+typedef LiteRtStatus (*LiteRtDmaContextDataReleaseFn)(
+    LiteRtDmaContextDataResponse response, void* user_data);
+
+// Caller-supplied callback pair for streaming a model's context binary
+// directly into caller-owned DMA buffers. See
+// LiteRtCreateModelFromFdWithDmaContextCallback.
+typedef struct LiteRtDmaContextBinaryCallback {
+  LiteRtDmaContextDataProviderFn provide;
+  LiteRtDmaContextDataReleaseFn release;
+  void* user_data;
+} LiteRtDmaContextBinaryCallback;
+
 #ifdef __cplusplus
 }
 #endif  // __cplusplus

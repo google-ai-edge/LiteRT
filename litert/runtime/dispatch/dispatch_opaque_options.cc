@@ -46,6 +46,8 @@ struct Payload {
   bool has_alloc_base_file_region = false;
   // Dispatch functions of the selected signatures. Empty if all are expected.
   std::vector<std::string> expected_function_names;
+  // Caller-supplied DMA context binary callback, if any.
+  LiteRtDmaContextBinaryCallback dma_context_binary_callback = {};
 };
 
 }  // namespace
@@ -88,6 +90,19 @@ Expected<void> DispatchDelegateOptions::SetAllocBaseFd(int alloc_base_fd) {
 Expected<int> DispatchDelegateOptions::GetAllocBaseFd() {
   LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
   return payload->alloc_base_fd;
+}
+
+Expected<void> DispatchDelegateOptions::SetDmaContextBinaryCallback(
+    LiteRtDmaContextBinaryCallback callback) {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  payload->dma_context_binary_callback = callback;
+  return {};
+}
+
+Expected<LiteRtDmaContextBinaryCallback>
+DispatchDelegateOptions::GetDmaContextBinaryCallback() {
+  LITERT_ASSIGN_OR_RETURN(Payload * payload, GetData<Payload>());
+  return payload->dma_context_binary_callback;
 }
 
 Expected<void> DispatchDelegateOptions::AddExecHandle(

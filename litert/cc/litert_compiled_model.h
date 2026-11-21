@@ -494,6 +494,51 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return Create(env, model_buffer, compilation_options);
   }
 
+  /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
+  ///
+  /// The model is loaded into memory, and the caller takes ownership of the
+  /// returned `CompiledModel` object. The caller should keep the model alive
+  /// until the `CompiledModel` is destroyed. The given `compilation_options`
+  /// are used for model compilation, and `hardware_accelerators` selects the
+  /// accelerator, regardless of whether the model is AOT or JIT compiled.
+  ///
+  /// @note The provided environment must outlive the compiled model and any
+  /// executions running on it.
+  /// @note Even if the model is fully AOT-compiled for an NPU, you must
+  /// specify the NPU accelerator in `hardware_accelerators` to use it
+  /// properly.
+  /// @note Signature selection structurally prunes the provided model in place.
+  /// Treat the model handle as consumed once compilation starts, including
+  /// when compilation returns an error.
+  static Expected<CompiledModel> Create(const litert::Environment& env,
+                                        const LiteRtModel litert_model,
+                                        Options& compilation_options) {
+    auto env_holder = env.GetHolder();
+    LITERT_ASSIGN_OR_RETURN(
+        auto owned_options,
+        BuildOptions(std::move(compilation_options), env_holder));
+    LiteRtCompiledModel compiled_model;
+    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
+        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
+    return CompiledModel(env_holder, litert_model,
+                         /*model_owned=*/OwnHandle::kNo, compiled_model,
+                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
+  }
+
+  /// @brief A simplified version of `Create` that uses default compilation
+  /// options.
+  ///
+  /// The provided hardware accelerator is used to select the target
+  /// accelerator.
+  /// @note This should be specified for both JIT and AOT compiled models.
+  static Expected<CompiledModel> Create(
+      const litert::Environment& env, const LiteRtModel litert_model,
+      litert::HwAccelerators hardware_accelerators) {
+    Options compilation_options;
+    compilation_options.SetHardwareAccelerators(hardware_accelerators);
+    return Create(env, litert_model, compilation_options);
+  }
+
   /// @brief Gets input buffer requirements for the given signature and input
   /// name.
   Expected<TensorBufferRequirements> GetInputBufferRequirements(
@@ -2059,53 +2104,6 @@ class CompiledModel : public internal::BaseHandle<LiteRtCompiledModel> {
     return CompiledModel(env_holder, model.Release(),
                          /*model_owned=*/OwnHandle::kYes, compiled_model,
                          /*owned=*/OwnHandle::kYes, std::move(owned_options));
-  }
-
-  /// @internal
-  /// @brief Creates a `CompiledModel` from a provided `LiteRtModel`.
-  ///
-  /// The model is loaded into memory, and the caller takes ownership of the
-  /// returned `CompiledModel` object. The caller should keep the model alive
-  /// until the `CompiledModel` is destroyed. The given `compilation_options`
-  /// are used for model compilation, and `hardware_accelerators` selects the
-  /// accelerator, regardless of whether the model is AOT or JIT compiled.
-  ///
-  /// @note The provided environment must outlive the compiled model and any
-  /// executions running on it.
-  /// @note Even if the model is fully AOT-compiled for an NPU, you must
-  /// specify the NPU accelerator in `hardware_accelerators` to use it
-  /// properly.
-  /// @note Signature selection structurally prunes the provided model in place.
-  /// Treat the model handle as consumed once compilation starts, including
-  /// when compilation returns an error.
-  static Expected<CompiledModel> Create(const litert::Environment& env,
-                                        const LiteRtModel litert_model,
-                                        Options& compilation_options) {
-    auto env_holder = env.GetHolder();
-    LITERT_ASSIGN_OR_RETURN(
-        auto owned_options,
-        BuildOptions(std::move(compilation_options), env_holder));
-    LiteRtCompiledModel compiled_model;
-    LITERT_RETURN_IF_ERROR(env_holder.runtime->CreateCompiledModel(
-        env_holder.handle, litert_model, owned_options.get(), &compiled_model));
-    return CompiledModel(env_holder, litert_model,
-                         /*model_owned=*/OwnHandle::kNo, compiled_model,
-                         /*owned=*/OwnHandle::kYes, std::move(owned_options));
-  }
-
-  /// @internal
-  /// @brief A simplified version of `Create` that uses default compilation
-  /// options.
-  ///
-  /// The provided hardware accelerator is used to select the target
-  /// accelerator.
-  /// @note This should be specified for both JIT and AOT compiled models.
-  static Expected<CompiledModel> Create(
-      const litert::Environment& env, const LiteRtModel litert_model,
-      litert::HwAccelerators hardware_accelerators) {
-    Options compilation_options;
-    compilation_options.SetHardwareAccelerators(hardware_accelerators);
-    return Create(env, litert_model, compilation_options);
   }
 
   /// @internal

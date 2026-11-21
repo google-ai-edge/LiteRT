@@ -18,7 +18,9 @@
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>  // NOLINT
+#include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <system_error>  // NOLINT
 #include <utility>
@@ -34,6 +36,13 @@
 #include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#endif
+
+#if defined(__linux__)
+#include <fcntl.h>
+
+#include "litert/cc/litert_model.h"
+#include "litert/tools/ai_core_sample/dma_buf_provider.h"
 #endif
 
 #include "absl/flags/flag.h"  // from @com_google_absl
@@ -67,6 +76,12 @@
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
+#if defined(__linux__)
+ABSL_FLAG(bool, load_via_dma_context_callback, false,
+          "Load --graph via LiteRtCreateModelFromFdWithDmaContextCallback, "
+          "using the litert/tools/ai_core_sample reference provider, "
+          "instead of a plain path load.");
+#endif
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
 ABSL_FLAG(std::string, compiler_cache_dir, "",
@@ -691,9 +706,38 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
   ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
+
+#if defined(__linux__)
+  // Kept alive for the lifetime of `compiled_model`: the DMA context
+  // callback is invoked on demand throughout compilation and execution, not
+  // just at load time.
+  std::unique_ptr<litert::tools::DmaBufProvider> dma_provider;
+  litert::ScopedFile dma_model_fd;
+  std::optional<litert::Model> dma_model;
+  if (absl::GetFlag(FLAGS_load_via_dma_context_callback)) {
+    LITERT_ASSIGN_OR_RETURN(
+        dma_model_fd,
+        litert::ScopedFile::Open(absl::GetFlag(FLAGS_graph)));
+    LITERT_ASSIGN_OR_RETURN(const size_t model_size, dma_model_fd.GetSize());
+    dma_provider = std::make_unique<litert::tools::DmaBufProvider>(
+        dma_model_fd.file());
+    LITERT_ASSIGN_OR_RETURN(
+        auto model,
+        Model::CreateFromFdWithDmaContextCallback(
+            env, dma_model_fd.file(), /*offset=*/0, model_size,
+            dma_provider->AsCallback()));
+    dma_model = std::move(model);
+  }
+  LITERT_ASSIGN_OR_RETURN(
+      auto compiled_model,
+      dma_model.has_value()
+          ? CompiledModel::Create(env, dma_model->Get(), options)
+          : CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+#else
   LITERT_ASSIGN_OR_RETURN(
       auto compiled_model,
       CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+#endif
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;

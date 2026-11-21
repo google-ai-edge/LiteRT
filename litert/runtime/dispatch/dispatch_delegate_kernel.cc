@@ -65,7 +65,8 @@ namespace litert::internal {
 Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
     const DispatchOpOptions& dispatch_options, const void* alloc_base,
     int alloc_base_fd, size_t alloc_base_file_offset, size_t alloc_base_size,
-    bool has_alloc_base_file_region) {
+    bool has_alloc_base_file_region,
+    LiteRtDmaContextBinaryCallback dma_context_binary_callback) {
   if (dispatch_options.bytecode_offset == 0) {
     return Unexpected(kLiteRtStatusErrorRuntimeFailure,
                       "Found dispatch op with missing bytecode offset");
@@ -91,6 +92,9 @@ Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
       /*.size=*/dispatch_options.bytecode_size,
       /*.alloc_base_file_offset=*/
       has_alloc_base_file_region ? alloc_base_file_offset : 0,
+      /*.dma_context_binary_callback=*/
+      has_alloc_base_file_region ? dma_context_binary_callback
+                                 : LiteRtDmaContextBinaryCallback{},
   };
 }
 
@@ -241,6 +245,16 @@ Expected<bool> DispatchDelegateKernel::HasAllocBaseFileRegion() const {
       auto dispatch_options,
       FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
   return dispatch_options.HasAllocBaseFileRegion();
+}
+
+Expected<LiteRtDmaContextBinaryCallback>
+DispatchDelegateKernel::FindDmaContextBinaryCallback() const {
+  auto opaque_options =
+      OpaqueOptions::WrapCObject(options_->options, OwnHandle::kNo);
+  LITERT_ASSIGN_OR_RETURN(
+      auto dispatch_options,
+      FindOpaqueOptions<DispatchDelegateOptions>(opaque_options));
+  return dispatch_options.GetDmaContextBinaryCallback();
 }
 
 TfLiteStatus DispatchDelegateKernel::Init(
@@ -685,13 +699,16 @@ DispatchDelegateKernel::CreateNodeInvocationContext(
     LITERT_ASSIGN_OR_RETURN(const size_t alloc_base_size, FindAllocBaseSize());
     LITERT_ASSIGN_OR_RETURN(const bool has_alloc_base_file_region,
                             HasAllocBaseFileRegion());
+    LITERT_ASSIGN_OR_RETURN(const auto dma_context_binary_callback,
+                            FindDmaContextBinaryCallback());
 
     // Get location of bytecode in the model buffer relative to alloc_base.
     LITERT_ASSIGN_OR_RETURN(
         LiteRtMemBuffer exec_bytecode_buffer,
         BuildExecutableBytecodeBuffer(dispatch_opts, alloc_base, alloc_fd,
                                       alloc_base_file_offset, alloc_base_size,
-                                      has_alloc_base_file_region));
+                                      has_alloc_base_file_region,
+                                      dma_context_binary_callback));
     const auto& function_name = dispatch_opts.name;
 
     auto num_node_inputs = TfLiteOpaqueNodeNumberOfInputs(node);
