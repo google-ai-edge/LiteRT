@@ -28,8 +28,13 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_buffer_ref.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
+#include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_options.h"
+#include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/core/model/model_buffer.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -208,6 +213,64 @@ TEST(DispatchApiStaticLinkTest, CanRunCompiledModel) {
   LiteRtDestroyCompiledModel(compiled_model);
   LiteRtDestroyModel(model);
   LiteRtDestroyEnvironment(environment);
+}
+
+TEST(DispatchApiStaticLinkTest, CanRunCompiledModelWithPerInvokeOptions) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+
+  auto tfl_path = testing::GetTestFilePath("simple_model_npu.tflite");
+  auto bin_path = testing::GetLiteRtPath(
+      "vendors/google_tensor/dispatch/"
+      "simple_model_reference_google_tensor.bin");
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto model_buf_with_bytecode,
+      litert::internal::GetModelBufWithByteCode(tfl_path, bin_path));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env,
+          BufferRef<uint8_t>(model_buf_with_bytecode.Data(),
+                             model_buf_with_bytecode.Size()),
+          HwAccelerators::kNpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers,
+                              compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  const size_t signature_index = 0;
+  const float kIn0[] = {1.0f, 2.0f};
+  const float kIn1[] = {10.0f, 20.0f};
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(kIn0));
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>(kIn1));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto run_options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto& gt_opts,
+      run_options.GetOptions<google_tensor::GoogleTensorOptions>());
+  gt_opts.SetPerformanceMode(
+      google_tensor::GoogleTensorOptions::PerformanceMode::kBurst);
+  LITERT_ASSERT_OK(compiled_model.Run(signature_index, input_buffers,
+                                      output_buffers, &run_options));
+  float out[2] = {0.0f, 0.0f};
+  LITERT_ASSERT_OK(output_buffers[0].Read<float>(out));
+  EXPECT_FLOAT_EQ(out[0], 11.0f);
+  EXPECT_FLOAT_EQ(out[1], 22.0f);
+
+  // Out-of-range PerformanceMode fails the invocation.
+  gt_opts.SetPerformanceMode(
+      static_cast<google_tensor::GoogleTensorOptions::PerformanceMode>(6));
+  LITERT_EXPECT_ERROR(compiled_model.Run(signature_index, input_buffers,
+                                         output_buffers, &run_options));
+
+  // Running without options resets PerformanceMode.
+  const float kNewIn0[] = {3.0f, 4.0f};
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>(kNewIn0));
+  LITERT_ASSERT_OK(
+      compiled_model.Run(signature_index, input_buffers, output_buffers));
+  LITERT_ASSERT_OK(output_buffers[0].Read<float>(out));
+  EXPECT_FLOAT_EQ(out[0], 13.0f);
+  EXPECT_FLOAT_EQ(out[1], 24.0f);
 }
 
 }  // namespace
