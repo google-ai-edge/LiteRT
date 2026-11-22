@@ -19,7 +19,10 @@
 # compiler plugin and dispatch library in RUNTIME_LIBS with FP32 and BF16
 # activations, and compares each NVIDIA run with the CPU's: FP32 to 1e-3, BF16
 # to 3e-2 (both must match; exit status; a QSA selection moved by BF16
-# rounding between near-tied blocks is reported, not failed).
+# rounding between near-tied blocks is reported, not failed). Then, with the
+# sigmoid gate and BF16 activations: INT4 block weights (as real exports
+# carry them) against the CPU run of the same weights' values in FP32, and
+# the hyper-connection mix in its other spelling (--hc_spelling=sum).
 #
 # QWEN4_ARTIFACT names the tool (default: this tree's bazel-bin), and
 # LD_LIBRARY_PATH must reach the TensorRT-RTX and CUDA libraries.
@@ -54,4 +57,20 @@ for gate in sigmoid silu; do
   "$tool" --compare --cpu_dir="$dir/cpu" --npu_dir="$dir/npu_bf16" --tolerance=3e-2 \
     --strict_selection=false || status=1
 done
+# One more model of the sigmoid gate: `name`, the flags that write the NVIDIA
+# run's model, and the flags that write its CPU reference.
+variant() {
+  local name=$1 npu_flags=$2 cpu_flags=$3
+  local dir=$out/$name
+  mkdir -p "$dir/cpu"
+  "$tool" $npu_flags --write_model="$dir/model.tflite"
+  "$tool" $cpu_flags --write_model="$dir/reference.tflite"
+  "$tool" --model="$dir/reference.tflite" --accelerator=cpu --out_dir="$dir/cpu"
+  run_npu "$dir/model.tflite" "$dir/npu_bf16" bf16
+  echo "== $name, BF16 activations"
+  "$tool" --compare --cpu_dir="$dir/cpu" --npu_dir="$dir/npu_bf16" --tolerance=3e-2 \
+    --strict_selection=false || status=1
+}
+variant int4 --weights=int4 --weights=int4_fp32
+variant hc_sum --hc_spelling=sum --hc_spelling=sum
 exit $status
