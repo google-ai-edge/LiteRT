@@ -122,6 +122,11 @@ def get_constant_buffer(
 
   creating new buffer if provided data is not found in buffers list.
 
+  Only buffers added by this function are reused. The model's original buffers
+  are not, since quantization may later replace their data in place (e.g. a
+  float weight with its quantized values), which would silently change the data
+  of any new constant sharing them.
+
   Args:
     data: The data of the new tensor.
     model: The model holding the buffers.
@@ -136,12 +141,13 @@ def get_constant_buffer(
     # in the case where the data is passed from quantization_params.
     data = np.ravel(data.view(np.uint8))
 
-  # Check if the model has a buffer lookup mapping, and if not, add one.
-  if not (id_for_buffer_data := getattr(model, '_id_for_buffer_data', None)):  # pyrefly: ignore[bad-assignment]
-    id_for_buffer_data: dict[HashableMemoryView, int] = {}
-    for buffer_id, buffer in enumerate(model.buffers):
-      if (buffer_data := buffer.data) is not None:
-        id_for_buffer_data[HashableMemoryView(buffer_data)] = buffer_id
+  # Check if the model has a lookup mapping of added buffers, and if not, add
+  # one.
+  id_for_buffer_data: dict[HashableMemoryView, int] | None = getattr(
+      model, '_id_for_buffer_data', None
+  )
+  if id_for_buffer_data is None:
+    id_for_buffer_data = {}
     model._id_for_buffer_data = id_for_buffer_data  # pylint: disable=protected-access
 
   # Check if we already have a buffer for this data.
@@ -156,10 +162,13 @@ def get_constant_buffer(
   new_buffer.offset = 0
   new_buffer.size = 0
 
-  # Store the new buffer.
+  # Store the new buffer. Do not cache force-duplicated buffers (e.g. from
+  # `duplicate_buffer` for weights about to be mutated in place by
+  # quantization) so future constants cannot alias them.
   new_buffer_id = len(model.buffers)
   model.buffers.append(new_buffer)
-  id_for_buffer_data[HashableMemoryView(data)] = new_buffer_id
+  if not force_duplicate_buffer:
+    id_for_buffer_data[HashableMemoryView(data)] = new_buffer_id
 
   return new_buffer_id
 
