@@ -129,7 +129,11 @@ LiteRtStatus ParseLiteRtCompilerOptions(const void* data, size_t size,
       [options](absl::string_view key,
                 absl::string_view value) -> LiteRtStatus {
         if (key == "partition_strategy") {
-          LITERT_ASSIGN_OR_RETURN(auto strategy, ParseTomlInt(value));
+          LITERT_ASSIGN_OR_RETURN(int64_t strategy, ParseTomlInt(value));
+          if (strategy < kLiteRtCompilerOptionsPartitionStrategyDefault ||
+              strategy > kLiteRtCompilerOptionsPartitionStrategyAcyclic) {
+            return kLiteRtStatusErrorInvalidArgument;
+          }
           options->partition_strategy =
               static_cast<LiteRtCompilerOptionsPartitionStrategy>(strategy);
         } else if (key == "dummy_option") {
