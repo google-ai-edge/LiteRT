@@ -126,6 +126,7 @@ cc_test(
     }),
     deps = [
         ":memory_profile",
+        ":windows_compat",
         "//litert/vendors/nvidia/dispatch:dispatch_profiler",
         "@com_google_googletest//:gtest_main",
     ],

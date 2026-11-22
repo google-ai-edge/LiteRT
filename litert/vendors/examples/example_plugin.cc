@@ -12,14 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+#include <cstdint>
 #include <cstdlib>
-#include <cstring>
 #include <memory>
 #include <string>
 #include <unordered_map>
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_abi_header.h"
@@ -211,14 +213,52 @@ void LiteRtDestroyCompilerPlugin(LiteRtCompilerPlugin compiler_plugin) {
   delete compiler_plugin;
 }
 
-LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
-                                           const char* soc_model,
-                                           LiteRtSubgraph c_subgraph,
-                                           LiteRtOpList selected_ops) {
-  const auto* ctx = compiler_plugin->compiler_context;
-  litert::compiler::Subgraph main_subgraph(ctx, c_subgraph);
+namespace {
 
-  for (const auto& op : main_subgraph.Ops()) {
+// Returns true if all subgraphs referenced by `op` in `c_model` are non-empty
+// and contain no nested subgraph references (example_plugin cannot lower
+// nested regions).
+litert::Expected<bool> ReferencedSubgraphsSupported(
+    const LiteRtCompilerContext* ctx, LiteRtModel c_model, LiteRtOp op) {
+  if (c_model == nullptr ||
+      !LITERT_ABI_HAS_API(ctx, /*req_major=*/1, get_num_op_subgraph_refs) ||
+      !LITERT_ABI_HAS_API(ctx, /*req_major=*/1, get_op_subgraph_ref)) {
+    return true;
+  }
+  LiteRtParamIndex num_refs = 0;
+  LITERT_RETURN_IF_ERROR(ctx->get_num_op_subgraph_refs(op, &num_refs));
+  for (LiteRtParamIndex i = 0; i < num_refs; ++i) {
+    LiteRtParamIndex ref_index = 0;
+    LITERT_RETURN_IF_ERROR(ctx->get_op_subgraph_ref(op, i, &ref_index));
+    LiteRtSubgraph callee = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        ctx->get_model_subgraph(c_model, ref_index, &callee));
+    LiteRtParamIndex num_callee_ops = 0;
+    LITERT_RETURN_IF_ERROR(ctx->get_num_subgraph_ops(callee, &num_callee_ops));
+    if (num_callee_ops == 0) {
+      return false;
+    }
+    for (LiteRtParamIndex op_idx = 0; op_idx < num_callee_ops; ++op_idx) {
+      LiteRtOp callee_op = nullptr;
+      LITERT_RETURN_IF_ERROR(ctx->get_subgraph_op(callee, op_idx, &callee_op));
+      LiteRtParamIndex nested_refs = 0;
+      LITERT_RETURN_IF_ERROR(
+          ctx->get_num_op_subgraph_refs(callee_op, &nested_refs));
+      if (nested_refs > 0) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+LiteRtStatus PartitionSubgraphOps(const LiteRtCompilerContext* ctx,
+                                  LiteRtModel c_model,
+                                  LiteRtSubgraph c_subgraph,
+                                  LiteRtOpList selected_ops) {
+  litert::compiler::Subgraph subgraph(ctx, c_subgraph);
+
+  for (const auto& op : subgraph.Ops()) {
     bool only_f32 = true;
     for (const auto& input : op.Inputs()) {
       only_f32 &= (input.ElementType() == litert::ElementType::Float32);
@@ -231,19 +271,62 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
     }
 
     auto opcode = op.Code();
+    LiteRtParamIndex partition_index = 0;
+    bool supported = false;
     if (opcode == kLiteRtOpCodeTflMul) {
-      LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 0));
+      supported = true;
+      partition_index = 0;
     } else if (opcode == kLiteRtOpCodeTflSub) {
-      LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 1));
+      supported = true;
+      partition_index = 1;
     } else if (opcode == kLiteRtOpCodeShloComposite) {
       const char* name;
       LITERT_RETURN_IF_ERROR(ctx->get_shlo_composite_op_name(op.Get(), &name));
       if (absl::string_view(name) == "odml.rms_norm") {
-        LITERT_RETURN_IF_ERROR(ctx->push_op(selected_ops, op.Get(), 0));
+        supported = true;
+        partition_index = 0;
       }
     }
+    if (!supported) {
+      continue;
+    }
+
+    LITERT_ASSIGN_OR_RETURN(
+        bool callees_ok, ReferencedSubgraphsSupported(ctx, c_model, op.Get()));
+    if (!callees_ok) {
+      continue;
+    }
+    LITERT_RETURN_IF_ERROR(
+        ctx->push_op(selected_ops, op.Get(), partition_index));
   }
   return kLiteRtStatusOk;
+}
+
+}  // namespace
+
+LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
+                                           const char* soc_model,
+                                           LiteRtSubgraph c_subgraph,
+                                           LiteRtOpList selected_ops) {
+  if (!compiler_plugin || !c_subgraph || !selected_ops) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return PartitionSubgraphOps(compiler_plugin->compiler_context,
+                              /*c_model=*/nullptr, c_subgraph, selected_ops);
+}
+
+LiteRtStatus LiteRtCompilerPluginPartitionV2(
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    LiteRtModel c_model, LiteRtParamIndex subgraph_index,
+    LiteRtOpList selected_ops) {
+  if (!compiler_plugin || !c_model || !selected_ops) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const auto* ctx = compiler_plugin->compiler_context;
+  LiteRtSubgraph c_subgraph = nullptr;
+  LITERT_RETURN_IF_ERROR(
+      ctx->get_model_subgraph(c_model, subgraph_index, &c_subgraph));
+  return PartitionSubgraphOps(ctx, c_model, c_subgraph, selected_ops);
 }
 
 namespace litert::example {
@@ -282,7 +365,10 @@ LiteRtStatus CompileSinglePartition(const LiteRtCompilerContext* ctx,
           global_graph.buffers_.end()) {
         ExampleTensor tensor(example_graph.Tensors()[example_ind].dims);
         tensor.data.resize(bytes.size() / sizeof(float));
-        std::memcpy(tensor.data.data(), bytes.data(), bytes.size());
+        const auto float_bytes =
+            bytes.first(tensor.data.size() * sizeof(float));
+        absl::c_copy(float_bytes,
+                     reinterpret_cast<uint8_t*>(tensor.data.data()));
         global_graph.buffers_[buffer_id] = std::move(tensor);
       }
       example_graph.AddConstMap(example_ind, buffer_id);
@@ -358,15 +444,21 @@ LiteRtStatus CompileSinglePartition(const LiteRtCompilerContext* ctx,
 }  // namespace
 }  // namespace litert::example
 
-LiteRtStatus LiteRtCompilerPluginCompile(
+LiteRtStatus LiteRtCompilerPluginCompileV2(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
-    LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
+    LiteRtModel partitions, LiteRtParamIndex num_entry_subgraphs,
+    LiteRtCompiledResult* compiled_result) {
+  if (!compiler_plugin || !partitions || !compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
   const auto* ctx = compiler_plugin->compiler_context;
   litert::compiler::Model model(ctx, partitions);
+  if (num_entry_subgraphs > model.NumSubgraphs()) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
-  auto num_partitions = model.NumSubgraphs();
   auto result = std::make_unique<LiteRtCompiledResultT>();
-  result->per_op_data.resize(num_partitions);
+  result->per_op_data.resize(num_entry_subgraphs);
 
   bool disable_jit_handle = true;
   if (soc_model && absl::string_view(soc_model) == "JustInTime") {
@@ -375,7 +467,7 @@ LiteRtStatus LiteRtCompilerPluginCompile(
 
   ::litert::example::ExampleGlobalGraph build_graph;
 
-  for (auto i = 0; i < num_partitions; ++i) {
+  for (LiteRtParamIndex i = 0; i < num_entry_subgraphs; ++i) {
     LITERT_ASSIGN_OR_RETURN(litert::compiler::Subgraph subgraph,
                             model.Subgraph(i));
     LITERT_RETURN_IF_ERROR(::litert::example::CompileSinglePartition(
@@ -400,6 +492,18 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   *compiled_result = result.release();
 
   return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtCompilerPluginCompile(
+    LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
+    LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
+  if (!compiler_plugin || !partitions || !compiled_result) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const auto* ctx = compiler_plugin->compiler_context;
+  litert::compiler::Model model(ctx, partitions);
+  return LiteRtCompilerPluginCompileV2(compiler_plugin, soc_model, partitions,
+                                       model.NumSubgraphs(), compiled_result);
 }
 
 LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
@@ -427,12 +531,16 @@ LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
 
 namespace {
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Simulates a plugin built against a future minor version of the compiler
+// plugin ABI, one past LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR: the official
+// LiteRtCompilerPluginInterface_V1 members, in order, followed by a member
+// (`dummy`) that the current table does not have. Used to test minor version
+// append-only extensibility (abi_header at offset 0, new members appended at
+// the end).
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1NextMinor {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -460,17 +568,31 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+  LiteRtCompilerPluginPartitionV2T compiler_plugin_partition_v2;
+  LiteRtCompilerPluginCompileV2T compiler_plugin_compile_v2;
 
-  // Appended in V1.1:
+  // Appended in the next minor version:
   LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+} LiteRtCompilerPluginInterface_V1NextMinor;
 
-static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
+// The extension must not overlap members of the official table.
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_partition_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_partition_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_compile_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_compile_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor, dummy) ==
+              sizeof(LiteRtCompilerPluginInterface_V1));
+
+const LiteRtCompilerPluginInterface_V1NextMinor kExamplePluginInterface = {
     .abi_header =
         {
-            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_1),
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1NextMinor),
             .major_version = 1,
-            .minor_version = 1,
+            .minor_version = LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1,
             .reserved = 0,
         },
     .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
@@ -497,6 +619,8 @@ static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
     .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
     .check_compiler_compatibility =
         LiteRtCompilerPluginCheckCompilerCompatibility,
+    .compiler_plugin_partition_v2 = LiteRtCompilerPluginPartitionV2,
+    .compiler_plugin_compile_v2 = LiteRtCompilerPluginCompileV2,
     .dummy = LiteRtCompilerPluginDummy,
 };
 
@@ -510,7 +634,7 @@ extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
   }
   if (litert_runtime_version.major >= 1) {
     if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
-      *out_interface = &ExamplePluginInterface_V1_1;
+      *out_interface = &kExamplePluginInterface;
       return kLiteRtStatusOk;
     }
   }

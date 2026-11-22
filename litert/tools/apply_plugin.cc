@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <numeric>
 #include <ostream>
 #include <string>
 #include <utility>
@@ -37,9 +38,11 @@
 #include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/compiler/plugin/compiler_plugin.h"
+#include "litert/core/model/model.h"
 #include "litert/core/model/model_serialize.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/tools/dump.h"
+#include "litert/tools/outstream.h"
 #include "litert/tools/tool_display.h"
 
 namespace litert::tools {
@@ -223,7 +226,7 @@ Expected<Model> LoadModel(Context& ctx) {
   ctx.Dump().Start("Load Model");
   ctx.Dump().Labeled() << absl::StreamFormat("Loading model from: %s\n",
                                              ctx.Run().model.value());
-  auto model_result = Model::CreateFromFile(ctx.Run().model->data());
+  auto model_result = Model::CreateFromFile(*ctx.Run().model);
   if (!model_result.HasValue()) {
     ctx.Dump().Labeled() << "Failed to load model from file.";
     ctx.Dump().Fail();
@@ -334,13 +337,16 @@ LiteRtStatus Partition(Context& ctx) {
   ctx.Dump().Done();
   DumpPartitionResult(ctx.Dump(), *partition_result);
 
-  // TODO: Handle the edge case where the result contains composites and
-  // their decompositions. See opposite logic in TransferSubgraphTo.
-  LiteRtSubgraphT::Alloc alloc;
-  for (auto* subgraph : partition_result->second.Subgraphs()) {
-    alloc.EmplaceBack(std::move(*subgraph));
+  // Append the partition subgraphs to the model, offsetting the subgraph
+  // references between them.
+  auto& partitions = partition_result->second;
+  std::vector<size_t> partition_indices(partitions.NumSubgraphs());
+  std::iota(partition_indices.begin(), partition_indices.end(), 0);
+  if (auto status =
+          model.AbsorbSubgraphsFrom(partitions, std::move(partition_indices));
+      !status) {
+    return status.Error().Status();
   }
-  model.TransferSubgraphsFrom(std::move(alloc));
 
   ctx.Dump().Start("Serializing model");
   auto serialized = SerializeModel(std::move(model));

@@ -44,7 +44,6 @@
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/shape_inference.h"
 #include "litert/core/model/shape_inference_types.h"
-#include "litert/core/util/flatbuffer_tools.h"
 #include "tflite/core/api/error_reporter.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/stderr_reporter.h"
@@ -100,7 +99,7 @@ absl::Status ValidateFlatBufferOperatorCodes(const tflite::Model* tfl_model) {
     const int32_t resolved_code =
         dep_code > builtin_code ? dep_code : builtin_code;
     if (builtin_code < 0 || resolved_code < 0 ||
-        resolved_code > static_cast<int32_t>(kLiteRtOpCodeShloComposite) ||
+        resolved_code > static_cast<int32_t>(kLiteRtOpCodeMaxValue) ||
         (dep_code < 0 && static_cast<int8_t>(builtin_code) !=
                              code->deprecated_builtin_code())) {
       return absl::InvalidArgumentError(absl::StrFormat(

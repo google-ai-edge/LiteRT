@@ -32,7 +32,7 @@ extern "C" {
 
 // Current ABI version for LiteRT Compiler Plugin interface tables.
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR 1
-#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 0
+#define LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR 1
 #define LITERT_COMPILER_PLUGIN_ABI_VERSION_PATCH 0
 
 //
@@ -99,6 +99,35 @@ typedef LiteRtStatus (*LiteRtCompilerPluginCheckCompilerCompatibilityT)(
     LiteRtEnvironmentOptions env, LiteRtOptions options,
     const char* soc_model_name);
 
+/// Selects ops in `model`'s subgraph at `subgraph_index` for compilation.
+///
+/// Same contract as `LiteRtCompilerPluginPartitionT`, except that the plugin
+/// receives the owning `model` and `subgraph_index` so it can follow op
+/// subgraph references (via `LiteRtCompilerContext::get_num_op_subgraph_refs`,
+/// `get_op_subgraph_ref`, and `get_model_subgraph`) to inspect control-flow
+/// bodies, region computations, and composite decompositions before selecting.
+///
+/// The plugin must treat `model` as read-only, must select only ops belonging
+/// to `subgraph_index`, and must tolerate being called more than once on the
+/// same subgraph (for example, after an unselected composite is inlined).
+typedef LiteRtStatus (*LiteRtCompilerPluginPartitionV2T)(
+    LiteRtCompilerPlugin, const char* soc_model, LiteRtModel model,
+    LiteRtParamIndex subgraph_index, LiteRtOpList selected_ops);
+
+/// Compiles `partitions`, whose subgraphs are laid out as
+/// `[entry subgraphs..., helper subgraphs...]` with `num_entry_subgraphs`
+/// leading entries.
+///
+/// Helpers (indices `[num_entry_subgraphs, num_subgraphs)`) are private
+/// subgraphs referenced transitively by ops in the entries (region bodies,
+/// control-flow branches, composite decompositions). The plugin must emit
+/// exactly one call per entry subgraph (call `i` for entry `i`) and none for
+/// helpers.
+typedef LiteRtStatus (*LiteRtCompilerPluginCompileV2T)(
+    LiteRtCompilerPlugin, const char* soc_model, LiteRtModel partitions,
+    LiteRtParamIndex num_entry_subgraphs,
+    LiteRtCompiledResult* compiled_result);
+
 /// Identifiers for the versioned compiler plugin interface tables queried via
 /// LiteRtCompilerPluginQueryInterface.
 ///
@@ -136,11 +165,28 @@ typedef struct LiteRtCompilerPluginInterface_V1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+
+  // Added in version 1.1.
+  LiteRtCompilerPluginPartitionV2T compiler_plugin_partition_v2;
+  LiteRtCompilerPluginCompileV2T compiler_plugin_compile_v2;
 } LiteRtCompilerPluginInterface_V1;
 
 static_assert(
     offsetof(LiteRtCompilerPluginInterface_V1, abi_header) == 0,
     "LiteRtCompilerPluginInterface_V1 abi_header must be at offset 0");
+#if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
+    __SIZEOF_POINTER__ == 8
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_partition_v2) == 152,
+              "LiteRtCompilerPluginInterface_V1 "
+              "compiler_plugin_partition_v2 offset mismatch");
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_compile_v2) == 160,
+              "LiteRtCompilerPluginInterface_V1 "
+              "compiler_plugin_compile_v2 offset mismatch");
+static_assert(sizeof(LiteRtCompilerPluginInterface_V1) == 168,
+              "LiteRtCompilerPluginInterface_V1 size mismatch");
+#endif  // __cplusplus
 
 typedef LiteRtStatus (*LiteRtCompilerPluginQueryInterfaceT)(
     LiteRtCompilerPluginInterfaceId interface_id,

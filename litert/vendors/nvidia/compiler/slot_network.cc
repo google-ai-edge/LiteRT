@@ -14,6 +14,7 @@
 
 #include "litert/vendors/nvidia/compiler/slot_network.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -30,6 +31,7 @@
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "NvInfer.h"
+#include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 
 namespace litert::nvidia {
 namespace {
@@ -327,14 +329,21 @@ class SlotNetworkBuilder {
     return true;
   }
 
+  // A row-wise plugin whose only per-slot input is its activation (input 0)
+  // runs once over the rows of several slots, its weights read once for
+  // them; its output is sliced back per slot.
+  //  - One row per slot (a decode step): every slot in one launch of the
+  //    plugin's slot-rows form (each row's bits those of a row alone).
+  //  - A slot's rows (an MTP verify step's T rows): whole verifies as units,
+  //    as many slots per launch as fit the GEMV's row limit, through the very
+  //    plugin of the single verify: its kernel at T rows or at a multiple of
+  //    T gives each row the same bits (the per-channel kernel keeps a row's
+  //    sums in order at any count; on the tensor cores each row is its own
+  //    MMA column). The MoE block's verify path is not merged.
   Expected<bool> MergeProjection(nvinfer1::ILayer& layer) {
     auto& plugin_layer = static_cast<nvinfer1::IPluginV3Layer&>(layer);
-    std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> twin(
-        SubbyteGemvSlotRowsPlugin(plugin_layer.getPlugin()));
-    if (twin == nullptr)
-      twin.reset(CreateSlotRowsPlugin(plugin_layer.getPlugin()));
-    if (twin == nullptr || layer.getNbOutputs() != 1 ||
-        layer.getNbInputs() < 2 || layer.getInput(0) == nullptr) {
+    if (layer.getNbOutputs() != 1 || layer.getNbInputs() < 2 ||
+        layer.getInput(0) == nullptr) {
       return false;
     }
     for (int32_t i = 1; i < layer.getNbInputs(); ++i) {
@@ -344,44 +353,76 @@ class SlotNetworkBuilder {
       }
     }
     const nvinfer1::Dims dims = layer.getInput(0)->getDimensions();
-    int64_t rows = 1;
-    for (int32_t d = 0; d + 1 < dims.nbDims; ++d) rows *= dims.d[d];
-    if (dims.nbDims < 2 || rows != 1) return false;  // one row per slot
-    const int32_t axis = dims.nbDims - 2;
-    std::vector<nvinfer1::ITensor*> rows_of_slots(slots_);
-    for (int32_t s = 0; s < slots_; ++s) {
-      LITERT_ASSIGN_OR_RETURN(rows_of_slots[s], Map(layer.getInput(0), s));
-    }
-    nvinfer1::IConcatenationLayer* concat =
-        out_.addConcatenation(rows_of_slots.data(), slots_);
-    if (concat == nullptr) return Fail("the slots' projection rows");
-    concat->setAxis(axis);
-    concat->setName((std::string(layer.getName()) + "#rows").c_str());
-    std::vector<nvinfer1::ITensor*> inputs(layer.getNbInputs());
-    inputs[0] = concat->getOutput(0);
-    for (int32_t i = 1; i < layer.getNbInputs(); ++i) {
-      inputs[i] = shared_tensor_[layer.getInput(i)];
-    }
-    nvinfer1::IPluginV3Layer* merged = tensorrt_rtx_1_5_0_99::AddPluginV3(
-        out_, inputs.data(), static_cast<int32_t>(inputs.size()), *twin);
-    Keep(std::move(twin));
-    if (merged == nullptr) return Fail("a slot-rows projection");
-    merged->setName((std::string(layer.getName()) + "#slots").c_str());
     const nvinfer1::Dims out_dims = layer.getOutput(0)->getDimensions();
-    for (int32_t s = 0; s < slots_; ++s) {
-      nvinfer1::Dims start{};
-      start.nbDims = out_dims.nbDims;
-      nvinfer1::Dims size = out_dims;
-      nvinfer1::Dims stride{};
-      stride.nbDims = out_dims.nbDims;
-      for (int32_t d = 0; d < out_dims.nbDims; ++d) stride.d[d] = 1;
-      start.d[axis] = s;
-      nvinfer1::ISliceLayer* slice =
-          out_.addSlice(*merged->getOutput(0), start, size, stride);
-      if (slice == nullptr) return Fail("a slot's projection row");
-      slice->setName(
-          (std::string(layer.getName()) + "#slot" + std::to_string(s)).c_str());
-      map_[Key(layer.getOutput(0), s)] = slice->getOutput(0);
+    if (dims.nbDims < 2 || out_dims.nbDims != dims.nbDims) return false;
+    const int32_t axis = dims.nbDims - 2;
+    for (int32_t d = 0; d < axis; ++d) {
+      if (dims.d[d] != 1) return false;  // the rows on one axis only
+    }
+    const int64_t rows = dims.d[axis];
+    if (rows < 1 || out_dims.d[axis] != rows) return false;
+    std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> twin(
+        SubbyteGemvSlotRowsPlugin(plugin_layer.getPlugin()));
+    int32_t per_launch = slots_;
+    if (rows == 1) {
+      if (twin == nullptr) {
+        twin.reset(CreateSlotRowsPlugin(plugin_layer.getPlugin()));
+      }
+    } else {
+      // A GEMV (it has a slot-rows form) runs the verify's own plugin.
+      if (twin == nullptr) return false;
+      twin.reset(plugin_layer.getPlugin().clone());
+      per_launch = static_cast<int32_t>(kLiteRtNvidiaSubbyteGemvMaxRows / rows);
+    }
+    if (twin == nullptr || per_launch < 2) return false;
+    for (int32_t first = 0; first < slots_; first += per_launch) {
+      const int32_t count = std::min(per_launch, slots_ - first);
+      std::vector<nvinfer1::ITensor*> rows_of_slots(count);
+      for (int32_t s = 0; s < count; ++s) {
+        LITERT_ASSIGN_OR_RETURN(rows_of_slots[s],
+                                Map(layer.getInput(0), first + s));
+      }
+      std::vector<nvinfer1::ITensor*> inputs(layer.getNbInputs());
+      std::string suffix = "#rows" + std::to_string(first);
+      if (count == 1) {
+        inputs[0] = rows_of_slots[0];
+      } else {
+        nvinfer1::IConcatenationLayer* concat =
+            out_.addConcatenation(rows_of_slots.data(), count);
+        if (concat == nullptr) return Fail("the slots' projection rows");
+        concat->setAxis(axis);
+        concat->setName((std::string(layer.getName()) + suffix).c_str());
+        inputs[0] = concat->getOutput(0);
+      }
+      for (int32_t i = 1; i < layer.getNbInputs(); ++i) {
+        inputs[i] = shared_tensor_[layer.getInput(i)];
+      }
+      // Every launch its own plugin object: the last one is the template's.
+      std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> plugin(
+          first + per_launch >= slots_ ? twin.release() : twin->clone());
+      if (plugin == nullptr) return Fail("a plugin of slot rows");
+      nvinfer1::IPluginV3Layer* merged = tensorrt_rtx_1_5_0_99::AddPluginV3(
+          out_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+      Keep(std::move(plugin));
+      if (merged == nullptr) return Fail("a slot-rows projection");
+      merged->setName(
+          (std::string(layer.getName()) + "#slots" + std::to_string(first))
+              .c_str());
+      for (int32_t s = 0; s < count; ++s) {
+        nvinfer1::Dims start{};
+        start.nbDims = out_dims.nbDims;
+        nvinfer1::Dims stride{};
+        stride.nbDims = out_dims.nbDims;
+        for (int32_t d = 0; d < out_dims.nbDims; ++d) stride.d[d] = 1;
+        start.d[axis] = s * rows;
+        nvinfer1::ISliceLayer* slice =
+            out_.addSlice(*merged->getOutput(0), start, out_dims, stride);
+        if (slice == nullptr) return Fail("a slot's projection rows");
+        slice->setName(
+            (std::string(layer.getName()) + "#slot" + std::to_string(first + s))
+                .c_str());
+        map_[Key(layer.getOutput(0), first + s)] = slice->getOutput(0);
+      }
     }
     ++merged_;
     return true;
@@ -656,7 +697,7 @@ int32_t DecodeSlotsRequested() {
   char* end = nullptr;
   const long parsed = std::strtol(value, &end, 10);
   if (end == value || *end != '\0' || parsed < 2) return 0;
-  return parsed > 4 ? 4 : static_cast<int32_t>(parsed);
+  return parsed > 8 ? 8 : static_cast<int32_t>(parsed);
 }
 
 Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(

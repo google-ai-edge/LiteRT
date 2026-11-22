@@ -138,12 +138,32 @@ class CompilerPlugin {
   // Get list of unique soc models targetable by this plugin.
   const std::vector<std::string>& SocModels() const { return soc_models_; }
 
-  // Selects ops for the plugin to compile.
+  // True if the plugin implements `compiler_plugin_compile_v2`, i.e. it
+  // accepts a partitions model laid out as `[entries..., helpers...]` with an
+  // explicit entry count.
+  bool AcceptsHelperSubgraphs() const;
+
+  // Selects ops in `model`'s subgraph at `subgraph_index` for compilation.
+  // Calls `compiler_plugin_partition_v2` if implemented, else falls back to
+  // `compiler_plugin_partition` with `&model.Subgraph(subgraph_index)`.
+  Expected<std::vector<LiteRtOpWithPartitionIndex>> Partition(
+      LiteRtModelT& model, LiteRtParamIndex subgraph_index,
+      absl::string_view soc_model = "");
+
+  // Selects ops for the plugin to compile using the v1 partition hook.
   Expected<std::vector<LiteRtOpWithPartitionIndex>> Partition(
       LiteRtSubgraph subgraph, absl::string_view soc_model = "");
 
-  // Compile given LiteRtSubgraphs. Result object must be outlived by
-  // this CompilerPlugin.
+  // Compiles `partitions`, whose leading `num_entry_subgraphs` subgraphs are
+  // entry points and the rest are helpers they reference. A v1 plugin gets the
+  // entries only, with composite decompositions cleared. Result object must be
+  // outlived by this CompilerPlugin.
+  Expected<CompiledResult> Compile(LiteRtModel partitions,
+                                   LiteRtParamIndex num_entry_subgraphs,
+                                   absl::string_view soc_model = "");
+
+  // Compile given LiteRtSubgraphs, treating every subgraph as an entry. Result
+  // object must be outlived by this CompilerPlugin.
   Expected<CompiledResult> Compile(LiteRtModel partitions,
                                    absl::string_view soc_model = "");
 
@@ -216,16 +236,23 @@ class CompilerPlugin {
 //===---------------------------------------------------------------------------
 
 // Dispatch op references and their subgraph to be compiled contained within a
-// new model. op[i]'s body is models ith subgraph.
+// new model. op[i]'s body is the model's ith subgraph, for i < op.size(). Any
+// further subgraphs are private helpers referenced by ops in the entry
+// subgraphs.
 using PartitionResult = std::pair<std::vector<LiteRtOp>, LiteRtModelT>;
 
 // Applies just the partition phase of the plugin on the model. Returns
 // references newly allocated subgraphs removed from input and their
-// corresponding dispatch ops in the input.
+// corresponding dispatch ops in the input. If `subgraphs_to_partition` is not
+// empty, only the CPU roots (signature subgraphs, the main subgraph, or
+// unreferenced subgraphs) with those indices are partitioned, together with
+// the bodies of control flow that stays on CPU in them; other CPU roots and
+// everything they reference are left unchanged.
 Expected<PartitionResult> PartitionModel(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model = "",
-    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {});
+    const absl::flat_hash_set<uint32_t>& subgraphs_to_partition = {},
+    bool* model_modified = nullptr);
 
 // Same as "PartitionModel" choose partitions directly based on the selected
 // ops. Selected ops may contain any ops in the the main subgraph of the model.
@@ -243,6 +270,12 @@ struct ApplyPluginsResult {
   size_t num_applied_plugins;
   std::string success_message;
   std::string error_message;
+
+  // Set by ApplyPlugins() if a plugin failed after it had started modifying
+  // the model (transformation, partitioning and compilation work in place and
+  // are not undone). The model is then in an unspecified state and must not
+  // be used or serialized; callers should fall back to the original model.
+  bool model_invalidated = false;
 
   // Keep the compiler plugins (and their loaded DLLs) alive.
   // MUST be declared before compiled_results so it is destroyed

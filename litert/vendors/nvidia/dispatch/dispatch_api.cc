@@ -74,8 +74,10 @@
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
+#include "litert/vendors/nvidia/compiler/hyper_connection_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/ple_tail_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
@@ -2969,7 +2971,7 @@ int DispatchSlots() {
     const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
     if (value == nullptr || value[0] == '\0') return 0;
     const int parsed = std::atoi(value);
-    return parsed < 2 ? 0 : std::min(parsed, 4);
+    return parsed < 2 ? 0 : std::min(parsed, 8);
   }();
   return slots;
 }
@@ -2981,6 +2983,29 @@ int64_t DispatchSlotsWaitUs() {
     return value != nullptr && value[0] != '\0' ? std::atoll(value) : 4000;
   }();
   return wait;
+}
+
+// The same for a verify step (speculative decoding's): the engines reach
+// their verifies at different times (each drafts as many steps as it
+// accepted), so a verify waits briefly and otherwise runs alone.
+int64_t DispatchSlotsVerifyWaitUs() {
+  static const int64_t wait = [] {
+    const char* value =
+        std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_VERIFY_WAIT_US");
+    return value != nullptr && value[0] != '\0' ? std::atoll(value) : 1000;
+  }();
+  return wait;
+}
+
+// LITERT_NVIDIA_DISPATCH_SLOTS_PROBE=0: a slot group always batches. By
+// default it measures its contexts' steps per second batched and alone, now
+// and then, and keeps the faster (DecodeSlotGroup::Batching).
+bool DispatchSlotsProbe() {
+  static const bool probe = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_PROBE");
+    return value == nullptr || std::strcmp(value, "0") != 0;
+  }();
+  return probe;
 }
 
 // With batched decode steps, the contexts that are no decode step (a
@@ -3330,7 +3355,8 @@ class DecodeSlotGroup {
 
   static std::shared_ptr<DecodeSlotGroup> Join(
       const std::string& artifact, const std::vector<std::string>& inputs,
-      const std::vector<std::string>& outputs, const void* participant) {
+      const std::vector<std::string>& outputs, bool decode,
+      const void* participant) {
     static std::mutex mutex;
     static auto* groups =
         new std::unordered_map<std::string, std::weak_ptr<DecodeSlotGroup>>();
@@ -3341,6 +3367,7 @@ class DecodeSlotGroup {
       group->artifact_ = artifact;
       group->input_names_ = inputs;
       group->output_names_ = outputs;
+      group->decode_ = decode;
       (*groups)[artifact] = group;
     }
     std::lock_guard<std::mutex> group_lock(group->mutex_);
@@ -3363,10 +3390,20 @@ class DecodeSlotGroup {
   void Leave(const void* participant) {
     std::lock_guard<std::mutex> lock(mutex_);
     last_seen_.erase(participant);
+    interval_.erase(participant);
     cv_.notify_all();
   }
 
   ~DecodeSlotGroup() {
+    if (loader_.joinable()) loader_.join();
+    if (decisions_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch: the slot group of %s ran alone after %llu "
+                 "of %llu measurements",
+                 artifact_.c_str(),
+                 static_cast<unsigned long long>(alone_decisions_),
+                 static_cast<unsigned long long>(decisions_));
+    }
     if (waits_ > 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA dispatch slots profile: %llu batches waited %.3f ms "
@@ -3388,14 +3425,27 @@ class DecodeSlotGroup {
   Expected<bool> Step(Arrival& arrival) {
     std::unique_lock<std::mutex> lock(mutex_);
     const auto now = Clock::now();
+    if (auto seen = last_seen_.find(arrival.participant);
+        seen != last_seen_.end() && seen->second != Clock::time_point{}) {
+      // The context's time from one step of this group to the next.
+      const auto gap = now - seen->second;
+      auto& interval = interval_[arrival.participant];
+      interval = gap < std::chrono::milliseconds(100) &&
+                         interval != Clock::duration::zero()
+                     ? (interval + gap) / 2
+                     : gap;
+    }
     last_seen_[arrival.participant] = now;
+    if (!Batching(now)) return false;
     pending_.push_back(&arrival);
     if (pending_.size() == 1) first_arrival_ = now;
     cv_.notify_all();
     const auto deadline =
-        first_arrival_ + std::chrono::microseconds(DispatchSlotsWaitUs());
+        first_arrival_ +
+        std::chrono::microseconds(decode_ ? DispatchSlotsWaitUs()
+                                          : DispatchSlotsVerifyWaitUs());
     while (arrival.outcome == 0 &&
-           pending_.size() < ActiveParticipants(Clock::now()) &&
+           pending_.size() < ExpectedParticipants(Clock::now()) &&
            static_cast<int>(pending_.size()) < DispatchSlots()) {
       if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) break;
     }
@@ -3446,7 +3496,86 @@ class DecodeSlotGroup {
  private:
   using Clock = std::chrono::steady_clock;
 
+  // Whether this arrival is batched (under the lock). Batched steps win
+  // where the device bounds the step; where each context's host work does
+  // (E2B: a step's device time is below the host's work per token), the
+  // contexts wait for the slowest one and their own steps, overlapping on the
+  // device, go faster. So the group measures: the steps per second of all
+  // its contexts batched, then alone, each over a second after 0.3 s to
+  // settle, keeps the faster (batched unless alone is 3% faster) for 30 s,
+  // and measures again (and at once when the number of contexts stepping
+  // changes). Either way every step's outputs are the same.
+  bool Batching(Clock::time_point now) {
+    // Once the batched engines are loaded (they load in the background and
+    // the steps run alone meanwhile).
+    if (!DispatchSlotsProbe() || !loaded_) return true;
+    const size_t active = ActiveParticipants(now);
+    if (active < 2) return true;
+    if (active != probe_active_) {
+      probe_active_ = active;
+      StartPhase(Phase::kMeasureBatched, now);
+    }
+    constexpr auto kSettle = std::chrono::milliseconds(300);
+    constexpr auto kMeasure = std::chrono::milliseconds(1300);
+    constexpr auto kHold = std::chrono::seconds(30);
+    const auto elapsed = now - phase_start_;
+    if (phase_ != Phase::kHold && elapsed >= kSettle) ++phase_steps_;
+    const double rate =
+        elapsed > kSettle
+            ? phase_steps_ /
+                  std::chrono::duration<double>(elapsed - kSettle).count()
+            : 0.0;
+    switch (phase_) {
+      case Phase::kMeasureBatched:
+        if (elapsed < kMeasure) return true;
+        batched_rate_ = rate;
+        StartPhase(Phase::kMeasureAlone, now);
+        return false;
+      case Phase::kMeasureAlone:
+        if (elapsed < kMeasure) return false;
+        alone_ = rate > batched_rate_ * 1.03;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch: %zu contexts step %.0f times per second "
+                   "batched, %.0f alone: %s",
+                   active, batched_rate_, rate, alone_ ? "alone" : "batched");
+        ++decisions_;
+        alone_decisions_ += alone_ ? 1 : 0;
+        StartPhase(Phase::kHold, now);
+        return !alone_;
+      case Phase::kHold:
+        if (elapsed < kHold) return !alone_;
+        StartPhase(Phase::kMeasureBatched, now);
+        return true;
+    }
+    return true;
+  }
+
+  enum class Phase { kMeasureBatched, kMeasureAlone, kHold };
+
+  void StartPhase(Phase phase, Clock::time_point now) {
+    phase_ = phase;
+    phase_start_ = now;
+    phase_steps_ = 0;
+  }
+
   // The contexts that stepped in the last 50 ms: the ones a batch waits for.
+  // The contexts a batch waits for: those whose next step of this group is
+  // due, by their time from step to step (within twice it since their last
+  // one). A context that steps here now and then (speculative decoding's
+  // plain steps between its rounds, or one prefilling) is not waited for.
+  size_t ExpectedParticipants(Clock::time_point now) const {
+    size_t expected = 0;
+    for (const auto& [participant, seen] : last_seen_) {
+      const auto it = interval_.find(participant);
+      if (it == interval_.end()) continue;
+      const auto since = now - seen;
+      if (since < std::chrono::milliseconds(50) && since < 2 * it->second) {
+        ++expected;
+      }
+    }
+    return expected;
+  }
+
   size_t ActiveParticipants(Clock::time_point now) const {
     size_t active = 0;
     for (const auto& [participant, seen] : last_seen_) {
@@ -3455,21 +3584,40 @@ class DecodeSlotGroup {
     return active;
   }
 
+  // The batched engine of `slots` slots, under the lock; null while the
+  // engines load (the steps run alone meanwhile). The first call starts a
+  // thread that loads the engines of every count, 2 to DispatchSlots(), so
+  // that no step waits for one to load and the measurements (Batching) see
+  // them all loaded.
   SlotEngine* EngineFor(int slots) {
-    auto& engine = engines_[slots];
-    if (!engine && !failed_[slots]) {
+    if (!loader_.joinable()) {
+      int device = 0;
+      cudaGetDevice(&device);
+      loader_ = std::thread([this, device] { LoadEngines(device); });
+    }
+    if (!loaded_) return nullptr;
+    auto it = engines_.find(slots);
+    return it == engines_.end() ? nullptr : it->second.get();
+  }
+
+  void LoadEngines(int device) {
+    cudaSetDevice(device);
+    std::map<int, std::unique_ptr<SlotEngine>> engines;
+    for (int slots = 2; slots <= DispatchSlots(); ++slots) {
       auto opened = SlotEngine::Open(
           litert::nvidia::SlotArtifactPath(artifact_, slots), slots);
       if (opened) {
-        engine = std::move(*opened);
+        engines[slots] = std::move(*opened);
       } else {
-        failed_[slots] = true;
         LITERT_LOG(LITERT_WARNING,
-                   "NVIDIA dispatch: no batched decode engine of %d slots: %s",
-                   slots, opened.Error().Message().c_str());
+                   "NVIDIA dispatch: no batched engine of %d slots: %s", slots,
+                   opened.Error().Message().c_str());
       }
     }
-    return engine.get();
+    std::lock_guard<std::mutex> lock(mutex_);
+    engines_ = std::move(engines);
+    loaded_ = true;
+    StartPhase(Phase::kMeasureBatched, Clock::now());
   }
 
   std::mutex mutex_;
@@ -3478,12 +3626,24 @@ class DecodeSlotGroup {
   std::vector<std::string> input_names_;
   std::vector<std::string> output_names_;
   std::unordered_map<const void*, Clock::time_point> last_seen_;
+  std::unordered_map<const void*, Clock::duration> interval_;
   std::vector<Arrival*> pending_;
   Clock::time_point first_arrival_;
   std::map<int, std::unique_ptr<SlotEngine>> engines_;
-  std::map<int, bool> failed_;
+  std::thread loader_;
+  bool loaded_ = false;  // under mutex_
   double wait_ms_ = 0.0;
   uint64_t waits_ = 0;
+  bool decode_ = true;
+  // Batching(): the measurements.
+  Phase phase_ = Phase::kMeasureBatched;
+  Clock::time_point phase_start_;
+  uint64_t phase_steps_ = 0;
+  size_t probe_active_ = 0;
+  double batched_rate_ = 0.0;
+  bool alone_ = false;
+  uint64_t decisions_ = 0;
+  uint64_t alone_decisions_ = 0;
 };
 
 class LiteRtDispatchInvocationContextT {
@@ -4484,6 +4644,8 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
     litert::nvidia::EnsureGatedDeltaPluginsRegistered();
+    litert::nvidia::EnsureHyperConnectionPluginRegistered();
+    litert::nvidia::EnsurePleTailPluginRegistered();
     litert::nvidia::EnsureInt8CacheWritePluginRegistered();
     litert::nvidia::EnsureMoePluginRegistered();
     litert::nvidia::EnsureQkvNormRopePluginRegistered();
@@ -4639,11 +4801,17 @@ class LiteRtDispatchInvocationContextT {
   Expected<bool> StepWithSlots() {
     if (!slot_group_ && !slot_group_tried_) {
       slot_group_tried_ = true;
-      if (DispatchSlots() >= 2 && bytecode_.step_feed.has_value() &&
-          !bytecode_.trtllm_head.has_value() && !aot_path_.empty() &&
-          !own_graph_enabled_) {
-        slot_group_ = DecodeSlotGroup::Join(aot_path_, bytecode_.input_names,
-                                            bytecode_.output_names, this);
+      // A decode step, or another step the compiler built batched engines
+      // for (an MTP verify).
+      std::error_code exists_error;
+      if (DispatchSlots() >= 2 && !bytecode_.trtllm_head.has_value() &&
+          !aot_path_.empty() && !own_graph_enabled_ &&
+          (bytecode_.step_feed.has_value() ||
+           std::filesystem::exists(
+               litert::nvidia::SlotArtifactPath(aot_path_, 2), exists_error))) {
+        slot_group_ = DecodeSlotGroup::Join(
+            aot_path_, bytecode_.input_names, bytecode_.output_names,
+            bytecode_.step_feed.has_value(), this);
         LITERT_RETURN_IF_ERROR(CudaOk(
             cudaEventCreateWithFlags(&slot_ready_, cudaEventDisableTiming),
             "cudaEventCreate slot ready"));
@@ -8073,9 +8241,22 @@ class LiteRtDispatchInvocationContextT {
 
   // A context that is no decode step, with batched decode steps on: it binds
   // the process's arena (ProcessActivationArena) when it enqueues.
-  bool UsesProcessArena() const {
-    return DispatchSlots() >= 2 && device_memory_bytes_ > 0 &&
-           !bytecode_.step_feed.has_value() && !aot_residency_;
+  // Not a step that runs outside an invocation or batched: a decode step
+  // (steps ahead), an MTP drafter's (DraftFeed: its steps ahead are launched
+  // from the sampler, without the arena's order), a step with batched
+  // engines (an MTP verify): those keep their engine's arena.
+  bool UsesProcessArena() {
+    if (!process_arena_decided_) {
+      process_arena_decided_ = true;
+      std::error_code exists_error;
+      process_arena_ =
+          DispatchSlots() >= 2 && !bytecode_.step_feed.has_value() &&
+          !draft_.enabled && !aot_residency_ &&
+          (aot_path_.empty() ||
+           !std::filesystem::exists(
+               litert::nvidia::SlotArtifactPath(aot_path_, 2), exists_error));
+    }
+    return process_arena_ && device_memory_bytes_ > 0;
   }
 
   Expected<void> BindSharedActivationArena() {
@@ -8243,6 +8424,9 @@ class LiteRtDispatchInvocationContextT {
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
+  // UsesProcessArena(): decided once.
+  bool process_arena_decided_ = false;
+  bool process_arena_ = false;
   // The thread and stream InvocationStreams knows this context by.
   std::thread::id noted_thread_;
   cudaStream_t noted_stream_ = nullptr;

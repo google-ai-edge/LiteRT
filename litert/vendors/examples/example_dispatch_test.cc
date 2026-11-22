@@ -260,6 +260,81 @@ TEST_F(ExampleDispatchTest, InvocationContext) {
   EXPECT_THAT(out, ElementsAre(1.0f, 4.0f, 9.0f, 16.0f));
 }
 
+TEST_F(ExampleDispatchTest, InvokeRejectsInputPackedSizeNotFloatMultiple) {
+  auto [device_context_ptr, invocation_context_ptr] =
+      CreateDeviceContextInvocationContext();
+  LiteRtDispatchDeviceContext device_context = device_context_ptr.get();
+  LiteRtDispatchInvocationContext invocation_context =
+      invocation_context_ptr.get();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input1, SimpleBuffer::Create<uint8_t>({5}, {1, 2, 3, 4, 5}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb1, input1.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input2,
+      SimpleBuffer::Create<float>({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb2, input2.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output, SimpleBuffer::Create<float>({2, 2}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tb, output.SpawnTensorBuffer());
+
+  LiteRtTensorBufferHandle handle1, handle2, handle3;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, input_tb1.Get(), &handle1));
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, input_tb2.Get(), &handle2));
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, output_tb.Get(), &handle3));
+
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 0, handle1));
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 1, handle2));
+  LITERT_ASSERT_OK(Api().attach_output(invocation_context, 0, handle3));
+
+  EXPECT_EQ(Api().invoke(invocation_context),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Buffer must not remain locked after validation failure.
+  std::vector<uint8_t> in1(5);
+  LITERT_ASSERT_OK(input_tb1.Read(absl::MakeSpan(in1)));
+}
+
+TEST_F(ExampleDispatchTest, InvokeRejectsOutputPackedSizeExceedingResult) {
+  auto [device_context_ptr, invocation_context_ptr] =
+      CreateDeviceContextInvocationContext();
+  LiteRtDispatchDeviceContext device_context = device_context_ptr.get();
+  LiteRtDispatchInvocationContext invocation_context =
+      invocation_context_ptr.get();
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input1,
+      SimpleBuffer::Create<float>({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb1, input1.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto input2,
+      SimpleBuffer::Create<float>({2, 2}, {1.0f, 2.0f, 3.0f, 4.0f}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto input_tb2, input2.SpawnTensorBuffer());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output, SimpleBuffer::Create<float>({4, 4}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output_tb, output.SpawnTensorBuffer());
+
+  LiteRtTensorBufferHandle handle1, handle2, handle3;
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, input_tb1.Get(), &handle1));
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, input_tb2.Get(), &handle2));
+  LITERT_ASSERT_OK(
+      Api().register_tensor_buffer(device_context, output_tb.Get(), &handle3));
+
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 0, handle1));
+  LITERT_ASSERT_OK(Api().attach_input(invocation_context, 1, handle2));
+  LITERT_ASSERT_OK(Api().attach_output(invocation_context, 0, handle3));
+
+  EXPECT_EQ(Api().invoke(invocation_context),
+            kLiteRtStatusErrorInvalidArgument);
+
+  // Buffer must not remain locked after validation failure.
+  std::vector<float> out(16);
+  LITERT_ASSERT_OK(output_tb.Read(absl::MakeSpan(out)));
+}
+
 TEST_F(ExampleDispatchTest, TensorBufferRequirementsInputs) {
   const auto t = MakeRankedTensorType<float>({2, 2});
   LiteRtTensorBufferRequirements requirements = nullptr;

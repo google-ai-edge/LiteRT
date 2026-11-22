@@ -540,6 +540,32 @@ typedef struct LiteRtCompilerContext {
       int32_t* stride_h, int32_t* stride_d, int32_t* dilation_w_factor,
       int32_t* dilation_h_factor, int32_t* dilation_d_factor,
       uint32_t* fused_activation_function);
+  // Added in version 1.6.0
+  // Number of subgraph indices stored in `op`'s options. Reports 0 for ops
+  // without subgraph references and for a StableHLO composite whose
+  // decomposition subgraph index is -1.
+  LiteRtStatus (*get_num_op_subgraph_refs)(LiteRtOp op,
+                                           LiteRtParamIndex* num_refs);
+  // The `ref_index`-th subgraph index referenced by `op`, in ABI-stable slot
+  // order:
+  //   - TFL_WHILE, STABLEHLO_WHILE: 0: cond, 1: body
+  //   - TFL_IF: 0: then, 1: else
+  //   - TFL_CALL_ONCE: 0: init
+  //   - STABLEHLO_CASE: i: branch_subgraph_indices[i]
+  //   - STABLEHLO_REDUCE, STABLEHLO_REDUCE_WINDOW: 0: body
+  //   - STABLEHLO_SCATTER: 0: update_computation
+  //   - STABLEHLO_SORT: 0: comparator
+  //   - STABLEHLO_CUSTOM_CALL: i: called_computations[i]
+  //   - STABLEHLO_COMPOSITE: 0: decomposition (absent if -1)
+  // The returned index is only meaningful in the model passed to the current
+  // plugin call. Non-nullable multi-slot ops preserve fixed slot indices even
+  // if a slot stores a malformed negative index.
+  // Returns:
+  //   - kLiteRtStatusErrorInvalidArgument if `op` or `subgraph_index` is null.
+  //   - kLiteRtStatusErrorIndexOOB if `ref_index` is out of range.
+  //   - kLiteRtStatusErrorInvalidGraphInvariant if the stored ref is negative.
+  LiteRtStatus (*get_op_subgraph_ref)(LiteRtOp op, LiteRtParamIndex ref_index,
+                                      LiteRtParamIndex* subgraph_index);
 } LiteRtCompilerContext;
 // LINT.ThenChange(./litert_compiler_context.cc:compiler_context_version)
 
@@ -549,7 +575,7 @@ typedef struct LiteRtCompilerContext {
 // changes to this struct.
 #if defined(__cplusplus) && defined(__SIZEOF_POINTER__) && \
     __SIZEOF_POINTER__ == 8
-static_assert(sizeof(LiteRtCompilerContext) == 1512,
+static_assert(sizeof(LiteRtCompilerContext) == 1528,
               "LiteRtCompilerContext size mismatch");
 static_assert(offsetof(LiteRtCompilerContext, abi_header) == 0,
               "LiteRtCompilerContext abi_header offset mismatch");
@@ -1235,6 +1261,10 @@ static_assert(
     offsetof(LiteRtCompilerContext, build_conv_3d_transpose_op_option) ==
         1504,
     "LiteRtCompilerContext build_conv_3d_transpose_op_option offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_num_op_subgraph_refs) == 1512,
+              "LiteRtCompilerContext get_num_op_subgraph_refs offset mismatch");
+static_assert(offsetof(LiteRtCompilerContext, get_op_subgraph_ref) == 1520,
+              "LiteRtCompilerContext get_op_subgraph_ref offset mismatch");
 #endif  // __cplusplus
 
 LiteRtCompilerContext* LrtGetCompilerContext();

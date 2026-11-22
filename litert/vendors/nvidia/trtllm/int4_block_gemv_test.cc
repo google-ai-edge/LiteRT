@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -164,9 +165,14 @@ TEST(Int4BlockGemvTest, MatchesCpuReference) {
   // (the expert down projection of 22 blocks runs on one warp) and a short
   // odd case; 44 channels end in a partial tile of 4. 10240 inputs run 44
   // CTAs of sixteen warps, a row each (Qwen 4's hyper-connection down
-  // projection's form).
-  constexpr int kN = 44;
-  for (const int k : {64, 704, 2112, 2816, 10240}) {
+  // projection's form); 320 inputs into 8200 outputs run 32 rows a CTA in
+  // decode, ending in a partial tile (its up projection's form).
+  for (const auto [k, kN] : {std::pair<int, int>{64, 44},
+                             {704, 44},
+                             {2112, 44},
+                             {2816, 44},
+                             {10240, 44},
+                             {320, 8200}}) {
     const std::vector<uint8_t> weights = MakeInt4Weights(kN, k, 1);
     const std::vector<uint16_t> scales = MakeScales(kN, k, 1);
     for (int rows = 1; rows <= kLiteRtNvidiaInt4BlockGemvMaxRows; ++rows) {

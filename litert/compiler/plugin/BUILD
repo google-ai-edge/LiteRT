@@ -36,6 +36,7 @@ cc_library(
         "//litert/c:litert_common",
         "//litert/c:litert_environment_options_header",
         "//litert/c:litert_model",
+        "//litert/c:litert_op_code",
         "//litert/c:litert_op_options",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
@@ -142,6 +143,7 @@ cc_test(
         "//litert/test:load_test_model",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//tflite/converter/schema:schema_fbs",
     ],
 )
@@ -212,9 +214,37 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/core:insert_order_map",
         "//litert/core/model",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",
+    ],
+)
+
+cc_test(
+    name = "compiler_plugin_region_test",
+    srcs = ["compiler_plugin_region_test.cc"],
+    data = ["//litert/test:tflite_test_data"],
+    deps = [
+        ":compiler_plugin",
+        "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_abi_header",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_op_options",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:load_test_model",
+        "//litert/test:matchers",
+        "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

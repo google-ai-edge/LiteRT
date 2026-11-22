@@ -171,9 +171,11 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginCompile(
 input `partitions` represents a model where **all** the selected subgraphs have
 been isolated. The plugin processes these partitions, invoking it's specific
 toolchain to generate the **bytecode** for the target hardware. It is expected
-that the plugin's output provides an entry point for each subgraph passed for
-compilation. In most cases this is either individual byte code modules for each
-input subgraph, or a single byte code module with multiple entry points.
+that the plugin's output provides an entry point for each *entry* subgraph
+passed for compilation (see
+[Region ops, composites, and helper subgraphs](#3-region-ops-composites-and-helper-subgraphs)). In most
+cases this is either individual byte code modules for each entry subgraph, or a
+single byte code module with multiple entry points.
 
 **Type of the data returned by `compile`:** The `LiteRtCompilerPluginCompile`
 function returns its output via the out-parameter **`LiteRtCompiledResult`**.
@@ -187,6 +189,68 @@ and contains two main pieces of information:
 2.  **Call Information:** Metadata for each partition. This provides the mapping
     from `i`th input subgraph to a result byte code module and entry point
     identifier into that module.
+
+### 3\. Region ops, composites, and helper subgraphs
+
+Some ops reference other subgraphs by index stored in their options: control
+flow (`WHILE`, `IF`, `CALL_ONCE`, `STABLEHLO_WHILE`, `STABLEHLO_CASE`), ops
+with computation regions (`STABLEHLO_REDUCE`, `STABLEHLO_REDUCE_WINDOW`,
+`STABLEHLO_SCATTER`, `STABLEHLO_SORT`, `STABLEHLO_CUSTOM_CALL`), and
+`STABLEHLO_COMPOSITE` decompositions. Compiler plugin API minor version 1 adds
+two optional entry points on `LiteRtCompilerPluginInterface_V1`, backed by two
+op-reference getters on `LiteRtCompilerContext` (minor version 6):
+
+*   **Reading an op's subgraph references:**
+    `LiteRtCompilerContext::get_num_op_subgraph_refs` and `get_op_subgraph_ref`
+    return the subgraph indices referenced by an op in ABI-stable slot order
+    (`WHILE`: `cond`, `body`; `IF`: `then`, `else`; `CALL_ONCE`: `init`;
+    `CASE`: `branch_subgraph_indices[i]`; `REDUCE`/`REDUCE_WINDOW`: `body`;
+    `SCATTER`: `update_computation`; `SORT`: `comparator`; `CUSTOM_CALL`:
+    `called_computations[i]`; `COMPOSITE`: `decomposition`, absent when `-1`).
+    `get_op_subgraph_ref` returns `kLiteRtStatusErrorIndexOOB` for out-of-range
+    `ref_index`, `kLiteRtStatusErrorInvalidGraphInvariant` if a non-nullable
+    slot stores a negative index, and `kLiteRtStatusErrorInvalidArgument` for
+    null pointers. Resolve returned indices via `get_model_subgraph` in the
+    `LiteRtModel` passed to the current call.
+*   **Model-aware partitioning (`compiler_plugin_partition_v2`):**
+
+    ```c
+    LiteRtStatus (*)(LiteRtCompilerPlugin, const char* soc_model,
+                     LiteRtModel model, LiteRtParamIndex subgraph_index,
+                     LiteRtOpList selected_ops)
+    ```
+
+    When implemented, LiteRT calls it instead of `compiler_plugin_partition` so
+    the plugin can inspect referenced subgraphs before selecting ops. Treat
+    `model` as read-only, select only ops of `subgraph_index`, and tolerate
+    repeated calls on the same subgraph (e.g., after composite inlining).
+*   **Helper-aware compilation (`compiler_plugin_compile_v2`):**
+
+    ```c
+    LiteRtStatus (*)(LiteRtCompilerPlugin, const char* soc_model,
+                     LiteRtModel partitions,
+                     LiteRtParamIndex num_entry_subgraphs,
+                     LiteRtCompiledResult* compiled_result)
+    ```
+
+    When implemented, LiteRT calls it instead of `compiler_plugin_compile`. The
+    partitions model is laid out as `[entry subgraphs..., helper subgraphs...]`
+    with `num_entry_subgraphs` leading entries. Helpers are private subgraphs
+    referenced transitively by ops in the entries (including decompositions of
+    selected standard composites). Every helper subgraph has a non-empty name,
+    and all non-empty subgraph names in `partitions` are unique. The plugin must
+    emit exactly one call per entry (`[0, num_entry_subgraphs)`) and none for
+    helpers. Use `num_entry_subgraphs`, not `NumSubgraphs()`, wherever the
+    plugin counts partitions. When calling `serialize_model_with_signatures` on
+    a partitions model containing helpers, pass `NumSubgraphs()` signature slots
+    padded with `nullptr` for the helper subgraphs.
+
+The two entry points are independent. For plugins that do not implement
+`compiler_plugin_compile_v2`, every subgraph of the partitions model passed to
+`compiler_plugin_compile` is an entry, standard composites and nested
+`odml.npu_call`s in it have their decompositions cleared to `-1`, region-op
+selections are kept on CPU (with a warning, splitting surrounding partitions),
+and an `odml.npu_call` whose body contains a region op is rejected up front.
 
 -----
 

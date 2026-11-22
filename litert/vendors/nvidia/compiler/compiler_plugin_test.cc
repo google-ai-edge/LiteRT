@@ -35,6 +35,7 @@
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/windows_compat.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace {
@@ -49,11 +50,13 @@ class CompilerAotTest : public testing::Test {
     directory_ = pattern;
     source_ = directory_ / "model.bin";
     std::ofstream(source_) << "test model identity";
-    ASSERT_EQ(
-        setenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR", directory_.c_str(), 1),
-        0);
-    ASSERT_EQ(
-        setenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH", source_.c_str(), 1), 0);
+    // string(): a path's own characters are wide on Windows.
+    ASSERT_EQ(setenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR",
+                     directory_.string().c_str(), 1),
+              0);
+    ASSERT_EQ(setenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH",
+                     source_.string().c_str(), 1),
+              0);
     LiteRtInterface raw_interface = nullptr;
     ASSERT_EQ(LiteRtCompilerPluginQueryInterface(
                   kLiteRtCompilerPluginInterfaceBasic,
