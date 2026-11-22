@@ -1121,6 +1121,27 @@ class LiteRtModelT {
     return kLiteRtStatusOk;
   }
 
+  // Adds a metadata buffer to the model, replacing any existing buffer for
+  // `key`. Like `PushMetadata`, the new buffer is owned by the model. When
+  // `key` already exists, its `BufferManager` slot is replaced in place, so
+  // existing `FindMetadata` / `GetBuildStamp` views of `key` are invalidated.
+  // When `key` is new, a buffer is registered as in `PushMetadata`, which may
+  // reallocate `BufferManager` storage and invalidate views of other owned
+  // buffers.
+  template <class... Args>
+  void SetMetadata(absl::string_view key, Args&&... args) {
+    ::litert::OwningBufferRef<uint8_t> buffer(std::forward<Args>(args)...);
+    auto [it, inserted] =
+        metadata_.try_emplace(std::string(key), BufferManager::kEmptyBufferId);
+    if (!inserted && it->second != BufferManager::kEmptyBufferId &&
+        it->second < Buffers()->NumBuffers()) {
+      // Cannot fail: the id is a registered, non-empty buffer id.
+      (void)Buffers()->SetOwnedBuffer(it->second, std::move(buffer));
+      return;
+    }
+    it->second = Buffers()->RegisterOwnedBuffer(std::move(buffer));
+  }
+
   // BUFFERS
 
   // Get stable pointer to buffer manager object.

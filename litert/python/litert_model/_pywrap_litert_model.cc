@@ -25,6 +25,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -761,11 +762,15 @@ struct PyModel {
     CheckEdit(AttachAsset(Get(), op.Get(), buffer_id, name));
   }
 
-  void SetBuildStamp(const std::string& soc_manufacturer,
-                     const std::string& soc_model) const {
+  void SetBuildStamp(std::string_view soc_manufacturer,
+                     std::string_view soc_model, bool overwrite) const {
     LiteRtModelT& model = Get();
     auto stamp =
         ValueOrThrow(internal::MakeBuildStamp(soc_manufacturer, soc_model));
+    if (overwrite) {
+      model.SetMetadata(kLiteRtBuildStampKey, std::move(stamp));
+      return;
+    }
     const LiteRtStatus status =
         model.PushMetadata(kLiteRtBuildStampKey, std::move(stamp));
     if (status != kLiteRtStatusOk) {
@@ -1238,7 +1243,8 @@ PYBIND11_MODULE(_pywrap_litert_model, m) {
       .def("attach_asset", &PyModel::AttachAssetToOp, py::arg("op"),
            py::arg("buffer_id"), py::arg("name"))
       .def("set_build_stamp", &PyModel::SetBuildStamp,
-           py::arg("soc_manufacturer"), py::arg("soc_model"))
+           py::arg("soc_manufacturer"), py::arg("soc_model"),
+           py::arg("overwrite") = false)
       .def("build_stamp", &PyModel::BuildStamp);
 
   py::class_<PySubgraph>(m, "Subgraph")
