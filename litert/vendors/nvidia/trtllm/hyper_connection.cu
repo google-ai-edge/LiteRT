@@ -63,7 +63,9 @@ struct Launch {
   int32_t streams;
   int32_t hidden;
   int32_t low_rank;
-  int32_t width;  // streams * hidden
+  int32_t extra;      // the rows of the extra projection
+  int32_t down_rows;  // low_rank, and a CTA's warps more with extra rows
+  int32_t width;      // streams * hidden
   float down_scale;
   float eps;
   int32_t stream_chunks;  // hidden / kChunk
@@ -71,7 +73,7 @@ struct Launch {
   int32_t stream_pieces;  // the pieces of a stream of a down row
   int32_t piece;          // the steps of a piece
   int32_t splits;         // streams * stream_pieces
-  int32_t stream_visits;  // low_rank * stream_pieces / kWarps
+  int32_t stream_visits;  // down_rows * stream_pieces / kWarps
   int32_t up_steps;       // low_rank / step
   int32_t lanes;          // the lanes of a warp that share an up row
   int32_t lanes_shift;    // lanes == 1 << lanes_shift
@@ -85,9 +87,11 @@ struct Launch {
   const float* norm_weight;
   Weights down;
   Weights up;
+  Weights more;  // the extra projection's
   __nv_bfloat16* mixed;
   __nv_bfloat16* normed;
-  float* partial;   // [rows][low_rank][kMaxSplits]
+  __nv_bfloat16* extra_out;
+  float* partial;   // [rows][down_rows][kMaxSplits]
   unsigned* state;  // [0] arrivals at the grid barrier, [1] CTAs done
 };
 
@@ -495,11 +499,12 @@ __global__ void __launch_bounds__(kThreads) HcMixKernel(Launch a) {
   };
   const Values up_values = {t + position * 4, a.lanes * 4,
                             kRuns * a.lanes * 4, a.t_floats};
-  // The down projection's task `task` (of low_rank * splits): output
-  // task % low_rank, piece task / low_rank.
-  const int visits = a.low_rank * a.splits / kWarps;
+  // The down projection's task `task` (of down_rows * splits): row
+  // task % down_rows (the low-rank outputs, then the extra projection's
+  // rows, then none), piece task / down_rows.
+  const int visits = a.down_rows * a.splits / kWarps;
   const auto down_task = [&](int task, Values* values) {
-    const int split = task / a.low_rank;
+    const int split = task / a.down_rows;
     const int stream = split / a.stream_pieces;
     const int begin = (split - stream * a.stream_pieces) * a.piece;
     const int end =
@@ -507,15 +512,28 @@ __global__ void __launch_bounds__(kThreads) HcMixKernel(Launch a) {
     const int origin = stream * a.stream_steps;
     *values = {xn + RunAt(begin + lane, 0, kRuns, 5), 32 * 4, kRuns * 32 * 4,
                a.xn_floats};
-    return Task{task - split * a.low_rank, origin + begin + lane, origin + end,
+    return Task{task - split * a.down_rows, origin + begin + lane, origin + end,
                 32};
   };
+  // A down task's weights: the row in the down projection or in the extra
+  // one (false: a row of neither).
+  const auto down_weights = [&](Task& task, const Weights** weights) {
+    *weights = &a.down;
+    if (task.row < a.low_rank) return true;
+    task.row -= a.low_rank;
+    *weights = &a.more;
+    return task.row < a.extra;
+  };
   const bool hold_down =
-      a.phase != 2 && first_task < a.low_rank * a.splits;
+      a.phase != 2 && first_task < a.down_rows * a.splits;
   const bool hold_up = a.phase != 1 && first_task < up_tasks;
   if (hold_down) {
     Values unused;
-    Stage<kInt4>(a.down, a.width, down_task(first_task, &unused), staged_down);
+    Task task = down_task(first_task, &unused);
+    const Weights* weights = nullptr;
+    if (down_weights(task, &weights)) {
+      Stage<kInt4>(*weights, a.width, task, staged_down);
+    }
   }
   CommitAsync();
   if (hold_up) Stage<kInt4>(a.up, a.low_rank, up_task(first_task), staged_up);
@@ -554,21 +572,24 @@ __global__ void __launch_bounds__(kThreads) HcMixKernel(Launch a) {
       }
       const int task_index = visit * kWarps + warp;
       Values values;
-      const Task task = down_task(task_index, &values);
+      Task task = down_task(task_index, &values);
+      const int row = task.row;
+      const Weights* weights = nullptr;
+      // The staged weights of the down projection are there.
+      if (visit == cta) WaitAsyncButOne();
+      if (!down_weights(task, &weights)) continue;
       float acc[kRows];
 #pragma unroll
       for (int r = 0; r < kRows; ++r) acc[r] = 0.0f;
-      // The staged weights of the down projection are there.
-      if (visit == cta) WaitAsyncButOne();
-      Dot<kInt4, kRows>(a.down, a.width, task,
+      Dot<kInt4, kRows>(*weights, a.width, task,
                         visit == cta && hold_down ? &staged_down : nullptr,
                         values, acc);
-      const int split = task_index / a.low_rank;
+      const int split = task_index / a.down_rows;
 #pragma unroll
       for (int r = 0; r < kRows; ++r) {
         const float sum = WarpSum(acc[r]);
         if (lane == 0 && r < rows) {
-          a.partial[(static_cast<size_t>(row0 + r) * a.low_rank + task.row) *
+          a.partial[(static_cast<size_t>(row0 + r) * a.down_rows + row) *
                         kMaxSplits +
                     split] = sum;
         }
@@ -596,32 +617,41 @@ __global__ void __launch_bounds__(kThreads) HcMixKernel(Launch a) {
       first_values[r] = normed_value(up_task(first_task), r);
     }
   }
-  // Every CTA: t = silu(scale * (the pieces' sum)) of its rows.
+  // The sum of the pieces of row `j` of the CTA's row r, in their order.
+  const auto pieces_sum = [&](int r, int j) {
+    const float4* pieces = reinterpret_cast<const float4*>(
+        a.partial +
+        (static_cast<size_t>(row0 + r) * a.down_rows + j) * kMaxSplits);
+    float4 parts[kMaxSplits / 4];
+#pragma unroll
+    for (int run = 0; run < kMaxSplits / 4; ++run) {
+      if (run * 4 < a.splits) parts[run] = __ldcg(pieces + run);
+    }
+    float sum = 0.0f;
+#pragma unroll
+    for (int run = 0; run < kMaxSplits / 4; ++run) {
+      if (run * 4 < a.splits) sum += parts[run].x;
+      if (run * 4 + 1 < a.splits) sum += parts[run].y;
+      if (run * 4 + 2 < a.splits) sum += parts[run].z;
+      if (run * 4 + 3 < a.splits) sum += parts[run].w;
+    }
+    return sum;
+  };
+  // Every CTA: t = silu(scale * (the pieces' sum)) of its rows; a group's
+  // first CTA: the extra projection's results.
 #pragma unroll
   for (int r = 0; r < kRows; ++r) {
     if (r >= rows) break;
     for (int j = threadIdx.x; j < a.low_rank; j += kThreads) {
-      const float4* pieces = reinterpret_cast<const float4*>(
-          a.partial +
-          (static_cast<size_t>(row0 + r) * a.low_rank + j) * kMaxSplits);
-      float4 parts[kMaxSplits / 4];
-#pragma unroll
-      for (int run = 0; run < kMaxSplits / 4; ++run) {
-        if (run * 4 < a.splits) parts[run] = __ldcg(pieces + run);
-      }
-      float sum = 0.0f;
-#pragma unroll
-      for (int run = 0; run < kMaxSplits / 4; ++run) {
-        if (run * 4 < a.splits) sum += parts[run].x;
-        if (run * 4 + 1 < a.splits) sum += parts[run].y;
-        if (run * 4 + 2 < a.splits) sum += parts[run].z;
-        if (run * 4 + 3 < a.splits) sum += parts[run].w;
-      }
-      const float d = sum * a.down_scale;
+      const float d = pieces_sum(r, j) * a.down_scale;
       // Where the up projection's lanes read value j.
       t[r * a.t_floats +
         RunAt(j / kValues, (j % kValues) / 4, kRuns, a.lanes_shift) + j % 4] =
           d / (1.0f + __expf(-d));
+    }
+    if (cta == 0 && threadIdx.x < a.extra) {
+      a.extra_out[static_cast<size_t>(row0 + r) * a.extra + threadIdx.x] =
+          __float2bfloat16_rn(pieces_sum(r, a.low_rank + threadIdx.x));
     }
   }
   __syncthreads();
@@ -702,7 +732,8 @@ size_t Plan(Launch& a, bool int4, int rows) {
   a.piece = (a.stream_steps + pieces - 1) / pieces;
   a.stream_pieces = (a.stream_steps + a.piece - 1) / a.piece;
   a.splits = a.streams * a.stream_pieces;
-  a.stream_visits = a.low_rank * a.stream_pieces / kWarps;
+  a.down_rows = a.low_rank + (a.extra > 0 ? kWarps : 0);
+  a.stream_visits = a.down_rows * a.stream_pieces / kWarps;
   return static_cast<size_t>(rows) * (a.xn_floats + a.t_floats) *
              sizeof(float) +
          2 * kHeld * kThreads * (sizeof(uint4) + sizeof(uint32_t));
@@ -714,6 +745,7 @@ Launch Shapes(const LiteRtNvidiaHcMixParams& p) {
   a.streams = p.streams;
   a.hidden = p.hidden;
   a.low_rank = p.low_rank;
+  a.extra = p.extra;
   a.width = p.streams * p.hidden;
   a.down_scale = p.down_scale;
   a.eps = p.eps;
@@ -788,7 +820,7 @@ cudaError_t LaunchMix(Launch a, bool one_launch, cudaStream_t stream) {
   // As many CTAs a group as its larger projection has tasks for its warps,
   // at most two a multiprocessor, the whole grid resident.
   const int groups = (a.rows + kRows - 1) / kRows;
-  const int down_tasks = a.low_rank * a.splits;
+  const int down_tasks = a.down_rows * a.splits;
   const int up_tasks = a.hidden / (32 / (a.lanes * a.streams));
   const int tasks = down_tasks > up_tasks ? down_tasks : up_tasks;
   const int most =
@@ -836,7 +868,8 @@ extern "C" bool LiteRtNvidiaHcMixSupports(const LiteRtNvidiaHcMixParams* p) {
       p->hidden > kThreads * kMaxStreamChunks * kChunk ||
       // The warps of a CTA take the same piece of as many outputs.
       p->low_rank < kWarps || p->low_rank % kWarps != 0 ||
-      p->low_rank > p->hidden || !(p->eps >= 0.0f) ||
+      p->low_rank > p->hidden || !(p->eps >= 0.0f) || p->extra < 0 ||
+      p->extra > kWarps ||
       (p->streams != 1 && p->streams != 2 && p->streams != 4 &&
        p->streams != 8) ||
       // INT4 blocks of 32 lie within a stream and within the low rank.
@@ -850,26 +883,31 @@ extern "C" bool LiteRtNvidiaHcMixSupports(const LiteRtNvidiaHcMixParams* p) {
 extern "C" size_t LiteRtNvidiaHcMixWorkspaceBytes(
     const LiteRtNvidiaHcMixParams* p) {
   if (!LiteRtNvidiaHcMixSupports(p)) return 0;
-  return static_cast<size_t>(p->rows) * p->low_rank * kMaxSplits *
+  return static_cast<size_t>(p->rows) * (p->low_rank + kWarps) * kMaxSplits *
          sizeof(float);
 }
 
 extern "C" size_t LiteRtNvidiaHcMixStateBytes() { return 2 * sizeof(unsigned); }
 
-extern "C" cudaError_t LiteRtNvidiaLaunchHcMix(
+extern "C" cudaError_t LiteRtNvidiaLaunchHcMixExtra(
     const LiteRtNvidiaHcMixParams* p, const __nv_bfloat16* x,
     const float* norm_weight, const void* w_down, const __half* down_scales,
-    const void* w_up, const __half* up_scales, __nv_bfloat16* mixed,
-    __nv_bfloat16* normed, void* state, void* workspace, cudaStream_t stream) {
+    const void* w_up, const __half* up_scales, const void* w_extra,
+    const __half* extra_scales, __nv_bfloat16* mixed, __nv_bfloat16* normed,
+    __nv_bfloat16* extra, void* state, void* workspace, cudaStream_t stream) {
   const bool int4 = p != nullptr && p->int4 != 0;
+  const bool more = p != nullptr && p->extra > 0;
   if (!LiteRtNvidiaHcMixSupports(p) || x == nullptr ||
       norm_weight == nullptr || w_down == nullptr || w_up == nullptr ||
       (int4 && (down_scales == nullptr || up_scales == nullptr)) ||
+      (more && (w_extra == nullptr || extra == nullptr ||
+                (int4 && extra_scales == nullptr))) ||
       mixed == nullptr || normed == nullptr || workspace == nullptr ||
       // The kernel reads and writes 16 bytes at a time.
       !Aligned16(x) || !Aligned16(norm_weight) || !Aligned16(w_down) ||
       !Aligned16(w_up) || !Aligned16(normed) || !Aligned16(workspace) ||
-      (int4 && (!Aligned16(down_scales) || !Aligned16(up_scales)))) {
+      (int4 && (!Aligned16(down_scales) || !Aligned16(up_scales))) ||
+      (more && (!Aligned16(w_extra) || (int4 && !Aligned16(extra_scales))))) {
     return cudaErrorInvalidValue;
   }
   Launch a = Shapes(*p);
@@ -877,8 +915,10 @@ extern "C" cudaError_t LiteRtNvidiaLaunchHcMix(
   a.norm_weight = norm_weight;
   a.down = Weights{w_down, down_scales};
   a.up = Weights{w_up, up_scales};
+  a.more = Weights{w_extra, extra_scales};
   a.mixed = mixed;
   a.normed = normed;
+  a.extra_out = extra;
   a.partial = static_cast<float*>(workspace);
   a.state = static_cast<unsigned*>(state);
   const bool one_launch = state != nullptr;
@@ -888,4 +928,15 @@ extern "C" cudaError_t LiteRtNvidiaLaunchHcMix(
   }
   return int4 ? LaunchMix<true, 1>(a, one_launch, stream)
               : LaunchMix<false, 1>(a, one_launch, stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchHcMix(
+    const LiteRtNvidiaHcMixParams* p, const __nv_bfloat16* x,
+    const float* norm_weight, const void* w_down, const __half* down_scales,
+    const void* w_up, const __half* up_scales, __nv_bfloat16* mixed,
+    __nv_bfloat16* normed, void* state, void* workspace, cudaStream_t stream) {
+  if (p != nullptr && p->extra != 0) return cudaErrorInvalidValue;
+  return LiteRtNvidiaLaunchHcMixExtra(
+      p, x, norm_weight, w_down, down_scales, w_up, up_scales, nullptr,
+      nullptr, mixed, normed, nullptr, state, workspace, stream);
 }
