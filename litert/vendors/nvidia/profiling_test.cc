@@ -21,6 +21,7 @@
 #include <gtest/gtest.h>
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
 #include "litert/vendors/nvidia/memory_profile.h"
+#include "litert/vendors/nvidia/windows_compat.h"
 
 namespace litert::nvidia {
 namespace {

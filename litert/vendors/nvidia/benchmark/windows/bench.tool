@@ -39,24 +39,16 @@ def load(name):
 common = load('common')
 
 
-def runtime_environment(config, pool, model, policy):
-  """env.sh's nb_runtime_env: the TensorRT-RTX settings of one model cache pool, the SDK and
-  runtime directories on PATH."""
+def runtime_environment(config, pool, model):
+  """env.sh's nb_runtime_env: the TensorRT-RTX paths of one model cache pool (the compiler's
+  and dispatch's defaults are the settings), the SDK and runtime directories on PATH."""
   env = {k: v for k, v in os.environ.items() if not k.startswith('LITERT_NVIDIA_')}
   for name in ('aot', 'runtime', 'compiler/cuda', 'cpu'):
     (pool / name).mkdir(parents=True, exist_ok=True)
   env.update({
-      'LITERT_NVIDIA_TENSORRT_PARTITION_POLICY': policy,
-      'LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS': 'bf16',
-      'LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS': 'cuda_gemv',
-      'LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS': '1',
-      'LITERT_NVIDIA_TENSORRT_WEIGHT_STORE': '1',
-      'LITERT_NVIDIA_TENSORRT_JIT_HANDLE': '0',
       'LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH': str(model),
       'LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR': str(pool / 'aot'),
       'LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR': str(pool / 'runtime'),
-      'LITERT_NVIDIA_DISPATCH_SHARED_WEIGHT_SEGMENTS': '1',
-      'LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES': '0',
       'CUDA_CACHE_DISABLE': '0', 'CUDA_CACHE_PATH': str(pool / 'compiler/cuda'),
   })
   env.pop('NVIDIA_TF32_OVERRIDE', None)
@@ -119,7 +111,7 @@ def main():
       raise SystemExit(f'A cold run needs an empty pool: {pool}')
   else:
     pool = pathlib.Path(args.pool) if args.pool else state / 'cache' / 'models' / profile / stamp
-  env = runtime_environment(config, pool, model, spec.get('partition_policy', 'gemma4'))
+  env = runtime_environment(config, pool, model)
   for assignment in args.env:
     key, value = assignment.split('=', 1)
     env[key] = value

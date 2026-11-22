@@ -123,13 +123,13 @@ struct Shape {
 
 // Block scales as a model file holds them, FP32 or FP16: ordinary positive
 // scales, and among them rows of zeros and rows of arbitrary bit patterns
-// (denormals, infinities, NaNs, negative values).
+// (denormals, infinities, NaNs, negative values) unless `odd_rows` is off.
 std::vector<uint8_t> MakeScales(size_t rows, size_t blocks, int scale_type,
-                                Random* random) {
+                                Random* random, bool odd_rows) {
   const size_t width = scale_type == 0 ? 4 : 2;
   std::vector<uint8_t> bytes(rows * blocks * width);
   for (size_t r = 0; r < rows; ++r) {
-    const int kind = r % 53 == 7 ? 1 : r % 61 == 11 ? 2 : 0;
+    const int kind = !odd_rows ? 0 : r % 53 == 7 ? 1 : r % 61 == 11 ? 2 : 0;
     for (size_t b = 0; b < blocks; ++b) {
       uint8_t* out = bytes.data() + (r * blocks + b) * width;
       const uint64_t bits = random->Next();
@@ -207,7 +207,7 @@ void Compact(const std::vector<uint8_t>& file, size_t rows, size_t blocks,
 // Writes a model file of `count` layers of `shape`, their pieces apart from
 // each other and out of order.
 std::vector<Layer> WriteModel(const std::string& path, const Shape& shape,
-                              int count, uint64_t seed) {
+                              int count, uint64_t seed, bool odd_rows = true) {
   Random random{seed};
   const size_t gate_rows =
       static_cast<size_t>(shape.hidden_dim) * shape.experts;
@@ -251,20 +251,20 @@ std::vector<Layer> WriteModel(const std::string& path, const Shape& shape,
                         &dense_gate, &dense_up, &layer.dense_down}) {
       random.Fill(bytes);
     }
-    const auto gate_s =
-        MakeScales(gate_rows, model_blocks, shape.scale_type, &random);
-    const auto up_s =
-        MakeScales(gate_rows, model_blocks, shape.scale_type, &random);
-    const auto down_s =
-        MakeScales(down_rows, hidden_blocks, shape.scale_type, &random);
-    const auto router_s =
-        MakeScales(shape.experts, model_blocks, shape.scale_type, &random);
+    const auto gate_s = MakeScales(gate_rows, model_blocks, shape.scale_type,
+                                   &random, odd_rows);
+    const auto up_s = MakeScales(gate_rows, model_blocks, shape.scale_type,
+                                 &random, odd_rows);
+    const auto down_s = MakeScales(down_rows, hidden_blocks, shape.scale_type,
+                                   &random, odd_rows);
+    const auto router_s = MakeScales(shape.experts, model_blocks,
+                                     shape.scale_type, &random, odd_rows);
     const auto dense_gate_s =
-        MakeScales(dense, model_blocks, shape.scale_type, &random);
+        MakeScales(dense, model_blocks, shape.scale_type, &random, odd_rows);
     const auto dense_up_s =
-        MakeScales(dense, model_blocks, shape.scale_type, &random);
-    const auto dense_down_s =
-        MakeScales(shape.model_dim, dense_blocks, shape.scale_type, &random);
+        MakeScales(dense, model_blocks, shape.scale_type, &random, odd_rows);
+    const auto dense_down_s = MakeScales(shape.model_dim, dense_blocks,
+                                         shape.scale_type, &random, odd_rows);
     // Out of the pieces' order, as a model file may hold them.
     write(layer.down, &layer, 2);
     write(dense_up_s, &layer, 11);
@@ -528,6 +528,133 @@ TEST_P(MoePluginTest, RejectsAFileOfAnotherSize) {
   LiteRtNvidiaMoeArena arena{};
   bool on_device = false;
   EXPECT_FALSE(LoadMoeArena(layers[0].source, 12, 256, 96, &arena, &on_device));
+}
+
+struct CudaFree {
+  void operator()(void* p) const { cudaFree(p); }
+};
+using DeviceBytes = std::unique_ptr<void, CudaFree>;
+
+DeviceBytes ToDevice(const void* data, size_t bytes) {
+  void* p = nullptr;
+  if (cudaMalloc(&p, bytes) != cudaSuccess) return nullptr;
+  if (data != nullptr) cudaMemcpy(p, data, bytes, cudaMemcpyHostToDevice);
+  return DeviceBytes(p);
+}
+
+// The slot-rows form of a layer block (the rows of a batched decode step's
+// slots): every row of a launch over several rows against the block on that
+// row alone, through the plugins' enqueue.
+TEST_P(MoePluginTest, SlotRowsMatchEachRowAlone) {
+  constexpr int kExperts = 64, kDim = 704, kHidden = 128, kDense = 96;
+  constexpr int kRows = 5;
+  const std::vector<Layer> layers =
+      WriteModel(Path("slot_rows"), {kExperts, kDim, kHidden, kDense, 1}, 1, 21,
+                 /*odd_rows=*/false);
+  ASSERT_EQ(layers.size(), 1u);
+  const auto plugin = MakePlugin(layers[0]);
+  ASSERT_NE(plugin, nullptr);
+  const auto runtime_of = [](nvinfer1::IPluginV3* p) {
+    return static_cast<nvinfer1::IPluginV3OneRuntime*>(
+        p->getCapabilityInterface(nvinfer1::PluginCapabilityType::kRUNTIME));
+  };
+  const std::unique_ptr<nvinfer1::IPluginV3> form(MoeSlotRowsPlugin(*plugin));
+  ASSERT_NE(form, nullptr);
+  // The form serializes its field after the block's own, which stay as
+  // they are, and an engine makes the form again from them.
+  const int32_t block_fields =
+      runtime_of(plugin.get())->getFieldsToSerialize()->nbFields;
+  const auto* form_fields = runtime_of(form.get())->getFieldsToSerialize();
+  ASSERT_EQ(form_fields->nbFields, block_fields + 1);
+  EXPECT_STREQ(form_fields->fields[block_fields].name, "slot_rows");
+  auto* creator = static_cast<nvinfer1::IPluginCreatorV3One*>(
+      getPluginRegistry()->getCreator("LiteRtNvidiaMoe", "1", ""));
+  ASSERT_NE(creator, nullptr);
+  const std::unique_ptr<nvinfer1::IPluginV3> restored(creator->createPlugin(
+      "moe", form_fields, nvinfer1::TensorRTPhase::kRUNTIME));
+  ASSERT_NE(restored, nullptr);
+  EXPECT_EQ(runtime_of(restored.get())->getFieldsToSerialize()->nbFields,
+            block_fields + 1);
+  // The form of a form is the form; a plain routed plugin has none.
+  const std::unique_ptr<nvinfer1::IPluginV3> again(MoeSlotRowsPlugin(*form));
+  EXPECT_NE(again, nullptr);
+
+  const auto block = Attach(plugin.get());
+  const auto rows_block = Attach(restored.get());
+  ASSERT_NE(block, nullptr);
+  ASSERT_NE(rows_block, nullptr);
+  // BF16 rows of both signs near one, each row its own.
+  std::vector<uint16_t> x(kRows * kDim);
+  for (int r = 0; r < kRows; ++r) {
+    for (int i = 0; i < kDim; ++i) {
+      const float value =
+          static_cast<float>((i * 31 + r * 17) % 103 - 51) / 37.0f;
+      uint32_t bits;
+      std::memcpy(&bits, &value, 4);
+      x[r * kDim + i] = static_cast<uint16_t>(bits >> 16);
+    }
+  }
+  std::vector<float> expert_scale(kExperts), norm(kDim);
+  for (int e = 0; e < kExperts; ++e) expert_scale[e] = 0.98f + 0.0003f * e;
+  for (int i = 0; i < kDim; ++i) norm[i] = 0.8f + 0.0005f * (i % 61);
+  const size_t row_bytes = kDim * sizeof(uint16_t);
+  const DeviceBytes d_x = ToDevice(x.data(), kRows * row_bytes);
+  const DeviceBytes d_scale = ToDevice(expert_scale.data(), kExperts * 4);
+  const DeviceBytes d_norm = ToDevice(norm.data(), kDim * 4);
+  const DeviceBytes d_y = ToDevice(nullptr, kRows * row_bytes);
+  const DeviceBytes d_expected = ToDevice(nullptr, kRows * row_bytes);
+  const LiteRtNvidiaMoeShape rows_shape = {kRows, 2,       kExperts,
+                                           kDim,  kHidden, 1};
+  const DeviceBytes d_workspace =
+      ToDevice(nullptr, LiteRtNvidiaMoeBlockWorkspaceBytes(&rows_shape, kDense,
+                                                           /*dense_gate=*/1));
+  ASSERT_TRUE(d_x && d_scale && d_norm && d_y && d_expected && d_workspace);
+  const auto run = [&](nvinfer1::IPluginV3* p, int rows, const void* in,
+                       void* out) {
+    nvinfer1::PluginTensorDesc descs[8] = {};
+    descs[0].dims = nvinfer1::Dims3{rows, 1, kDim};
+    descs[0].type = nvinfer1::DataType::kBF16;
+    nvinfer1::PluginTensorDesc out_desc = descs[0];
+    const void* inputs[8] = {in,           d_scale.get(), d_norm.get(),
+                             d_norm.get(), d_norm.get(),  d_norm.get(),
+                             d_norm.get(), d_norm.get()};
+    void* outputs[1] = {out};
+    return runtime_of(p)->enqueue(descs, &out_desc, inputs, outputs,
+                                  d_workspace.get(), nullptr);
+  };
+  for (int r = 0; r < kRows; ++r) {
+    ASSERT_EQ(
+        run(block.get(), 1, static_cast<const char*>(d_x.get()) + r * row_bytes,
+            static_cast<char*>(d_expected.get()) + r * row_bytes),
+        0);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  }
+  ASSERT_EQ(run(rows_block.get(), kRows, d_x.get(), d_y.get()), 0);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint16_t> y(kRows * kDim), expected(kRows * kDim);
+  ASSERT_EQ(cudaMemcpy(y.data(), d_y.get(), kRows * row_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(expected.data(), d_expected.get(), kRows * row_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_EQ(y, expected);
+  int finite = 0, changed = 0;
+  for (size_t i = 0; i < y.size(); ++i) {
+    finite += (y[i] & 0x7f80) != 0x7f80;
+    changed += y[i] != x[i];
+  }
+  EXPECT_EQ(finite, kRows * kDim);
+  EXPECT_GT(changed, kRows * kDim / 2);
+  // The block over the same rows takes the tensor cores for the dense
+  // feed-forward: not the bits of the rows alone, which is why the form
+  // exists.
+  ASSERT_EQ(run(block.get(), kRows, d_x.get(), d_y.get()), 0);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(y.data(), d_y.get(), kRows * row_bytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_NE(y, expected);
 }
 
 }  // namespace

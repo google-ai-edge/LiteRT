@@ -85,6 +85,7 @@ double FromBf16(uint16_t bits) {
 }
 
 double Silu(double x) { return x / (1.0 + std::exp(-x)); }
+double Sigmoid(double x) { return 1.0 / (1.0 + std::exp(-x)); }
 
 struct Layer {
   LiteRtNvidiaGatedDeltaNetParams p;
@@ -154,6 +155,9 @@ Result Reference(const Layer& layer, std::optional<int32_t> valid_len) {
   const int channels = (2 * hk + hv) * d;
   const int n = p.tokens;
   const int valid = valid_len.has_value() ? std::clamp(*valid_len, 0, n) : n;
+  const auto Gate = [&](double z) {
+    return p.sigmoid_gate != 0 ? Sigmoid(z) : Silu(z);
+  };
   const double* decay = nullptr;
   std::vector<double> c(layer.constants.begin(), layer.constants.end());
   decay = c.data();
@@ -232,7 +236,7 @@ Result Reference(const Layer& layer, std::optional<int32_t> valid_len) {
       for (int j = 0; j < d; ++j) {
         result.out[(static_cast<size_t>(t) * hv + h) * d + j] =
             o[j] * factor * norm_weight[j] *
-            Silu(proj(t, p.z_offset + h * d + j) + z_bias[h * d + j]);
+            Gate(proj(t, p.z_offset + h * d + j) + z_bias[h * d + j]);
       }
     }
   }
@@ -325,6 +329,16 @@ TEST(GatedDeltaNetTest, PrefillChunkWithPadding) {
   Check(MakeLayer(48, 2, 6, 29), /*valid_len=*/2,
         false);  // fewer rows than taps
   Check(MakeLayer(16, 1, 3, 31), /*valid_len=*/0, false);
+}
+
+// Qwen 4's output gate: rms_norm(o) * sigmoid(z).
+TEST(GatedDeltaNetTest, SigmoidOutputGate) {
+  Layer layer = MakeLayer(1, 2, 6, 37);
+  layer.p.sigmoid_gate = 1;
+  Check(layer, std::nullopt, /*in_place=*/true);
+  layer = MakeLayer(40, 2, 6, 41);
+  layer.p.sigmoid_gate = 1;
+  Check(layer, /*valid_len=*/33, /*in_place=*/false);
 }
 
 TEST(GatedDeltaNetTest, Supports) {

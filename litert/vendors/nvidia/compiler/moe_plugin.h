@@ -74,11 +74,22 @@ struct MoeExpertSource {
 // residual_multiplier. Four more FP32 [model_dim] inputs follow: the dense
 // input norm's scale, the dense output norm's, the experts' output norm's
 // and the sum's norm's. The output is the next residual stream.
+// `slot_rows` (a layer block only): the rows of x are separate sequences, the
+// slots of a batched decode step (at most kLiteRtNvidiaInt4BlockGemvMaxRows):
+// each row gets the bits it gets alone
+// (LiteRtNvidiaLaunchMoeLayerBlockSlotRows), the router and the dense
+// feed-forward read once for all of them. The field is serialized only when
+// set.
 nvinfer1::IPluginV3* CreateMoePlugin(
     int32_t experts, int32_t top_k, int32_t model_dim, int32_t hidden_dim,
     int32_t gate, const MoeExpertSource& source, bool routed = false,
     float norm_eps = -1.0f, float router_multiplier = 1.0f, bool block = false,
-    int32_t dense_gate = 0, float residual_multiplier = 1.0f) noexcept;
+    int32_t dense_gate = 0, float residual_multiplier = 1.0f,
+    bool slot_rows = false) noexcept;
+
+// The slot-rows form of `plugin`, a layer block of this file, sharing its
+// expert arena; null for any other plugin.
+nvinfer1::IPluginV3* MoeSlotRowsPlugin(nvinfer1::IPluginV3& plugin) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.
