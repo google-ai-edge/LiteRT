@@ -32,25 +32,9 @@ _TRANSFORMATION_COPTS = select({
     ],
 })
 
-cc_library(
+alias(
     name = "transformation_utils",
-    srcs = ["transformation_utils.cc"],
-    hdrs = ["transformation_utils.h"],
-    copts = _TRANSFORMATION_COPTS,
-    deps = [
-        "//litert/c:litert_common",
-        "//litert/c:litert_model_types",
-        "//litert/c:litert_op_code",
-        "//litert/cc:litert_element_type",
-        "//litert/cc:litert_expected",
-        "//litert/cc:litert_layout",
-        "//litert/cc:litert_macros",
-        "//litert/cc:litert_ranked_tensor_type",
-        "//litert/compiler/cc:litert_builder",
-        "//litert/compiler/cc:litert_model",
-        "//litert/compiler/cc:litert_op_options",
-        "@com_google_absl//absl/types:span",
-    ],
+    actual = "//litert/compiler/cc:transformation_utils",
 )
 
 cc_library(
@@ -93,7 +77,6 @@ cc_library(
     copts = _TRANSFORMATION_COPTS,
     deps = [
         ":orphan_cleanup_transformation",
-        ":transformation_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -107,6 +90,7 @@ cc_library(
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/compiler/cc:transformation_utils",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/types:span",
     ],
@@ -118,7 +102,6 @@ cc_library(
     hdrs = ["mlp_quant_transformation.h"],
     copts = _TRANSFORMATION_COPTS,
     deps = [
-        ":transformation_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -127,11 +110,11 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_ranked_tensor_type",
         "//litert/compiler/cc:litert_builder",
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/compiler/cc:transformation_utils",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -143,7 +126,6 @@ cc_library(
     copts = _TRANSFORMATION_COPTS,
     deps = [
         ":orphan_cleanup_transformation",
-        ":transformation_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -157,6 +139,7 @@ cc_library(
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/compiler/cc:transformation_utils",
         "@com_google_absl//absl/types:span",
     ],
 )
@@ -168,7 +151,6 @@ cc_library(
     copts = _TRANSFORMATION_COPTS,
     deps = [
         ":orphan_cleanup_transformation",
-        ":transformation_utils",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -177,11 +159,11 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
-        "//litert/cc:litert_ranked_tensor_type",
         "//litert/compiler/cc:litert_builder",
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
+        "//litert/compiler/cc:transformation_utils",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/types:span",
     ],
@@ -194,12 +176,9 @@ cc_library(
     copts = _TRANSFORMATION_COPTS,
     deps = [
         ":orphan_cleanup_transformation",
-        ":transformation_utils",
         "//litert/c:litert_common",
-        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context_header",
-        "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_layout",
         "//litert/cc:litert_macros",
@@ -208,7 +187,7 @@ cc_library(
         "//litert/compiler/cc:litert_matchers",
         "//litert/compiler/cc:litert_model",
         "//litert/compiler/cc:litert_op_options",
-        "@com_google_absl//absl/types:span",
+        "//litert/compiler/cc:transformation_utils",
     ],
 )
 

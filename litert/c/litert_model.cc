@@ -630,6 +630,15 @@ LiteRtStatus LiteRtGetTensorDefiningOp(LiteRtTensor tensor,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtGetTensorSubgraph(LiteRtTensor tensor,
+                                     LiteRtSubgraph* subgraph) {
+  if (!tensor || !subgraph) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *subgraph = tensor->Subgraph();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtGetTensorTypeId(LiteRtTensor tensor,
                                    LiteRtTensorTypeId* type_id) {
   if (!tensor || !type_id) {

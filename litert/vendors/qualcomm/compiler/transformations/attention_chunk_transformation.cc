@@ -29,21 +29,29 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/compiler/cc/litert_builder.h"
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
+#include "litert/compiler/cc/transformation_utils.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
-#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
 using litert::ElementType;
 using litert::Expected;
 using litert::compiler::BatchMatmulOptions;
+using litert::compiler::BuildBatchMatmul;
+using litert::compiler::BuildConcatInto;
 using litert::compiler::Builder;
+using litert::compiler::BuildReshape;
+using litert::compiler::BuildReshapeInto;
+using litert::compiler::BuildSlice;
+using litert::compiler::BuildSoftmax;
+using litert::compiler::ConstI32;
 using litert::compiler::GetOptionsAs;
+using litert::compiler::HasDims;
+using litert::compiler::HasPerm;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
 using litert::compiler::m_CaptureOrSameAs;
@@ -51,22 +59,13 @@ using litert::compiler::m_Custom;
 using litert::compiler::m_HasOneUse;
 using litert::compiler::m_Op;
 using litert::compiler::m_Shape;
+using litert::compiler::NewLike;
 using litert::compiler::Op;
+using litert::compiler::SingleOutput;
+using litert::compiler::SingleUser;
 using litert::compiler::SoftmaxOptions;
 using litert::compiler::SplitOptions;
 using litert::compiler::Tensor;
-using litert::qnn::BuildBatchMatmul;
-using litert::qnn::BuildConcatInto;
-using litert::qnn::BuildReshape;
-using litert::qnn::BuildReshapeInto;
-using litert::qnn::BuildSlice;
-using litert::qnn::BuildSoftmax;
-using litert::qnn::ConstI32;
-using litert::qnn::HasDims;
-using litert::qnn::HasPerm;
-using litert::qnn::NewLike;
-using litert::qnn::SingleOutput;
-using litert::qnn::SingleUser;
 
 // Default minimum logits tensor size in bytes to trigger auto-chunking.
 constexpr int64_t kDefaultAutoMinLogitsBytes = 8 << 20;

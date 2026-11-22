@@ -28,12 +28,11 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_layout.h"
 #include "litert/cc/litert_macros.h"
-#include "litert/cc/litert_ranked_tensor_type.h"
 #include "litert/compiler/cc/litert_builder.h"
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
-#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
+#include "litert/compiler/cc/transformation_utils.h"
 
 namespace {
 
@@ -41,7 +40,10 @@ using litert::ElementType;
 using litert::Expected;
 using litert::compiler::AddOptions;
 using litert::compiler::Builder;
+using litert::compiler::BuildReshape;
+using litert::compiler::BuildReshapeInto;
 using litert::compiler::CompositeOptions;
+using litert::compiler::HasDims;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
 using litert::compiler::m_CaptureOrSameAs;
@@ -53,13 +55,10 @@ using litert::compiler::m_Op;
 using litert::compiler::m_Shape;
 using litert::compiler::Match;
 using litert::compiler::MulOptions;
+using litert::compiler::NewLike;
 using litert::compiler::Op;
 using litert::compiler::RmsNormOpts;
 using litert::compiler::Tensor;
-using litert::qnn::BuildReshape;
-using litert::qnn::BuildReshapeInto;
-using litert::qnn::HasDims;
-using litert::qnn::NewLike;
 
 constexpr int32_t kMinSequenceFor4DFolding = 600;
 

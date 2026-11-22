@@ -36,6 +36,7 @@
 namespace litert::compiler {
 
 class Op;
+class Subgraph;
 class Tensor;
 
 class Weights {
@@ -237,6 +238,8 @@ class Tensor {
   struct TensorUse;
   std::vector<TensorUse> Uses() const;
 
+  Expected<Subgraph> GetSubgraph() const;
+
   bool IsSubgraphInput() const {
     auto def_op = DefiningOp();
     return !HasWeights() && !def_op.has_value();
@@ -256,6 +259,44 @@ class Tensor {
       return true;
     }
     return is_output;
+  }
+
+  /// @brief Returns true if this tensor is an output of its owning subgraph.
+  /// Returns false for null or unattached/staged tensors, and conservatively
+  /// returns true if the runtime context predates `get_tensor_subgraph` or a
+  /// query fails.
+  bool IsSubgraphOutput() const {
+    if (tensor_ == nullptr) {
+      return false;
+    }
+    if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, get_tensor_subgraph)) {
+      return true;
+    }
+    LiteRtSubgraph subgraph = nullptr;
+    if (ctx_->get_tensor_subgraph(tensor_, &subgraph) != kLiteRtStatusOk) {
+      return true;
+    }
+    if (subgraph == nullptr) {
+      return false;
+    }
+    if (!ctx_->get_num_subgraph_outputs || !ctx_->get_subgraph_output) {
+      return true;
+    }
+    LiteRtParamIndex num_outputs = 0;
+    if (ctx_->get_num_subgraph_outputs(subgraph, &num_outputs) !=
+        kLiteRtStatusOk) {
+      return true;
+    }
+    for (LiteRtParamIndex i = 0; i < num_outputs; ++i) {
+      LiteRtTensor output = nullptr;
+      if (ctx_->get_subgraph_output(subgraph, i, &output) != kLiteRtStatusOk) {
+        return true;
+      }
+      if (output == tensor_) {
+        return true;
+      }
+    }
+    return false;
   }
 
   uint32_t TensorIndex() const {
@@ -482,10 +523,29 @@ class Subgraph {
     return ops;
   }
 
+  bool operator==(const Subgraph& other) const {
+    return subgraph_ == other.subgraph_;
+  }
+  bool operator!=(const Subgraph& other) const {
+    return subgraph_ != other.subgraph_;
+  }
+
  private:
   const LiteRtCompilerContext* ctx_;
   LiteRtSubgraph subgraph_;
 };
+
+inline Expected<Subgraph> Tensor::GetSubgraph() const {
+  if (!LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, get_tensor_subgraph)) {
+    return Unexpected(kLiteRtStatusErrorWrongVersion);
+  }
+  LiteRtSubgraph subgraph = nullptr;
+  LITERT_RETURN_IF_ERROR(ctx_->get_tensor_subgraph(tensor_, &subgraph));
+  if (subgraph == nullptr) {
+    return Unexpected(kLiteRtStatusErrorNotFound);
+  }
+  return Subgraph(ctx_, subgraph);
+}
 
 class Model {
  public:

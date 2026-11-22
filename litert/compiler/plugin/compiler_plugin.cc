@@ -614,13 +614,24 @@ LiteRtStatus PartitionSubgraph(
     size_t max_partitions = 0) {
   // Pick partition strategy based on compiler options.
   std::vector<std::vector<LiteRtOp>> (*partition_strategy_func)(
-      const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) =
-      GroupPartitions;
-  if (partition_strategy_option ==
-      kLiteRtCompilerOptionsPartitionStrategyDefault) {
-    partition_strategy_func = GroupPartitionsV2;
+      const std::vector<LiteRtOpWithPartitionIndex>&, LiteRtSubgraph) = nullptr;
+  switch (partition_strategy_option) {
+    case kLiteRtCompilerOptionsPartitionStrategyDefault:
+      partition_strategy_func = GroupPartitionsV2;
+      break;
+    case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
+      partition_strategy_func = GroupPartitions;
+      break;
+    case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+      partition_strategy_func = GroupPartitionsAcyclic;
+      break;
+    default:
+      LITERT_LOG(LITERT_ERROR, "Unknown partition strategy: %d",
+                 static_cast<int>(partition_strategy_option));
+      return kLiteRtStatusErrorInvalidArgument;
   }
-  LITERT_LOG(LITERT_INFO, "Partition strategy: %d", partition_strategy_option);
+  LITERT_LOG(LITERT_INFO, "Partition strategy: %d",
+             static_cast<int>(partition_strategy_option));
 
   // Group selected ops into connected islands.
   auto islands = partition_strategy_func(selected_ops, &subgraph);
@@ -729,6 +740,18 @@ Expected<PartitionResult> PartitionModel(
     }
   });
 
+  // Resolve compiler options once before partitioning or mutating subgraphs.
+  LiteRtCompilerOptionsPartitionStrategy strategy =
+      kLiteRtCompilerOptionsPartitionStrategyDefault;
+  size_t max_partitions = 0;
+  if (auto compiler_options = compiler_plugin.CompilerOptions();
+      compiler_options.HasValue()) {
+    strategy = compiler_options->partition_strategy;
+    max_partitions = compiler_options->max_partitions;
+  } else if (compiler_options.Error().Status() != kLiteRtStatusErrorNotFound) {
+    return compiler_options.Error();
+  }
+
   // Build partition result via calling plugin on non-decomposition subgraphs.
   std::vector<LiteRtOp> dispatch_ops;
   for (auto i = 0; i < input_num_sgs; ++i) {
@@ -826,16 +849,6 @@ Expected<PartitionResult> PartitionModel(
     auto num_ops = subgraph->Ops().size();
 
     auto num_partitions = dispatch_ops.size();
-    // Get partition strategy from compiler options.
-    auto compiler_options = compiler_plugin.CompilerOptions();
-    LiteRtCompilerOptionsPartitionStrategy strategy =
-        kLiteRtCompilerOptionsPartitionStrategyDefault;
-    size_t max_partitions = 0;
-    if (compiler_options.HasValue()) {
-      strategy = compiler_options->partition_strategy;
-      max_partitions = compiler_options->max_partitions;
-    }
-
     LITERT_RETURN_IF_ERROR(PartitionSubgraph(std::move(*selected_ops),
                                              *subgraph, dispatch_ops, model,
                                              strategy, max_partitions));
