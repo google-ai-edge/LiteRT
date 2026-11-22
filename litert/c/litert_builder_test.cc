@@ -30,6 +30,7 @@
 #include "litert/cc/litert_buffer_ref.h"
 #include "litert/core/model/buffer_manager.h"
 #include "litert/core/model/model.h"
+#include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/matchers.h"
 #include "tflite/converter/schema/schema_generated.h"
 
@@ -59,6 +60,61 @@ TEST(LiteRtBuilderTest, EraseOpNullOpReturnsError) {
 TEST(LiteRtBuilderTest, EraseOpNullBuilderReturnsError) {
   EXPECT_EQ(LiteRtBuilderEraseOp(nullptr, nullptr),
             kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(LiteRtBuilderTest, EraseOpIsDeferredUntilApplyChanges) {
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  LiteRtOpT& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  LiteRtTensorT& input = subgraph.EmplaceTensor();
+  LiteRtTensorT& output = subgraph.EmplaceTensor();
+  litert::internal::AttachInput(&input, op);
+  litert::internal::AttachOutput(&output, op);
+  litert::internal::TflOptions add_options;
+  add_options.Set(tflite::AddOptionsT());
+  litert::internal::SetTflOptions(op, std::move(add_options));
+
+  LiteRtBuilderT builder;
+  LITERT_ASSERT_OK(LiteRtBuilderEraseOp(&builder, &op));
+
+  // Nothing changes until the builder's changes are applied.
+  EXPECT_THAT(op.Inputs(), ElementsAre(&input));
+  EXPECT_THAT(op.Outputs(), ElementsAre(&output));
+  EXPECT_THAT(input.Users(), ElementsAre(&op));
+  EXPECT_EQ(output.DefiningOp(), &op);
+  EXPECT_EQ(litert::internal::GetTflOptions(op).type,
+            tflite::BuiltinOptions_AddOptions);
+  EXPECT_EQ(subgraph.Ops().size(), 1);
+
+  builder.ApplyChanges(&subgraph);
+  EXPECT_TRUE(subgraph.Ops().empty());
+}
+
+TEST(LiteRtBuilderTest, ErasedOpIsReplacedByOpBuiltOnTheSameTensors) {
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  LiteRtOpT& old_op = subgraph.EmplaceOp();
+  old_op.SetOpCode(kLiteRtOpCodeTflAdd);
+  LiteRtTensorT& input = subgraph.EmplaceTensor();
+  LiteRtTensorT& output = subgraph.EmplaceTensor();
+  litert::internal::AttachInput(&input, old_op);
+  litert::internal::AttachOutput(&output, old_op);
+
+  LiteRtBuilderT builder;
+  LiteRtTensor inputs[] = {&input};
+  LiteRtTensor outputs[] = {&output};
+  LiteRtOp new_op;
+  LITERT_ASSERT_OK(LiteRtBuilderBuildOp(&builder, kLiteRtOpCodeTflMul,
+                                        /*num_inputs=*/1, inputs,
+                                        /*num_outputs=*/1, outputs, &new_op));
+  LITERT_ASSERT_OK(LiteRtBuilderEraseOp(&builder, &old_op));
+
+  builder.ApplyChanges(&subgraph);
+
+  EXPECT_THAT(subgraph.Ops(), ElementsAre(new_op));
+  EXPECT_EQ(output.DefiningOp(), new_op);
+  EXPECT_THAT(input.Users(), ElementsAre(new_op));
 }
 
 TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {

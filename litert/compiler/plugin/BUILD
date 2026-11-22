@@ -142,6 +142,7 @@ cc_test(
         "//litert/test:load_test_model",
         "//litert/tools:dump",
         "//litert/vendors/c:litert_compiler_plugin",
+        "//litert/vendors/c:litert_compiler_plugin_api",
         "//tflite/converter/schema:schema_fbs",
     ],
 )
@@ -212,6 +213,7 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/core:insert_order_map",
         "//litert/core/model",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_check",

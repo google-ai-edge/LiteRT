@@ -716,6 +716,13 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_DISPATCH_SLOTS",
       // Qwen 4's n-gram hash and lookups in the engine.
       "LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
+      // =0: Qwen 4's hyper-connection mixes op by op (no existing model has
+      // one, so the default changes no engine of theirs).
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION",
+      // =0: Qwen 4's per-layer embedding past its projections op by op.
+      "LITERT_NVIDIA_TENSORRT_FUSE_PLE",
+      // =0: the combine's injection projection as a GEMV of its own.
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION_COMBINE",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
     if (const char* value = std::getenv(name); value != nullptr) {
@@ -2165,8 +2172,15 @@ Expected<void> PersistSlotPlans(
                                 weights, pending.View(head, feed)));
     const std::string path =
         litert::nvidia::SlotArtifactPath(decode_artifact, plan.slots);
-    LITERT_RETURN_IF_ERROR(
-        PersistArtifactFile(path, shard.data(), shard.size()));
+    // The path is the decode artifact's, not this plan's content: a compile
+    // that asks for another slot count rebuilds the plan, and TensorRT-RTX's
+    // build may give other bytes for the same engine. The newer plan
+    // replaces the older (a reader holds its own copy, SlotEngine::Open).
+    if (!PersistArtifactFile(path, shard.data(), shard.size())) {
+      unlink(path.c_str());
+      LITERT_RETURN_IF_ERROR(
+          PersistArtifactFile(path, shard.data(), shard.size()));
+    }
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX persisted the batched decode engine of %d "
                "slots: artifact_bytes=%zu path=%s",

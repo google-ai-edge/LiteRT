@@ -14,12 +14,48 @@
 
 #include "litert/c/internal/litert_compiler_context.h"
 
+#include <cstdint>
+
 #include "litert/c/litert_builder.h"
+#include "litert/c/litert_common.h"
 #include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_model.h"
 #include "litert/c/litert_op_options.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/c/litert_options.h"
+#include "litert/core/model/subgraph_refs.h"
+
+namespace {
+
+// Kept internal to LiteRtCompilerContext (not exported in libLiteRt.so) so
+// compiler-plugin subgraph-ref inspection does not expand the public runtime
+// shared library symbol surface.
+LiteRtStatus GetNumOpSubgraphRefs(LiteRtOp op, LiteRtParamIndex* num_refs) {
+  if (op == nullptr || num_refs == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *num_refs = litert::internal::SubgraphRefs(*op).size();
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus GetOpSubgraphRef(LiteRtOp op, LiteRtParamIndex ref_index,
+                              LiteRtParamIndex* subgraph_index) {
+  if (op == nullptr || subgraph_index == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const auto refs = litert::internal::SubgraphRefs(*op);
+  if (ref_index >= refs.size()) {
+    return kLiteRtStatusErrorIndexOOB;
+  }
+  const int32_t ref = refs[ref_index];
+  if (ref < 0) {
+    return kLiteRtStatusErrorInvalidGraphInvariant;
+  }
+  *subgraph_index = static_cast<LiteRtParamIndex>(ref);
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
 
 LiteRtCompilerContext* LrtGetCompilerContext() {
   static LiteRtCompilerContext ctx = {
@@ -28,7 +64,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 5,
+              .minor_version = 6,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -315,6 +351,8 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
           LiteRtGetConv3dTransposeDilationHOption,
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
+      .get_num_op_subgraph_refs = GetNumOpSubgraphRefs,
+      .get_op_subgraph_ref = GetOpSubgraphRef,
   };
   return &ctx;
 }

@@ -239,6 +239,25 @@ pass@1, temperature 0.6 with top-k 20 / top-p 0.95 and a fixed seed per question
 about 40 minutes at 13 tokens/s; LiteRT-LM's default 10-minute session wait must be raised for
 such runs.
 
+**One process, several engines** (Linux). `EVAL_ONE_PROCESS=1` (`run.sh`) or `--one-process`
+(`gpqa/run.tool`) loads the model once and runs every problem in one process
+(`eval/one_process.sh`, `eval/engine_runner.tool`, LiteRT-LM's C API through its Python package
+named by `LITERT_LM_PYTHON`), each problem in a fresh conversation configured as the CLI's, the
+answers the CLI's. `EVAL_ENGINES=N` / `--engines N` decodes N problems side by side, an engine
+each, the weights held once; `EVAL_BATCH=1` (or `--env LITERT_NVIDIA_DISPATCH_SLOTS=N`) runs
+their concurrent decode and MTP verify steps as batched launches, each answer the same as alone.
+`EVAL_ORDER_FROM` / `--order-from` takes the problems longest first by an earlier run's lengths,
+so that several engines do not end on one long answer.
+
+The Windows path needs, and does not have yet: (1) LiteRT-LM's C API library built as a DLL with
+MSVC (at LiteRT-LM 42531a01 `c/engine.cc` puts an `#if` inside `LITERT_LM_C_ASSIGN_OR_RETURN`'s
+arguments, which MSVC rejects; a 12-line fix hoists the `ScopedFile` into a variable first, not
+applied, as LiteRT-LM is not changed here), and the `litert_lm` Python package around it;
+(2) the shell steps of `one_process.sh` (it fills in the model, the dispatch library directory
+and the cache pool of the job list, sets the pool's environment and runs `engine_runner.tool`) on
+`windows/common.tool`'s paths instead of `env.sh`'s, and `run.sh`'s one-process branch without
+GNU `time`; `gpqa/run.tool --one-process` refuses to run on Windows until then.
+
 ## The merge into LiteRT
 
 The tree maps onto `litert/vendors/nvidia/benchmark/` as it is: `report/`, `windows/`,

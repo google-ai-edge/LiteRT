@@ -19,10 +19,9 @@
 #   with EVAL_ENV adding LITERT_NVIDIA_DISPATCH_STEP_FEED=0 LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=0:
 #   with either on, a CUDA graph capture or a step ahead updates that state twice, and an answer
 #   depends on what ran before it (the CLI's on its own capture step).
-#   EVAL_BATCH=1 (with EVAL_ENGINES=N, 2 to 4) batches the engines' decode steps: the steps that
-#   come together run as one launch of a batched decode engine (LITERT_NVIDIA_DISPATCH_SLOTS=4:
-#   engines of 2 to 4 slots compiled beside the decode engine, one compile for any N), each
-#   response the same as alone.
+#   EVAL_BATCH=1 (with EVAL_ENGINES=N, 2 to 8) batches the engines' decode steps: the steps that
+#   come together run as one launch of a batched decode engine (LITERT_NVIDIA_DISPATCH_SLOTS=N:
+#   engines of 2 to N slots compiled beside the decode engine), each response the same as alone.
 #   EVAL_ORDER_FROM="DIR..." (one process) runs the problems longest answer first, by their decode
 #   tokens in those earlier runs (unknown ones first): the set does not end on one long answer.
 #   EVAL_SIGNATURES=a,b compiles and runs only those signatures (the 12B and 26B plain runs default
@@ -59,7 +58,7 @@ engines=${EVAL_ENGINES:-1}
 [[ $engines == 1 || $one_process == 1 ]] || nb_die "EVAL_ENGINES needs EVAL_ONE_PROCESS=1"
 batch=${EVAL_BATCH:-0}
 [[ $batch == 0 || $batch == 1 ]] || nb_die "EVAL_BATCH must be 0 or 1"
-[[ $batch == 0 || ( $engines -ge 2 && $engines -le 4 ) ]] || nb_die "EVAL_BATCH=1 needs EVAL_ENGINES from 2 to 4"
+[[ $batch == 0 || ( $engines -ge 2 && $engines -le 8 ) ]] || nb_die "EVAL_BATCH=1 needs EVAL_ENGINES from 2 to 8"
 if [[ $one_process == 1 ]]; then
   # LiteRT-LM's C API sets no advanced executor settings: the expansion is the CLI's alone.
   [[ $expansion == 0 ]] || nb_die "EVAL_ONE_PROCESS=1 cannot expand the context (LiteRT-LM's C API has no setting for it)"
@@ -71,7 +70,7 @@ profile=$model_arg; [[ $profile =~ ^(e2b|e4b|12b|26b)$ ]] || profile=$(basename 
 # EVAL_ENV="NAME=VALUE ..." overrides the pool's standard TensorRT-RTX environment.
 pool=${EVAL_POOL:-$NB_ROOT/cache/models/$profile/$(nb_build_id)${EVAL_POOL_SUFFIX:+-$EVAL_POOL_SUFFIX}}
 nb_runtime_env "$pool" "$model"
-[[ $batch == 0 ]] || export LITERT_NVIDIA_DISPATCH_SLOTS=4
+[[ $batch == 0 ]] || export LITERT_NVIDIA_DISPATCH_SLOTS=$engines
 for kv in ${EVAL_ENV:-}; do export "$kv"; done
 runs=${EVAL_RUNS:-$NB_ROOT/eval/lcb/runs}/$label; mkdir -p "$runs"
 engine=$NB_RUNTIME_LIBS/litert_lm_advanced_main
