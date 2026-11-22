@@ -532,13 +532,20 @@ LiteRtStatus UnpackSignatures(std::vector<TflSignaturePtr>& tfl_signatures,
     auto& tfl_outputs = tfl_signature->outputs;
 
     // Tflite signatures map a tensor index to a name. The input & output
-    // indexes of signatures and subgraph are not matched, but the nubmer of
-    // inputs and outputs should be the same.
+    // indexes of signatures and subgraph are not matched. Models may have extra
+    // subgraph inputs not listed in the signature; the downstream alias-lookup
+    // handles them via tensor->Name().
+    if (tfl_inputs.size() > litert_subgraph->Inputs().size() ||
+        tfl_outputs.size() > litert_subgraph->Outputs().size()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Signature declares more inputs/outputs than the subgraph");
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
     if (tfl_inputs.size() != litert_subgraph->Inputs().size() ||
         tfl_outputs.size() != litert_subgraph->Outputs().size()) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Signature has incorrect number of input/outputs");
-      return kLiteRtStatusErrorInvalidFlatbuffer;
+      LITERT_LOG(LITERT_WARNING,
+                 "Signature has fewer inputs/outputs than the subgraph "
+                 "(extra subgraph tensors will use their tensor names)");
     }
 
     absl::flat_hash_map<LiteRtTensor, std::string> input_aliases;
