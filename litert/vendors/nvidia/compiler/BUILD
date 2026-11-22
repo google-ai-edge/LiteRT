@@ -235,6 +235,32 @@ cc_library(
 )
 
 cc_library(
+    name = "hyper_connection_plugin",
+    srcs = ["hyper_connection_plugin.cc"],
+    hdrs = ["hyper_connection_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
+    name = "ple_tail_plugin",
+    srcs = ["ple_tail_plugin.cc"],
+    hdrs = ["ple_tail_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
     name = "moe_plugin",
     srcs = ["moe_plugin.cc"],
     hdrs = ["moe_plugin.h"],
@@ -454,8 +480,10 @@ cc_library(
         ":cache_update_plugin",
         ":decode_attention_plugin",
         ":gated_delta_plugin",
+        ":hyper_connection_plugin",
         ":int8_cache_write_plugin",
         ":moe_plugin",
+        ":ple_tail_plugin",
         ":qkv_norm_rope_plugin",
         ":qsa_attention_plugin",
         ":quant_attention_plugin",
