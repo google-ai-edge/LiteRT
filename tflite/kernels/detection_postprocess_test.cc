@@ -15,6 +15,7 @@ limitations under the License.
 #include <stdint.h>
 
 #include <initializer_list>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -1287,6 +1288,47 @@ TEST(DetectionPostprocessOpTest,
   EXPECT_THAT(m.GetOutput4<float>(),
               ElementsAreArray(
                   ArrayFloatNear({static_cast<float>(kMaxDetections)}, 1e-4)));
+}
+
+TEST(DetectionPostprocessOpTest, MultiThreadedRegularNMSTiedScoresMatchSingle) {
+  constexpr int kNumBoxes = 16;
+  constexpr int kNumClasses = 8;
+  constexpr int kNumClassesWithBackground = 9;
+  constexpr int kMaxDetections = 6;
+
+  auto run = [&](int num_threads) {
+    DetectionPostprocessOpModelwithRegularNMS m(
+        {TensorType_FLOAT32, {1, kNumBoxes, 4}},
+        {TensorType_FLOAT32, {1, kNumBoxes, kNumClassesWithBackground}},
+        {TensorType_FLOAT32, {kNumBoxes, 4}}, {TensorType_FLOAT32, {}},
+        {TensorType_FLOAT32, {}}, {TensorType_FLOAT32, {}},
+        {TensorType_FLOAT32, {}}, /*use_regular_nms=*/true, num_threads,
+        kMaxDetections, /*detection_per_class=*/2, kNumClasses);
+    m.SetInput1<float>(std::vector<float>(kNumBoxes * 4, 0.0f));
+    std::vector<float> class_scores(kNumBoxes * kNumClassesWithBackground,
+                                    0.0f);
+    for (int b = 0; b < kNumBoxes; ++b) {
+      class_scores[b * kNumClassesWithBackground + 1 + b % kNumClasses] = 0.9f;
+    }
+    m.SetInput2<float>(class_scores);
+    std::vector<float> anchors(kNumBoxes * 4, 0.0f);
+    for (int b = 0; b < kNumBoxes; ++b) {
+      anchors[b * 4 + 0] = 0.5f;
+      anchors[b * 4 + 1] = b * 10.0f + 0.5f;
+      anchors[b * 4 + 2] = 1.0f;
+      anchors[b * 4 + 3] = 1.0f;
+    }
+    m.SetInput3<float>(anchors);
+    EXPECT_EQ(m.Invoke(), kTfLiteOk);
+    return std::make_pair(m.GetOutput1<float>(), m.GetOutput2<float>());
+  };
+
+  const auto expected = run(1);
+  for (int num_threads : {2, 4, 8}) {
+    for (int i = 0; i < 50; ++i) {
+      EXPECT_EQ(run(num_threads), expected) << "num_threads=" << num_threads;
+    }
+  }
 }
 
 }  // namespace
