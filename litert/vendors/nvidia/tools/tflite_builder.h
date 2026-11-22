@@ -57,6 +57,69 @@ class Random {
 };
 
 // A TFLite model under construction, one subgraph at a time.
+// `values` [rows, columns] as INT4 in blocks of kInt4Block columns: the codes
+// (two's complement nibbles, the low one first), an FP16 scale per row and
+// block (the block's largest magnitude over 7), and the values the codes
+// stand for.
+constexpr int kInt4Block = 32;
+
+struct Int4Blocks {
+  std::vector<uint8_t> codes;
+  std::vector<uint16_t> scales;
+  std::vector<float> values;
+};
+
+// The FP16 bits nearest to a positive normal `value` (ties to even), and
+// their value.
+inline uint16_t HalfBits(float value) {
+  uint32_t bits = 0;
+  std::memcpy(&bits, &value, sizeof(bits));
+  const int exponent = static_cast<int>((bits >> 23) & 0xff) - 127 + 15;
+  if (exponent <= 0) return 0;
+  if (exponent >= 31) return 0x7c00;
+  const uint32_t mantissa = bits & 0x7fffffu;
+  uint32_t half = (static_cast<uint32_t>(exponent) << 10) | (mantissa >> 13);
+  const uint32_t rest = mantissa & 0x1fffu;
+  if (rest > 0x1000u || (rest == 0x1000u && (half & 1u) != 0)) ++half;
+  return static_cast<uint16_t>(half);
+}
+
+inline float HalfValue(uint16_t half) {
+  const int exponent = (half >> 10) & 0x1f;
+  if (exponent == 0) return 0.0f;
+  return std::ldexp(1.0f + static_cast<float>(half & 0x3ff) / 1024.0f,
+                    exponent - 15);
+}
+
+inline Int4Blocks QuantizeInt4Blocks(int rows, int columns,
+                                     const std::vector<float>& values) {
+  Int4Blocks q;
+  q.codes.assign(static_cast<size_t>(rows) * columns / 2, 0);
+  q.scales.resize(static_cast<size_t>(rows) * (columns / kInt4Block));
+  q.values.resize(values.size());
+  for (size_t block = 0; block < q.scales.size(); ++block) {
+    const size_t first = block * kInt4Block;
+    float largest = 0.0f;
+    for (int i = 0; i < kInt4Block; ++i) {
+      largest = std::max(largest, std::fabs(values[first + i]));
+    }
+    q.scales[block] = HalfBits(largest > 0.0f ? largest / 7.0f : 1.0f);
+    const float scale = HalfValue(q.scales[block]);
+    for (int i = 0; i < kInt4Block; ++i) {
+      const int code =
+          scale > 0.0f
+              ? std::clamp(
+                    static_cast<int>(std::lround(values[first + i] / scale)),
+                    -8, 7)
+              : 0;
+      q.values[first + i] = static_cast<float>(code) * scale;
+      q.codes[(first + i) / 2] |=
+          static_cast<uint8_t>((code & 0xf) << (((first + i) % 2) * 4));
+    }
+  }
+  return q;
+}
+
 class Builder {
  public:
   Builder() {
@@ -128,6 +191,26 @@ class Builder {
     quantization->scale = scales;
     quantization->zero_point.assign(rows, 0);
     quantization->quantized_dimension = 0;
+    graph().tensors[tensor]->quantization = std::move(quantization);
+    return tensor;
+  }
+  // An INT4 constant [rows, columns] quantized in blocks of 32 columns
+  // (symmetric, an FP16 scale per row and block), from `values`: the weights
+  // of a FULLY_CONNECTED as the Gemma 4 26B and Qwen 3.8 exports carry them.
+  int32_t ConstInt4Blockwise(const std::string& name, int rows, int columns,
+                             const std::vector<float>& values) {
+    const Int4Blocks q = QuantizeInt4Blocks(rows, columns, values);
+    const int32_t scales =
+        Constant(name + "_scales", tflite::TensorType_FLOAT16,
+                 {rows, columns / kInt4Block}, q.scales);
+    const int32_t tensor =
+        Constant(name, tflite::TensorType_INT4, {rows, columns}, q.codes);
+    tflite::BlockwiseQuantizationT blockwise;
+    blockwise.scales = scales;
+    blockwise.zero_points = -1;
+    blockwise.block_size = kInt4Block;
+    auto quantization = std::make_unique<tflite::QuantizationParametersT>();
+    quantization->details.Set(std::move(blockwise));
     graph().tensors[tensor]->quantization = std::move(quantization);
     return tensor;
   }
