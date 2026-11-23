@@ -45,12 +45,14 @@
 //
 // USAGE
 //   qwen4_artifact --write_model=FILE.tflite [--gdn_gate=sigmoid|silu]
+//                  [--weights=fp32|int8|int4|int4_fp32]
+//                  [--hc_spelling=mean|sum]
 //   qwen4_artifact --model=FILE --accelerator=cpu|npu [--runtime_libs=DIR]
 //                  --out_dir=DIR
 //   qwen4_artifact --compare --cpu_dir=DIR --npu_dir=DIR [--tolerance=T]
 //                  [--strict_selection=false]
 // qwen4_artifact_check.sh runs all of it for both output gates and both
-// activation types.
+// activation types, and with INT4 weights and the other spelling of the mix.
 // Signatures prefill_16 and decode share the states (kv_cache_*), bound in
 // place on the NPU as LiteRT-LM binds them.
 
@@ -101,8 +103,16 @@ ABSL_FLAG(std::string, runtime_libs, "",
 ABSL_FLAG(std::string, out_dir, "", "Where a run writes its outputs.");
 ABSL_FLAG(int, decode_steps, 12, "Decode steps after the prompt.");
 ABSL_FLAG(std::string, weights, "fp32",
-          "The FULLY_CONNECTED weights of --write_model: fp32, or int8 (per "
-          "output channel, as an export's weight-only quantization).");
+          "The FULLY_CONNECTED weights of --write_model: fp32; int8 (per "
+          "output channel); int4 (blocks of 32 inputs with FP16 scales, as "
+          "the Qwen 3.8 export's: the projections whose inputs are whole "
+          "blocks); or int4_fp32 (the values of the int4 weights in FP32: the "
+          "model whose CPU run is the reference of an int4 model's).");
+ABSL_FLAG(std::string, hc_spelling, "mean",
+          "How --write_model spells a hyper-connection mix: mean (MEAN over "
+          "the streams of the flat product), or sum (the product of the "
+          "reshaped operands, SUM times 1 / hc, the scale as a division and "
+          "silu with its operands swapped).");
 ABSL_FLAG(
     bool, ple, true,
     "Whether the PLE layers have their per-layer embeddings (false: "
@@ -489,7 +499,8 @@ class Model {
         n_(rows),
         prefill_(prefill),
         sigmoid_gate_(sigmoid_gate),
-        int8_weights_(absl::GetFlag(FLAGS_weights) == "int8") {}
+        weights_(absl::GetFlag(FLAGS_weights)),
+        hc_sum_(absl::GetFlag(FLAGS_hc_spelling) == "sum") {}
 
   int32_t Const(const std::string& name, const Shape& shape,
                 const std::vector<float>& values) {
@@ -512,10 +523,23 @@ class Model {
   int32_t Fc(int32_t x, const std::vector<float>& weights, int out_dim,
              int in_dim, const Shape& shape,
              const std::vector<float>* bias = nullptr) {
-    const int32_t weight =
-        int8_weights_ ? b_.ConstInt8PerRow(absl::StrCat("fc_w_", counter_++),
-                                           out_dim, in_dim, weights)
-                      : Const("fc", {out_dim, in_dim}, weights);
+    // INT4 blocks need whole blocks of inputs; the other projections of an
+    // int4 model keep FP32 weights.
+    const bool blocks = (weights_ == "int4" || weights_ == "int4_fp32") &&
+                        in_dim % kInt4Block == 0;
+    int32_t weight = -1;
+    if (weights_ == "int8") {
+      weight = b_.ConstInt8PerRow(absl::StrCat("fc_w_", counter_++), out_dim,
+                                  in_dim, weights);
+    } else if (blocks && weights_ == "int4") {
+      weight = b_.ConstInt4Blockwise(absl::StrCat("fc_w_", counter_++), out_dim,
+                                     in_dim, weights);
+    } else if (blocks) {
+      weight = Const("fc", {out_dim, in_dim},
+                     QuantizeInt4Blocks(out_dim, in_dim, weights).values);
+    } else {
+      weight = Const("fc", {out_dim, in_dim}, weights);
+    }
     const int32_t out = b_.F32(absl::StrCat("fc_", counter_++), shape);
     auto& op =
         b_.Op(tflite::BuiltinOperator_FULLY_CONNECTED,
@@ -550,15 +574,29 @@ class Model {
   // The hyper-connection mix: the layer input [1, n, H] and the normed
   // streams [1, n, hc*H].
   std::pair<int32_t, int32_t> Mix(int32_t streams, const HcWeights& w) {
-    const int32_t normed =
-        b_.Reshape(GroupedNorm(streams, w.norm), {1, n_, kStreams});
+    const int32_t normed4 = GroupedNorm(streams, w.norm);
+    const int32_t normed = b_.Reshape(normed4, {1, n_, kStreams});
     const Shape low = {1, n_, kLowRank};
+    const Shape s4 = {1, n_, kHc, kWidth};
+    if (hc_sum_) {
+      // The same mix in other spellings (--hc_spelling=sum).
+      const int32_t z = b_.Binary(tflite::BuiltinOperator_DIV,
+                                  Fc(normed, w.down, kLowRank, kStreams),
+                                  Const("hc", {1}, {static_cast<float>(kHc)}),
+                                  tflite::TensorType_FLOAT32, low);
+      const int32_t t = b_.MulF(Sigmoid(z, low), z, low);
+      const int32_t u =
+          Sigmoid(Fc(t, w.up, kStreams, kLowRank), {1, n_, kStreams});
+      const int32_t gated = b_.MulF(normed4, b_.Reshape(u, s4), s4);
+      const int32_t sum = b_.Reduce(tflite::BuiltinOperator_SUM, gated, {-2},
+                                    false, {1, n_, kWidth});
+      return {Scale(sum, 1.0f / kHc, {1, n_, kWidth}), normed};
+    }
     const int32_t t = Silu(
         Scale(Fc(normed, w.down, kLowRank, kStreams), 1.0f / kHc, low), low);
     const int32_t u =
         Sigmoid(Fc(t, w.up, kStreams, kLowRank), {1, n_, kStreams});
-    const int32_t gated =
-        b_.Reshape(b_.MulF(u, normed, {1, n_, kStreams}), {1, n_, kHc, kWidth});
+    const int32_t gated = b_.Reshape(b_.MulF(u, normed, {1, n_, kStreams}), s4);
     const int32_t mixed = b_.Reduce(tflite::BuiltinOperator_MEAN, gated, {2},
                                     false, {1, n_, kWidth});
     return {mixed, normed};
@@ -963,7 +1001,8 @@ class Model {
   const int n_;
   const bool prefill_;
   const bool sigmoid_gate_;
-  const bool int8_weights_;
+  const std::string weights_;
+  const bool hc_sum_;
   int32_t row_mask_bool_ = -1;
   int counter_ = 0;
 };
