@@ -1450,6 +1450,13 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   // The device contents change without an invocation: no fused argmax of them
   // can be fresh.
   FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
+  // A runtime clears its states when a conversation starts over, while a
+  // step the previous one ran ahead may still be writing them on its own
+  // (non-blocking) stream: the zeros go in after every such write, or a
+  // state rewritten in place (a gated-DeltaNet layer's) starts the next
+  // conversation dirty.
+  LITERT_RETURN_IF_ERROR(CudaStatus(cudaDeviceSynchronize(),
+                                    "cudaDeviceSynchronize before a clear"));
   LITERT_RETURN_IF_ERROR(
       CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
                  "cudaMemset CUDA tensor buffer"));
@@ -3383,7 +3390,7 @@ class LiteRtDispatchInvocationContextT {
     }
     LITERT_RETURN_IF_ERROR(EnqueueStep());
     if (invocation_count_ == 1 && whole_graph_capture_ &&
-        bytecode_.step_feed.has_value() &&
+        bytecode_.step_feed.has_value() && !UpdatesStateInPlace() &&
         execution_context_->isStreamCapturable(stream_)) {
       // TensorRT-RTX captures an engine's CUDA graph at its second
       // execution. A decode engine (the bytecode's step-feed record marks
@@ -3394,6 +3401,8 @@ class LiteRtDispatchInvocationContextT {
       // costs about 0.3 s at 30K (12B). The same inputs give the same
       // outputs and cache rows, so the first step runs twice, where
       // TensorRT-RTX can capture it, with the aux streams the enqueue takes.
+      // Not when the step rewrites a state in place (UpdatesStateInPlace):
+      // a second run would advance it twice.
       if (!aux_streams_.empty()) {
         execution_context_->setAuxStreams(
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
@@ -3924,6 +3933,39 @@ class LiteRtDispatchInvocationContextT {
                  bytecode_.function_name.c_str(), aliased);
     }
     return {};
+  }
+
+  // Whether the step rewrites a state it reads in place, other than a KV
+  // cache: an FP32 output that the runtime bound to the memory of one of the
+  // step's inputs, where the engine does not alias the two (Qwen 3.8's
+  // gated-DeltaNet conv and recurrent states; the engine's own in-place
+  // outputs are its caches). A cache step writes the same row whatever ran
+  // before it, so running it again changes nothing; such a state moves on
+  // at every run. Decided at the first invocation, from its bindings.
+  bool UpdatesStateInPlace() {
+    if (states_in_place_known_) return states_in_place_ > 0;
+    states_in_place_known_ = true;
+    for (size_t i = 0; i < bound_output_ptrs_.size(); ++i) {
+      if (bound_output_ptrs_[i] == nullptr ||
+          bytecode_.output_names[i].empty() ||
+          (i < aliased_input_of_output_.size() &&
+           aliased_input_of_output_[i] >= 0) ||
+          engine_->getTensorDataType(bytecode_.output_names[i].c_str()) !=
+              nvinfer1::DataType::kFLOAT) {
+        continue;
+      }
+      if (std::find(bound_input_ptrs_.begin(), bound_input_ptrs_.end(),
+                    bound_output_ptrs_[i]) != bound_input_ptrs_.end()) {
+        ++states_in_place_;
+      }
+    }
+    if (states_in_place_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s rewrites %zu states in place: each step "
+                 "runs once",
+                 bytecode_.function_name.c_str(), states_in_place_);
+    }
+    return states_in_place_ > 0;
   }
 
   // The step feed (bytecode.h, TensorRtStepFeed): the decode steps run on
@@ -5139,6 +5181,19 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> SpeculateNextStep() {
     if (!feed_.enabled || feed_.stopped || !feed_.argmax_ready) return {};
+    if (UpdatesStateInPlace()) {
+      // A step ahead advances such a state, and a dropped one (a miss, the
+      // end of the response) cannot be undone as the ring rows are: the
+      // whole state changes every step. Saving it before each step ahead
+      // would cost more than the steps ahead save (Qwen 3.8 27B: 150 MB per
+      // step against 1% of the decode time), so the feed stays off.
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: no steps ahead: the step rewrites %zu "
+                 "states in place",
+                 bytecode_.function_name.c_str(), states_in_place_);
+      feed_.stopped = true;
+      return {};
+    }
     {
       // The session's sampler says how it samples at its first sample, after
       // the first step: until then, or past the second step, the argmax.
@@ -7442,6 +7497,9 @@ class LiteRtDispatchInvocationContextT {
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
+  // UpdatesStateInPlace: decided, and the states it found.
+  bool states_in_place_known_ = false;
+  size_t states_in_place_ = 0;
   uint64_t consecutive_invocations_ = 0;
   // The decode budget this invocation took (StepFeedBudget).
   uint32_t step_budget_ = UINT32_MAX;
