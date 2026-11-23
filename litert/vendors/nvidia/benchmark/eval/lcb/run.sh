@@ -23,6 +23,8 @@
 #   come together run as one launch of a batched decode engine (LITERT_NVIDIA_DISPATCH_SLOTS=4:
 #   engines of 2 to 4 slots compiled beside the decode engine, one compile for any N), each
 #   response the same as alone.
+#   EVAL_ORDER_FROM="DIR..." (one process) runs the problems longest answer first, by their decode
+#   tokens in those earlier runs (unknown ones first): the set does not end on one long answer.
 #   EVAL_SIGNATURES=a,b compiles and runs only those signatures (the 12B and 26B plain runs default
 #   to prefill_1024,decode): a one-process Qwen 3.8 run with prefill_1024,decode does not page.
 # Output: $EVAL_RUNS/LABEL/<question_id>.{out,log,json} (LABEL defaults to MODEL_MODE); .out is
@@ -187,12 +189,26 @@ if ((${#pending[@]})); then
   echo "$(date -Is) $label: ${#pending[@]} problems in one process"
   python3 - "$runs/jobs.json" "$model" "$NB_RUNTIME_LIBS" "$pool/compiler" "$context" "$max_tokens" \
       "$spec" "$here/prompts" "$runs" "${selected[*]}" "${sampler_args[*]}" "$engines" "${pending[@]}" <<'PY'
-import json, sys
+import json, os, sys
 path, model, libs, cache, context, budget, spec, prompts, runs, selected, sampler, engines, *qids = sys.argv[1:]
 flags = dict(a[2:].split('=', 1) for a in sampler.split())
 sampler = {'top_k': int(flags['sampler_top_k']), 'top_p': float(flags['sampler_top_p']),
            'temperature': float(flags['sampler_temperature']), 'seed': int(flags['sampler_seed'])} if flags else None
 signatures = selected.split('=', 1)[1].split(',') if selected else None
+# EVAL_ORDER_FROM: earlier runs' directories; the problems go longest answer first (by their decode
+# tokens there, the most of any; a problem none of them ran goes first), so that the engines, each
+# taking the next problem when done, do not end the set on one long answer.
+known = {}
+for directory in os.environ.get('EVAL_ORDER_FROM', '').split():
+    for q in qids:
+        try:
+            tokens = json.load(open(os.path.join(directory, f'{q}.json'))).get('decode_tokens')
+        except (OSError, ValueError):
+            continue
+        if isinstance(tokens, int):
+            known[q] = max(known.get(q, 0), tokens)
+if os.environ.get('EVAL_ORDER_FROM'):
+    qids = sorted(qids, key=lambda q: -known.get(q, float('inf')))
 jobs = [{'name': q, 'prompt_file': f'{prompts}/{q}.txt', 'max_output_tokens': int(budget), 'sampler': sampler,
          'stdout': f'{runs}/{q}.out', 'stderr': f'{runs}/{q}.log', 'time': f'{runs}/{q}.time'} for q in qids]
 json.dump({'engine': {'model': model, 'dispatch_lib_dir': libs, 'cache_dir': cache, 'max_num_tokens': int(context),

@@ -5902,11 +5902,6 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> SpeculateNextStep() {
     if (!feed_.enabled || feed_.stopped || !feed_.argmax_ready) return {};
-    if (slot_group_ && !slot_group_->Alone(this)) {
-      // A step that may be batched with other contexts' runs when they do:
-      // none ahead of the host while another context steps.
-      return {};
-    }
     if (UpdatesStateInPlace()) {
       // A step ahead advances such a state, and a dropped one (a miss, the
       // end of the response) cannot be undone as the ring rows are: the
@@ -6132,7 +6127,10 @@ class LiteRtDispatchInvocationContextT {
         execution_context_->setAuxStreams(
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
       }
-      LITERT_RETURN_IF_ERROR(EnqueueStep());
+      // A step ahead of a context of a slot group is a slot of a batched
+      // step too: the contexts' steps ahead meet as their steps do.
+      LITERT_ASSIGN_OR_RETURN(const bool batched, StepWithSlots());
+      if (!batched) LITERT_RETURN_IF_ERROR(EnqueueStep());
       LITERT_RETURN_IF_ERROR(EnqueueFeedToken(feed_.in_flight + 1, &slot));
       slot.prefetched.clear();
       LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(&slot));
