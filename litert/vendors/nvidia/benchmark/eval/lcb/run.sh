@@ -19,6 +19,12 @@
 #   with EVAL_ENV adding LITERT_NVIDIA_DISPATCH_STEP_FEED=0 LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=0:
 #   with either on, a CUDA graph capture or a step ahead updates that state twice, and an answer
 #   depends on what ran before it (the CLI's on its own capture step).
+#   EVAL_BATCH=1 (with EVAL_ENGINES=N, 2 to 4) batches the engines' decode steps: the steps that
+#   come together run as one launch of a batched decode engine (LITERT_NVIDIA_DISPATCH_SLOTS=4:
+#   engines of 2 to 4 slots compiled beside the decode engine, one compile for any N), each
+#   response the same as alone.
+#   EVAL_SIGNATURES=a,b compiles and runs only those signatures (the 12B and 26B plain runs default
+#   to prefill_1024,decode): a one-process Qwen 3.8 run with prefill_1024,decode does not page.
 # Output: $EVAL_RUNS/LABEL/<question_id>.{out,log,json} (LABEL defaults to MODEL_MODE); .out is
 # the model's response (the CLI's stdout), .log the CLI's log with the BenchmarkInfo block (the
 # prompt is real text and stop tokens end the turn: --benchmark with both token counts 0),
@@ -49,6 +55,9 @@ one_process=${EVAL_ONE_PROCESS:-0}
 engines=${EVAL_ENGINES:-1}
 [[ $engines =~ ^[1-9][0-9]*$ ]] || nb_die "EVAL_ENGINES must be a positive integer"
 [[ $engines == 1 || $one_process == 1 ]] || nb_die "EVAL_ENGINES needs EVAL_ONE_PROCESS=1"
+batch=${EVAL_BATCH:-0}
+[[ $batch == 0 || $batch == 1 ]] || nb_die "EVAL_BATCH must be 0 or 1"
+[[ $batch == 0 || ( $engines -ge 2 && $engines -le 4 ) ]] || nb_die "EVAL_BATCH=1 needs EVAL_ENGINES from 2 to 4"
 if [[ $one_process == 1 ]]; then
   # LiteRT-LM's C API sets no advanced executor settings: the expansion is the CLI's alone.
   [[ $expansion == 0 ]] || nb_die "EVAL_ONE_PROCESS=1 cannot expand the context (LiteRT-LM's C API has no setting for it)"
@@ -60,11 +69,15 @@ profile=$model_arg; [[ $profile =~ ^(e2b|e4b|12b|26b)$ ]] || profile=$(basename 
 # EVAL_ENV="NAME=VALUE ..." overrides the pool's standard TensorRT-RTX environment.
 pool=${EVAL_POOL:-$NB_ROOT/cache/models/$profile/$(nb_build_id)${EVAL_POOL_SUFFIX:+-$EVAL_POOL_SUFFIX}}
 nb_runtime_env "$pool" "$model"
+[[ $batch == 0 ]] || export LITERT_NVIDIA_DISPATCH_SLOTS=4
 for kv in ${EVAL_ENV:-}; do export "$kv"; done
 runs=${EVAL_RUNS:-$NB_ROOT/eval/lcb/runs}/$label; mkdir -p "$runs"
 engine=$NB_RUNTIME_LIBS/litert_lm_advanced_main
 selected=()  # plain runs of the larger models compile only the signatures they run
-if [[ $mode == plain && ( $profile == 12b || $profile == 26b ) ]]; then
+if [[ -n ${EVAL_SIGNATURES:-} ]]; then
+  [[ $EVAL_SIGNATURES =~ ^[A-Za-z0-9_]+(,[A-Za-z0-9_]+)*$ ]] || nb_die "EVAL_SIGNATURES is a comma-separated list of signatures"
+  selected=("--selected_signatures=$EVAL_SIGNATURES")
+elif [[ $mode == plain && ( $profile == 12b || $profile == 26b ) ]]; then
   selected=(--selected_signatures=prefill_1024,decode)
 fi
 spec=false; [[ $mode == plain ]] || spec=true

@@ -1299,20 +1299,25 @@ class InvocationStreams {
     entries_.erase(context);
   }
 
-  // Waits for the work of the calling thread's contexts; the whole device
-  // when this thread invoked none. Unlike a device synchronization, waiting
-  // for these streams leaves another thread's graph capture alone.
+  // Waits for the work of the calling thread's contexts when several threads
+  // invoke contexts (several engines in a process): unlike a device
+  // synchronization, waiting for these streams leaves another thread's graph
+  // capture alone. The whole device when one thread invokes them all, or
+  // when this thread invoked none.
   cudaError_t SynchronizeCallingThread() {
     std::vector<cudaStream_t> streams;
+    bool other_threads = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       for (const auto& [context, entry] : entries_) {
         if (entry.first == std::this_thread::get_id()) {
           streams.push_back(entry.second);
+        } else {
+          other_threads = true;
         }
       }
     }
-    if (streams.empty()) return cudaDeviceSynchronize();
+    if (streams.empty() || !other_threads) return cudaDeviceSynchronize();
     for (cudaStream_t stream : streams) {
       if (cudaError_t status = cudaStreamSynchronize(stream);
           status != cudaSuccess) {
