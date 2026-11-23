@@ -98,6 +98,8 @@ struct TensorRtBuildResult {
 
 // Shared-weight mode builds stripped, refittable plans. The compiler plugin
 // then stores each unique named weight once in a multi-engine bytecode bundle.
+// On by default when the AOT cache directory and the model path give the
+// compilation a weight store; LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS sets it.
 bool TensorRtSharedWeightsEnabled();
 
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);

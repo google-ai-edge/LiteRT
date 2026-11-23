@@ -126,6 +126,32 @@ float Fp16ToFloat(uint16_t half) {
   return value;
 }
 
+TEST(TensorRtGraphBuilderTest, SharedWeightsFollowTheWeightStoreByDefault) {
+  // The target sets LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS=0; the default is
+  // checked unset and the setting restored at the end.
+  unsetenv("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS");
+  unsetenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR");
+  unsetenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH");
+  unsetenv("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE");
+  unsetenv("G4MODEL");
+  EXPECT_FALSE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  setenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR", "/aot", 1);
+  EXPECT_FALSE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  setenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH", "/model.litertlm", 1);
+  EXPECT_TRUE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  setenv("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE", "0", 1);
+  EXPECT_FALSE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  unsetenv("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE");
+  setenv("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS", "0", 1);
+  EXPECT_FALSE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  unsetenv("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR");
+  unsetenv("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH");
+  // Without a store, shared weights mean weight-stripped plans: only asked.
+  setenv("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS", "1", 1);
+  EXPECT_TRUE(litert::nvidia::TensorRtSharedWeightsEnabled());
+  setenv("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS", "0", 1);
+}
+
 TEST(TensorRtGraphBuilderTest, Int4FullyConnectedBlockScales) {
   // K=128 selects the block-scaled encoding (block 64); K=80 has no block
   // candidate and keeps the per-channel dequantize. Both must reproduce the

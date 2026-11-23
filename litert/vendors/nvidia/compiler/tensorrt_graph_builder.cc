@@ -14794,8 +14794,21 @@ class TensorRtGraphBuilder {
 }  // namespace
 
 bool TensorRtSharedWeightsEnabled() {
-  return EnvEnabled("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS",
-                    /*default_value=*/false);
+  // On by default when a weight store can hold the plans' packed weights: an
+  // AOT cache directory, the model file the store maps (compiler_plugin.cc,
+  // CreateWeightStore) and the store not turned off. Without the store, shared
+  // weights build weight-stripped plans that run only on the current GPU and
+  // are refitted at load, which LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS=1 still
+  // asks for.
+  const auto set = [](const char* name) {
+    const char* value = std::getenv(name);
+    return value != nullptr && value[0] != '\0';
+  };
+  const bool weight_store =
+      set("LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR") &&
+      (set("LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH") || set("G4MODEL")) &&
+      EnvEnabled("LITERT_NVIDIA_TENSORRT_WEIGHT_STORE", /*default_value=*/true);
+  return EnvEnabled("LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS", weight_store);
 }
 
 bool IsTensorRtOpSupported(const Op& op) {
