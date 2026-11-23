@@ -1890,7 +1890,7 @@ std::optional<GeneralFusedSdpa> ParseGeneralFusedSdpa(const Op& op) {
 // model_dim / 32], down weights [model_dim, experts, 1, hidden] with scales
 // [model_dim, experts, 1, hidden / 32], per_expert_scale [1, 1, 1, experts];
 // a flexbuffer map of num_experts, num_active_experts, model_dim, hidden_dim,
-// activation (gelu | gelu_tanh), weight_type (int4) and
+// activation (gelu | gelu_tanh | silu | swish), weight_type (int4) and
 // renormalized_top_weights.
 struct MoeCustomOp {
   int32_t experts = 0;
@@ -1931,6 +1931,9 @@ std::optional<MoeCustomOp> ParseMoeCustomOp(const Op& op) {
     moe.gate = 1;
   } else if (activation == "gelu") {
     moe.gate = 2;
+  } else if (activation == "silu" || activation == "swish") {
+    // Qwen's experts (the GPU delegate takes both names since b32ee661b).
+    moe.gate = 3;
   } else {
     return std::nullopt;
   }

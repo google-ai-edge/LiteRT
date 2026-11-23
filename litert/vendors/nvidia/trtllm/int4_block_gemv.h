@@ -152,7 +152,7 @@ struct LiteRtNvidiaMoeShape {
   int32_t experts;
   int32_t model_dim;   // a multiple of 32
   int32_t hidden_dim;  // a multiple of 32
-  int32_t gate;        // 1: tanh GELU, 2: erf GELU
+  int32_t gate;        // 1: tanh GELU, 2: erf GELU, 3: SiLU
 };
 
 // Whether the launch takes the shape: rows >= 1, top_k in [1, 32], experts

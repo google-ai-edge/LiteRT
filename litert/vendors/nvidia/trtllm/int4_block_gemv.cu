@@ -1749,7 +1749,7 @@ extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape) {
       shape->experts > kMaxExperts || shape->model_dim < kBlock ||
       shape->model_dim % kBlock != 0 || shape->hidden_dim < kBlock ||
       shape->hidden_dim % kBlock != 0 ||
-      (shape->gate != 1 && shape->gate != 2) ||
+      (shape->gate != 1 && shape->gate != 2 && shape->gate != 3) ||
       static_cast<int64_t>(shape->rows) * shape->top_k >
           std::numeric_limits<int32_t>::max() / 4) {
     return false;

@@ -128,6 +128,7 @@ std::vector<uint16_t> MakeScales(int n, int k, int seed) {
 }
 
 float Gelu(float x, int gate) {
+  if (gate == 3) return x / (1.0f + std::exp(-x));
   if (gate == 1) {
     return 0.5f * x *
            (1.0f +
@@ -783,6 +784,9 @@ TEST(Int4BlockGemvTest, MoeDecodeMatchesCpuReference) {
   RunMoeCase({1, 8, 16, 256, 64, 1});
   RunMoeCase({3, 4, 12, 2816, 704, 1});
   RunMoeCase({8, 2, 5, 128, 96, 2});
+  // SiLU experts (Qwen's).
+  RunMoeCase({1, 8, 16, 256, 64, 3});
+  RunMoeCase({4, 8, 64, 512, 128, 3});
 }
 
 TEST(Int4BlockGemvTest, MoePrefillMatchesCpuReference) {
@@ -792,6 +796,7 @@ TEST(Int4BlockGemvTest, MoePrefillMatchesCpuReference) {
   RunMoeCase({256, 8, 16, 704, 128, 2});
   RunMoeCase({130, 8, 128, 2816, 704, 1});
   RunMoeCase({1024, 8, 128, 2816, 704, 1});
+  RunMoeCase({256, 8, 64, 512, 128, 3});
 }
 
 // The fused block (router norm, router GEMV, softmax, top-k, renormalized
@@ -1004,6 +1009,8 @@ TEST(Int4BlockGemvTest, MoeRejectsInvalidShapes) {
   EXPECT_TRUE(supports({4, 8, 16, 256, 96, 1}));
   EXPECT_FALSE(supports({64, 8, 16, 256, 96, 1}));
   EXPECT_FALSE(supports({1, 8, 128, 2816, 704, 0}));
+  EXPECT_TRUE(supports({1, 8, 128, 2816, 704, 3}));
+  EXPECT_FALSE(supports({1, 8, 128, 2816, 704, 4}));
   EXPECT_FALSE(supports({1, 8, 2048, 2816, 704, 1}));
   EXPECT_FALSE(LiteRtNvidiaMoeSupports(nullptr));
   EXPECT_EQ(LiteRtNvidiaMoeWorkspaceBytes(nullptr), 0u);
