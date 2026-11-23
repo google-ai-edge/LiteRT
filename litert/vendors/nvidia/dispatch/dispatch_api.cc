@@ -1311,26 +1311,33 @@ class InvocationStreams {
     entries_.erase(context);
   }
 
-  // Waits for the work of the calling thread's contexts when several threads
-  // invoke contexts (several engines in a process): unlike a device
-  // synchronization, waiting for these streams leaves another thread's graph
-  // capture alone. The whole device when one thread invokes them all, or
-  // when this thread invoked none.
-  cudaError_t SynchronizeCallingThread() {
-    std::vector<cudaStream_t> streams;
+  // Waits for the steps the contexts may still run: those of the calling
+  // thread's contexts when other threads invoke contexts too (several
+  // engines in a process: each engine's steps run on its own thread), else
+  // those of every context. Never a device synchronization: while another
+  // thread captures a CUDA graph, one fails and spoils that capture. A
+  // stream being captured runs nothing, and is left alone.
+  cudaError_t SynchronizeInvocations() {
+    std::vector<cudaStream_t> mine, all;
     bool other_threads = false;
     {
       std::lock_guard<std::mutex> lock(mutex_);
       for (const auto& [context, entry] : entries_) {
+        all.push_back(entry.second);
         if (entry.first == std::this_thread::get_id()) {
-          streams.push_back(entry.second);
+          mine.push_back(entry.second);
         } else {
           other_threads = true;
         }
       }
     }
-    if (streams.empty() || !other_threads) return cudaDeviceSynchronize();
-    for (cudaStream_t stream : streams) {
+    for (cudaStream_t stream : !mine.empty() && other_threads ? mine : all) {
+      cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+      if (cudaError_t status = cudaStreamIsCapturing(stream, &capture);
+          status != cudaSuccess) {
+        return status;
+      }
+      if (capture != cudaStreamCaptureStatusNone) continue;
       if (cudaError_t status = cudaStreamSynchronize(stream);
           status != cudaSuccess) {
         return status;
@@ -1350,8 +1357,8 @@ class InvocationStreams {
 // were.
 class RelaxedCaptureScope {
  public:
-  RelaxedCaptureScope()
-      : active_(InvocationStreams::Get().SeveralThreads() ||
+  explicit RelaxedCaptureScope(bool always = false)
+      : active_(always || InvocationStreams::Get().SeveralThreads() ||
                 DispatchSlotsSet()) {
     if (active_) cudaThreadExchangeStreamCaptureMode(&mode_);
   }
@@ -1550,7 +1557,9 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 }
 
 LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
-  RelaxedCaptureScope relaxed_capture;
+  // Always relaxed: a clear can come while another engine captures, before
+  // that engine is known to run on a thread of its own.
+  RelaxedCaptureScope relaxed_capture(/*always=*/true);
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1569,7 +1578,7 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   // state rewritten in place (a gated-DeltaNet layer's) starts the next
   // conversation dirty. The runtime's steps ran on this thread's contexts.
   LITERT_RETURN_IF_ERROR(
-      CudaStatus(InvocationStreams::Get().SynchronizeCallingThread(),
+      CudaStatus(InvocationStreams::Get().SynchronizeInvocations(),
                  "synchronizing the invocations before a clear"));
   LITERT_RETURN_IF_ERROR(
       CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
@@ -3084,8 +3093,11 @@ class SlotEngine {
     }
     engine->runtime_config_.reset(engine->engine_->createRuntimeConfig());
     if (engine->runtime_config_) {
+      // Layer profiling times each layer: no graph then.
       engine->runtime_config_->setCudaGraphStrategy(
-          nvinfer1::CudaGraphStrategy::kWHOLE_GRAPH_CAPTURE);
+          litert::nvidia::DispatchLayerProfilingEnabled()
+              ? nvinfer1::CudaGraphStrategy::kDISABLED
+              : nvinfer1::CudaGraphStrategy::kWHOLE_GRAPH_CAPTURE);
       const std::string dir = RuntimeCacheDir();
       if (!dir.empty()) {
         engine->cache_path_ =
@@ -3115,6 +3127,11 @@ class SlotEngine {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Failed to create the batched engine's context");
     }
+    if (litert::nvidia::DispatchLayerProfilingEnabled()) {
+      engine->layer_profiler_ =
+          std::make_unique<litert::nvidia::TensorRtLayerProfiler>();
+      engine->context_->setProfiler(engine->layer_profiler_.get());
+    }
     for (int32_t i = 0; i < engine->engine_->getNbAuxStreams(); ++i) {
       cudaStream_t aux = nullptr;
       LITERT_RETURN_IF_ERROR(
@@ -3134,6 +3151,19 @@ class SlotEngine {
 
   ~SlotEngine() {
     if (stream_ != nullptr) cudaStreamSynchronize(stream_);
+    if (profile_device_steps_ > 0 && profile_periods_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch slots profile: %d slots, %llu steps, device "
+                 "%.3f ms per step, host period %.3f ms per step",
+                 slots_, static_cast<unsigned long long>(profile_device_steps_),
+                 profile_device_ms_ / profile_device_steps_,
+                 profile_period_ms_ / profile_periods_);
+    }
+    if (layer_profiler_) {
+      layer_profiler_->Dump("slots" + std::to_string(slots_));
+    }
+    if (profile_begin_ != nullptr) cudaEventDestroy(profile_begin_);
+    if (profile_end_ != nullptr) cudaEventDestroy(profile_end_);
     if (cache_ && !cache_path_.empty()) {
       TrtPtr<nvinfer1::IHostMemory> serialized(cache_->serialize());
       if (serialized && serialized->size() > 0) {
@@ -3201,14 +3231,48 @@ class SlotEngine {
                               static_cast<int32_t>(aux_streams_.size()));
       aux_streams_set_ = true;
     }
+    if (Profiled()) ProfileBegin();
     if (!context_->enqueueV3(stream_)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    "Batched decode engine: enqueueV3 failed");
     }
     LITERT_RETURN_IF_ERROR(
         CudaOk(cudaEventRecord(done_, stream_), "cudaEventRecord slots"));
+    if (Profiled()) cudaEventRecord(profile_end_, stream_);
     ++launches_;
     return done_;
+  }
+
+  // LITERT_NVIDIA_DISPATCH_SLOTS_PROFILE: the batched steps' device time and
+  // the host's time from one batched step to the next, logged at the end.
+  static bool Profiled() {
+    static const bool on =
+        std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_PROFILE") != nullptr;
+    return on;
+  }
+
+  void ProfileBegin() {
+    const auto now = std::chrono::steady_clock::now();
+    if (profile_begin_ == nullptr) {
+      cudaEventCreate(&profile_begin_);
+      cudaEventCreate(&profile_end_);
+    } else if (profile_pending_) {
+      // The previous step's device time (it ended before this one starts).
+      float ms = 0.0f;
+      if (cudaEventSynchronize(profile_end_) == cudaSuccess &&
+          cudaEventElapsedTime(&ms, profile_begin_, profile_end_) ==
+              cudaSuccess) {
+        profile_device_ms_ += ms;
+        ++profile_device_steps_;
+      }
+      profile_period_ms_ +=
+          std::chrono::duration<double, std::milli>(now - profile_last_)
+              .count();
+      ++profile_periods_;
+    }
+    profile_last_ = now;
+    cudaEventRecord(profile_begin_, stream_);
+    profile_pending_ = true;
   }
 
   int slots() const { return slots_; }
@@ -3223,6 +3287,15 @@ class SlotEngine {
   std::vector<std::string> names_;
   std::vector<void*> bound_;
   bool aux_streams_set_ = false;
+  std::unique_ptr<litert::nvidia::TensorRtLayerProfiler> layer_profiler_;
+  cudaEvent_t profile_begin_ = nullptr;
+  cudaEvent_t profile_end_ = nullptr;
+  bool profile_pending_ = false;
+  std::chrono::steady_clock::time_point profile_last_;
+  double profile_device_ms_ = 0.0;
+  double profile_period_ms_ = 0.0;
+  uint64_t profile_device_steps_ = 0;
+  uint64_t profile_periods_ = 0;
   std::vector<uint8_t> file_;
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::TensorRtLogger logger_;
