@@ -203,8 +203,7 @@ __global__ void __launch_bounds__(kDim)
         __bfloat162float(
             proj[static_cast<size_t>(t) * p.proj_stride + p.z_offset + head * kDim + d]) +
         w.z_bias[head * kDim + d];
-    const float gate = p.sigmoid_gate != 0 ? 1.0f / (1.0f + expf(-z)) : Silu(z);
-    value = x * rsqrtf(squares / kDim + p.out_eps) * w.norm_weight[d] * gate;
+    value = x * rsqrtf(squares / kDim + p.out_eps) * w.norm_weight[d] * Silu(z);
   }
   out[(static_cast<size_t>(t) * p.value_heads + head) * kDim + d] =
       __float2bfloat16_rn(value);

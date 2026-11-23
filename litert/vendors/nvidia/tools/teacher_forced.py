@@ -30,12 +30,11 @@ writes instead (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=DIR:STEPS:MB).
       OUT_PREFIX.steps.json (each decode step's position and, given the
       model's SentencePiece tokenizer and the target text, the token the step
       scores: step i scores the target's token i).
-  teacher_forced.py collect-dispatch [--tokenizer SPM --target FILE]
-                                     [--vocab N] DUMP_DIR OUT_PREFIX
+  teacher_forced.py collect-dispatch [--tokenizer SPM --target FILE] DUMP_DIR
+  OUT_PREFIX
       The same from the NVIDIA dispatch's output dumps (DUMP_DIR/index.jsonl):
-      every output as wide as the vocabulary (--vocab, default Gemma's
-      262144; Qwen 3.8's is 248320), in the order the steps produced them.
-      They carry no positions: `compare` takes the reference's.
+      every output as wide as the vocabulary, in the order the steps produced
+      them. They carry no positions: `compare` takes the reference's.
   teacher_forced.py replay-manifest --model FILE.tflite [--signature decode]
                             --function F [--steps N,...] DUMP_DIR LOG OUT_DIR
       A CPU reference where LiteRT-LM's CPU run does not finish (a long
@@ -583,7 +582,6 @@ def main(argv):
   d = sub.add_parser("collect-dispatch")
   d.add_argument("--tokenizer")
   d.add_argument("--target")
-  d.add_argument("--vocab", type=int, default=262144)
   d.add_argument("dump_dir")
   d.add_argument("out_prefix")
   r = sub.add_parser("replay-manifest")
@@ -615,7 +613,7 @@ def main(argv):
     scored = None
     if args.tokenizer and args.target:
       scored = target_tokens(args.tokenizer, args.target)
-    collect_dispatch(args.dump_dir, args.out_prefix, scored, args.vocab)
+    collect_dispatch(args.dump_dir, args.out_prefix, scored)
     return 0
   if args.command == "replay-manifest":
     replay_manifest(

@@ -294,12 +294,6 @@ TEST(ShortConvTest, MatchesReference) {
   // Fewer valid rows than the history keeps part of the old state.
   RunShortConv({300, 33, 4, 1}, 2, /*in_place=*/true);
   RunShortConv({300, 33, 4, 1}, 0, /*in_place=*/false);
-  // Qwen 4's PLE convolution: 4 taps at dilation 3 as 10 (the hc streams of
-  // 2560), and the most taps.
-  RunShortConv({10240, 1, 10, 1}, std::nullopt, /*in_place=*/true);
-  RunShortConv({10240, 128, 10, 1}, 100, /*in_place=*/true);
-  RunShortConv({300, 33, 10, 1}, 5, /*in_place=*/false);
-  RunShortConv({300, 33, 16, 0}, 33, /*in_place=*/true);
 }
 
 }  // namespace

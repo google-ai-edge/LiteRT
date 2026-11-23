@@ -179,17 +179,6 @@ bool StreamCapturing(cudaStream_t stream) {
          status != cudaStreamCaptureStatusNone;
 }
 
-// The paths for Qwen 4's narrow projections (long rows into few outputs,
-// short rows into many); LITERT_NVIDIA_GEMV_NARROW_PATHS=0 turns them off,
-// to time them against the general ones.
-bool NarrowPathsEnabled() {
-  static const bool enabled = [] {
-    const char* value = std::getenv("LITERT_NVIDIA_GEMV_NARROW_PATHS");
-    return value == nullptr || std::strcmp(value, "0") != 0;
-  }();
-  return enabled;
-}
-
 template <int Rows, int Threads, int Gate>
 cudaError_t LaunchDense(const __nv_bfloat16* activation,
                         const uint8_t* weights, const __half* scales,
@@ -220,37 +209,13 @@ cudaError_t LaunchDense(const __nv_bfloat16* activation,
                               norm.multiplier, output, input_size, output_size,
                               trigger);
   };
-  if constexpr (Threads >= 512) {
-    // The long narrow rows' CTAs (LaunchDenseRowsAnyThreads): one row each.
-    return launch(std::integral_constant<int, 1>());
-  } else if constexpr (Threads == 32) {
-    // Short rows into many outputs (Qwen 4's hyper-connection up projection,
-    // [10240 x 320], 10 blocks a row): eight rows a CTA left a warp a third
-    // busy over 1280 CTAs; 32 rows a CTA give each busy lane 32 loads in
-    // flight. Only one row of at most 512 inputs into 8192 outputs and more
-    // (a decode step), which no other model's projections are (their sums
-    // keep their order).
-    if constexpr (Rows == 1 && Gate == 0) {
-      if (input_size <= 512 && output_size >= 8192 && NarrowPathsEnabled()) {
-        return launch(std::integral_constant<int, 32>());
-      }
-    }
-    if (output_size >= kDenseMinCtas * kTileRows) {
-      return launch(std::integral_constant<int, kTileRows>());
-    }
-    if (output_size >= kDenseMinCtas * 4) {
-      return launch(std::integral_constant<int, 4>());
-    }
-    return launch(std::integral_constant<int, 2>());
-  } else {
-    if (output_size >= kDenseMinCtas * kTileRows) {
-      return launch(std::integral_constant<int, kTileRows>());
-    }
-    if (output_size >= kDenseMinCtas * 4) {
-      return launch(std::integral_constant<int, 4>());
-    }
-    return launch(std::integral_constant<int, 2>());
+  if (output_size >= kDenseMinCtas * kTileRows) {
+    return launch(std::integral_constant<int, kTileRows>());
   }
+  if (output_size >= kDenseMinCtas * 4) {
+    return launch(std::integral_constant<int, 4>());
+  }
+  return launch(std::integral_constant<int, 2>());
 }
 
 template <int Rows, int Threads>
@@ -462,16 +427,6 @@ cudaError_t LaunchDenseFp32(const __nv_bfloat16* activation,
   // expert's down projection) one warp, 66 (the dense down projection)
   // three, 88 and more four.
   const int blocks = input_size / kBlock;
-  // Few outputs of long rows (Qwen 4's hyper-connection down projection,
-  // [320 x 10240]): their 2 rows per CTA leave most of the GPU idle at four
-  // warps (93 GB/s); sixteen warps per CTA read the row at once. Only rows of
-  // 10240 inputs and more into at most 512 outputs, which no other model's
-  // projections are (Gemma 4 26B's drafter has [1024 x 8192]: their sums keep
-  // their order).
-  if (blocks >= 320 && output_size <= 512 && NarrowPathsEnabled()) {
-    return LaunchDenseRows<512>(activation, weights, scales, norm, output,
-                                rows, input_size, output_size, gate, stream);
-  }
   if (blocks <= 32) {
     return LaunchDenseRows<32>(activation, weights, scales, norm, output, rows,
                                input_size, output_size, gate, stream);
@@ -1794,7 +1749,7 @@ extern "C" bool LiteRtNvidiaMoeSupports(const LiteRtNvidiaMoeShape* shape) {
       shape->experts > kMaxExperts || shape->model_dim < kBlock ||
       shape->model_dim % kBlock != 0 || shape->hidden_dim < kBlock ||
       shape->hidden_dim % kBlock != 0 ||
-      (shape->gate != 1 && shape->gate != 2 && shape->gate != 3) ||
+      (shape->gate != 1 && shape->gate != 2) ||
       static_cast<int64_t>(shape->rows) * shape->top_k >
           std::numeric_limits<int32_t>::max() / 4) {
     return false;
@@ -2102,72 +2057,6 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
       DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
 }
 
-extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlockSlotRows(
-    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
-    const void* activation, const float* per_expert_scale,
-    const float* router_norm_scale, float router_multiplier,
-    const float* expert_norm_scale, float norm_eps, int renormalize,
-    const LiteRtNvidiaMoeBlockParams* block, void* workspace, void* output,
-    cudaStream_t stream) {
-  using namespace litert::nvidia::int4_block;
-  if (!FusedArgumentsValid(shape, arena, activation, router_norm_scale,
-                           expert_norm_scale, norm_eps, workspace) ||
-      shape->rows > kLiteRtNvidiaInt4BlockGemvMaxRows || block == nullptr ||
-      block->dense_norm_scale == nullptr ||
-      block->dense_post_scale == nullptr || block->moe_post_scale == nullptr ||
-      block->sum_post_scale == nullptr || block->side_stream == nullptr ||
-      block->fork == nullptr || block->join == nullptr ||
-      arena->dense_gate_up == nullptr ||
-      arena->dense_gate_up_scales == nullptr ||
-      arena->dense_down == nullptr || arena->dense_down_scales == nullptr ||
-      LiteRtNvidiaMoeBlockWorkspaceBytes(shape, block->dense_hidden,
-                                         block->dense_gate) == 0) {
-    return cudaErrorInvalidValue;
-  }
-  const MoeWorkspace w =
-      LayoutWorkspace(*shape, block->dense_hidden, block->dense_gate);
-  auto* bytes = static_cast<char*>(workspace);
-  auto* dense_hidden = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_hidden);
-  auto* dense_out = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_out);
-  // The dense feed-forward on the side stream as in the layer block, every
-  // row on the kernels a row alone runs on.
-  cudaError_t status = cudaEventRecord(block->fork, stream);
-  if (status != cudaSuccess) return status;
-  status = cudaStreamWaitEvent(block->side_stream, block->fork, 0);
-  if (status != cudaSuccess) return status;
-  status = LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
-      activation, arena->dense_gate_up, arena->dense_gate_up_scales,
-      block->dense_norm_scale, norm_eps, 1.0f, dense_hidden, shape->rows,
-      shape->model_dim, block->dense_hidden, block->dense_gate,
-      block->side_stream);
-  if (status != cudaSuccess) return status;
-  status = LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
-      dense_hidden, arena->dense_down, arena->dense_down_scales, nullptr, 0.0f,
-      1.0f, dense_out, shape->rows, block->dense_hidden, shape->model_dim, 0,
-      block->side_stream);
-  if (status != cudaSuccess) return status;
-  status = cudaEventRecord(block->join, block->side_stream);
-  if (status != cudaSuccess) return status;
-  // The router's logits come from the FP32 kernels at any of these row
-  // counts, and without the grouping a (row, expert) pair has its own blocks,
-  // the ones of a launch of that row alone.
-  status = LaunchFusedRouting(shape, arena, activation, router_norm_scale,
-                              router_multiplier, norm_eps, renormalize,
-                              workspace, stream);
-  if (status != cudaSuccess) return status;
-  LiteRtNvidiaMoeArena row_arena = *arena;
-  row_arena.group_rows = 0;
-  const BlockEpilogue epilogue{
-      block, static_cast<const __nv_bfloat16*>(activation), dense_out,
-      norm_eps};
-  return LaunchMoeChecked(
-      shape, &row_arena, activation,
-      reinterpret_cast<const int32_t*>(bytes + w.top_indices),
-      reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
-      expert_norm_scale, norm_eps, workspace, output, stream, &epilogue,
-      DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
-}
-
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
     const void* activation, const uint8_t* packed_weights, const void* scales,
     void* output, int rows, int input_size, int output_size, int gate,
@@ -2175,41 +2064,6 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
   return LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
       activation, packed_weights, scales, nullptr, 0.0f, 1.0f, output, rows,
       input_size, output_size, gate, stream);
-}
-
-namespace {
-
-bool ValidRowsLaunch(const void* activation, const uint8_t* packed_weights,
-                     const void* scales, const float* norm_scale,
-                     float norm_eps, const void* output, int rows,
-                     int input_size, int output_size, int gate) {
-  using namespace litert::nvidia::int4_block;
-  return !(activation == nullptr || packed_weights == nullptr ||
-           scales == nullptr || output == nullptr || rows <= 0 ||
-           rows > kLiteRtNvidiaInt4BlockGemvMaxRows || input_size <= 0 ||
-           input_size % kBlock != 0 || output_size <= 0 || gate < 0 ||
-           gate > 3 || (norm_scale != nullptr && norm_eps < 0.0f));
-}
-
-}  // namespace
-
-extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
-    const void* activation, const uint8_t* packed_weights, const void* scales,
-    const float* norm_scale, float norm_eps, float norm_multiplier,
-    void* output, int rows, int input_size, int output_size, int gate,
-    cudaStream_t stream) {
-  using namespace litert::nvidia::int4_block;
-  if (!ValidRowsLaunch(activation, packed_weights, scales, norm_scale,
-                       norm_eps, output, rows, input_size, output_size,
-                       gate)) {
-    return cudaErrorInvalidValue;
-  }
-  // DenseKernel keeps each row's accumulation in the order of a row alone.
-  const DenseNorm norm = {norm_scale, norm_eps, norm_multiplier};
-  return LaunchDenseFp32(static_cast<const __nv_bfloat16*>(activation),
-                         packed_weights, static_cast<const __half*>(scales),
-                         norm, static_cast<__nv_bfloat16*>(output), rows,
-                         input_size, output_size, gate, stream);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(

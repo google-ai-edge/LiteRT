@@ -124,9 +124,7 @@ __global__ void __launch_bounds__(kThreads)
 }
 
 constexpr int kConvThreads = 256;
-// Up to 8 taps (Qwen 3.5's 4) take the state kernel's 8-register copy; up to
-// 16 (Qwen 4's PLE convolution, 4 taps at dilation 3 as 10) the wider one.
-constexpr int kMaxTaps = 16;
+constexpr int kMaxTaps = 8;
 
 __device__ __forceinline__ float ConvWindow(const float* __restrict__ x,
                                             const float* state, int channels,
@@ -158,7 +156,6 @@ __global__ void __launch_bounds__(kConvThreads)
 
 // One thread per channel: the last taps - 1 valid inputs, read before the
 // state is overwritten (in-place safe; runs after ShortConvOutputKernel).
-template <int kKept>
 __global__ void __launch_bounds__(kConvThreads)
     ShortConvStateKernel(const float* __restrict__ x, const float* state,
                          const int32_t* __restrict__ valid_len,
@@ -168,7 +165,7 @@ __global__ void __launch_bounds__(kConvThreads)
   const int history = p.taps - 1;
   int valid = p.tokens;
   if (valid_len != nullptr) valid = min(max(valid_len[0], 0), p.tokens);
-  float kept[kKept];
+  float kept[kMaxTaps];
   for (int j = 0; j < history; ++j) {
     kept[j] = ConvWindow(x, state, p.channels, history, c, valid + j);
   }
@@ -235,12 +232,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchShortConv(
   const int blocks = (params->channels + kConvThreads - 1) / kConvThreads;
   ShortConvOutputKernel<<<dim3(blocks, params->tokens), kConvThreads, 0,
                           stream>>>(x, state, weight, *params, y);
-  if (params->taps <= 8) {
-    ShortConvStateKernel<8><<<blocks, kConvThreads, 0, stream>>>(
-        x, state, valid_len, *params, new_state);
-  } else {
-    ShortConvStateKernel<kMaxTaps><<<blocks, kConvThreads, 0, stream>>>(
-        x, state, valid_len, *params, new_state);
-  }
+  ShortConvStateKernel<<<blocks, kConvThreads, 0, stream>>>(
+      x, state, valid_len, *params, new_state);
   return cudaPeekAtLastError();
 }

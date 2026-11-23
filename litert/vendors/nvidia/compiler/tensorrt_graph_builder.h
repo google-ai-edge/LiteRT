@@ -84,18 +84,8 @@ struct TensorRtWeightHolderBuildData {
   uint64_t bytes = 0;
 };
 
-// A batched decode engine of `slots` sequence slots (slot_network.h), built
-// beside a decode step's engine when LITERT_NVIDIA_DISPATCH_SLOTS asks.
-struct TensorRtSlotPlanBuildData {
-  int32_t slots = 0;
-  std::vector<uint8_t> engine;
-  std::vector<std::string> input_names;
-  std::vector<std::string> output_names;
-};
-
 struct TensorRtBuildResult {
   std::vector<uint8_t> engine;
-  std::vector<TensorRtSlotPlanBuildData> slot_plans;
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;
@@ -108,8 +98,6 @@ struct TensorRtBuildResult {
 
 // Shared-weight mode builds stripped, refittable plans. The compiler plugin
 // then stores each unique named weight once in a multi-engine bytecode bundle.
-// On by default when the AOT cache directory and the model path give the
-// compilation a weight store; LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS sets it.
 bool TensorRtSharedWeightsEnabled();
 
 bool IsTensorRtOpSupported(const litert::compiler::Op& op);

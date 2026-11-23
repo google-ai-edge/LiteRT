@@ -116,6 +116,7 @@
     "table": "qwen",
     "mtp": false,
     "sampler": "model",
+    "partition_policy": "qwen3_5",
     "workloads": [
       "short",
       "8k",

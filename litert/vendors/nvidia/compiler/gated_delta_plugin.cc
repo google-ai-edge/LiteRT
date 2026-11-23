@@ -483,9 +483,7 @@ LiteRtNvidiaGatedDeltaNetParams GatedDeltaNetParams(
   p.value_heads = f[1];
   p.head_dim = f[2];
   p.taps = f[3];
-  // Bit 0 the convolution's SiLU, bit 1 the sigmoid output gate.
-  p.silu = f[4] & 1;
-  p.sigmoid_gate = (f[4] >> 1) & 1;
+  p.silu = f[4];
   p.proj_stride = f[5];
   p.qkv_offset = f[6];
   p.z_offset = f[7];
@@ -715,8 +713,7 @@ nvinfer1::IPluginV3* CreateGatedDeltaNetPlugin(
   values[1] = params.value_heads;
   values[2] = params.head_dim;
   values[3] = params.taps;
-  // The sigmoid output gate in bit 1: a silu-gated layer keeps its field.
-  values[4] = params.silu | (params.sigmoid_gate != 0 ? 2 : 0);
+  values[4] = params.silu;
   values[5] = params.proj_stride;
   values[6] = params.qkv_offset;
   values[7] = params.z_offset;

@@ -99,9 +99,6 @@ constexpr char kBlockField[] = "block";
 constexpr char kDenseGateField[] = "dense_gate";
 constexpr char kResidualMultiplierField[] = "residual_multiplier";
 constexpr int kFields = 19;
-// After the fields of every plugin, and serialized only when set, so that
-// the plugins without it serialize as they did.
-constexpr char kSlotRowsField[] = "slot_rows";
 constexpr int kPieces = 14;
 
 constexpr size_t kArenaAlignment = 256;
@@ -1115,8 +1112,8 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   MoePlugin(int32_t experts, int32_t top_k, int32_t model_dim,
             int32_t hidden_dim, int32_t gate, MoeExpertSource source,
             int32_t routed, float norm_eps, float router_multiplier,
-            int32_t block, int32_t dense_gate, float residual_multiplier,
-            int32_t slot_rows) noexcept
+            int32_t block, int32_t dense_gate,
+            float residual_multiplier) noexcept
       : experts_(experts),
         top_k_(top_k),
         model_dim_(model_dim),
@@ -1129,7 +1126,6 @@ class MoePlugin final : public nvinfer1::IPluginV3,
         block_(block),
         dense_gate_(dense_gate),
         residual_multiplier_(residual_multiplier),
-        slot_rows_(slot_rows),
         model_size_(static_cast<int64_t>(source_.model_size)) {
     for (int i = 0; i < kPieces; ++i) {
       offsets_[i] = static_cast<int64_t>(source_.offsets[i]);
@@ -1165,9 +1161,8 @@ class MoePlugin final : public nvinfer1::IPluginV3,
         {kDenseGateField, &dense_gate_, nvinfer1::PluginFieldType::kINT32, 1},
         {kResidualMultiplierField, &residual_multiplier_,
          nvinfer1::PluginFieldType::kFLOAT32, 1},
-        {kSlotRowsField, &slot_rows_, nvinfer1::PluginFieldType::kINT32, 1},
     }};
-    field_collection_ = {kFields + (slot_rows_ != 0 ? 1 : 0), fields_.data()};
+    field_collection_ = {static_cast<int32_t>(fields_.size()), fields_.data()};
   }
 
   nvinfer1::IPluginCapability* getCapabilityInterface(
@@ -1187,7 +1182,7 @@ class MoePlugin final : public nvinfer1::IPluginV3,
     auto* copy = new (std::nothrow)
         MoePlugin(experts_, top_k_, model_dim_, hidden_dim_, gate_, source_,
                   routed_, norm_eps_, router_multiplier_, block_, dense_gate_,
-                  residual_multiplier_, slot_rows_);
+                  residual_multiplier_);
     if (copy != nullptr) {
       copy->arena_ = arena_;
     }
@@ -1322,8 +1317,7 @@ class MoePlugin final : public nvinfer1::IPluginV3,
           side_stream_,
           fork_,
           join_};
-      status = (slot_rows_ != 0 ? LiteRtNvidiaLaunchMoeLayerBlockSlotRows
-                                : LiteRtNvidiaLaunchMoeLayerBlock)(
+      status = LiteRtNvidiaLaunchMoeLayerBlock(
           &shape, &arena_->pointers, inputs[0],
           static_cast<const float*>(inputs[1]),
           static_cast<const float*>(inputs[2]), router_multiplier_,
@@ -1436,7 +1430,6 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   int32_t block_;
   int32_t dense_gate_;
   float residual_multiplier_;
-  int32_t slot_rows_;
   cudaStream_t side_stream_ = nullptr;
   cudaEvent_t fork_ = nullptr;
   cudaEvent_t join_ = nullptr;
@@ -1444,7 +1437,7 @@ class MoePlugin final : public nvinfer1::IPluginV3,
   std::array<int64_t, kPieces> offsets_{};
   std::array<int64_t, kPieces> sizes_{};
   std::shared_ptr<Arena> arena_;
-  std::array<nvinfer1::PluginField, kFields + 1> fields_;
+  std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
@@ -1476,7 +1469,6 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
             {kDenseGateField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
             {kResidualMultiplierField, nullptr,
              nvinfer1::PluginFieldType::kFLOAT32, 1},
-            {kSlotRowsField, nullptr, nvinfer1::PluginFieldType::kINT32, 1},
         }},
         field_collection_{static_cast<int32_t>(fields_.size()),
                           fields_.data()} {}
@@ -1499,7 +1491,6 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
     int32_t block = 0;
     int32_t dense_gate = 0;
     float residual_multiplier = 1.0f;
-    int32_t slot_rows = 0;
     MoeExpertSource source;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
@@ -1572,14 +1563,12 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
         block = value;
       } else if (std::strcmp(field.name, kDenseGateField) == 0) {
         dense_gate = value;
-      } else if (std::strcmp(field.name, kSlotRowsField) == 0) {
-        slot_rows = value;
       }
     }
     nvinfer1::IPluginV3* plugin =
         CreateMoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
                         routed != 0, norm_eps, router_multiplier, block != 0,
-                        dense_gate, residual_multiplier, slot_rows != 0);
+                        dense_gate, residual_multiplier);
     if (plugin != nullptr && phase == nvinfer1::TensorRTPhase::kRUNTIME &&
         MoeArenaLoadingEnabled()) {
       // An engine being deserialized: its layers' arenas are wanted together
@@ -1601,17 +1590,19 @@ class MoePluginCreator final : public nvinfer1::IPluginCreatorV3One {
   }
 
  private:
-  std::array<nvinfer1::PluginField, kFields + 1> fields_;
+  std::array<nvinfer1::PluginField, kFields> fields_;
   nvinfer1::PluginFieldCollection field_collection_;
 };
 
 }  // namespace
 
-nvinfer1::IPluginV3* CreateMoePlugin(
-    int32_t experts, int32_t top_k, int32_t model_dim, int32_t hidden_dim,
-    int32_t gate, const MoeExpertSource& source, bool routed, float norm_eps,
-    float router_multiplier, bool block, int32_t dense_gate,
-    float residual_multiplier, bool slot_rows) noexcept {
+nvinfer1::IPluginV3* CreateMoePlugin(int32_t experts, int32_t top_k,
+                                     int32_t model_dim, int32_t hidden_dim,
+                                     int32_t gate,
+                                     const MoeExpertSource& source, bool routed,
+                                     float norm_eps, float router_multiplier,
+                                     bool block, int32_t dense_gate,
+                                     float residual_multiplier) noexcept {
   const LiteRtNvidiaMoeShape shape = {1,         top_k,      experts,
                                       model_dim, hidden_dim, gate};
   if (!LiteRtNvidiaMoeSupports(&shape) || source.model_path.empty() ||
@@ -1622,7 +1613,7 @@ nvinfer1::IPluginV3* CreateMoePlugin(
       (routed && (norm_eps < 0.0f || model_dim > 4096 ||
                   !(router_multiplier == router_multiplier))) ||
       source.dense_scale_type < -1 || source.dense_scale_type > 1 ||
-      block != (source.dense_scale_type >= 0) || (slot_rows && !block) ||
+      block != (source.dense_scale_type >= 0) ||
       (block &&
        (!routed || source.dense_hidden < 32 || source.dense_hidden % 32 != 0 ||
         (dense_gate != 1 && dense_gate != 2) ||
@@ -1644,38 +1635,7 @@ nvinfer1::IPluginV3* CreateMoePlugin(
   return new (std::nothrow)
       MoePlugin(experts, top_k, model_dim, hidden_dim, gate, source,
                 routed ? 1 : 0, norm_eps, router_multiplier, block ? 1 : 0,
-                dense_gate, residual_multiplier, slot_rows ? 1 : 0);
-}
-
-nvinfer1::IPluginV3* MoeSlotRowsPlugin(nvinfer1::IPluginV3& plugin) noexcept {
-  auto* core = static_cast<nvinfer1::IPluginV3OneCore*>(
-      plugin.getCapabilityInterface(nvinfer1::PluginCapabilityType::kCORE));
-  auto* runtime = static_cast<nvinfer1::IPluginV3OneRuntime*>(
-      plugin.getCapabilityInterface(nvinfer1::PluginCapabilityType::kRUNTIME));
-  if (core == nullptr || runtime == nullptr ||
-      core->getPluginName() == nullptr ||
-      std::strcmp(core->getPluginName(), kPluginName) != 0) {
-    return nullptr;
-  }
-  // The plugin's own fields and the slot rows after them, through the
-  // creator: the plugin may be another library's copy of the class.
-  const nvinfer1::PluginFieldCollection* fields =
-      runtime->getFieldsToSerialize();
-  if (fields == nullptr || fields->fields == nullptr || fields->nbFields < 1 ||
-      fields->nbFields > kFields + 1) {
-    return nullptr;
-  }
-  std::array<nvinfer1::PluginField, kFields + 2> with;
-  std::copy_n(fields->fields, fields->nbFields, with.begin());
-  const int32_t slot_rows = 1;
-  with[fields->nbFields] = {kSlotRowsField, &slot_rows,
-                            nvinfer1::PluginFieldType::kINT32, 1};
-  const nvinfer1::PluginFieldCollection collection = {fields->nbFields + 1,
-                                                      with.data()};
-  // The build phase: the arena is the plugin's, asked for when a context
-  // attaches the form.
-  return MoePluginCreator().createPlugin(kPluginName, &collection,
-                                         nvinfer1::TensorRTPhase::kBUILD);
+                dense_gate, residual_multiplier);
 }
 
 void EnsureMoePluginRegistered() noexcept {}

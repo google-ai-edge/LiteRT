@@ -24,7 +24,6 @@
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/cache_layout.h"
-#include "litert/vendors/nvidia/windows_compat.h"
 
 namespace litert::nvidia {
 namespace {

@@ -61,7 +61,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchGatedDeltaUpdate(
 struct LiteRtNvidiaShortConvParams {
   int32_t channels;
   int32_t tokens;
-  int32_t taps;  // 2 to 16
+  int32_t taps;  // 2 to 8
   int32_t silu;
 };
 

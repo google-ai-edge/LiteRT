@@ -17,7 +17,6 @@ choose the flags of a workload, keep a run's files together and turn run directo
 | `ci.sh` | `ci.sh OUT_DIR`: 12B cold 128k, 12B hot 32k, 26B cold MTP 32k; builds once, validates and prints results |
 | `matrix.sh` | the data points of the record: `matrix.sh OUT_DIR [MODEL...]`, `BENCH_GROUPS="context mtp init verify"` selects the groups |
 | `report.py` | tables from run directories: `python3 report.py [--json] RUN_DIR...` |
-| `teacher_forced.sh` | the decode logits against LiteRT-LM's CPU, fed the same tokens, and their pass bar (`tools/teacher_forced.py gate`): `reference --model M --set DIR` once for a set of prompts, then `run --model M --set DIR --out DIR [--env NAME=VALUE]` per build or setting |
 | `prompts/` | the real prompts of the MTP measurements: about 1k, 8k, 16k, 30k and 128k tokens of documentation ending in a question |
 
 ## Setup
@@ -101,11 +100,9 @@ Each run directory holds the CLI's log and benchmark report (`cli.log`), GNU tim
 (`meta.json`). Compiled engines, runtime caches and the CUDA JIT cache live in a pool under
 `$LITERT_BENCH_ROOT/cache/models/<model>/<build id>`, the build id being the two trees' commits
 (a `+` marks local changes), so a changed tree compiles afresh and an unchanged one starts warm.
-A pool's TensorRT-RTX environment (`nb_runtime_env` in `env.sh`) is its paths alone: the model
-file and the AOT and runtime cache directories. The compiler's and dispatch's defaults are the
-settings of every model (the validated LLM partition policy, BF16 activations, the CUDA GEMV
-plugins, the shared weight store); `--env NAME=VALUE` overrides one for an experiment, in a pool
-of its own (`--pool DIR`).
+The TensorRT-RTX settings of a pool (`nb_runtime_env` in `env.sh`: the Gemma 4 partition policy,
+BF16 activations, the CUDA GEMV plugins, the shared weight store) are the same for every model;
+`--env NAME=VALUE` overrides one for an experiment, in a pool of its own (`--pool DIR`).
 
 Use one `LITERT_BENCH_ROOT` for the standalone scripts and any measurement or evaluation
 wrapper. Source/build identities already separate model pools; a branch does not need a

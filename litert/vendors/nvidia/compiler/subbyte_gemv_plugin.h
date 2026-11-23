@@ -68,11 +68,6 @@ namespace litert::nvidia {
 // LITERT_NVIDIA_GEMM_INT8_REAL_ROWS=0 ignores the input: every row chooses, as
 // without it.
 //
-// `slot_rows` (blockwise GEMV only): the activation rows are separate
-// sequences, the slots of a batched decode step: each row gets the bits it gets
-// alone (LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed), the weights read
-// once. The field is serialized only when set.
-//
 // `int8_blockwise` (gemm with blockwise scales) runs the product on the int8
 // tensor cores like the per-channel ones; LITERT_NVIDIA_GEMM_INT8_BLOCKWISE=0
 // or =1 overrides the choice at run time.
@@ -81,15 +76,7 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     bool gemm = false, int64_t weight_offset = 0, int64_t holder_granule = 0,
     int32_t scale_block = 0, int64_t scale_offset = -1, float norm_eps = -1.0f,
     float norm_multiplier = 1.0f, bool row_positions = false,
-    bool int8_blockwise = false, bool slot_rows = false) noexcept;
-
-// The plugin a batched decode engine's merged projection runs for a GEMV
-// plugin of this file, over the rows of every slot with each row's bits the
-// ones it gets alone: a blockwise INT4 GEMV's slot-rows form, a per-channel
-// GEMV itself (its kernel keeps each row's order at any row count); null for
-// a GEMM or any other plugin.
-nvinfer1::IPluginV3* SubbyteGemvSlotRowsPlugin(
-    nvinfer1::IPluginV3& plugin) noexcept;
+    bool int8_blockwise = false) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.
