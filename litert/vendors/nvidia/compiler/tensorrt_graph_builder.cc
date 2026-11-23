@@ -5066,12 +5066,13 @@ class TensorRtGraphBuilder {
       LITERT_ASSIGN_OR_RETURN(auto type, input.RankedTensorType());
       LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
       // A UINT8 cache of the general forms crosses as its bytes
-      // (FindGeneralCaches).
-      LITERT_ASSIGN_OR_RETURN(
-          auto data_type,
-          byte_caches_.count(input.Get()) != 0
-              ? Expected<nvinfer1::DataType>(nvinfer1::DataType::kINT8)
-              : ConvertDataType(type.ElementType()));
+      // (FindGeneralCaches). Not a conditional expression of two Expected
+      // values: MSVC builds its result through Expected's forwarding
+      // constructor, which has no conversion from an Expected.
+      nvinfer1::DataType data_type = nvinfer1::DataType::kINT8;
+      if (byte_caches_.count(input.Get()) == 0) {
+        LITERT_ASSIGN_OR_RETURN(data_type, ConvertDataType(type.ElementType()));
+      }
       std::string name = TensorName("input", input, i);
       // An INT4 cache of the composites over quantized caches is declared as
       // the INT8 bytes that hold it (FindPackedInt4Caches).
@@ -5183,11 +5184,11 @@ class TensorRtGraphBuilder {
       }
       if (Fp16ActivationsEnabled()) {
         LITERT_ASSIGN_OR_RETURN(auto type, output.RankedTensorType());
-        LITERT_ASSIGN_OR_RETURN(
-            auto boundary_type,
-            byte_caches_.count(output.Get()) != 0
-                ? Expected<nvinfer1::DataType>(nvinfer1::DataType::kINT8)
-                : ConvertDataType(type.ElementType()));
+        nvinfer1::DataType boundary_type = nvinfer1::DataType::kINT8;
+        if (byte_caches_.count(output.Get()) == 0) {
+          LITERT_ASSIGN_OR_RETURN(boundary_type,
+                                  ConvertDataType(type.ElementType()));
+        }
         if (const auto in_place = in_place_outputs_.find(output.Get());
             in_place != in_place_outputs_.end() &&
             type.ElementType() == litert::ElementType::Float32 &&
