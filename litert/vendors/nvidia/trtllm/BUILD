@@ -22,6 +22,15 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+# Headers that experimental/megakernel's cuda_library takes by label.
+exports_files(
+    [
+        "decode_attention.h",
+        "int4_block_gemv.h",
+    ],
+    visibility = ["//litert/vendors/nvidia/experimental/megakernel:__pkg__"],
+)
+
 cuda_library(
     name = "gemma4_head_kernels_cuda",
     srcs = [
