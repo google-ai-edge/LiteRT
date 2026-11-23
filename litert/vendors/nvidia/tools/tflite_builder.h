@@ -20,6 +20,8 @@
 // qwen4_artifact.cc): tensors, constants, builtin, custom and composite ops,
 // and signatures.
 
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <functional>
@@ -99,6 +101,33 @@ class Builder {
     auto quantization = std::make_unique<tflite::QuantizationParametersT>();
     quantization->scale = {scale};
     quantization->zero_point = {zero_point};
+    graph().tensors[tensor]->quantization = std::move(quantization);
+    return tensor;
+  }
+  // An INT8 constant [rows, columns] quantized per row (symmetric), from
+  // `values`: the weights of a FULLY_CONNECTED quantized per output channel.
+  int32_t ConstInt8PerRow(const std::string& name, int rows, int columns,
+                          const std::vector<float>& values) {
+    std::vector<int8_t> q(values.size());
+    std::vector<float> scales(rows);
+    for (int r = 0; r < rows; ++r) {
+      float largest = 0.0f;
+      for (int c = 0; c < columns; ++c) {
+        largest = std::max(
+            largest, std::fabs(values[static_cast<size_t>(r) * columns + c]));
+      }
+      scales[r] = largest > 0.0f ? largest / 127.0f : 1.0f;
+      for (int c = 0; c < columns; ++c) {
+        const size_t i = static_cast<size_t>(r) * columns + c;
+        q[i] = static_cast<int8_t>(std::lround(values[i] / scales[r]));
+      }
+    }
+    const int32_t tensor =
+        Constant(name, tflite::TensorType_INT8, {rows, columns}, q);
+    auto quantization = std::make_unique<tflite::QuantizationParametersT>();
+    quantization->scale = scales;
+    quantization->zero_point.assign(rows, 0);
+    quantization->quantized_dimension = 0;
     graph().tensors[tensor]->quantization = std::move(quantization);
     return tensor;
   }

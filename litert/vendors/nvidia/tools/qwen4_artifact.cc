@@ -97,6 +97,13 @@ ABSL_FLAG(std::string, runtime_libs, "",
           "The directory of the NVIDIA compiler plugin and dispatch library.");
 ABSL_FLAG(std::string, out_dir, "", "Where a run writes its outputs.");
 ABSL_FLAG(int, decode_steps, 12, "Decode steps after the prompt.");
+ABSL_FLAG(std::string, weights, "fp32",
+          "The FULLY_CONNECTED weights of --write_model: fp32, or int8 (per "
+          "output channel, as an export's weight-only quantization).");
+ABSL_FLAG(
+    bool, ple, true,
+    "Whether the PLE layers have their per-layer embeddings (false: "
+    "none, to time them by difference; for --write_model and --compare).");
 ABSL_FLAG(bool, compare, false, "Compare the outputs of two runs.");
 ABSL_FLAG(std::string, cpu_dir, "", "The CPU run's outputs.");
 ABSL_FLAG(std::string, npu_dir, "", "The NPU run's outputs.");
@@ -273,7 +280,7 @@ Weights MakeWeights() {
     LayerWeights lw;
     lw.attn_hc = MakeHc(random);
     lw.mlp_hc = MakeHc(random);
-    lw.ple = kHasPle[l];
+    lw.ple = kHasPle[l] && absl::GetFlag(FLAGS_ple);
     if (lw.ple) lw.ple_weights = MakePle(random, ple_index++);
     if (kIsGdn[l]) {
       lw.qkv = Matrix(random, kConvDim, kWidth);
@@ -429,7 +436,8 @@ class Model {
         w_(w),
         n_(rows),
         prefill_(prefill),
-        sigmoid_gate_(sigmoid_gate) {}
+        sigmoid_gate_(sigmoid_gate),
+        int8_weights_(absl::GetFlag(FLAGS_weights) == "int8") {}
 
   int32_t Const(const std::string& name, const Shape& shape,
                 const std::vector<float>& values) {
@@ -446,7 +454,10 @@ class Model {
 
   int32_t Fc(int32_t x, const std::vector<float>& weights, int out_dim,
              int in_dim, const std::vector<float>* bias = nullptr) {
-    const int32_t weight = Const("fc", {out_dim, in_dim}, weights);
+    const int32_t weight =
+        int8_weights_ ? b_.ConstInt8PerRow(absl::StrCat("fc_w_", counter_++),
+                                           out_dim, in_dim, weights)
+                      : Const("fc", {out_dim, in_dim}, weights);
     const int32_t out =
         b_.F32(absl::StrCat("fc_", counter_++), {1, n_, out_dim});
     auto& op =
@@ -816,6 +827,7 @@ class Model {
   const int n_;
   const bool prefill_;
   const bool sigmoid_gate_;
+  const bool int8_weights_;
   int32_t row_mask_bool_ = -1;
   int counter_ = 0;
 };
@@ -1221,7 +1233,7 @@ Expected<bool> Compare() {
     LITERT_RETURN_IF_ERROR(
         compare("logits", 0, static_cast<size_t>(step.valid) * kVocab));
     for (int l = 0; l < kNumLayers; ++l) {
-      if (kHasPle[l]) {
+      if (kHasPle[l] && absl::GetFlag(FLAGS_ple)) {
         LITERT_RETURN_IF_ERROR(compare(StateName("ple", l), 0, SIZE_MAX));
       }
       if (kIsGdn[l]) {
