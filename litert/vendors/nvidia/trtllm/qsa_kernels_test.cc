@@ -459,6 +459,42 @@ TEST(QsaIndexerTest, ShortContextTakesEveryBlockAndLongContextSelects) {
 }
 
 // Every score ties (zero queries: relu(0) everywhere): the lowest blocks win.
+// Rows of more than 4,096 blocks select in two stages (a chunk's best, then
+// the best of those): ties still go to the lowest blocks, across chunks.
+TEST(QsaIndexerTest, TwoStageSelectionKeepsTiesAcrossChunks) {
+  ref::IndexerShape shape;
+  shape.rows = 2;
+  shape.index_heads = 4;
+  shape.index_dim = 64;
+  shape.rotary_dim = 32;
+  shape.max_blocks = 9000;
+  shape.block_topk = 300;
+  shape.mask_len = 4 * 9000;
+  IndexerCase c = MakeIndexerCase(shape, 35990, 8);
+  std::fill(c.q.begin(), c.q.end(), 0.0f);
+  const IndexerRun run = RunIndexer(c);
+  for (int t = 0; t < 2; ++t) {
+    for (int i = 0; i < 300; ++i) EXPECT_EQ(run.topk[t * 300 + i], i);
+  }
+  // Equal scores in two chunks, a few higher ones in the last: the higher
+  // ones, then the lowest tied blocks.
+  std::fill(c.q.begin(), c.q.end(), 1.0f);
+  std::fill(c.pool.begin(), c.pool.end(), 0.5f);
+  for (int b : {8000, 8995, 4100}) {
+    for (int d = 0; d < 64; ++d)
+      c.pool[static_cast<size_t>(b) * 64 + d] = 0.75f;
+  }
+  const IndexerRun higher = RunIndexer(c);
+  for (int t = 0; t < 2; ++t) {
+    std::vector<int32_t> want;
+    for (int i = 0; i < 297; ++i) want.push_back(i);
+    want.insert(want.end(), {4100, 8000, 8995});
+    const std::vector<int32_t> got(higher.topk.begin() + t * 300,
+                                   higher.topk.begin() + (t + 1) * 300);
+    EXPECT_EQ(got, want) << "row " << t;
+  }
+}
+
 TEST(QsaIndexerTest, AllTiedScoresTakeTheLowestBlocks) {
   ref::IndexerShape shape;
   shape.rows = 2;

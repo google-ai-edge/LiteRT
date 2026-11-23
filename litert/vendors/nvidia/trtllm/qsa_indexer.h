@@ -75,8 +75,11 @@ inline constexpr int32_t kLiteRtNvidiaQsaBlockTokens = 4;
 // exactly 0 (the GPU delegate's rules).
 //
 // ring and pool are updated in place (no other block of the launch reads
-// what one writes). Every float is accumulated in FP32 and the result does
-// not depend on the launch configuration.
+// what one writes). Every float is accumulated in FP32. Steps of 64 rows or
+// more (prefill chunks) take the score products on tensor cores, the query
+// and the pool each split into two FP16 parts: their scores agree with FP32
+// products to about 1e-6 of their size. The result does not depend on the
+// device.
 struct LiteRtNvidiaQsaIndexerParams {
   int32_t rows;
   int32_t index_heads;  // at most 32

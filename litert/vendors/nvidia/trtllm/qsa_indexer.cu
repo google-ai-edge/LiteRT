@@ -16,6 +16,7 @@
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
+#include <mma.h>
 
 #include <algorithm>
 #include <cstddef>
@@ -309,15 +310,124 @@ __device__ __forceinline__ void TileReluProducts(
   __syncthreads();
 }
 
+// Steps of at least this many rows (prefill chunks) score on tensor cores.
+constexpr int32_t kTensorScoreRows = 64;
+// Floats of the score kernels' shared memory: the FP32 tiles, or the FP16
+// tiles of the tensor-core product (queries and pool, each in a high and a
+// low part); the relu'd products [kTileVectors][kTileBlocks] reuse it.
+constexpr int kTensorLd = kTileDims + 8;  // halves per staged row
+constexpr int kScoreShared =
+    std::max(2 * kTileDims * (kTileVectors + kTilePad),
+             (2 * kTileVectors + 2 * kTileBlocks) * kTensorLd / 2);
+
+// TileReluProducts on tensor cores, for long steps: FP16 products with FP32
+// accumulation of the queries and the pool each split into an FP16 high part
+// and the FP16 rounding of the rest (a BF16 or FP16 query has no rest), so
+// a product carries about 22 bits of each operand: the scores agree with the
+// FP32 product to about 1e-6 of their size. index_dim a multiple of 16.
 template <typename State>
+__device__ __forceinline__ void TileReluProductsTensor(
+    const LiteRtNvidiaQsaIndexerParams& p, const void* __restrict__ q,
+    int64_t q_vector0, int32_t vectors, const State* __restrict__ pool,
+    int32_t block0, int32_t bound, float* shared) {
+  namespace wmma = nvcuda::wmma;
+  __half* q_hi = reinterpret_cast<__half*>(shared);
+  __half* q_lo = q_hi + kTileVectors * kTensorLd;
+  __half* p_hi = q_lo + kTileVectors * kTensorLd;
+  __half* p_lo = p_hi + kTileBlocks * kTensorLd;
+  float* products = shared;  // [kTileVectors][kTileBlocks]
+  const int32_t dim = p.index_dim;
+  const bool q_split = p.q_type == kLiteRtNvidiaQsaFloat32;
+  const int warp = threadIdx.x / 32;
+  const int vector0 = (warp / 2) * 16;  // 8 warps: 4 x 2 of 16 x 32
+  const int column0 = (warp % 2) * 32;
+  wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc[2];
+  wmma::fill_fragment(acc[0], 0.0f);
+  wmma::fill_fragment(acc[1], 0.0f);
+  // Eight values in a high and a low FP16 part, 16 bytes each.
+  const auto split = [](const float (&eight)[8], __half* hi, __half* lo) {
+    __align__(16) __half h[8];
+    __align__(16) __half l[8];
+#pragma unroll
+    for (int j = 0; j < 8; ++j) {
+      h[j] = __float2half(eight[j]);
+      l[j] = __float2half(eight[j] - __half2float(h[j]));
+    }
+    *reinterpret_cast<uint4*>(hi) = *reinterpret_cast<const uint4*>(h);
+    *reinterpret_cast<uint4*>(lo) = *reinterpret_cast<const uint4*>(l);
+  };
+  for (int32_t d0 = 0; d0 < dim; d0 += kTileDims) {
+    for (int i = threadIdx.x * 8; i < kTileVectors * kTileDims;
+         i += kBlock * 8) {
+      const int v = i / kTileDims;
+      const int d = i % kTileDims;
+      float eight[8] = {};
+      if (v < vectors && d0 + d < dim) {
+        LoadEightAsFloat(q, p.q_type, (q_vector0 + v) * dim + d0 + d, eight);
+      }
+      split(eight, q_hi + v * kTensorLd + d, q_lo + v * kTensorLd + d);
+    }
+    for (int i = threadIdx.x * 8; i < kTileBlocks * kTileDims;
+         i += kBlock * 8) {
+      const int b = i / kTileDims;
+      const int d = i % kTileDims;
+      const int32_t block = block0 + b;
+      float eight[8] = {};
+      if (block < bound && d0 + d < dim) {
+        LoadEightAsFloat(pool, StateType<State>(),
+                         int64_t{block} * dim + d0 + d, eight);
+      }
+      split(eight, p_hi + b * kTensorLd + d, p_lo + b * kTensorLd + d);
+    }
+    __syncthreads();
+#pragma unroll
+    for (int kk = 0; kk < kTileDims; kk += 16) {
+      wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a_hi;
+      wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a_lo;
+      wmma::load_matrix_sync(a_hi, q_hi + vector0 * kTensorLd + kk, kTensorLd);
+      if (q_split) {
+        wmma::load_matrix_sync(a_lo, q_lo + vector0 * kTensorLd + kk,
+                               kTensorLd);
+      }
+#pragma unroll
+      for (int j = 0; j < 2; ++j) {
+        const int column = column0 + 16 * j;
+        wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::col_major> b;
+        wmma::load_matrix_sync(b, p_lo + column * kTensorLd + kk, kTensorLd);
+        wmma::mma_sync(acc[j], a_hi, b, acc[j]);
+        if (q_split) {
+          wmma::load_matrix_sync(b, p_hi + column * kTensorLd + kk, kTensorLd);
+          wmma::mma_sync(acc[j], a_lo, b, acc[j]);
+        }
+        wmma::load_matrix_sync(b, p_hi + column * kTensorLd + kk, kTensorLd);
+        wmma::mma_sync(acc[j], a_hi, b, acc[j]);
+      }
+    }
+    __syncthreads();
+  }
+#pragma unroll
+  for (int j = 0; j < 2; ++j) {
+    wmma::store_matrix_sync(products + vector0 * kTileBlocks + column0 + 16 * j,
+                            acc[j], kTileBlocks, wmma::mem_row_major);
+  }
+  __syncthreads();
+  for (int i = threadIdx.x; i < kTileVectors * kTileBlocks; i += kBlock) {
+    products[i] = fmaxf(products[i], 0.0f);
+  }
+  __syncthreads();
+}
+
+template <typename State, bool kTensorCores>
 __global__ void __launch_bounds__(kBlock) QsaScoreKernel(
     LiteRtNvidiaQsaIndexerParams p, int32_t row0, int32_t group_rows,
     const void* __restrict__ q, const State* __restrict__ pool,
     const int32_t* __restrict__ start_pos, const void* __restrict__ mask,
     float* __restrict__ scores) {
   // The staged operands, then the relu'd products [vector][block].
-  __shared__ __align__(16) float shared[2 * kTileDims *
-                                        (kTileVectors + kTilePad)];
+  __shared__ __align__(32) float shared[kTensorCores ? kScoreShared
+                                                     : 2 * kTileDims *
+                                                           (kTileVectors +
+                                                            kTilePad)];
   float (*q_tile)[kTileVectors + kTilePad] =
       reinterpret_cast<float (*)[kTileVectors + kTilePad]>(shared);
   float (*k_tile)[kTileBlocks + kTilePad] =
@@ -340,7 +450,10 @@ __global__ void __launch_bounds__(kBlock) QsaScoreKernel(
   const int tb = tid % (kTileBlocks / 4);
   const int tv = tid / (kTileBlocks / 4);
 
-  if (!dense) {
+  if (!dense && kTensorCores) {
+    TileReluProductsTensor<State>(p, q, int64_t{first} * heads, vectors, pool,
+                                  block0, bound, shared);
+  } else if (!dense) {
     float acc[4][4] = {};
     for (int32_t d0 = 0; d0 < dim; d0 += kTileDims) {
       // Eight dims at a time (index_dim % 8 == 0 keeps the loads aligned).
@@ -821,15 +934,21 @@ __device__ __forceinline__ void BlockSumThreeAlternating(int32_t* a,
   *c = static_cast<int32_t>(__reduce_add_sync(0xffffffffu, c_lane));
 }
 
-// QsaSelectKernel for rows of at most kKeysPerThread blocks per thread,
-// with the row's scores held in registers: the k-th largest key two bits at
-// a time (16 counting passes over the registers behind one barrier each, no
+// QsaSelectKernel for rows of at most kKeys blocks per thread, with the
+// row's scores held in registers: the k-th largest key two bits at a time
+// (16 counting passes over the registers behind one barrier each, no
 // shared-memory histogram whose atomics the scores of a row crowd into a few
 // bins), then the indices in ascending order from contiguous runs per
-// thread.
+// thread. Long rows select in two stages: first each chunk of `chunk` blocks
+// (blockIdx.y) its own block_topk best into `list` (padded with -1), then
+// the row's best among those candidates (`list` of list_len per row, in
+// block order). A block a chunk leaves out cannot be among the row's best:
+// block_topk blocks of its chunk beat it.
+template <int kKeys, bool kList>
 __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
     LiteRtNvidiaQsaIndexerParams p, int32_t row0,
     const int32_t* __restrict__ start_pos, const int32_t* __restrict__ bounds,
+    int32_t chunk, const int32_t* __restrict__ list, int32_t list_len,
     const float* __restrict__ scores, int32_t* __restrict__ topk) {
   __shared__ int32_t sums[128];
   __shared__ int32_t warp_sums[32];
@@ -843,34 +962,61 @@ __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
                     0),
                 p.max_blocks);
   const float* s = scores + int64_t{blockIdx.x} * p.max_blocks;
+  // The candidates: blocks [lo, lo + count), or the list's.
+  const int32_t* candidates =
+      kList ? list + int64_t{blockIdx.x} * list_len : nullptr;
+  int32_t lo = 0;
+  int32_t count = bound;
   int32_t* out = topk + int64_t{row} * p.block_topk;
+  if (chunk > 0) {
+    lo = min(static_cast<int32_t>(blockIdx.y) * chunk, bound);
+    count = min(chunk, bound - lo);
+    out = topk + (int64_t{blockIdx.x} * gridDim.y + blockIdx.y) * p.block_topk;
+  } else if (kList) {
+    count = list_len;
+  }
   // Runs of a multiple of 4 blocks, so that a run starts 16-byte aligned.
   const int32_t per =
-      ((bound + 4 * static_cast<int32_t>(blockDim.x) - 1) /
+      ((count + 4 * static_cast<int32_t>(blockDim.x) - 1) /
        (4 * static_cast<int32_t>(blockDim.x))) * 4;
   const int32_t first = static_cast<int32_t>(threadIdx.x) * per;
+  const auto block_of = [&](int32_t i) {
+    return kList ? candidates[i] : lo + i;
+  };
   // Key 0 marks a block that is no candidate (every candidate's key is
   // above it).
-  uint32_t key[kKeysPerThread];
+  uint32_t key[kKeys];
   int32_t valid_local = 0;
 #pragma unroll
-  for (int j = 0; j < kKeysPerThread; j += 4) {
-    const int32_t b = first + j;
+  for (int j = 0; j < kKeys; j += 4) {
+    const int32_t i = first + j;
     float4 four = make_float4(kHiddenScore, kHiddenScore, kHiddenScore,
                               kHiddenScore);
-    if (j < per && b + 3 < bound && p.max_blocks % 4 == 0) {
-      four = *reinterpret_cast<const float4*>(s + b);
-    } else if (j < per && b < bound) {
-      four.x = s[b];
-      if (b + 1 < bound) four.y = s[b + 1];
-      if (b + 2 < bound) four.z = s[b + 2];
-      if (b + 3 < bound) four.w = s[b + 3];
+    if (kList) {
+      float values[4] = {kHiddenScore, kHiddenScore, kHiddenScore,
+                         kHiddenScore};
+#pragma unroll
+      for (int e = 0; e < 4; ++e) {
+        if (j + e < per && i + e < count) {
+          const int32_t b = candidates[i + e];
+          if (b >= 0) values[e] = s[b];
+        }
+      }
+      four = make_float4(values[0], values[1], values[2], values[3]);
+    } else if (j < per && i + 3 < count && p.max_blocks % 4 == 0 &&
+               lo % 4 == 0) {
+      four = *reinterpret_cast<const float4*>(s + lo + i);
+    } else if (j < per && i < count) {
+      four.x = s[lo + i];
+      if (i + 1 < count) four.y = s[lo + i + 1];
+      if (i + 2 < count) four.z = s[lo + i + 2];
+      if (i + 3 < count) four.w = s[lo + i + 3];
     }
     const float values[4] = {four.x, four.y, four.z, four.w};
 #pragma unroll
-    for (int i = 0; i < 4; ++i) {
-      const bool valid = values[i] > kHiddenBelow;
-      key[j + i] = valid ? ScoreKey(values[i]) : 0u;
+    for (int e = 0; e < 4; ++e) {
+      const bool valid = values[e] > kHiddenBelow;
+      key[j + e] = valid ? ScoreKey(values[e]) : 0u;
       valid_local += valid ? 1 : 0;
     }
   }
@@ -891,7 +1037,7 @@ __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
       int32_t n2 = 0;
       int32_t n3 = 0;
 #pragma unroll
-      for (int j = 0; j < kKeysPerThread; ++j) {
+      for (int j = 0; j < kKeys; ++j) {
         n1 += key[j] >= c1 ? 1 : 0;
         n2 += key[j] >= c2 ? 1 : 0;
         n3 += key[j] >= c3 ? 1 : 0;
@@ -908,7 +1054,7 @@ __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
   int32_t equal = 0;
   if (target > 0) {
 #pragma unroll
-    for (int j = 0; j < kKeysPerThread; ++j) {
+    for (int j = 0; j < kKeys; ++j) {
       above += key[j] > threshold ? 1 : 0;
       equal += key[j] == threshold ? 1 : 0;
     }
@@ -923,11 +1069,11 @@ __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
   if (target > 0) {
     int32_t equal_left = take_equal;
 #pragma unroll
-    for (int j = 0; j < kKeysPerThread; ++j) {
+    for (int j = 0; j < kKeys; ++j) {
       const bool taken = key[j] > threshold ||
                          (key[j] == threshold && equal_left > 0);
       if (key[j] == threshold && taken) --equal_left;
-      if (taken) out[offset++] = first + j;
+      if (taken) out[offset++] = block_of(first + j);
     }
   }
   for (int32_t i = target + threadIdx.x; i < p.block_topk; i += blockDim.x) {
@@ -936,10 +1082,62 @@ __global__ void __launch_bounds__(kSelectThreads) QsaSelectInRegistersKernel(
 }
 
 // Threads of the register selection: enough warps for runs of at most
-// kKeysPerThread blocks.
-int32_t SelectThreads(const LiteRtNvidiaQsaIndexerParams& p) {
-  const int32_t threads = (p.max_blocks + kKeysPerThread - 1) / kKeysPerThread;
+// `keys` blocks.
+int32_t SelectThreads(int32_t count, int32_t keys) {
+  const int32_t threads = (count + keys - 1) / keys;
   return std::min(kSelectThreads, std::max(32, (threads + 31) / 32 * 32));
+}
+
+// Rows of more blocks than this select in two stages, a chunk of this many
+// blocks per CTA first (QsaSelectInRegistersKernel): the counting passes then
+// run over a few keys per thread on many multiprocessors instead of 32 keys
+// per thread on one.
+constexpr int32_t kSelectChunk = 2048;
+constexpr int kStageKeys = 8;
+
+int32_t SelectChunks(const LiteRtNvidiaQsaIndexerParams& p) {
+  if (p.max_blocks <= 2 * kSelectChunk || 4 * p.block_topk > kSelectChunk) {
+    return 0;
+  }
+  return (p.max_blocks + kSelectChunk - 1) / kSelectChunk;
+}
+
+// The candidates the first stage leaves per row.
+int32_t SelectCandidates(const LiteRtNvidiaQsaIndexerParams& p) {
+  return SelectChunks(p) * p.block_topk;
+}
+
+// Selects the rows [row0, row0 + rows) (their scores in `scores`, the row
+// model's bounds in `bounds` when set); `list` holds the first stage's
+// candidates of rows x SelectCandidates(p).
+void LaunchSelect(const LiteRtNvidiaQsaIndexerParams& p, int32_t row0,
+                  int32_t rows, const int32_t* start_pos,
+                  const int32_t* bounds, const float* scores, int32_t* list,
+                  int32_t* topk, cudaStream_t stream) {
+  const int32_t chunks = SelectChunks(p);
+  if (chunks > 0) {
+    QsaSelectInRegistersKernel<kStageKeys, false>
+        <<<dim3(rows, chunks), SelectThreads(kSelectChunk, kStageKeys), 0,
+           stream>>>(p, row0, start_pos, bounds, kSelectChunk, nullptr, 0,
+                     scores, list);
+    const int32_t candidates = SelectCandidates(p);
+    if (candidates <= kStageKeys * kSelectThreads) {
+      QsaSelectInRegistersKernel<kStageKeys, true>
+          <<<rows, SelectThreads(candidates, kStageKeys), 0, stream>>>(
+              p, row0, start_pos, bounds, 0, list, candidates, scores, topk);
+    } else {
+      QsaSelectInRegistersKernel<kKeysPerThread, true>
+          <<<rows, SelectThreads(candidates, kKeysPerThread), 0, stream>>>(
+              p, row0, start_pos, bounds, 0, list, candidates, scores, topk);
+    }
+  } else if (p.max_blocks <= kKeysPerThread * kSelectThreads) {
+    QsaSelectInRegistersKernel<kKeysPerThread, false>
+        <<<rows, SelectThreads(p.max_blocks, kKeysPerThread), 0, stream>>>(
+            p, row0, start_pos, bounds, 0, nullptr, 0, scores, topk);
+  } else {
+    QsaSelectKernel<<<rows, kSelectThreads, 0, stream>>>(
+        p, row0, start_pos, bounds, scores, topk);
+  }
 }
 
 bool ValidTypes(const LiteRtNvidiaQsaIndexerParams& p) {
@@ -950,6 +1148,12 @@ bool ValidTypes(const LiteRtNvidiaQsaIndexerParams& p) {
           p.state_type == kLiteRtNvidiaQsaFloat16) &&
          (p.mask_type == kLiteRtNvidiaQsaMaskBool ||
           p.mask_type == kLiteRtNvidiaQsaMaskFloat);
+}
+
+// The scores of `rows` rows, 256-byte aligned.
+size_t ScoreBytes(const LiteRtNvidiaQsaIndexerParams& p, int32_t rows) {
+  const size_t bytes = static_cast<size_t>(rows) * p.max_blocks * sizeof(float);
+  return (bytes + 255) / 256 * 256;
 }
 
 int32_t ChunkRows(const LiteRtNvidiaQsaIndexerParams& p) {
@@ -969,7 +1173,7 @@ cudaError_t Launch(const LiteRtNvidiaQsaIndexerParams& p, const void* q,
                    const void* k_new, State* ring, State* pool,
                    const float* norm_weight, const float* cos, const float* sin,
                    const int32_t* start_pos, const void* mask, int32_t* topk,
-                   float* scores, cudaStream_t stream) {
+                   float* scores, int32_t* list, cudaStream_t stream) {
   const int32_t candidates = std::max(
       1, std::min(p.max_blocks, p.rows / kLiteRtNvidiaQsaBlockTokens + 2));
   QsaPoolUpdateKernel<State><<<candidates, kBlock, 0, stream>>>(
@@ -983,15 +1187,15 @@ cudaError_t Launch(const LiteRtNvidiaQsaIndexerParams& p, const void* q,
   for (int32_t row0 = 0; row0 < p.rows; row0 += chunk) {
     const int32_t rows = std::min(chunk, p.rows - row0);
     const dim3 grid(tiles, (rows + group - 1) / group);
-    QsaScoreKernel<State><<<grid, kBlock, 0, stream>>>(
-        p, row0, group, q, pool, start_pos, mask, scores);
-    if (p.max_blocks <= kKeysPerThread * kSelectThreads) {
-      QsaSelectInRegistersKernel<<<rows, SelectThreads(p), 0, stream>>>(
-          p, row0, start_pos, nullptr, scores, topk);
+    if (p.rows >= kTensorScoreRows && p.index_dim % 16 == 0) {
+      QsaScoreKernel<State, true><<<grid, kBlock, 0, stream>>>(
+          p, row0, group, q, pool, start_pos, mask, scores);
     } else {
-      QsaSelectKernel<<<rows, kSelectThreads, 0, stream>>>(
-          p, row0, start_pos, nullptr, scores, topk);
+      QsaScoreKernel<State, false><<<grid, kBlock, 0, stream>>>(
+          p, row0, group, q, pool, start_pos, mask, scores);
     }
+    LaunchSelect(p, row0, rows, start_pos, nullptr, scores, list, topk,
+                 stream);
   }
   return cudaPeekAtLastError();
 }
@@ -1005,7 +1209,8 @@ cudaError_t LaunchRows(const LiteRtNvidiaQsaIndexerParams& p,
                        int64_t pool_stride, const void* q, const void* k_new,
                        State* ring, State* pool, const float* norm_weight,
                        const float* cos, const float* sin, int32_t* topk,
-                       float* scores, int32_t* bounds, cudaStream_t stream) {
+                       float* scores, int32_t* bounds, int32_t* list,
+                       cudaStream_t stream) {
   if (q != nullptr) {
     // Path blocks: a step of n rows completes at most n / 4 + 2 blocks from
     // a context.
@@ -1017,13 +1222,7 @@ cudaError_t LaunchRows(const LiteRtNvidiaQsaIndexerParams& p,
     const int32_t tiles = (p.max_blocks + kTileBlocks - 1) / kTileBlocks;
     QsaRowsScoreKernel<State><<<dim3(tiles, p.rows), kBlock, 0, stream>>>(
         p, model, pool_stride, GroupRows(p), q, pool, scores);
-    if (p.max_blocks <= kKeysPerThread * kSelectThreads) {
-      QsaSelectInRegistersKernel<<<p.rows, SelectThreads(p), 0, stream>>>(
-          p, 0, nullptr, bounds, scores, topk);
-    } else {
-      QsaSelectKernel<<<p.rows, kSelectThreads, 0, stream>>>(
-          p, 0, nullptr, bounds, scores, topk);
-    }
+    LaunchSelect(p, 0, p.rows, nullptr, bounds, scores, list, topk, stream);
   }
   if (model.ancestors == nullptr) {
     const int32_t candidates = std::max(
@@ -1053,8 +1252,9 @@ extern "C" bool LiteRtNvidiaQsaIndexerSupports(
 extern "C" size_t LiteRtNvidiaQsaIndexerWorkspaceBytes(
     const LiteRtNvidiaQsaIndexerParams* params) {
   if (!LiteRtNvidiaQsaIndexerSupports(params)) return 0;
-  return static_cast<size_t>(ChunkRows(*params)) * params->max_blocks *
-         sizeof(float);
+  return ScoreBytes(*params, ChunkRows(*params)) +
+         static_cast<size_t>(ChunkRows(*params)) *
+             SelectCandidates(*params) * sizeof(int32_t);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerUpdate(
@@ -1070,14 +1270,17 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerUpdate(
     return cudaErrorInvalidValue;
   }
   float* scores = static_cast<float*>(workspace);
+  int32_t* list = reinterpret_cast<int32_t*>(
+      static_cast<char*>(workspace) +
+      ScoreBytes(*params, ChunkRows(*params)));
   if (params->state_type == kLiteRtNvidiaQsaFloat16) {
     return Launch(*params, q, k_new, static_cast<__half*>(ring),
                   static_cast<__half*>(pool), norm_weight, cos, sin, start_pos,
-                  mask, topk, scores, stream);
+                  mask, topk, scores, list, stream);
   }
   return Launch(*params, q, k_new, static_cast<float*>(ring),
                 static_cast<float*>(pool), norm_weight, cos, sin, start_pos,
-                mask, topk, scores, stream);
+                mask, topk, scores, list, stream);
 }
 
 extern "C" bool LiteRtNvidiaQsaIndexerRowsSupports(
@@ -1096,11 +1299,13 @@ extern "C" bool LiteRtNvidiaQsaIndexerRowsSupports(
 
 extern "C" size_t LiteRtNvidiaQsaIndexerRowsWorkspaceBytes(
     const LiteRtNvidiaQsaIndexerParams* params) {
-  if (params == nullptr) return 0;
-  const size_t scores = static_cast<size_t>(params->rows) *
-                        std::max(params->max_blocks, 0) * sizeof(float);
-  return (scores + 255) / 256 * 256 +
-         static_cast<size_t>(std::max(params->rows, 0)) * sizeof(int32_t);
+  if (params == nullptr || params->rows < 1 || params->max_blocks < 1) {
+    return 0;
+  }
+  return ScoreBytes(*params, params->rows) +
+         (static_cast<size_t>(params->rows) * SelectCandidates(*params) +
+          params->rows) *
+             sizeof(int32_t);
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerRows(
@@ -1118,16 +1323,16 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerRows(
   }
   const auto& p = *params;
   float* scores = static_cast<float*>(workspace);
-  int32_t* bounds = reinterpret_cast<int32_t*>(
-      static_cast<char*>(workspace) +
-      (static_cast<size_t>(p.rows) * p.max_blocks * sizeof(float) + 255) /
-          256 * 256);
+  int32_t* list = reinterpret_cast<int32_t*>(static_cast<char*>(workspace) +
+                                             ScoreBytes(p, p.rows));
+  int32_t* bounds = list + static_cast<size_t>(p.rows) * SelectCandidates(p);
   if (p.state_type == kLiteRtNvidiaQsaFloat16) {
     return LaunchRows(p, *rows, ring_stride, pool_stride, q, k_new,
                       static_cast<__half*>(ring), static_cast<__half*>(pool),
-                      norm_weight, cos, sin, topk, scores, bounds, stream);
+                      norm_weight, cos, sin, topk, scores, bounds, list,
+                      stream);
   }
   return LaunchRows(p, *rows, ring_stride, pool_stride, q, k_new,
                     static_cast<float*>(ring), static_cast<float*>(pool),
-                    norm_weight, cos, sin, topk, scores, bounds, stream);
+                    norm_weight, cos, sin, topk, scores, bounds, list, stream);
 }
