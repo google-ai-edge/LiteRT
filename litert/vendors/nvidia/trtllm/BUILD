@@ -613,3 +613,75 @@ cc_test(
         "@local_cuda//:cuda_runtime",
     ],
 )
+
+# The decode step's kernels over several sequence slots in one launch (a
+# batched decode step), each slot's results those of its own launch. Their own
+# archive and their own copy of the device code (decode_attention_blocks.cuh):
+# the kernels above are not rebuilt or changed.
+cuda_library(
+    name = "slot_kernels_cuda",
+    srcs = [
+        "decode_attention_slots.cu",
+    ],
+    hdrs = [
+        "block_sync.cuh",
+        "decode_attention.h",
+        "decode_attention_blocks.cuh",
+        "decode_attention_slots.h",
+    ],
+    # copybara:uncomment_begin(google-only)
+    # copts = [
+    # "--no-cuda-gpu-arch=sm_60",
+    # "--no-cuda-gpu-arch=sm_70",
+    # "--cuda-gpu-arch=sm_120",
+    # ],
+    # copybara:uncomment_end
+    linkstatic = 1,
+    tags = ["manual"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_import(
+    name = "slot_kernels_archive",
+    static_library = ":slot_kernels_cuda",
+    tags = ["manual"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "slot_kernels",
+    hdrs = [
+        "decode_attention_slots.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels_archive",
+        "@local_cuda//:cuda_headers",
+    ],
+)
+
+cc_test(
+    name = "decode_attention_slots_test",
+    srcs = ["decode_attention_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
