@@ -45,8 +45,7 @@ absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
   mapping["model.language_model.embed_tokens.weight"] =
       "model.embed_tokens.weight";
 
-  // Optional separate output projection. Gemma4WeightHooks supplies the tied
-  // embeddings when the checkpoint has no separate head.
+  // LM head.
   mapping["lm_head.weight"] = "lm_head.weight";
 
   // Final norm
@@ -112,23 +111,6 @@ absl::flat_hash_map<std::string, std::string> GetGemma4WeightMapping(
         absl::StrCat(model_prefix, ".layer_scalar");
   }
 
-  // Mobile QAT checkpoints store static activation scales beside each weight.
-  // Keep them addressable when graph builders switch from eager loading to the
-  // lazy mapping, or those builders would silently use floating activations.
-  absl::flat_hash_map<std::string, std::string> activation_mapping;
-  for (const auto& [checkpoint_name, model_name] : mapping) {
-    absl::string_view checkpoint_module = checkpoint_name;
-    absl::string_view model_module = model_name;
-    if (!absl::ConsumeSuffix(&checkpoint_module, ".weight") ||
-        !absl::ConsumeSuffix(&model_module, ".weight")) {
-      continue;
-    }
-    for (const char* suffix : {".input_scale", ".output_scale"}) {
-      activation_mapping.emplace(absl::StrCat(checkpoint_module, suffix),
-                                 absl::StrCat(model_module, suffix));
-    }
-  }
-  mapping.insert(activation_mapping.begin(), activation_mapping.end());
   return mapping;
 }
 
@@ -169,15 +151,6 @@ absl::StatusOr<TensorHandle> Gemma4WeightHooks::SlicePerLayerModelProjection(
     return absl::UnimplementedError(absl::StrCat(
         "Slicing quantized ", kPerLayerModelProjection, " isn't supported."));
   }
-  const Shape expected_shape = {config_.num_layers, config_.per_layer_input_dim,
-                                config_.embed_dim};
-  const Shape flattened_shape = {config_.num_layers * config_.per_layer_input_dim,
-                                 config_.embed_dim};
-  if (proj_w.GetShape() != expected_shape &&
-      proj_w.GetShape() != flattened_shape) {
-    return absl::InvalidArgumentError(
-        "Per-layer projection shape disagrees with model config");
-  }
   LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & proj_w_buf, proj_w.GetBuffer());
   auto proj_locked = proj_w_buf.Lock();
   const std::byte* proj_w_bytes = proj_locked.data();
@@ -195,11 +168,10 @@ absl::StatusOr<TensorHandle> Gemma4WeightHooks::SlicePerLayerModelProjection(
                      " don't start on a byte boundary."));
   }
   const size_t layer_w_bytes = BufferSize(type, layer_w_elements);
-  if (proj_locked.size() != config_.num_layers * layer_w_bytes) {
+  if (proj_locked.size() < (layer + 1) * layer_w_bytes) {
     return absl::InvalidArgumentError(
         absl::StrCat(kPerLayerModelProjection, " holds ", proj_locked.size(),
-                     " bytes, but its configured shape requires ",
-                     config_.num_layers * layer_w_bytes));
+                     " bytes, which is too small to slice layer ", layer));
   }
 
   const std::byte* layer_bytes = proj_w_bytes + layer * layer_w_bytes;

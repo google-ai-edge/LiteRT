@@ -23,7 +23,6 @@
 #include <cstring>
 #include <memory>
 #include <string>
-#include <vector>
 
 #include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/const_init.h"  // from @com_google_absl
@@ -37,11 +36,6 @@
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
-#include "tflite/builtin_ops.h"
-#include "tflite/c/c_api_opaque.h"
-#include "tflite/core/c/builtin_op_data.h"
-#include "tflite/core/subgraph.h"
-#include "tflite/schema/schema_generated.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -67,65 +61,6 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                           LiteRtCompiledModelT::Create(
                               environment, model, jit_compilation_options));
   *compiled_model = created_compiled_model.release();
-  return kLiteRtStatusOk;
-}
-
-LiteRtStatus LiteRtGetCompiledModelOperatorDelegations(
-    LiteRtCompiledModel compiled_model,
-    LiteRtOperatorDelegationCallback callback, void* user_data) {
-  if (!compiled_model || !callback) {
-    return kLiteRtStatusErrorInvalidArgument;
-  }
-  LITERT_ASSIGN_OR_RETURN(auto* interpreter, GetInterpreter(compiled_model));
-  for (size_t gi = 0; gi < interpreter->subgraphs_size(); ++gi) {
-    const auto* graph = interpreter->subgraph(gi);
-    std::vector<const char*> owners(graph->nodes_size(), "");
-    for (int index : graph->execution_plan()) {
-      const auto* partition = graph->node_and_registration(index);
-      if (partition->second.builtin_code != kTfLiteBuiltinDelegate) continue;
-      if (!partition->first.builtin_data) continue;
-      const TfLiteIntArray* members;
-      const auto* delegate = partition->first.delegate;
-      const bool opaque = delegate && !delegate->Prepare &&
-                          !delegate->CopyFromBufferHandle &&
-                          !delegate->FreeBufferHandle &&
-                          delegate->opaque_delegate_builder;
-      if (opaque) {
-        members = static_cast<const TfLiteOpaqueDelegateParams*>(
-                      partition->first.builtin_data)->nodes_to_replace;
-      } else {
-        members = static_cast<const TfLiteDelegateParams*>(
-                      partition->first.builtin_data)->nodes_to_replace;
-      }
-      if (!members) continue;
-      const char* owner = partition->second.custom_name;
-      if (!owner && partition->second.registration_external) {
-        owner = TfLiteOperatorGetCustomName(partition->second.registration_external);
-      }
-      for (int j = 0; j < members->size; ++j) {
-        const int member = members->data[j];
-        if (member < 0 || static_cast<size_t>(member) >= owners.size()) {
-          return kLiteRtStatusErrorRuntimeFailure;
-        }
-        owners[member] = owner ? owner : "";
-      }
-    }
-    for (size_t index = 0; index < graph->nodes_size(); ++index) {
-      const auto& [node, registration] = *graph->node_and_registration(index);
-      if (registration.builtin_code == kTfLiteBuiltinDelegate) continue;
-      const char* name = tflite::EnumNameBuiltinOperator(
-          static_cast<tflite::BuiltinOperator>(registration.builtin_code));
-      if (registration.builtin_code == kTfLiteBuiltinCustom) {
-        name = registration.custom_name ? registration.custom_name : "CUSTOM";
-      } else if (registration.builtin_code == kTfLiteBuiltinStablehloComposite &&
-                 node.builtin_data) {
-        const auto* params = static_cast<const TfLiteStablehloCompositeParams*>(
-            node.builtin_data);
-        if (params->name) name = params->name;
-      }
-      LITERT_RETURN_IF_ERROR(callback(user_data, gi, index, name, owners[index]));
-    }
-  }
   return kLiteRtStatusOk;
 }
 

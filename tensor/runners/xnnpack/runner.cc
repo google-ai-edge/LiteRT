@@ -119,8 +119,8 @@ absl::Status XnnpackRunner::CreateRuntime() {
   xnn_runtime* raw_runtime = nullptr;
   const uint32_t flags = IsXnnProfilingEnabled() ? XNN_FLAG_BASIC_PROFILING : 0;
   LRT_TENSOR_RETURN_IF_ERROR(XnnStatusToAbsl(
-      xnn_create_runtime_v4(sg, weights_cache_, workspace_, threadpool_,
-                            runtime_flags_ | flags, &raw_runtime),
+      xnn_create_runtime_v4(sg, weights_cache_, workspace_, threadpool_, flags,
+                            &raw_runtime),
       "xnn_create_runtime_v4"));
   runtime_.reset(raw_runtime);
   // Blockwise FP16 scale buffers are only consumed when packing weights during

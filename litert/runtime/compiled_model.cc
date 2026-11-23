@@ -383,132 +383,6 @@ LiteRtSchedulingInfo GetDefaultSchedulingInfo() {
   return info;
 }
 
-std::string TfLiteAllocationTypeName(TfLiteAllocationType allocation_type) {
-  switch (allocation_type) {
-    case kTfLiteMemNone:
-      return "kTfLiteMemNone";
-    case kTfLiteMmapRo:
-      return "kTfLiteMmapRo";
-    case kTfLiteArenaRw:
-      return "kTfLiteArenaRw";
-    case kTfLiteArenaRwPersistent:
-      return "kTfLiteArenaRwPersistent";
-    case kTfLiteDynamic:
-      return "kTfLiteDynamic";
-    case kTfLitePersistentRo:
-      return "kTfLitePersistentRo";
-    case kTfLiteCustom:
-      return "kTfLiteCustom";
-    case kTfLiteVariantObject:
-      return "kTfLiteVariantObject";
-    case kTfLiteNonCpu:
-      return "kTfLiteNonCpu";
-  }
-  return absl::StrCat("<unknown:", static_cast<int>(allocation_type), ">");
-}
-
-std::string ShapeSpanToString(absl::Span<const int> shape) {
-  std::string out = "[";
-  for (size_t i = 0; i < shape.size(); ++i) {
-    if (i > 0) {
-      absl::StrAppend(&out, ", ");
-    }
-    absl::StrAppend(&out, shape[i]);
-  }
-  absl::StrAppend(&out, "]");
-  return out;
-}
-
-std::string TfLiteIntArrayToString(const TfLiteIntArray* array) {
-  if (array == nullptr) {
-    return "<null>";
-  }
-  return ShapeSpanToString(absl::MakeConstSpan(array->data, array->size));
-}
-
-std::string TensorRegistrationDebugString(const TfLiteTensor* tensor,
-                                          int tensor_index,
-                                          const char* tensor_name,
-                                          absl::Span<const int> buffer_shape) {
-  if (tensor == nullptr) {
-    return absl::StrCat("signature_name=",
-                        tensor_name != nullptr ? tensor_name : "<null>",
-                        ", tensor_index=", tensor_index, ", tensor=<null>",
-                        ", buffer_shape=", ShapeSpanToString(buffer_shape));
-  }
-  return absl::StrCat(
-      "signature_name=", tensor_name != nullptr ? tensor_name : "<null>",
-      ", tensor_index=", tensor_index,
-      ", tensor_name=", tensor->name != nullptr ? tensor->name : "<unnamed>",
-      ", type=", TfLiteTypeGetName(tensor->type), "(",
-      static_cast<int>(tensor->type), ")",
-      ", dims=", TfLiteIntArrayToString(tensor->dims),
-      ", dims_signature=", TfLiteIntArrayToString(tensor->dims_signature),
-      ", allocation_type=",
-      TfLiteAllocationTypeName(tensor->allocation_type), ", bytes=",
-      tensor->bytes, ", buffer_shape=", ShapeSpanToString(buffer_shape));
-}
-
-bool ShapeIsCompatibleWithSignature(const TfLiteIntArray* signature_shape,
-                                    absl::Span<const int> requested_shape) {
-  if (signature_shape == nullptr ||
-      signature_shape->size != requested_shape.size()) {
-    return false;
-  }
-  for (size_t i = 0; i < requested_shape.size(); ++i) {
-    const int signature_dim = signature_shape->data[i];
-    const int requested_dim = requested_shape[i];
-    if (requested_dim < 0) {
-      return false;
-    }
-    if (signature_dim != -1 && signature_dim != requested_dim) {
-      return false;
-    }
-  }
-  return true;
-}
-
-Expected<void> MaterializeGraphInputTensorIfNeeded(
-    TfLiteTensor* tensor, int tensor_index, const char* tensor_name,
-    LiteRtElementType buffer_element_type,
-    absl::Span<const int> requested_shape) {
-  if (tensor == nullptr || tensor->allocation_type != kTfLiteMemNone) {
-    return {};
-  }
-  if (!ShapeIsCompatibleWithSignature(tensor->dims_signature,
-                                      requested_shape)) {
-    return Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrCat("Cannot materialize input tensor with incompatible "
-                     "shape signature: ",
-                     TensorRegistrationDebugString(
-                         tensor, tensor_index, tensor_name, requested_shape)));
-  }
-
-  // Some TFLite delegate/reset paths can leave signature graph inputs in a
-  // shape-signature-only state. Graph inputs are still resizable/registerable,
-  // so restore the allocation type that TFLite uses for ordinary inputs before
-  // calling ResizeInputTensor or SetCustomAllocationForTensor.
-  if (tensor->type == kTfLiteNoType) {
-    if (buffer_element_type == kLiteRtElementTypeNone) {
-      return Unexpected(
-          kLiteRtStatusErrorInvalidArgument,
-          absl::StrCat("Cannot materialize input tensor without element type: ",
-                       TensorRegistrationDebugString(
-                           tensor, tensor_index, tensor_name,
-                           requested_shape)));
-    }
-    tensor->type = static_cast<TfLiteType>(buffer_element_type);
-  }
-  tensor->allocation_type = kTfLiteArenaRw;
-  tensor->data.raw = nullptr;
-  LITERT_LOG(LITERT_INFO, "Materialized input tensor for registration: %s",
-             TensorRegistrationDebugString(tensor, tensor_index, tensor_name,
-                                           requested_shape)
-                 .c_str());
-  return {};
-}
-
 Expected<void> ValidateSchedulingInfo(
     const LiteRtSchedulingInfo& scheduling_info) {
   if ((scheduling_info.fields_mask &
@@ -2491,12 +2365,10 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
 
   // Automatic shape detection for input tensors.
   if (is_input) {
-    auto [element_type, layout] = buffer->tensor_type();
+    auto [_, layout] = buffer->tensor_type();
     absl::Span<const int> buffer_shape =
         absl::MakeConstSpan(layout.dimensions, layout.rank);
 
-    LITERT_RETURN_IF_ERROR(MaterializeGraphInputTensorIfNeeded(
-        tensor, tensor_index, tensor_name, element_type, buffer_shape));
     LITERT_ASSIGN_OR_RETURN(bool needs_auto_resize,
                             InputTensorNeedsResize(tensor, buffer_shape));
     if (needs_auto_resize) {
@@ -2520,11 +2392,8 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         LITERT_LOG(LITERT_INFO, "Automatically resized input tensor index %d",
                    tensor_index);
       } else {
-        return Unexpected(
-            kLiteRtStatusErrorRuntimeFailure,
-            absl::StrCat("Automatic resize failed for input tensor: ",
-                         TensorRegistrationDebugString(
-                             tensor, tensor_index, tensor_name, buffer_shape)));
+        LITERT_LOG(LITERT_WARNING,
+                   "Automatic resize failed for tensor index %d", tensor_index);
       }
     } else {
       // Get current tensor shape.
@@ -2532,11 +2401,7 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
           absl::MakeConstSpan(tensor->dims->data, tensor->dims->size);
       LITERT_RETURN_IF_ERROR(current_shape == buffer_shape,
                              Unexpected(kLiteRtStatusErrorInvalidArgument,
-                                        absl::StrCat(
-                                            "Input tensor shape mismatch: ",
-                                            TensorRegistrationDebugString(
-                                                tensor, tensor_index,
-                                                tensor_name, buffer_shape))));
+                                        "Input tensor shape mismatch"));
     }
   }
 
@@ -2680,9 +2545,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
       // allocation.
       TfLiteCustomAllocation custom_allocation{host_mem_addr,
                                                buffer->buffer_size()};
-      auto [_, layout] = buffer->tensor_type();
-      absl::Span<const int> buffer_shape =
-          absl::MakeConstSpan(layout.dimensions, layout.rank);
       // If this is a constant output, save the locked address for later data
       // copying
       if (is_constant_output) {
@@ -2692,22 +2554,24 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
                    "Tracked constant output tensor %s with locked address",
                    tensor_name);
       }
+      TfLiteStatus status = kTfLiteOk;
       if (is_input) {
-        TfLiteStatus set_allocation_status = kTfLiteOk;
         if (runner) {
-          set_allocation_status = runner->SetCustomAllocationForInputTensor(
-              tensor_name, custom_allocation, /*flags=*/0);
+          status = runner->SetCustomAllocationForInputTensor(tensor_name,
+                                                             custom_allocation,
+                                                             /*flags=*/0);
         } else {
-          set_allocation_status = interp_->SetCustomAllocationForTensor(
-              tensor_index, custom_allocation, /*flags=*/0);
+          status = interp_->SetCustomAllocationForTensor(tensor_index,
+                                                         custom_allocation,
+                                                         /*flags=*/0);
         }
-        if (set_allocation_status != kTfLiteOk) {
-          return Unexpected(
-              kLiteRtStatusErrorRuntimeFailure,
-              absl::StrCat(
-                  "Failed to set custom allocation for input tensor: ",
-                  TensorRegistrationDebugString(tensor, tensor_index,
-                                                tensor_name, buffer_shape)));
+        if (status != kTfLiteOk) {
+          LITERT_LOG(LITERT_ERROR,
+                     "Failed to set custom allocation for input tensor %s "
+                     "(index %d): %d",
+                     tensor_name ? tensor_name : "", tensor_index, status);
+          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                            "Failed to set custom allocation for input");
         }
 
         // For string inputs, we must manually set tensor->bytes because TFLite
@@ -2720,22 +2584,22 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
         // TFLite doesn't allow custom allocation for read-only memory-mapped
         // tensors
         if (!is_constant_output) {
-          TfLiteStatus set_allocation_status = kTfLiteOk;
           if (runner) {
-            set_allocation_status =
-                runner->SetCustomAllocationForOutputTensor(
-                    tensor_name, custom_allocation, /*flags=*/0);
+            status = runner->SetCustomAllocationForOutputTensor(
+                tensor_name, custom_allocation,
+                /*flags=*/0);
           } else {
-            set_allocation_status = interp_->SetCustomAllocationForTensor(
-                tensor_index, custom_allocation, /*flags=*/0);
+            status = interp_->SetCustomAllocationForTensor(tensor_index,
+                                                           custom_allocation,
+                                                           /*flags=*/0);
           }
-          if (set_allocation_status != kTfLiteOk) {
-            return Unexpected(
-                kLiteRtStatusErrorRuntimeFailure,
-                absl::StrCat(
-                    "Failed to set custom allocation for output tensor: ",
-                    TensorRegistrationDebugString(tensor, tensor_index,
-                                                  tensor_name, buffer_shape)));
+          if (status != kTfLiteOk) {
+            LITERT_LOG(LITERT_ERROR,
+                       "Failed to set custom allocation for output tensor %s "
+                       "(index %d): %d",
+                       tensor_name ? tensor_name : "", tensor_index, status);
+            return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to set custom allocation for output");
           }
         }
       }
@@ -2771,43 +2635,25 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
     TfLiteCustomAllocation custom_allocation{host_mem_addr,
                                              buffer->buffer_size()};
-    auto [_, layout] = buffer->tensor_type();
-    absl::Span<const int> buffer_shape =
-        absl::MakeConstSpan(layout.dimensions, layout.rank);
     if (is_input) {
-      TfLiteStatus set_allocation_status = kTfLiteOk;
       if (runner) {
-        set_allocation_status = runner->SetCustomAllocationForInputTensor(
-            tensor_name, custom_allocation, /*flags=*/0);
+        runner->SetCustomAllocationForInputTensor(tensor_name,
+                                                  custom_allocation,
+                                                  /*flags=*/0);
       } else {
-        set_allocation_status = interp_->SetCustomAllocationForTensor(
-            tensor_index, custom_allocation, /*flags=*/0);
-      }
-      if (set_allocation_status != kTfLiteOk) {
-        return Unexpected(
-            kLiteRtStatusErrorRuntimeFailure,
-            absl::StrCat("Failed to set custom allocation for input tensor: ",
-                         TensorRegistrationDebugString(
-                             tensor, tensor_index, tensor_name, buffer_shape)));
+        interp_->SetCustomAllocationForTensor(tensor_index, custom_allocation,
+                                              /*flags=*/0);
       }
     } else {
       // Skip SetCustomAllocationForOutputTensor for constant tensors
       if (!is_constant_output) {
-        TfLiteStatus set_allocation_status = kTfLiteOk;
         if (runner) {
-          set_allocation_status = runner->SetCustomAllocationForOutputTensor(
-              tensor_name, custom_allocation, /*flags=*/0);
+          runner->SetCustomAllocationForOutputTensor(tensor_name,
+                                                     custom_allocation,
+                                                     /*flags=*/0);
         } else {
-          set_allocation_status = interp_->SetCustomAllocationForTensor(
-              tensor_index, custom_allocation, /*flags=*/0);
-        }
-        if (set_allocation_status != kTfLiteOk) {
-          return Unexpected(
-              kLiteRtStatusErrorRuntimeFailure,
-              absl::StrCat("Failed to set custom allocation for output tensor: ",
-                           TensorRegistrationDebugString(
-                               tensor, tensor_index, tensor_name,
-                               buffer_shape)));
+          interp_->SetCustomAllocationForTensor(tensor_index, custom_allocation,
+                                                /*flags=*/0);
         }
       }
     }
@@ -2867,10 +2713,6 @@ Expected<void> LiteRtCompiledModelT::Run(
                         "Failed to get signature runner");
     }
   }
-  tflite::SignatureRunner* allocation_runner = runner;
-  if (use_interpreter_directly) {
-    allocation_runner = GetSignatureRunner(signature_key);
-  }
 
   size_t num_inputs = input_buffers.size();
   size_t expected_inputs = use_interpreter_directly
@@ -2901,84 +2743,6 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
   }
 
-  bool can_reuse_registered_buffers = false;
-  if (allocation_runner != nullptr) {
-    LITERT_ASSIGN_OR_RETURN(bool needs_allocation,
-                            SignatureNeedsAllocation(allocation_runner));
-    if (!needs_allocation) {
-      auto is_tensor_already_bound =
-          [&](TfLiteTensor* tensor, LiteRtTensorBuffer buffer,
-              bool is_input) -> bool {
-        if (tensor == nullptr || buffer == nullptr) {
-          return false;
-        }
-
-        auto existing_buffer = buffer_context_->GetTensorBuffer(tensor);
-        if (existing_buffer && existing_buffer->get() == buffer) {
-          return true;
-        }
-
-        void* host_mem_addr = nullptr;
-        LiteRtTensorBufferLockMode lock_mode =
-            is_input ? kLiteRtTensorBufferLockModeRead
-                     : kLiteRtTensorBufferLockModeWrite;
-        if (LiteRtLockTensorBuffer(buffer, &host_mem_addr, lock_mode) !=
-            kLiteRtStatusOk) {
-          return false;
-        }
-        const bool matches_current_allocation = tensor->data.raw == host_mem_addr;
-        if (LiteRtUnlockTensorBuffer(buffer) != kLiteRtStatusOk) {
-          return false;
-        }
-        return matches_current_allocation;
-      };
-
-      can_reuse_registered_buffers = true;
-      for (int i = 0; i < num_inputs; ++i) {
-        if (input_buffers[i] == nullptr) {
-          can_reuse_registered_buffers = false;
-          break;
-        }
-        TfLiteTensor* input_tensor = nullptr;
-        if (use_interpreter_directly) {
-          input_tensor = interp_->tensor(interp_->inputs()[i]);
-        } else {
-          const auto& input_name_str = runner->subgraph_input_names()[i];
-          input_tensor = runner->input_tensor(input_name_str);
-        }
-        if (input_tensor == nullptr) {
-          can_reuse_registered_buffers = false;
-          break;
-        }
-        if (!is_tensor_already_bound(input_tensor, input_buffers[i],
-                                     /*is_input=*/true)) {
-          can_reuse_registered_buffers = false;
-          break;
-        }
-      }
-      for (int i = 0; can_reuse_registered_buffers && i < expected_outputs;
-           ++i) {
-        const TfLiteTensor* output_tensor = nullptr;
-        if (use_interpreter_directly) {
-          output_tensor = interp_->tensor(interp_->outputs()[i]);
-        } else {
-          const auto& output_name_str = runner->subgraph_output_names()[i];
-          output_tensor = runner->output_tensor(output_name_str);
-        }
-        if (output_tensor == nullptr) {
-          can_reuse_registered_buffers = false;
-          break;
-        }
-        if (!is_tensor_already_bound(const_cast<TfLiteTensor*>(output_tensor),
-                                     output_buffers[i],
-                                     /*is_input=*/false)) {
-          can_reuse_registered_buffers = false;
-          break;
-        }
-      }
-    }
-  }
-
   // The collection of locked buffers mapped to their host memory addresses.
   // It is used to unlock the buffers after the inference is done and to reuse
   // host addresses when a buffer is shared (e.g. as both input and output).
@@ -2999,121 +2763,90 @@ Expected<void> LiteRtCompiledModelT::Run(
     }
   });
 
-  if (!can_reuse_registered_buffers) {
-    {
-      uint64_t apply_bindings_event_handle =
-          std::numeric_limits<uint64_t>::max();
-      if (profiler_ && profiler_->IsProfiling()) {
-        profiler_->SetCurrentEventSource(LITERT);
-        apply_bindings_event_handle = profiler_->BeginEvent(
-            "LiteRT::Run[apply buffer bindings]",
-            tflite::Profiler::EventType::DEFAULT, 0, 0);
-      }
-      auto end_apply_bindings_event = absl::MakeCleanup([&]() {
-        if (profiler_ && profiler_->IsProfiling() &&
-            apply_bindings_event_handle !=
-                std::numeric_limits<uint64_t>::max()) {
-          profiler_->SetCurrentEventSource(LITERT);
-          profiler_->EndEvent(apply_bindings_event_handle);
-        }
-      });
+  for (int i = 0; i < num_inputs; ++i) {
+    int tensor_index = -1;
+    const char* tensor_name = nullptr;
+    TfLiteTensor* input_tensor = nullptr;
 
-      for (int i = 0; i < num_inputs; ++i) {
-        int tensor_index = -1;
-        const char* tensor_name = nullptr;
-        TfLiteTensor* input_tensor = nullptr;
-
-        if (use_interpreter_directly) {
-          tensor_index = interp_->inputs()[i];
-          input_tensor = interp_->tensor(tensor_index);
-        } else {
-          const auto& input_name_str = runner->subgraph_input_names()[i];
-          tensor_name = input_name_str;
-          input_tensor = runner->input_tensor(tensor_name);
-        }
-
-        LiteRtTensorBuffer input_buffer = input_buffers[i];
-        if (input_buffer == nullptr) {
-          // Preserve runtime-owned buffers for unbound CPU inputs while
-          // retaining the fast path for unchanged explicit buffer bindings.
-          LITERT_ASSIGN_OR_RETURN(input_buffer,
-                                  GetBufferForUnboundInput(input_tensor));
-          if (input_buffer == nullptr) {
-            continue;
-          }
-        }
-
-        auto res =
-            RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
-                           input_buffer, /*is_input=*/true,
-                           locked_buffers, constant_outputs,
-                           pending_string_output_copies);
-
-        if (!res) {
-          return Unexpected(
-              kLiteRtStatusErrorRuntimeFailure,
-              absl::StrCat("Failed to register input tensor buffer: ",
-                           res.Error().Message()));
-        }
-      }
-
-      for (int i = 0; i < expected_outputs; ++i) {
-        int tensor_index = -1;
-        const char* tensor_name = nullptr;
-        const TfLiteTensor* output_tensor = nullptr;
-
-        if (use_interpreter_directly) {
-          tensor_index = interp_->outputs()[i];
-          output_tensor = interp_->tensor(tensor_index);
-        } else {
-          const auto& output_name_str = runner->subgraph_output_names()[i];
-          tensor_name = output_name_str;
-          output_tensor = runner->output_tensor(tensor_name);
-        }
-
-        auto res =
-            RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
-                           tensor_index, tensor_name, output_buffers[i],
-                           /*is_input=*/false, locked_buffers,
-                           constant_outputs, pending_string_output_copies);
-
-        if (!res) {
-          return Unexpected(
-              kLiteRtStatusErrorRuntimeFailure,
-              absl::StrCat("Failed to register output tensor buffer: ",
-                           res.Error().Message()));
-        }
-      }
-    }
-    if (profiler_ && profiler_->IsProfiling() &&
-        event_handle != std::numeric_limits<uint64_t>::max()) {
-      profiler_->SetCurrentEventSource(LITERT);
-      profiler_->EndEvent(event_handle);
+    if (use_interpreter_directly) {
+      tensor_index = interp_->inputs()[i];
+      input_tensor = interp_->tensor(tensor_index);
+    } else {
+      const auto& input_name_str = runner->subgraph_input_names()[i];
+      tensor_name = input_name_str;
+      input_tensor = runner->input_tensor(tensor_name);
     }
 
-    TfLiteStatus allocate_status = kTfLiteOk;
-    {
-      LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Allocation");
-      if (use_interpreter_directly) {
-        allocate_status = interp_->AllocateTensors();
-      } else {
-        allocate_status = runner->AllocateTensors();
-      }
+    LiteRtTensorBuffer input_buffer = input_buffers[i];
+    if (input_buffer == nullptr) {
+      // The caller may leave some inputs unbound (e.g. external tensor
+      // bindings). Tensors without backing memory get a runtime-owned buffer.
+      LITERT_ASSIGN_OR_RETURN(input_buffer,
+                              GetBufferForUnboundInput(input_tensor));
+      if (input_buffer == nullptr) continue;
     }
-    if (allocate_status != kTfLiteOk) {
-      if (error_reporter_) {
-        error_reporter_->Report("Failed to allocate tensors for execution");
-      }
+
+    auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
+                              input_buffer, /*is_input=*/true, locked_buffers,
+                              constant_outputs, pending_string_output_copies);
+
+    if (!res) {
       return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                        "Failed to allocate tensors");
+                        absl::StrCat("Failed to register input tensor buffer: ",
+                                     res.Error().Message()));
     }
-    if (allocation_runner != nullptr) {
-      LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(allocation_runner));
+  }
+
+  for (int i = 0; i < expected_outputs; ++i) {
+    int tensor_index = -1;
+    const char* tensor_name = nullptr;
+    const TfLiteTensor* output_tensor = nullptr;
+
+    if (use_interpreter_directly) {
+      tensor_index = interp_->outputs()[i];
+      output_tensor = interp_->tensor(tensor_index);
+    } else {
+      const auto& output_name_str = runner->subgraph_output_names()[i];
+      tensor_name = output_name_str;
+      output_tensor = runner->output_tensor(tensor_name);
     }
-  } else if (profiler_ && profiler_->IsProfiling() &&
-             event_handle != std::numeric_limits<uint64_t>::max()) {
+
+    auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
+                              tensor_index, tensor_name, output_buffers[i],
+                              /*is_input=*/false, locked_buffers,
+                              constant_outputs, pending_string_output_copies);
+
+    if (!res) {
+      return Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("Failed to register output tensor buffer: ",
+                       res.Error().Message()));
+    }
+  }
+  if (profiler_ && profiler_->IsProfiling() &&
+      event_handle != std::numeric_limits<uint64_t>::max()) {
     profiler_->SetCurrentEventSource(LITERT);
     profiler_->EndEvent(event_handle);
+  }
+
+  TfLiteStatus allocate_status = kTfLiteOk;
+  {
+    LITERT_PERFETTO_TRACE_EVENT("CompiledModel Buffer Allocation");
+    if (use_interpreter_directly) {
+      allocate_status = interp_->AllocateTensors();
+    } else {
+      allocate_status = runner->AllocateTensors();
+    }
+  }
+  if (allocate_status != kTfLiteOk) {
+    if (error_reporter_) {
+      error_reporter_->Report("Failed to allocate tensors for execution");
+    }
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                      "Failed to allocate tensors");
+  }
+  if (!use_interpreter_directly) {
+    LITERT_RETURN_IF_ERROR(MarkSignatureAllocationUpToDate(runner));
   }
 
   // Relay scheduling information to DelegateKernel of Accelerator. This is
@@ -3356,58 +3089,37 @@ Expected<LiteRtMetricsT> LiteRtCompiledModelT::StopMetricsCollection() const {
 // then return error.
 Expected<bool> LiteRtCompiledModelT::InputTensorNeedsResize(
     const TfLiteTensor* tensor, absl::Span<const int> new_shape) {
-  if (tensor == nullptr) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument, "Tensor is null");
-  }
-  if (new_shape.empty()) {
+  const TfLiteIntArray* shape_array = tensor->dims;
+  if (!shape_array || shape_array->size == 0 || new_shape.empty()) {
     return false;
   }
 
-  const TfLiteIntArray* shape_array = tensor->dims;
-  const bool has_runtime_shape = shape_array != nullptr && shape_array->size > 0;
-  if (has_runtime_shape) {
-    // Get current tensor shape.
-    absl::Span<const int> current_shape =
-        absl::MakeConstSpan(shape_array->data, shape_array->size);
+  // Get current tensor shape.
+  absl::Span<const int> current_shape =
+      absl::MakeConstSpan(shape_array->data, shape_array->size);
 
-    // Check if shapes are already the same.
-    if (current_shape == new_shape) {
-      if (tensor->allocation_type == kTfLiteMemNone) {
-        return true;
-      }
-      return false;
-    }
+  // Check if shapes are already the same.
+  if (current_shape == new_shape) {
+    return false;
   }
 
   if (!tensor->dims_signature || tensor->dims_signature->size == 0) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       absl::StrCat("Cannot auto-resize tensor ",
                                    tensor->name ? tensor->name : "<unnamed>",
-                                   has_runtime_shape
-                                       ? ": no dims_signature exists"
-                                       : ": no runtime shape or "
-                                         "dims_signature exists"));
+                                   ": no dims_signature exists"));
   }
   // Validate that the tensor has dynamic dimensions (contains -1).
   absl::Span<const int> signature_shape = absl::MakeConstSpan(
       tensor->dims_signature->data, tensor->dims_signature->size);
 
-  const bool has_dynamic_shape =
+  LITERT_RETURN_IF_ERROR(
       std::find(signature_shape.begin(), signature_shape.end(), -1) !=
-      signature_shape.end();
-  if (!has_dynamic_shape) {
-    if (!has_runtime_shape && signature_shape == new_shape) {
-      LITERT_LOG(LITERT_INFO,
-                 "Detected missing runtime shape for tensor %s - "
-                 "materializing static signature shape",
-                 tensor->name ? tensor->name : "<unnamed>");
-      return true;
-    }
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      absl::StrCat("Cannot auto-resize tensor ",
-                                   tensor->name ? tensor->name : "<unnamed>",
-                                   ": no dynamic dimensions found"));
-  }
+          signature_shape.end(),
+      Unexpected(kLiteRtStatusErrorInvalidArgument,
+                 absl::StrCat("Cannot auto-resize tensor ",
+                              tensor->name ? tensor->name : "<unnamed>",
+                              ": no dynamic dimensions found")));
 
   // Validate that new shape is compatible with tensor structure.
   LITERT_RETURN_IF_ERROR(

@@ -40,7 +40,6 @@
 #include "ml_drift/common/task/profiling_info.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/webgpu/buffer.h"  // from @ml_drift
-#include "ml_drift/webgpu/command_buffer_capture.h"  // from @ml_drift
 #include "ml_drift/webgpu/converter.h"  // from @ml_drift
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/inference_context.h"  // from @ml_drift
@@ -53,7 +52,6 @@
 #include "ml_drift_delegate/delegate/delegate_data.h"
 #include "ml_drift_delegate/delegate/delegate_utils.h"
 #include "ml_drift_delegate/delegate/gpu_backend.h"
-#include "ml_drift_delegate/delegate/webgpu_command_capture.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
 #include "tflite/c/common.h"
 
@@ -197,21 +195,12 @@ class GpuBackendWebGpu : public GpuBackend {
         num_steps_of_command_buffer_preparations;
   }
 
-  // Existing contexts retain their configuration and outstanding leases.
-  void set_command_capture(std::shared_ptr<const WebGpuCommandCapture> capture) {
-    command_capture_ = std::move(capture);
-  }
-  std::shared_ptr<const WebGpuCommandCapture> command_capture() const {
-    return command_capture_;
-  }
-
  private:
   std::unique_ptr<::ml_drift::webgpu::ExecutionEnvironment> env_owned_;
   ::ml_drift::webgpu::ExecutionEnvironment* const env_;
   absl::Mutex memory_manager_mutex_;
   ::ml_drift::webgpu::MemoryManager memory_manager_;
   int num_steps_of_command_buffer_preparations_ = 0;
-  std::shared_ptr<const WebGpuCommandCapture> command_capture_;
 
   // Encoder for batch of IO tensor conversions.
   std::unique_ptr<wgpu::CommandEncoder> command_encoder_;
@@ -253,8 +242,6 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
       std::vector<::ml_drift::WeightsManager::UploadWeightsInfo>& upload_infos)
       override;
   absl::Status Dispatch() override;
-  absl::Status DispatchWithProfiling(
-      ::ml_drift::ProfilingInfo& profiling_info) override;
   absl::StatusOr<GpuEventHandle> GetPreDispatchEvent() override;
   absl::StatusOr<GpuEventHandle> GetPostDispatchEvent(
       bool is_async_execution_mode) override;
@@ -281,55 +268,31 @@ class GpuInferenceContextWebGpu : public GpuInferenceContext {
   GpuBackendWebGpu* backend() const { return backend_; };
 
  private:
-  struct PreparedCommandBuffers {
-    // Declare buffers after the lease so destruction releases buffers first.
-    std::unique_ptr<::ml_drift::webgpu::CommandBufferCapture> capture;
-    std::vector<wgpu::CommandBuffer> buffers;
-    uint64_t preparation_id = 0;
-    bool from_cache = false;
-
-    void Clear() {
-      buffers.clear();
-      capture.reset();
-      preparation_id = 0;
-      from_cache = false;
-    }
-    void Swap(PreparedCommandBuffers& other) {
-      capture.swap(other.capture);
-      buffers.swap(other.buffers);
-      std::swap(preparation_id, other.preparation_id);
-      std::swap(from_cache, other.from_cache);
-    }
-  };
-
   absl::StatusOr<::ml_drift::webgpu::SpatialTensor*> GetSpatialTensorInternal(
       ::ml_drift::ValueId id);
   void JoinNextCommandBuffersThread();
   absl::Status FlushPendingSpatialTensors();
   // Prepares command buffers for Dispatch() call.
   absl::Status PrepareCommandBuffers(
-      PreparedCommandBuffers& command_buffers,
+      std::vector<wgpu::CommandBuffer>& command_buffers,
       bool submit_command_buffers);
   // Updates command buffers from next_command_buffers_ which would already been
   // prepared by a thread scheduled in the previous Dispatch() call.
   // If next_command_buffers_ is not available, i.e. at the first Dispatch()
   // call, it just calls PrepareCommandBuffers().
   absl::Status PrepareCommandBuffersFromCached(
-      PreparedCommandBuffers& command_buffers);
+      std::vector<wgpu::CommandBuffer>& command_buffers);
 
   GpuBackendWebGpu* const backend_;
   std::unique_ptr<::ml_drift::webgpu::InferenceContext> ctx_;
   std::vector<std::shared_ptr<absl::Notification>> async_upload_notifications_;
-  const std::shared_ptr<const WebGpuCommandCapture> command_capture_;
-  const uint64_t capture_context_id_;
-
   // Spatial tensor bindings staged while background command buffer preparation
   // is enabled, applied to ctx_ once next_command_buffers_thread_ finishes.
   absl::flat_hash_map<::ml_drift::ValueId, ::ml_drift::webgpu::SpatialTensor*>
       pending_spatial_tensors_;
 
   // Command buffers prepared in advance for the next Dispatch() call.
-  std::vector<PreparedCommandBuffers> next_command_buffers_;
+  std::vector<std::vector<wgpu::CommandBuffer>> next_command_buffers_;
   int num_nodes_per_command_encoder_;
   // Index of next_command_buffers_ to use and prepare when
   // next_command_buffers_.size() > 1.

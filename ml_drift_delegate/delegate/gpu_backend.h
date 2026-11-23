@@ -433,15 +433,6 @@ class GpuInferenceContext {
   // [REQUIRED]
   virtual absl::Status Dispatch() = 0;
 
-  // Executes an invocation and reports its profile. Backends with a
-  // single-execution profiler override this to avoid replaying state writes.
-  virtual absl::Status DispatchWithProfiling(
-      ::ml_drift::ProfilingInfo& profiling_info) {
-    auto status = Profile(profiling_info);
-    if (!status.ok()) return status;
-    return Dispatch();
-  }
-
   // Gets a GPU event used to synchronize with the inference context before
   // dispatching. If it returns with a GPU event, the client must wait for it
   // completed by calling WaitForEventsCompleted() before Dispatch().

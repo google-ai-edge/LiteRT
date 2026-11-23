@@ -1861,51 +1861,6 @@ TEST(CompiledModelTest, CheckResizeFail) {
   LiteRtDestroyEnvironment(env_ptr);
 }
 
-TEST(CompiledModelTest, CheckNeedResizeWithMissingRuntimeShape) {
-  // Environment setup.
-  LITERT_ASSERT_OK_AND_ASSIGN(LiteRtEnvironmentT::Ptr env,
-                              LiteRtEnvironmentT::CreateWithOptions({}));
-  LiteRtEnvironmentT* env_ptr = env.release();
-
-  // Create LiteRtModel and check signatures.
-  constexpr absl::string_view kSimpleAddDynamicShapeModel =
-      "simple_add_dynamic_shape.tflite";
-  std::string path = testing::GetTestFilePath(kSimpleAddDynamicShapeModel);
-  LiteRtModel model;
-  ASSERT_EQ(LiteRtCreateModelFromFile(env_ptr, path.c_str(), &model),
-            kLiteRtStatusOk);
-
-  // Create CompiledModel with options.
-  LiteRtOptions jit_compilation_options;
-  ASSERT_EQ(LiteRtCreateOptions(&jit_compilation_options), kLiteRtStatusOk);
-  ASSERT_EQ(LiteRtSetOptionsHardwareAccelerators(jit_compilation_options,
-                                                 kLiteRtHwAcceleratorCpu),
-            kLiteRtStatusOk);
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      LiteRtCompiledModelT::Ptr compiled_model,
-      LiteRtCompiledModelT::Create(env_ptr, model, jit_compilation_options));
-
-  std::unique_ptr<TfLiteIntArray, decltype(&TfLiteIntArrayFree)> dims_signature(
-      TfLiteIntArrayCreate(3), TfLiteIntArrayFree);
-  dims_signature->data[0] = 1;
-  dims_signature->data[1] = -1;
-  dims_signature->data[2] = 4;
-
-  TfLiteTensor input_tensor = {};
-  input_tensor.name = "dynamic_input_without_runtime_shape";
-  input_tensor.dims = nullptr;
-  input_tensor.dims_signature = dims_signature.get();
-
-  LITERT_ASSERT_OK_AND_ASSIGN(
-      bool needs_resize,
-      InputTensorNeedsResize(compiled_model.get(), &input_tensor, {1, 128, 4}));
-  EXPECT_TRUE(needs_resize);
-
-  LiteRtDestroyOptions(jit_compilation_options);
-  LiteRtDestroyModel(model);
-  LiteRtDestroyEnvironment(env_ptr);
-}
-
 TEST(CompiledModelTest, DynamicResizeWithCustomAllocationsSimple) {
   constexpr absl::string_view kSimpleAddDynamicShapeModel =
       "simple_add_dynamic_shape.tflite";
@@ -3328,18 +3283,10 @@ TEST(CompiledModelTest, HostMemoryUnalignedFallsBackToCpuAllocation) {
   size_t alloc_size = sizeof(float) * kTestOutputSize + 4096;
   std::unique_ptr<void, decltype(&std::free)> raw_mem(std::malloc(alloc_size),
                                                       &std::free);
-  ASSERT_NE(raw_mem.get(), nullptr);
-  // Satisfy HostMemory's own alignment while violating the delegate's 4096B
-  // requirement. malloc alone need not return a 64B-aligned address.
-  constexpr size_t kHostAlignment = LITERT_HOST_MEMORY_BUFFER_ALIGNMENT;
-  uintptr_t unaligned_addr =
-      (reinterpret_cast<uintptr_t>(raw_mem.get()) + kHostAlignment - 1) /
-      kHostAlignment * kHostAlignment;
+  uintptr_t unaligned_addr = reinterpret_cast<uintptr_t>(raw_mem.get()) + 64;
   if (unaligned_addr % 4096 == 0) {
-    unaligned_addr += kHostAlignment;
+    unaligned_addr += 64;
   }
-  ASSERT_EQ(unaligned_addr % kHostAlignment, 0);
-  ASSERT_NE(unaligned_addr % 4096, 0);
   void* unaligned_ptr = reinterpret_cast<void*>(unaligned_addr);
 
   auto tensor_type_expected = litert::internal::ConvertTensorType(

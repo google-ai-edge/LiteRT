@@ -34,8 +34,6 @@ limitations under the License.
 #include "tensor/arithmetic.h"
 #include "tensor/datatypes.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
-#include "tensor/examples/gemma4/helpers/mobile_fully_connected.h"
-#include "tensor/examples/gemma4/helpers/transformer.h"
 #include "tensor/examples/ops/transformer/transformer_block.h"
 #include "tensor/examples/ops/transformer/transformer_ops.h"
 #include "tensor/examples/utils/tensor_mapping.h"
@@ -65,36 +63,23 @@ struct Gemma4Outputs {
   std::vector<Tensor<Mixins...>> key_caches;
   std::vector<Tensor<Mixins...>> value_caches;
 
-  // Intermediate values become external outputs only when requested.
-  std::vector<Tensor<Mixins...>> layer_outputs;
-  Tensor<Mixins...> final_normalized = TensorHandle::Invalid();
-
-  // Shared-KV layers may have invalid cache outputs; do not export those.
-  std::vector<TensorHandle> GetAllHandles(bool include_intermediates = false) {
+  // Returns all valid output handles in a single vector, skipping
+  // `TensorHandle::Invalid()` entries (such as shared-KV layers that do not
+  // produce updated caches).
+  std::vector<TensorHandle> GetAllHandles() {
     std::vector<TensorHandle> output_handles;
-    output_handles.reserve(1 + key_caches.size() + value_caches.size() +
-                           (include_intermediates ? layer_outputs.size() + 1 : 0));
+    output_handles.reserve(1 + key_caches.size() + value_caches.size());
     if (logits != TensorHandle::Invalid()) {
       output_handles.push_back(logits);
     }
-    for (const Tensor<Mixins...>& key : key_caches) {
-      if (key != TensorHandle::Invalid()) {
-        output_handles.push_back(key);
+    for (const auto& k : key_caches) {
+      if (k != TensorHandle::Invalid()) {
+        output_handles.push_back(k);
       }
     }
-    for (const Tensor<Mixins...>& value : value_caches) {
-      if (value != TensorHandle::Invalid()) {
-        output_handles.push_back(value);
-      }
-    }
-    if (include_intermediates) {
-      for (const Tensor<Mixins...>& output : layer_outputs) {
-        if (output != TensorHandle::Invalid()) {
-          output_handles.push_back(output);
-        }
-      }
-      if (final_normalized != TensorHandle::Invalid()) {
-        output_handles.push_back(final_normalized);
+    for (const auto& v : value_caches) {
+      if (v != TensorHandle::Invalid()) {
+        output_handles.push_back(v);
       }
     }
     return output_handles;
@@ -337,10 +322,8 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
 
   std::vector<Tensor<Mixins...>> updated_key_caches;
   std::vector<Tensor<Mixins...>> updated_value_caches;
-  std::vector<Tensor<Mixins...>> layer_outputs;
   updated_key_caches.reserve(config.num_layers);
   updated_value_caches.reserve(config.num_layers);
-  layer_outputs.reserve(config.num_layers);
 
   const std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
   std::vector<SharedKv<Mixins...>> computed_kv(
@@ -443,7 +426,6 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
                          std::move(shared_kv), std::move(per_layer_input)));
 
     hidden_states = block_out.output;
-    layer_outputs.push_back(hidden_states);
     computed_kv[layer_idx] = SharedKv<Mixins...>{
         .k = block_out.k_for_attn,
         .v = block_out.v_for_attn,
@@ -492,134 +474,7 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
   }
 
   return Gemma4Outputs<Mixins...>{logits, updated_key_caches,
-                                  updated_value_caches, layer_outputs,
-                                  final_output};
-}
-
-// Retain the experimental static-activation graph used by the local CPU
-// runner. The default BuildGemma4Graph above uses upstream TransformerBlock.
-template <class... Mixins>
-absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4MobileGraph(
-    const Gemma4Inputs<Mixins...>& inputs, TensorMapping& weights,
-    const Config& config) {
-  ABSL_VLOG(4) << "Building Gemma4 Graph, seq_len="
-               << inputs.embedded_input.GetShape()[1];
-
-  Tensor emb_scale_tensor =
-      Tensor<Mixins...>({.type = Type::kFP32,
-                         .shape = {1},
-                         .buffer = std::sqrt(config.embed_dim)});
-  Tensor hidden_states = Mul(inputs.embedded_input, emb_scale_tensor);
-  Tensor<Mixins...> eps_tensor(
-      {.type = Type::kFP32, .shape = {1}, .buffer = config.rms_norm_eps});
-
-  std::vector<Tensor<Mixins...>> updated_key_caches;
-  std::vector<Tensor<Mixins...>> updated_value_caches;
-  std::vector<Tensor<Mixins...>> layer_outputs;
-  updated_key_caches.reserve(config.num_layers);
-  updated_value_caches.reserve(config.num_layers);
-  layer_outputs.reserve(config.num_layers);
-
-  std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
-  std::vector<Tensor<Mixins...>> computed_keys(config.num_layers);
-  std::vector<Tensor<Mixins...>> computed_values(config.num_layers);
-
-  for (int layer_idx = 0; layer_idx < config.num_layers; ++layer_idx) {
-    ABSL_VLOG(4) << "  Layer " << layer_idx << " ("
-                 << config.GetLayerType(layer_idx) << ")";
-
-    const int shared_idx = sharing_patterns[layer_idx];
-    const bool is_shared = (shared_idx != layer_idx);
-
-    Tensor key_cache = layer_idx < inputs.key_caches.size()
-                           ? inputs.key_caches[layer_idx]
-                           : Tensor<Mixins...>();
-    Tensor value_cache = layer_idx < inputs.value_caches.size()
-                             ? inputs.value_caches[layer_idx]
-                             : Tensor<Mixins...>();
-
-    Tensor<Mixins...> shared_key = TensorHandle::Invalid();
-    Tensor<Mixins...> shared_value = TensorHandle::Invalid();
-
-    if (is_shared) {
-      shared_key = computed_keys[shared_idx];
-      shared_value = computed_values[shared_idx];
-    }
-
-    const bool is_global =
-        config.GetLayerType(layer_idx) == Config::LayerType::kGlobal;
-    Tensor attention_mask = is_global ? inputs.global_attention_mask
-                                      : inputs.sliding_attention_mask;
-    Tensor cos = is_global ? inputs.rope_global_cos : inputs.rope_local_cos;
-    Tensor sin = is_global ? inputs.rope_global_sin : inputs.rope_local_sin;
-
-    Tensor<Mixins...> per_layer_input;
-    if (config.per_layer_input_dim > 0 &&
-        layer_idx < inputs.per_layer_token_embeddings.size() &&
-        inputs.per_layer_token_embeddings[layer_idx].GetStatus().ok()) {
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          Tensor<Mixins...> proj_w,
-          weights.Get(absl::StrCat("model.layers.", layer_idx,
-                                   ".per_layer_model_projection.weight")));
-      Tensor proj_out = MobileFullyConnected(inputs.embedded_input, proj_w,
-                                             &weights);
-
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          Tensor<Mixins...> norm_w,
-          weights.Get("model.per_layer_projection_norm.weight"));
-      Tensor normed_proj = RmsNorm(proj_out, norm_w, eps_tensor);
-
-      float sqrt_per_layer_dim =
-          std::sqrt(static_cast<float>(config.per_layer_input_dim));
-      Tensor scaled_tok_emb =
-          Mul(inputs.per_layer_token_embeddings[layer_idx], sqrt_per_layer_dim);
-
-      Tensor sum_emb = Add(normed_proj, scaled_tok_emb);
-
-      float rsqrt_2 = 1.0f / std::sqrt(2.0f);
-      per_layer_input = Mul(sum_emb, rsqrt_2);
-    }
-
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        TransformerLayerOutput<Mixins...> layer_out,
-        TransformerLayer(hidden_states, attention_mask, cos, sin, key_cache,
-                         value_cache, per_layer_input, shared_key, shared_value,
-                         config, weights, layer_idx, eps_tensor));
-
-    hidden_states = layer_out.output;
-    layer_outputs.push_back(hidden_states);
-
-    computed_keys[layer_idx] = layer_out.key_for_attn;
-    computed_values[layer_idx] = layer_out.value_for_attn;
-
-    updated_key_caches.push_back(layer_out.key_cache);
-    updated_value_caches.push_back(layer_out.value_cache);
-  }
-
-  // Final RMSNorm
-  LRT_TENSOR_ASSIGN_OR_RETURN(Tensor<Mixins...> final_norm_scale,
-                              weights.Get("model.norm.weight"));
-  Tensor final_output = RmsNorm(hidden_states, final_norm_scale, eps_tensor);
-
-  // LM Head.
-  LRT_TENSOR_ASSIGN_OR_RETURN(Tensor<Mixins...> lm_head,
-                              weights.Get("lm_head.weight"));
-  Tensor logits = MobileFullyConnected(final_output, lm_head, &weights);
-
-  // Logits Soft Capping
-  if (config.final_logit_softcap > 0.0f) {
-    Tensor soft_cap_tensor =
-        Tensor<Mixins...>({.type = Type::kFP32,
-                           .shape = {1},
-                           .buffer = OwningCpuBuffer::Copy<Type::kFP32>(
-                               {config.final_logit_softcap})});
-    Tensor scaled_logits = Div(logits, soft_cap_tensor);
-    Tensor capped_logits = Tanh(scaled_logits);
-    logits = Mul(capped_logits, soft_cap_tensor);
-  }
-
-  return Gemma4Outputs<Mixins...>{logits, updated_key_caches, updated_value_caches,
-                                layer_outputs, final_output};
+                                  updated_value_caches};
 }
 
 }  // namespace litert::tensor::examples::gemma4

@@ -146,8 +146,10 @@ struct QuantizationConfig {
   }
 };
 
-// SafeTensor loader with optional compressed-tensors configuration in a sibling
-// config.json. File mappings are retained by tensors that borrow their storage.
+// SafeTensor file loader using safetensors-cpp library.
+//
+// Supports loading tensors from HuggingFace safetensor format, including
+// weights compressed with the `compressed-tensors` library.
 class SafetensorLoader {
  public:
   // Creates a loader that doesn't hold any tensor.
@@ -173,40 +175,19 @@ class SafetensorLoader {
 
   // Loads a tensor.
   //
-  // Unquantized BF16/FP16 tensors are converted to FP32, except the per-layer
-  // embedding table, whose CPU row lookup converts only the requested rows.
-  // compressed-tensors .weight names resolve to the packed/scale/shape tuple.
-  // Header-declared packed weights keep their declared bit width. Sidecar
-  // mobile configs retain the existing INT2-to-INT4 compatibility conversion.
+  // Note: This supports the `compressed-tensors` extension to safetensors.
+  // With it quantized weights are stored as a
+  // `<module>.weight_{packed,scale,zero_point,shape}` buffer tuple. Asking for
+  // `<module>.weight` will detect and load that triplet.
   absl::StatusOr<TensorHandle> LoadTensor(absl::string_view name) const;
-
-  // Compatibility helpers for callers that materialize the complete mapping.
-  // New graph builders can load weights on demand through LazyTensorMapping.
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-  LoadAllTensors() const;
-  absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-  LoadWeightsWithMapping(
-      const absl::flat_hash_map<std::string, std::string>& name_mapping) const;
 
   // Reads a tensor and converts its elements to `T` (`float` or `int64_t`).
   template <typename T>
   absl::StatusOr<std::vector<T>> ReadTensorAs(absl::string_view name) const;
 
  private:
-  struct TargetedQuantizationConfig {
-    QuantizationConfig::Scheme weights;
-    std::vector<std::string> targets;
-    bool input_activations = false;
-    bool output_activations = false;
-  };
-
   // Loads a single safetensor file and appends its tensors.
   absl::Status AddSafetensorFile(const std::string& path);
-  absl::StatusOr<const TargetedQuantizationConfig*> FindWeightConfig(
-      absl::string_view module) const;
-  absl::StatusOr<TensorHandle> LoadCompressedWeight(
-      absl::string_view name, absl::string_view module,
-      const TargetedQuantizationConfig& config) const;
 
   // Reads `quantization_config` from a HuggingFace `config.json`. Returns
   // `absl::NotFoundError` if the file does not exist.
@@ -230,7 +211,6 @@ class SafetensorLoader {
 
   // Quantization config from the header metadata or from `config.json`.
   std::optional<QuantizationConfig> quant_config_;
-  std::vector<TargetedQuantizationConfig> targeted_configs_;
 };
 
 }  // namespace litert::tensor::examples

@@ -43,9 +43,6 @@ struct CompilationOptions {
   bool enable_benchmark_mode = false;
   bool enable_allow_src_quantized_fc_conv_ops = false;
   bool enable_hint_waiting_for_completion = false;
-  bool gpu_hint_fully_delegated_to_single_delegate = false;
-  std::vector<std::string> gpu_external_tensor_patterns;
-  std::vector<std::string> gpu_buffer_storage_tensor_patterns;
 
   int qualcomm_log_level = -1;
   int qualcomm_htp_performance_mode = -1;
@@ -197,9 +194,6 @@ class CompiledModelWrapper {
 
   // Returns whether the model is fully accelerated with selected accelerators.
   PyObject* IsFullyAccelerated();
-
-  // Read-only ownership of original operators in delegate partitions.
-  PyObject* GetOperatorDelegations();
 
   // Returns whether the model is fully accelerated on non-CPU hardware.
   PyObject* IsNonCpuFullyAccelerated();

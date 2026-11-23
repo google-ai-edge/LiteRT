@@ -1739,11 +1739,6 @@ void AbslStringify(Sink& sink, const ::litert::internal::TflOptions& opts) {
       ::litert::internal::PrintNullableOpts(sink, opts.AsL2NormOptions());
       break;
     }
-    case tflite::BuiltinOptions_ExpOptions:
-    case tflite::BuiltinOptions_CosOptions:
-    case tflite::BuiltinOptions_SquareOptions:
-    case tflite::BuiltinOptions_AbsOptions:
-    case tflite::BuiltinOptions_NegOptions:
     case tflite::BuiltinOptions_NONE: {
       sink.Append("{}");
       break;

@@ -27,7 +27,6 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
-#include "litert/c/litert_compiled_model.h"
 #include "litert/c/litert_model_types.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/c/options/litert_intel_openvino_options.h"
@@ -190,10 +189,7 @@ bool PopulateCompilationOptions(litert::Options& options,
       compilation_options.enable_infinite_float_capping ||
       compilation_options.enable_benchmark_mode ||
       compilation_options.enable_allow_src_quantized_fc_conv_ops ||
-      compilation_options.enable_hint_waiting_for_completion ||
-      compilation_options.gpu_hint_fully_delegated_to_single_delegate ||
-      !compilation_options.gpu_external_tensor_patterns.empty() ||
-      !compilation_options.gpu_buffer_storage_tensor_patterns.empty()) {
+      compilation_options.enable_hint_waiting_for_completion) {
     auto gpu_options_or = options.GetGpuOptions();
     if (!gpu_options_or) {
       if (out_error) *out_error = gpu_options_or.Error().Message();
@@ -217,16 +213,6 @@ bool PopulateCompilationOptions(litert::Options& options,
     }
     if (compilation_options.enable_hint_waiting_for_completion) {
       gpu_options_or->HintWaitingForCompletion(true);
-    }
-    if (compilation_options.gpu_hint_fully_delegated_to_single_delegate) {
-      gpu_options_or->SetHintFullyDelegatedToSingleDelegate(true);
-    }
-    for (const auto& pattern : compilation_options.gpu_external_tensor_patterns) {
-      gpu_options_or->AddExternalTensorPattern(pattern.c_str());
-    }
-    for (const auto& pattern :
-         compilation_options.gpu_buffer_storage_tensor_patterns) {
-      gpu_options_or->AddBufferStorageTensorPattern(pattern.c_str());
     }
   }
 
@@ -968,31 +954,6 @@ PyObject* CompiledModelWrapper::IsFullyAccelerated() {
     return ConvertErrorToPyExc(is_fully_accelerated_or.Error());
   }
   return PyBool_FromLong(*is_fully_accelerated_or ? 1 : 0);
-}
-
-PyObject* CompiledModelWrapper::GetOperatorDelegations() {
-  PyObject* result = PyList_New(0);
-  if (!result) return nullptr;
-  auto append = [](void* data, LiteRtParamIndex graph, LiteRtParamIndex node,
-                   const char* op, const char* delegate) -> LiteRtStatus {
-    PyObject* entry = Py_BuildValue(
-        "{s:i,s:i,s:s,s:s}", "subgraph_index", static_cast<int>(graph),
-        "operator_index", static_cast<int>(node), "operator_name", op,
-        "delegate_name", delegate);
-    if (!entry) return kLiteRtStatusErrorMemoryAllocationFailure;
-    const int status = PyList_Append(static_cast<PyObject*>(data), entry);
-    Py_DECREF(entry);
-    return status == 0 ? kLiteRtStatusOk
-                       : kLiteRtStatusErrorMemoryAllocationFailure;
-  };
-  const auto status = LiteRtGetCompiledModelOperatorDelegations(
-      compiled_model_->Get(), append, result);
-  if (status != kLiteRtStatusOk) {
-    Py_DECREF(result);
-    if (PyErr_Occurred()) return nullptr;
-    return ReportError("Failed to inspect compiled operator delegation");
-  }
-  return result;
 }
 
 PyObject* CompiledModelWrapper::IsNonCpuFullyAccelerated() {

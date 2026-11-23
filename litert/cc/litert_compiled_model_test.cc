@@ -428,18 +428,18 @@ TEST_F(CompiledModelWithDefaultEnvironmentTest,
 //                             HwAccelerators::kCpu));
 //   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
 //                               GetInterpreter(compiled_model.Get()));
-//
+// 
 //   const auto before = GetPrimarySubgraphAllocInfo(*interpreter);
 //   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
 //                               compiled_model.CreateOutputBuffers());
 //   const auto after = GetPrimarySubgraphAllocInfo(*interpreter);
-//
+// 
 //   EXPECT_EQ(after.arena_size, before.arena_size);
 //   EXPECT_EQ(after.arena_persist_size, before.arena_persist_size);
 //   EXPECT_EQ(after.dynamic_size, before.dynamic_size);
 //   EXPECT_EQ(after.resource_size, before.resource_size);
 // }
-//
+// 
 // TEST_F(CompiledModelWithDefaultEnvironmentTest,
 //        CreateOutputBuffersDoesNotAllocateUnknownOutputLayouts) {
 //   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -449,12 +449,12 @@ TEST_F(CompiledModelWithDefaultEnvironmentTest,
 //                             HwAccelerators::kCpu));
 //   LITERT_ASSERT_OK_AND_ASSIGN(tflite::Interpreter * interpreter,
 //                               GetInterpreter(compiled_model.Get()));
-//
+// 
 //   const auto before = GetPrimarySubgraphAllocInfo(*interpreter);
 //   LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
 //                               compiled_model.CreateOutputBuffers());
 //   const auto after = GetPrimarySubgraphAllocInfo(*interpreter);
-//
+// 
 //   // Output tensors are marked kTfLiteNonCpu during CompiledModel
 //   // initialization, so TFLite's ArenaPlanner does not allocate host arena
 //   // memory for them even when AllocateTensors is invoked to resolve dynamic

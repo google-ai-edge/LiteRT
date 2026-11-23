@@ -51,10 +51,10 @@ using ::testing::SizeIs;
 
 constexpr char kProjectionName[] = "model.per_layer_model_projection.weight";
 
-// Weight mappings also expose each weight's optional QAT input/output scales.
-constexpr int kNumGlobalWeights = 6 * 3;
-// The layer scalar has no associated activation-scale mappings.
-constexpr int kNumWeightsPerLayer = 16 * 3 + 1;
+// Number of checkpoint tensors that are mapped once for the whole model.
+constexpr int kNumGlobalWeights = 6;
+// Number of checkpoint tensors that are mapped for each layer.
+constexpr int kNumWeightsPerLayer = 17;
 
 // Small config used to slice the per-layer model projection.
 Config SmallConfig() {
@@ -289,13 +289,10 @@ TEST(Gemma4WeightHooksTest, FailsForTooSmallCombinedProjection) {
   LazyTensorMapping mapping = LazyTensorMapping({{kProjectionName, too_small}})
                                   .Register<Gemma4WeightHooks>(config);
 
-  // Reject a checkpoint inconsistent with the configured model, including
-  // requests for a layer whose bytes happen to be present.
-  for (int layer : {0, 1}) {
-    EXPECT_THAT(mapping.Get(LayerProjectionName(layer)),
-                StatusIs(absl::StatusCode::kInvalidArgument,
-                         HasSubstr("shape disagrees with model config")));
-  }
+  EXPECT_THAT(mapping.Get(LayerProjectionName(0)), IsOk());
+  EXPECT_THAT(mapping.Get(LayerProjectionName(1)),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("too small to slice layer 1")));
 }
 
 TEST(Gemma4WeightHooksTest, FailsForLayersThatDontStartOnAByteBoundary) {

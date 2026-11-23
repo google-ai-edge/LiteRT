@@ -220,7 +220,7 @@ else:
     _litert_so = _os.path.join(_pkg_dir, "libLiteRt.so")
     if _os.path.isfile(_litert_so):
         import ctypes as _ctypes
-        _ctypes.CDLL(_litert_so, mode=_os.RTLD_LAZY | _ctypes.RTLD_LOCAL)
+        _ctypes.CDLL(_litert_so, mode=_os.RTLD_LAZY | _ctypes.RTLD_GLOBAL)
     # Import vendor SDKs so their __init__.py runs (which on Linux copies
     # bundled libraries like libopenvino_intel_npu_compiler.so into their
     # expected locations under openvino/libs/). Silent on ImportError since

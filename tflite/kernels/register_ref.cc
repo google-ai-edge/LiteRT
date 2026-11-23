@@ -29,8 +29,6 @@ TfLiteRegistration* Register_NUMERIC_VERIFY_REF();
 TfLiteRegistration* Register_AUDIO_SPECTROGRAM();
 TfLiteRegistration* Register_MFCC();
 TfLiteRegistration* Register_DETECTION_POSTPROCESS();
-TfLiteRegistration* Register_ODML_CAUSAL_CONV_WITH_STATE_1D();
-TfLiteRegistration* Register_ODML_RECURRENT_LINEAR_ATTENTION();
 
 }  // namespace custom
 
@@ -619,11 +617,6 @@ BuiltinRefOpResolver::BuiltinRefOpResolver() {
             tflite::ops::custom::Register_AUDIO_SPECTROGRAM());
   AddCustom("TFLite_Detection_PostProcess",
             tflite::ops::custom::Register_DETECTION_POSTPROCESS());
-  AddCustom("odml.causal_conv_with_state_1d",
-            tflite::ops::custom::Register_ODML_CAUSAL_CONV_WITH_STATE_1D());
-  AddCustom(
-      "odml.recurrent_linear_attention",
-      tflite::ops::custom::Register_ODML_RECURRENT_LINEAR_ATTENTION());
 }
 
 }  // namespace builtin

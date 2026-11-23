@@ -24,8 +24,8 @@ if [[ -z "${TEST_SRCDIR}" ]]; then
   die "TEST_SRCDIR is not set"
 fi
 
-SO_FILE="${TEST_SRCDIR}/${TEST_WORKSPACE:-litert}/litert/c/libLiteRt.so"
-EXPECTED_SYMBOLS="${TEST_SRCDIR}/${TEST_WORKSPACE:-litert}/litert/c/litert_runtime_c_api_so_symbols.txt"
+SO_FILE="${TEST_SRCDIR}/litert/c/libLiteRt.so"
+EXPECTED_SYMBOLS="${TEST_SRCDIR}/litert/c/litert_runtime_c_api_so_symbols.txt"
 
 if [[ ! -f "${SO_FILE}" ]]; then
   die "Failed to find the shared library: ${SO_FILE}"

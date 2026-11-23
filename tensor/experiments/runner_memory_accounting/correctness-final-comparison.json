@@ -1,7 +1,0 @@
-{
-  "reference": "/data/bt/tmp/gemma4-litert-chunked-prefill-20260924/validated-correctness-staged/capture",
-  "candidate": "/data/bt/tmp/gemma4-litert-production-20260924/correctness-final",
-  "files": 5053,
-  "bytes": 1227569152,
-  "mismatches": []
-}

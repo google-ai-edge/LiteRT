@@ -1,6 +1,0 @@
-The standalone CMake integration and Android unit-test launcher include work
-adapted from the local XNNPACK tensor harness (Copyright 2026 Google LLC).
-Its original BSD license is retained at
-../experiments/history/XNNPACK_LICENSE.BSD. Original source snapshots are
-retained under ../experiments/history/migration-20260915. Apache-licensed
-LiteRT sources and new integration files retain their own notices.

@@ -54,23 +54,6 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
                                        LiteRtOptions compilation_options,
                                        LiteRtCompiledModel* compiled_model);
 
-// Experimental diagnostic API. Visits non-delegate TFLite nodes, including
-// nodes replaced by active delegate partitions, without invoking the model.
-// Indices identify the compiled interpreter's subgraph and node, not a
-// signature's ordinal. Rewrites may change indices from the input model.
-// Composite/custom operator names are preserved. An empty delegate name means
-// no active delegate partition claims the node (including inactive subgraphs).
-// Strings are borrowed for the duration of the callback. A non-OK callback
-// status stops iteration. Do not mutate or invoke the model during iteration.
-typedef LiteRtStatus (*LiteRtOperatorDelegationCallback)(
-    void* user_data, LiteRtParamIndex subgraph_index,
-    LiteRtParamIndex operator_index, const char* operator_name,
-    const char* delegate_name);
-
-LiteRtStatus LiteRtGetCompiledModelOperatorDelegations(
-    LiteRtCompiledModel compiled_model,
-    LiteRtOperatorDelegationCallback callback, void* user_data);
-
 // Returns the buffer requirements for the given n-th input tensor. The returned
 // LiteRtTensorBufferRequirements is used to create the input tensor
 // buffer.

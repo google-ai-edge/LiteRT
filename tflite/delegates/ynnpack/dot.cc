@@ -303,8 +303,7 @@ TfLiteStatus DefineMatMul(TfLiteContext* context, ynn_subgraph_t subgraph,
                           const TfLiteTensor& input_a_tensor,
                           const TfLiteTensor& input_b_tensor,
                           const TfLiteTensor& output_tensor,
-                          uint32_t* output_id,
-                          bool allow_symmetric_weights = true) {
+                          uint32_t* output_id) {
   auto quant_params = GetBlockwiseOrMultiAxisQuantParams(input_b_tensor);
   if (quant_params && quant_params->block_size > 0) {
     return DefineBlockwiseQuantizedMatMul(
@@ -402,8 +401,8 @@ TfLiteStatus DefineMatMul(TfLiteContext* context, ynn_subgraph_t subgraph,
     }
 
     uint32_t dot_flags = 0;
-    if (allow_symmetric_weights && input_b_tensor.type == kTfLiteInt8 &&
-        IsConstant(input_b_tensor) && b_zp_id == YNN_INVALID_VALUE_ID) {
+    if (input_b_tensor.type == kTfLiteInt8 && IsConstant(input_b_tensor) &&
+        b_zp_id == YNN_INVALID_VALUE_ID) {
       // In TFlite, quantized int8 weights are in the range [-127, 127] (see
       // quantization_spec.md for reference).
       dot_flags |= YNN_NODE_FLAG_SYMMETRIC_B;
@@ -438,23 +437,6 @@ TfLiteStatus DefineMatMul(TfLiteContext* context, ynn_subgraph_t subgraph,
 }
 
 }  // namespace
-
-TfLiteStatus DefineDynamicallyQuantizedMatMul(
-    TfLiteContext* context, ynn_subgraph_t subgraph, int rank_a, int rank_b,
-    uint32_t a_id, uint32_t b_id, const TfLiteTensor& b_tensor, bool adj_y,
-    uint32_t* output_id) {
-  // A and the output are internal FP32 values. DefineMatMul only needs their
-  // dtype/quantization metadata; dimensions come from the value IDs and ranks.
-  TfLiteTensor fp32_metadata = {};
-  fp32_metadata.type = kTfLiteFloat32;
-  // This affine INT8 entry point does not use model tensor IDs for block scales.
-  TensorToValueIdMap tensor_to_value_id;
-  return DefineMatMul(context, subgraph, tensor_to_value_id, rank_a, rank_b,
-                      a_id, b_id, YNN_INVALID_VALUE_ID, /*adj_x=*/false, adj_y,
-                      /*mutual_broadcast=*/true, fp32_metadata, b_tensor,
-                      fp32_metadata, output_id,
-                      /*allow_symmetric_weights=*/false);
-}
 
 TfLiteStatus IsBatchMatMulSupported(const TfLiteRegistration* registration,
                                     const TfLiteNode* node,

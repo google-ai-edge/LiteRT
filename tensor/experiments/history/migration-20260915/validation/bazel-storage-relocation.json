@@ -1,8 +1,0 @@
-{
-  "reason": "Root filesystem exhausted during owned Bazel SDK extraction; preserve generated cache on data volume.",
-  "logical_output_base": "/home/chasun/src/LiteRT/.bazel-output-tensor-native-consolidation",
-  "real_output_base": "/data/bt/tmp/gemma4-litert-build-storage-20260915/bazel",
-  "idle_server_shutdown": "completed before relocation",
-  "start_unix": 1789502916.3439114,
-  "finish_unix": 1789503029.8077574
-}

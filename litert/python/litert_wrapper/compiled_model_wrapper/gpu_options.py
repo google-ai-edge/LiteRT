@@ -20,16 +20,7 @@ from typing import Any
 
 @dataclasses.dataclass
 class GpuOptions:
-  """GPU-specific options for a LiteRT compiled model.
-
-  `hint_fully_delegated_to_single_delegate` skips preparing CPU kernels before
-  delegation and requires the GPU delegate to claim the whole graph. Compilation
-  fails if it cannot. This is useful for composites with dynamic CPU fallbacks.
-
-  Tensor patterns match name prefixes. External tensor patterns bypass layout
-  conversion; buffer storage patterns request buffer storage for matching
-  tensors. LiteRT-LM uses both for its in-place KV cache and parameter tensors.
-  """
+  """GPU-specific options for a LiteRT compiled model."""
 
   enforce_f32: bool = False
   constant_tensor_sharing: bool = False
@@ -37,9 +28,6 @@ class GpuOptions:
   benchmark_mode: bool = False
   allow_src_quantized_fc_conv_ops: bool = False
   hint_waiting_for_completion: bool = False
-  hint_fully_delegated_to_single_delegate: bool = False
-  external_tensor_patterns: list[str] = dataclasses.field(default_factory=list)
-  buffer_storage_tensor_patterns: list[str] = dataclasses.field(default_factory=list)
 
   def _as_flat_kwargs(self) -> dict[str, Any]:
     """Returns kwargs for the internal pybind wrapper."""
@@ -53,9 +41,4 @@ class GpuOptions:
             self.allow_src_quantized_fc_conv_ops
         ),
         "enable_hint_waiting_for_completion": self.hint_waiting_for_completion,
-        "gpu_hint_fully_delegated_to_single_delegate": (
-            self.hint_fully_delegated_to_single_delegate
-        ),
-        "gpu_external_tensor_patterns": self.external_tensor_patterns,
-        "gpu_buffer_storage_tensor_patterns": self.buffer_storage_tensor_patterns,
     }

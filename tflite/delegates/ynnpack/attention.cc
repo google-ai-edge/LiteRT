@@ -45,21 +45,6 @@ struct SdpaInputs {
   int param_index = -1;
 };
 
-bool IsPerTensorInt8Cache(const TfLiteTensor& tensor) {
-  if (tensor.type != kTfLiteInt8 ||
-      tensor.quantization.type != kTfLiteAffineQuantization ||
-      tensor.quantization.params == nullptr) {
-    return false;
-  }
-  const auto* params =
-      static_cast<const TfLiteAffineQuantization*>(tensor.quantization.params);
-  return params->scale != nullptr && params->scale->size == 1 &&
-         std::isfinite(params->scale->data[0]) && params->scale->data[0] > 0 &&
-         params->zero_point != nullptr && params->zero_point->size == 1 &&
-         params->zero_point->data[0] >= -128 &&
-         params->zero_point->data[0] <= 127;
-}
-
 SdpaInputs GetSdpaInputs(TfLiteContext* context, const NodeInfo& node) {
   SdpaInputs inputs;
   inputs.q_index = node.inputs[0];
@@ -356,11 +341,11 @@ TfLiteStatus IsSdpaSupported(const TfLiteRegistration* registration,
            type == kTfLiteBFloat16;
   };
   auto is_quantized_int8 = [](const TfLiteTensor& tensor) {
-    return IsPerTensorInt8Cache(tensor);
+    return tensor.type == kTfLiteInt8 && IsQuantized(tensor);
   };
   auto is_quantized_int4_or_int8 = [](const TfLiteTensor& tensor) {
-    return IsPerTensorInt8Cache(tensor) ||
-           (tensor.type == kTfLiteInt4 && IsQuantized(tensor));
+    return (tensor.type == kTfLiteInt8 || tensor.type == kTfLiteInt4) &&
+           IsQuantized(tensor);
   };
 
   TF_LITE_ENSURE(context, IsSdpaDotTypeSupported(options.sdpa_dot_type));

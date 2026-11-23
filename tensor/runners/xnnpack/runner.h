@@ -49,18 +49,15 @@ class XnnpackRunner : public NnpackRunner {
   };
   using RuntimePtr = std::unique_ptr<::xnn_runtime, RuntimeDeleter>;
 
-  // Runtime flags are passed to XNNPACK when PrepareRuntime() or Run() first
-  // creates the runtime, and are retained when the runner is moved.
   static absl::StatusOr<XnnpackRunner> Create(
-      std::vector<TensorHandle> outputs, uint32_t runtime_flags = 0) {
+      std::vector<TensorHandle> outputs) {
     LRT_TENSOR_ASSIGN_OR_RETURN(auto graph,
                                 BuildXnnpackGraph(std::move(outputs)));
-    return XnnpackRunner(std::move(graph), runtime_flags);
+    return XnnpackRunner(std::move(graph));
   }
 
-  explicit XnnpackRunner(std::unique_ptr<XnnpackGraph> graph,
-                        uint32_t runtime_flags = 0)
-      : NnpackRunner(std::move(graph)), runtime_flags_(runtime_flags) {}
+  explicit XnnpackRunner(std::unique_ptr<XnnpackGraph> graph)
+      : NnpackRunner(std::move(graph)) {}
 
   ~XnnpackRunner() override {
     if (threadpool_ != nullptr) {
@@ -71,7 +68,6 @@ class XnnpackRunner : public NnpackRunner {
   XnnpackRunner(XnnpackRunner&& other) noexcept
       : NnpackRunner(std::move(other)),
         runtime_(std::move(other.runtime_)),
-        runtime_flags_(other.runtime_flags_),
         weights_cache_(other.weights_cache_),
         workspace_(other.workspace_),
         threadpool_(std::exchange(other.threadpool_, nullptr)) {}
@@ -83,7 +79,6 @@ class XnnpackRunner : public NnpackRunner {
       }
       NnpackRunner::operator=(std::move(other));
       runtime_ = std::move(other.runtime_);
-      runtime_flags_ = other.runtime_flags_;
       weights_cache_ = other.weights_cache_;
       workspace_ = other.workspace_;
       threadpool_ = std::exchange(other.threadpool_, nullptr);
@@ -115,7 +110,6 @@ class XnnpackRunner : public NnpackRunner {
   xnn_workspace_t workspace() const { return workspace_; }
   pthreadpool_t threadpool() const { return threadpool_; }
   xnn_runtime_t runtime() const { return runtime_.get(); }
-  uint32_t runtime_flags() const { return runtime_flags_; }
 
  protected:
   uint32_t FlagExternalInput() const override {
@@ -140,7 +134,6 @@ class XnnpackRunner : public NnpackRunner {
 
  private:
   RuntimePtr runtime_ = nullptr;
-  uint32_t runtime_flags_ = 0;
   xnn_weights_cache_t weights_cache_ = nullptr;
   xnn_workspace_t workspace_ = nullptr;
   pthreadpool_t threadpool_ = nullptr;

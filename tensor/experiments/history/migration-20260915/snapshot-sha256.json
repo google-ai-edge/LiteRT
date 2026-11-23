@@ -1,7 +1,0 @@
-{
-  "xnnpack-archive.json": "6c9b66e7458a86c4009ba74e4a94d64a62761d689e5918dd81b9be51e5e6ff27",
-  "inventory.json": "3f713bc2e3e18ba458e618abf767c10af5a01e3b5f612e34da3cc2822c97a670",
-  "xnnpack-local-source-snapshot.tar.gz": "a93aef038ec136426a8855137677e8b5a995adc72f4b6f13473f09049043b692",
-  "external-source-snapshot.json": "326b09021cd3b8063f33e2a6d2f2c0e0460d2d96ea726fb8a09b229a585d7001",
-  "external-native-source-snapshot.tar.gz": "9031845184e5d754ef4e1fee8093a23e4720b432296894a23a41b54ae6e78274"
-}

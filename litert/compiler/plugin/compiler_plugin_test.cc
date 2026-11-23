@@ -1499,35 +1499,6 @@ TEST(PartitionTest, MappedCompositeOp) {
   ASSERT_EQ(model.NumSubgraphs(), 1);
 }
 
-TEST(PartitionTest, InlineSharedDecomposition) {
-  auto model_wrap = testing::LoadTestFileModel("multi_composite.tflite");
-  ASSERT_TRUE(model_wrap);
-  auto& model = *model_wrap.Get();
-  // All three calls share the same body, containing an op selected by the
-  // example plugin. Only two subgraphs remain before partitioning.
-  for (auto* op : model.Subgraph(0).Ops()) {
-    tflite::StableHLOCompositeOptionsT options;
-    options.name = "test.shared_multiply";
-    options.decomposition_subgraph_index = 1;
-    TflOptions2 tfl_options;
-    tfl_options.Set(std::move(options));
-    SetTflOptions2(*op, std::move(tfl_options));
-  }
-  model.Subgraph(1).Op(0).SetOpCode(kLiteRtOpCodeTflMul);
-  model.Yank({2, 3});
-  ASSERT_EQ(model.NumSubgraphs(), 2);
-  auto plugins =
-      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
-  ASSERT_TRUE(plugins);
-  ASSERT_EQ(plugins->size(), 1);
-  auto result = PartitionModel(plugins->front(), model);
-  ASSERT_TRUE(result);
-  ASSERT_EQ(result->first.size(), 1);
-  ASSERT_EQ(result->second.NumSubgraphs(), 1);
-  EXPECT_EQ(result->second.Subgraph(0).Ops().size(), 3);
-  EXPECT_EQ(model.NumSubgraphs(), 1);
-}
-
 TEST(PartitionTest, SharedDecompositionSubgraphMultipleComposites) {
   // Build a model with 2 subgraphs (main + 1 shared decomposition subgraph) and
   // 3 composite ops in the main subgraph that all reference decomposition

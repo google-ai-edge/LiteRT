@@ -61,7 +61,6 @@ cc_test(
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_environment",
-        "//litert/c:litert_compiled_model",
         "//litert/c:litert_model",
         "//litert/c:litert_opaque_options_header",
         "//litert/c:litert_options",

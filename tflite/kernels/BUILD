@@ -836,7 +836,6 @@ cc_library(
     }),
     visibility = [
         "//tflite/core/kernels:__subpackages__",
-        "//tflite/kernels/fuzzing:__pkg__",
     ],
     deps = BUILTIN_KERNEL_DEPS + [
         ":variable_op_kernels",
@@ -1322,7 +1321,6 @@ cc_test(
         "//tflite/kernels/internal:tensor_ctypes",
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest",
-        "@flatbuffers",
     ],
 )
 

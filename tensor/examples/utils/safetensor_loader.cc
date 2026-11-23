@@ -13,14 +13,8 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 #include "tensor/examples/utils/safetensor_loader.h"
-#ifndef LITERT_TENSOR_STANDALONE
-#include "perfetto/tracing/track_event.h"  // from @perfetto
-#include "tensor/examples/utils/perfetto_session.h"
-#endif
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -253,18 +247,6 @@ CONVERT_INFO(UINT64, int64_t, uint64_t, static_cast<int64_t>);
 CHECK_INFO(UINT64, int64_t, val <= std::numeric_limits<int64_t>::max());
 CONVERT_INFO(BOOL, int64_t, uint8_t, BoolByteToInt64);
 
-// Allows conversion directly into the owning tensor buffer.
-template <Type type>
-struct TypedOwningBuffer {
-  using value_type = typename NativeStorage<type>::type;
-  void resize(size_t count) { buffer = OwningCpuBuffer::Allocate<type>(count); }
-  value_type* data() const noexcept {
-    return reinterpret_cast<value_type*>(buffer->data());
-  }
-
-  std::shared_ptr<OwningCpuBuffer> buffer;
-};
-
 template <class Container>
 absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info) {
   using T = typename Container::value_type;
@@ -280,8 +262,6 @@ absl::StatusOr<Container> ConvertTensorTo(const SafetensorTensorInfo& info) {
   values.resize(num_elements);
   auto* values_data = values.data();
 
-// Metadata can follow packed weights at unaligned offsets. Copy each storage
-// value before converting it instead of dereferencing an unaligned pointer.
 #define CONVERT_CASE(ST_TYPE)                                                  \
   case safetensors::dtype::k##ST_TYPE: {                                       \
     if constexpr (CanConvert<safetensors::dtype::k##ST_TYPE, T>::value) {      \
@@ -350,15 +330,6 @@ constexpr absl::string_view kRegexPrefix = "re:";
 // a specific module. Module names are dotted paths, class names are not.
 bool IsModuleClassName(absl::string_view target) {
   return !absl::StrContains(target, '.');
-}
-
-absl::StatusOr<std::regex> CompileTargetRegex(absl::string_view pattern) {
-  try {
-    return std::regex(std::string(pattern), std::regex_constants::ECMAScript);
-  } catch (const std::regex_error&) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid quantization target regex: ", pattern));
-  }
 }
 
 // Returns the element type holding `num_bits` wide quantized values.
@@ -443,18 +414,6 @@ struct ValueParser {
   static absl::StatusOr<TargetType> Parse(
       const typename MinijsonTypeTraits<TargetType>::type& raw) {
     return static_cast<TargetType>(raw);
-  }
-};
-
-template <>
-struct ValueParser<int> {
-  static absl::StatusOr<int> Parse(minijson::number value) {
-    if (!std::isfinite(value) || std::trunc(value) != value ||
-        value < std::numeric_limits<int>::min() ||
-        value > std::numeric_limits<int>::max()) {
-      return absl::InvalidArgumentError("JSON integer is out of range");
-    }
-    return static_cast<int>(value);
   }
 };
 
@@ -564,12 +523,10 @@ absl::StatusOr<QuantizationConfig::Scheme> ParseScheme(
           GetJsonArray(group_obj, "targets", targets_val);
       targets != nullptr) {
     LRT_TENSOR_RETURN_IF_ERROR(
-        ParseFromStringArray(*targets, [&scheme](absl::string_view target)
-                                          -> absl::Status {
+        ParseFromStringArray(*targets, [&scheme](absl::string_view target) {
           if (absl::ConsumePrefix(&target, kRegexPrefix)) {
-            LRT_TENSOR_ASSIGN_OR_RETURN(std::regex pattern,
-                                        CompileTargetRegex(target));
-            scheme.patterns.push_back(std::move(pattern));
+            scheme.patterns.emplace_back(std::string(target),
+                                         std::regex_constants::ECMAScript);
           } else if (IsModuleClassName(target)) {
             scheme.matches_any_module = true;
           } else {
@@ -618,12 +575,9 @@ absl::StatusOr<QuantizationConfig> ParseQuantizationConfigObject(
           GetJsonArray(root_obj, "ignore", ignore_val);
       ignore != nullptr) {
     LRT_TENSOR_RETURN_IF_ERROR(
-        ParseFromStringArray(*ignore, [&cfg](absl::string_view pattern)
-                                         -> absl::Status {
+        ParseFromStringArray(*ignore, [&cfg](absl::string_view pattern) {
           if (absl::ConsumePrefix(&pattern, kRegexPrefix)) {
-            LRT_TENSOR_ASSIGN_OR_RETURN(std::regex compiled,
-                                        CompileTargetRegex(pattern));
-            cfg.ignore_regexes.push_back(std::move(compiled));
+            cfg.ignore_regexes.emplace_back(pattern.data(), pattern.size());
           } else {
             cfg.ignore.emplace_back(pattern);
           }
@@ -684,76 +638,6 @@ absl::StatusOr<QuantizationConfig> ParseQuantizationConfig(
 
 #undef ASSIGN_IF_OK
 
-absl::StatusOr<std::vector<std::string>> ReadTargets(
-    const minijson::object& object, absl::string_view field) {
-  minijson::value value;
-  if (!object.at(std::string(field), &value)) {
-    return absl::InvalidArgumentError(absl::StrCat("Missing ", field));
-  }
-  const auto* array = value.as<minijson::array>();
-  if (array == nullptr) {
-    return absl::InvalidArgumentError(absl::StrCat(field, " must be an array"));
-  }
-  std::vector<std::string> targets;
-  for (const auto& item : *array) {
-    const auto* target = item.as<minijson::string>();
-    if (target == nullptr || target->empty()) {
-      return absl::InvalidArgumentError(
-          "Quantization targets must be nonempty strings");
-    }
-    if (absl::StartsWith(*target, "re:")) {
-      try {
-        std::regex pattern(target->substr(3));
-      } catch (const std::regex_error&) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Invalid target regex: ", *target));
-      }
-    }
-    targets.push_back(*target);
-  }
-  return targets;
-}
-
-bool MatchesTarget(absl::string_view module, const std::string& target) {
-  if (absl::StartsWith(target, "re:")) {
-    // compressed-tensors uses re.match: the expression starts at the beginning
-    // of the module name; callers can use '$' when they require an exact end.
-    return std::regex_search(module.begin(), module.end(),
-                             std::regex(target.substr(3)),
-                             std::regex_constants::match_continuous);
-  }
-  return module == target;
-}
-
-absl::StatusOr<bool> HasStaticActivations(const minijson::object& group,
-                                          absl::string_view field) {
-  minijson::value value;
-  if (!group.at(std::string(field), &value) || value.as<minijson::null_t>()) {
-    return false;
-  }
-  const auto* config = value.as<minijson::object>();
-  if (config == nullptr) {
-    return absl::InvalidArgumentError(
-        absl::StrCat(field, " must be an object or null"));
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(int bits, GetJsonField<int>(*config, "num_bits"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(bool dynamic,
-                              GetJsonField<bool>(*config, "dynamic"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(bool symmetric,
-                              GetJsonField<bool>(*config, "symmetric"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(std::string type,
-                              GetJsonField<std::string>(*config, "type"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(std::string strategy,
-                              GetJsonField<std::string>(*config, "strategy"));
-  if (bits != 8 || dynamic || !symmetric || type != "int" ||
-      strategy != "tensor") {
-    return absl::UnimplementedError(
-        "Only static symmetric int8 tensor activation quantization is "
-        "supported");
-  }
-  return true;
-}
-
 }  // namespace
 
 bool QuantizationConfig::Scheme::Matches(absl::string_view module) const {
@@ -805,353 +689,6 @@ const QuantizationConfig::Scheme* QuantizationConfig::FindScheme(
   return catch_all;
 }
 
-absl::Status SafetensorLoader::AddQuantizationConfigFromJsonFile(
-    const std::string& path) {
-#ifndef LITERT_TENSOR_STANDALONE
-  TRACE_EVENT(kTensorApiCategory, "AddQuantizationConfigFromJsonFile");
-#endif
-  std::error_code ec;
-  const bool exists = std::filesystem::exists(path, ec);
-  if (ec)
-    return absl::InvalidArgumentError(
-        absl::StrCat("Cannot inspect ", path, ": ", ec.message()));
-  if (!exists)
-    return absl::NotFoundError(absl::StrCat("File not found: ", path));
-  std::ifstream input(path);
-  if (!input)
-    return absl::InvalidArgumentError(absl::StrCat("Cannot read ", path));
-  const std::string json((std::istreambuf_iterator<char>(input)), {});
-  minijson::value root;
-  const char* text = json.c_str();
-  if (minijson::parse(text, root) != minijson::no_error ||
-      root.as<minijson::object>() == nullptr) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid model config JSON: ", path));
-  }
-  minijson::value value;
-  if (!root.as<minijson::object>()->at("quantization_config", &value) ||
-      value.as<minijson::null_t>())
-    return absl::OkStatus();
-  const auto* config = value.as<minijson::object>();
-  if (config == nullptr)
-    return absl::InvalidArgumentError("quantization_config must be an object");
-  LRT_TENSOR_ASSIGN_OR_RETURN(quant_config_,
-                              ParseQuantizationConfigObject(*config));
-  if (quant_config_->quant_method !=
-      QuantizationConfig::Method::kCompressedTensors) {
-    return absl::OkStatus();
-  }
-  minijson::value groups_value;
-  if (!config->at("config_groups", &groups_value)) return absl::OkStatus();
-  if (groups_value.as<minijson::object>() == nullptr) {
-    return absl::InvalidArgumentError(
-        "compressed-tensors config_groups must be an object");
-  }
-  const auto& groups = *groups_value.as<minijson::object>();
-  for (const auto& name : groups.keys()) {
-    minijson::value group_value;
-    groups.at(name, &group_value);
-    const auto* group = group_value.as<minijson::object>();
-    if (group == nullptr)
-      return absl::InvalidArgumentError("Quantization group must be an object");
-    TargetedQuantizationConfig parsed;
-    LRT_TENSOR_ASSIGN_OR_RETURN(parsed.weights, ParseScheme(*group));
-    minijson::value weights_value;
-    const minijson::object* weights = group;
-    if (group->at("weights", &weights_value)) {
-      weights = weights_value.as<minijson::object>();
-      if (weights == nullptr) {
-        return absl::InvalidArgumentError(
-            "Quantization group must describe weights");
-      }
-    }
-    auto format = GetJsonField<std::string>(*group, "format");
-    if (absl::IsNotFound(format.status())) {
-      format = GetJsonField<std::string>(*config, "format");
-    }
-    // Older configs omit these fields and describe static integer weights.
-    if (absl::IsNotFound(format.status())) {
-      format =
-          parsed.weights.num_bits == 8 ? "int-quantized" : "pack-quantized";
-    }
-    if (!format.ok()) return format.status();
-    auto type = GetJsonField<std::string>(*weights, "type");
-    if (absl::IsNotFound(type.status())) type = "int";
-    if (!type.ok()) return type.status();
-    auto dynamic = GetJsonField<bool>(*weights, "dynamic");
-    if (absl::IsNotFound(dynamic.status())) dynamic = false;
-    if (!dynamic.ok()) return dynamic.status();
-    if ((parsed.weights.num_bits != 2 && parsed.weights.num_bits != 4 &&
-         parsed.weights.num_bits != 8) ||
-        !parsed.weights.symmetric || *dynamic || *type != "int" ||
-        (parsed.weights.strategy != QuantizationConfig::Strategy::kChannel &&
-         parsed.weights.strategy != QuantizationConfig::Strategy::kGroup) ||
-        (*format != "pack-quantized" && *format != "int-quantized")) {
-      return absl::UnimplementedError(
-          absl::StrCat("Unsupported compressed-tensors weight config: ", name));
-    }
-    if (parsed.weights.num_bits != 8 && *format != "pack-quantized") {
-      return absl::UnimplementedError(
-          "Two- and four-bit weights must use pack-quantized format");
-    }
-    minijson::value targets;
-    if (group->at("targets", &targets)) {
-      LRT_TENSOR_ASSIGN_OR_RETURN(parsed.targets,
-                                  ReadTargets(*group, "targets"));
-    }
-    // Class targets such as Linear are fallbacks. A root module such as
-    // lm_head still matches its exact name instead of claiming other weights.
-    parsed.weights.matches_any_module =
-        parsed.targets.empty() ||
-        std::any_of(parsed.targets.begin(), parsed.targets.end(),
-                    [](const std::string& target) {
-                      return IsModuleClassName(target) &&
-                             target.front() >= 'A' && target.front() <= 'Z';
-                    });
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        parsed.input_activations,
-        HasStaticActivations(*group, "input_activations"));
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        parsed.output_activations,
-        HasStaticActivations(*group, "output_activations"));
-    targeted_configs_.push_back(std::move(parsed));
-  }
-  ABSL_LOG(INFO) << "Loaded " << targeted_configs_.size()
-                 << " compressed-tensors groups from " << path;
-  return absl::OkStatus();
-}
-
-absl::StatusOr<const SafetensorLoader::TargetedQuantizationConfig*>
-SafetensorLoader::FindWeightConfig(absl::string_view module) const {
-  if (quant_config_.has_value() && quant_config_->IsIgnored(module)) {
-    return nullptr;
-  }
-  const TargetedQuantizationConfig* catch_all = nullptr;
-  const TargetedQuantizationConfig* result = nullptr;
-  for (const auto& group : targeted_configs_) {
-    if (group.weights.matches_any_module && catch_all == nullptr) {
-      catch_all = &group;
-    }
-    const bool matched = std::any_of(
-        group.targets.begin(), group.targets.end(),
-        [&](const auto& target) { return MatchesTarget(module, target); });
-    if (matched) {
-      if (result != nullptr)
-        return absl::InvalidArgumentError(
-            absl::StrCat("Multiple quantization groups match ", module));
-      result = &group;
-    }
-  }
-  return result != nullptr ? result : catch_all;
-}
-
-absl::StatusOr<TensorHandle> SafetensorLoader::LoadCompressedWeight(
-    absl::string_view name, absl::string_view module,
-    const TargetedQuantizationConfig& config) const {
-  const int bits = config.weights.num_bits;
-  const std::string physical_name =
-      absl::StrCat(module, bits == 8 ? ".weight" : ".weight_packed");
-  LRT_TENSOR_ASSIGN_OR_RETURN(SafetensorTensorInfo info,
-                              GetTensorInfo(physical_name));
-  LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(info));
-  const auto ReadFloat =
-      [&](absl::string_view suffix) -> absl::StatusOr<std::vector<float>> {
-    const std::string key = absl::StrCat(module, suffix);
-    auto metadata = GetTensorInfo(key);
-    if (!metadata.ok())
-      return absl::InvalidArgumentError(
-          absl::StrCat("Missing quantization tensor: ", key));
-    if (metadata->dtype != safetensors::dtype::kFLOAT32 &&
-        metadata->dtype != safetensors::dtype::kFLOAT16 &&
-        metadata->dtype != safetensors::dtype::kBFLOAT16) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Quantization scale must be floating point: ", key));
-    }
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(*metadata));
-    return ConvertTensorTo<std::vector<float>>(*metadata);
-  };
-  const auto ReadInteger =
-      [&](absl::string_view suffix) -> absl::StatusOr<std::vector<int64_t>> {
-    const std::string key = absl::StrCat(module, suffix);
-    auto metadata = GetTensorInfo(key);
-    if (!metadata.ok())
-      return absl::InvalidArgumentError(
-          absl::StrCat("Missing quantization tensor: ", key));
-    LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(*metadata));
-    return ConvertTensorTo<std::vector<int64_t>>(*metadata);
-  };
-  std::vector<int64_t> shape = info.shape;
-  if (bits != 8) {
-    auto shape_info = GetTensorInfo(absl::StrCat(module, ".weight_shape"));
-    if (absl::IsNotFound(shape_info.status())) {
-      // Unpadded checkpoints may omit weight_shape. In that case every field
-      // in the packed row belongs to the logical weight.
-      if (info.dtype != safetensors::dtype::kINT32 || shape.size() != 2 ||
-          shape[1] <= 0 ||
-          shape[1] > std::numeric_limits<int32_t>::max() / (32 / bits)) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Cannot infer packed weight shape: ", module));
-      }
-      shape[1] *= 32 / bits;
-    } else {
-      LRT_TENSOR_RETURN_IF_ERROR(shape_info.status());
-      if (shape_info->dtype != safetensors::dtype::kINT64 ||
-          shape_info->shape != std::vector<int64_t>{2}) {
-        return absl::InvalidArgumentError(
-            absl::StrCat("Packed weight requires I64 weight_shape[2]: ", module));
-      }
-      LRT_TENSOR_ASSIGN_OR_RETURN(shape, ReadInteger(".weight_shape"));
-    }
-  }
-  if (shape.size() != 2 || shape[0] <= 0 || shape[1] <= 0 ||
-      shape[0] > std::numeric_limits<int32_t>::max() ||
-      shape[1] > std::numeric_limits<int32_t>::max()) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Quantized weight must have positive int32 matrix dimensions: ",
-        module));
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(const size_t elements, NumElements(shape));
-  const size_t rows = shape[0];
-  const size_t columns = shape[1];
-  const size_t packed_columns = (columns + 32 / bits - 1) / (32 / bits);
-  const size_t bytes = info.data_end - info.data_start;
-  if (bits == 8) {
-    if (info.dtype != safetensors::dtype::kINT8 || bytes != elements) {
-      return absl::InvalidArgumentError(
-          absl::StrCat("Eight-bit weights require an I8 matrix: ", module));
-    }
-  } else if (info.dtype != safetensors::dtype::kINT32 ||
-             info.shape !=
-                 std::vector<int64_t>{static_cast<int64_t>(rows),
-                                      static_cast<int64_t>(packed_columns)} ||
-             bytes != rows * packed_columns * sizeof(uint32_t)) {
-    return absl::InvalidArgumentError(absl::StrCat(
-        "Packed I32 storage disagrees with weight_shape: ", module));
-  }
-  size_t groups_per_row = 1;
-  if (config.weights.strategy == QuantizationConfig::Strategy::kGroup) {
-    if (columns % config.weights.group_size != 0) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Weight columns must be divisible by group_size: ", module));
-    }
-    groups_per_row = columns / config.weights.group_size;
-  }
-  LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> scales,
-                              ReadFloat(".weight_scale"));
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      auto scale_info, GetTensorInfo(absl::StrCat(module, ".weight_scale")));
-  const std::vector<int64_t> expected_scale_shape = {
-      static_cast<int64_t>(rows), static_cast<int64_t>(groups_per_row)};
-  if ((scale_info.shape != expected_scale_shape &&
-       !(groups_per_row == 1 &&
-         scale_info.shape ==
-             std::vector<int64_t>{static_cast<int64_t>(rows)})) ||
-      scales.size() != rows * groups_per_row ||
-      std::any_of(scales.begin(), scales.end(), [](float scale) {
-        return !std::isfinite(scale) || scale <= 0;
-      })) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("Invalid scale shape or values for ", module));
-  }
-  if (tensor_infos_.contains(absl::StrCat(module, ".weight_g_idx"))) {
-    return absl::UnimplementedError(absl::StrCat(
-        "Reordered quantization groups are unsupported: ", module));
-  }
-  if (tensor_infos_.contains(absl::StrCat(module, ".weight_zero_point"))) {
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto zeros, ReadInteger(".weight_zero_point"));
-    if ((zeros.size() != 1 && zeros.size() != scales.size()) ||
-        std::any_of(zeros.begin(), zeros.end(),
-                    [](int64_t zero) { return zero != 0; })) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Symmetric weights require zero-valued zero points: ", module));
-    }
-  }
-  for (const auto& [needed, suffix] :
-       {std::pair<bool, absl::string_view>{config.input_activations,
-                                           ".input_scale"},
-        {config.output_activations, ".output_scale"}}) {
-    if (!needed) continue;
-    LRT_TENSOR_ASSIGN_OR_RETURN(auto activation_scale, ReadFloat(suffix));
-    if (activation_scale.size() != 1 || !std::isfinite(activation_scale[0]) ||
-        activation_scale[0] <= 0) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "Static activation scale must be one positive finite value: ", module,
-          suffix));
-    }
-    const std::string zero_suffix =
-        absl::StrCat(suffix.substr(0, suffix.size() - 6), "_zero_point");
-    if (tensor_infos_.contains(absl::StrCat(module, zero_suffix))) {
-      LRT_TENSOR_ASSIGN_OR_RETURN(auto zero, ReadInteger(zero_suffix));
-      if (zero.size() != 1 || zero[0] != 0) {
-        return absl::InvalidArgumentError(
-            "Symmetric activation zero point must be zero");
-      }
-    }
-  }
-
-  const auto* source = reinterpret_cast<const uint8_t*>(
-      info.storage->data_base + info.data_start);
-  std::shared_ptr<Buffer> buffer;
-  if (bits == 8) {
-    buffer =
-        MakeMappedBuffer(info.storage->file_data,
-                         reinterpret_cast<const std::byte*>(source), bytes,
-                         /*alignment=*/alignof(int8_t));
-  } else {
-    auto unpacked = OwningCpuBuffer::Allocate<Type::kI4>(elements);
-    auto* destination = reinterpret_cast<uint8_t*>(unpacked->data());
-    if (bits == 4 && columns % 8 == 0) {
-      // CT stores offset-binary nibbles; tensor I4 uses signed two's
-      // complement.
-      for (size_t i = 0; i < bytes; ++i) destination[i] = source[i] ^ 0x88;
-    } else if (bits == 2 && columns % 16 == 0) {
-      // Each source byte contains four 2-bit values, expanded to two I4 bytes.
-      std::array<uint16_t, 256> table{};
-      for (int value = 0; value < 256; ++value) {
-        for (int slot = 0; slot < 4; ++slot) {
-          table[value] |= ((((value >> (slot * 2)) & 3) - 2) & 15)
-                          << (slot * 4);
-        }
-      }
-      for (size_t i = 0; i < bytes; ++i) {
-        const uint16_t expanded = table[source[i]];
-        destination[2 * i] = expanded & 255;
-        destination[2 * i + 1] = expanded >> 8;
-      }
-    } else {
-      // Trim row padding recorded by weight_shape, including odd-width rows.
-      std::memset(destination, 0, unpacked->size());
-      for (size_t row = 0; row < rows; ++row) {
-        for (size_t column = 0; column < columns; ++column) {
-          const size_t source_byte =
-              row * packed_columns * 4 + column * bits / 8;
-          const int code = (source[source_byte] >> ((column * bits) % 8)) &
-                           ((1 << bits) - 1);
-          const uint8_t nibble = (code - (1 << (bits - 1))) & 15;
-          const size_t index = row * columns + column;
-          destination[index / 2] |= nibble << ((index % 2) * 4);
-        }
-      }
-    }
-    buffer = std::move(unpacked);
-  }
-  std::shared_ptr<Quantization> quantization;
-  if (config.weights.strategy == QuantizationConfig::Strategy::kGroup) {
-    quantization = std::make_shared<BlockwiseQuantization>(
-        std::move(scales), std::vector<int64_t>{0}, config.weights.group_size,
-        0);
-  } else {
-    quantization = std::make_shared<PerChannelAffineQuantization>(
-        std::move(scales), std::vector<int64_t>{0}, 0);
-  }
-  return TensorHandle(TensorInit{
-      .name = std::string(name),
-      .type = bits == 8 ? Type::kI8 : Type::kI4,
-      .shape = {static_cast<int32_t>(rows), static_cast<int32_t>(columns)},
-      .buffer = std::move(buffer),
-      .quantization = std::move(quantization)});
-}
-
 // static
 absl::StatusOr<Type> SafetensorLoader::DtypeToType(safetensors::dtype dtype) {
   switch (dtype) {
@@ -1189,9 +726,7 @@ absl::StatusOr<Type> SafetensorLoader::DtypeToType(safetensors::dtype dtype) {
 }
 
 absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
-#ifndef LITERT_TENSOR_STANDALONE
   TRACE_EVENT(kTensorApiCategory, "AddSafetensorFile");
-#endif
   auto st = std::make_shared<safetensors::safetensors_t>();
   std::string warn, err;
   bool ret = safetensors::mmap_from_file(path, st.get(), &warn, &err);
@@ -1220,9 +755,7 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
   // Convert safetensors-cpp tensor info to our format.
   const std::vector<std::string>& tensor_keys = st->tensors.keys();
   for (const std::string& name : tensor_keys) {
-#ifndef LITERT_TENSOR_STANDALONE
     TRACE_EVENT(kTensorApiCategory, "AddTensor");
-#endif
     if (tensor_infos_.contains(name)) {
       return absl::AlreadyExistsError(absl::StrCat(
           "Duplicate tensor name across safetensor files: ", name));
@@ -1270,11 +803,49 @@ absl::Status SafetensorLoader::AddSafetensorFile(const std::string& path) {
   return absl::OkStatus();
 }
 
+absl::Status SafetensorLoader::AddQuantizationConfigFromJsonFile(
+    const std::string& path) {
+  TRACE_EVENT(kTensorApiCategory, "AddQuantizationConfigFromJsonFile");
+  std::ifstream file(path);
+  if (!file.is_open()) {
+    return absl::NotFoundError(absl::StrCat("File not found: ", path));
+  }
+  std::string contents((std::istreambuf_iterator<char>(file)),
+                       std::istreambuf_iterator<char>());
+
+  minijson::value val;
+  const char* json_str = contents.data();
+  if (minijson::parse(json_str, val) != minijson::no_error) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Failed to parse ", path, " as JSON"));
+  }
+  const minijson::object* root_obj = val.as<minijson::object>();
+  if (root_obj == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(path, " does not hold a JSON object"));
+  }
+
+  minijson::value quant_cfg_val;
+  if (!root_obj->at("quantization_config", &quant_cfg_val)) {
+    return absl::OkStatus();
+  }
+  const minijson::object* quant_cfg_obj = quant_cfg_val.as<minijson::object>();
+  if (quant_cfg_obj == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("quantization_config in ", path, " is not a JSON object"));
+  }
+
+  LRT_TENSOR_ASSIGN_OR_RETURN(quant_config_,
+                              ParseQuantizationConfigObject(*quant_cfg_obj));
+  ABSL_LOG(INFO) << "Parsed quantization_config from " << path
+                 << ": method=" << quant_config_->quant_method
+                 << " config groups=" << quant_config_->schemes.size();
+  return absl::OkStatus();
+}
+
 absl::StatusOr<SafetensorLoader> SafetensorLoader::Load(
     const std::string& path) {
-#ifndef LITERT_TENSOR_STANDALONE
   TRACE_EVENT(kTensorApiCategory, "Initialize weight loader");
-#endif
   namespace fs = std::filesystem;
   SafetensorLoader loader;
 
@@ -1370,35 +941,9 @@ absl::StatusOr<const SafetensorTensorInfo&> SafetensorLoader::GetTensorInfo(
 
 absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
     absl::string_view name) const {
-#ifndef LITERT_TENSOR_STANDALONE
   TRACE_EVENT(kTensorApiCategory, "LoadTensor");
-#endif
   ABSL_VLOG(3) << "Loading tensor " << name;
-  absl::string_view module = name;
-  if (absl::ConsumeSuffix(&module, ".weight") ||
-      absl::ConsumeSuffix(&module, ".weight_packed")) {
-    LRT_TENSOR_ASSIGN_OR_RETURN(const auto* config, FindWeightConfig(module));
-    const bool has_packed_weight =
-        tensor_infos_.contains(absl::StrCat(module, ".weight_packed"));
-    const auto weight = tensor_infos_.find(name);
-    // Class targets also cover unquantized floating-point tensors. Only enter
-    // the compressed path for packed weights or an actual int8 weight.
-    if (config != nullptr &&
-        (has_packed_weight ||
-         (weight != tensor_infos_.end() &&
-          weight->second.dtype == safetensors::dtype::kINT8))) {
-      return LoadCompressedWeight(name, module, *config);
-    }
-    if (!targeted_configs_.empty() && has_packed_weight && config == nullptr &&
-        !quant_config_->IsIgnored(module)) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          "No quantization group matches packed weight: ", module));
-    }
-  }
 
-  // Header-declared packed weights retain their compact upstream representation.
-  // The sidecar-configured mobile path above also preserves activation metadata
-  // and its existing INT2-to-INT4 compatibility behavior.
   if (!tensor_infos_.contains(name)) {
     absl::string_view module = name;
     if (absl::ConsumeSuffix(&module, kWeightSuffix) &&
@@ -1417,12 +962,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
   }
 
   LRT_TENSOR_RETURN_IF_ERROR(ValidateTensorRange(info));
-  for (int64_t dim : info.shape) {
-    if (dim < 0 || dim > std::numeric_limits<int32_t>::max()) {
-      return absl::InvalidArgumentError(
-          "Tensor dimensions must fit nonnegative int32 values");
-    }
-  }
+
   const std::byte* data_ptr = storage.data_base + info.data_start;
   size_t data_size = info.data_end - info.data_start;
   const size_t dtype_alignment = safetensors::get_dtype_bytes(info.dtype);
@@ -1598,19 +1138,7 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadTensor(
       break;
     }
     case Type::kBF16:
-    case Type::kFP16: {
-      if (absl::EndsWith(name, "embed_tokens_per_layer.weight")) {
-        buffer = MakeMappedBuffer(storage.file_data, data_ptr, data_size,
-                                  dtype_alignment);
-      } else {
-        LRT_TENSOR_ASSIGN_OR_RETURN(
-            auto converted,
-            ConvertTensorTo<TypedOwningBuffer<Type::kFP32>>(info));
-        buffer = std::move(converted.buffer);
-        type = Type::kFP32;
-      }
-      break;
-    }
+    case Type::kFP16:
     case Type::kFP32:
     case Type::kFP64:
     case Type::kI64:
@@ -1717,9 +1245,7 @@ SafetensorLoader::LoadQuantizationParams(
 
 absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
     absl::string_view module, absl::string_view name) const {
-#ifndef LITERT_TENSOR_STANDALONE
   TRACE_EVENT(kTensorApiCategory, "LoadPackedTensor");
-#endif
   if (!quant_config_.has_value()) {
     return absl::FailedPreconditionError(absl::StrCat(
         "Cannot load packed weight ", module,
@@ -1839,52 +1365,4 @@ absl::StatusOr<TensorHandle> SafetensorLoader::LoadPackedTensor(
       .quantization = std::move(quantization)});
 }
 
-absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadAllTensors() const {
-  absl::flat_hash_map<std::string, TensorHandle> tensors;
-  for (const auto& [name, info] : tensor_infos_) {
-    absl::StatusOr<TensorHandle> tensor_or = LoadTensor(name);
-    if (!tensor_or.ok()) {
-      ABSL_LOG(WARNING) << "Failed to load tensor " << name << ": "
-                        << tensor_or.status();
-      continue;
-    }
-    tensors[name] = std::move(*tensor_or);
-  }
-  return tensors;
-}
-
-absl::StatusOr<absl::flat_hash_map<std::string, TensorHandle>>
-SafetensorLoader::LoadWeightsWithMapping(
-    const absl::flat_hash_map<std::string, std::string>& name_mapping) const {
-#ifndef LITERT_TENSOR_STANDALONE
-  TRACE_EVENT(kTensorApiCategory, "LoadWeightsWithMapping");
-#endif
-  absl::flat_hash_map<std::string, TensorHandle> tensors;
-  for (const auto& [hf_name, model_name] : name_mapping) {
-    absl::StatusOr<TensorHandle> tensor_or = LoadTensor(hf_name);
-    if (!tensor_or.ok()) {
-      if (!absl::IsNotFound(tensor_or.status())) return tensor_or.status();
-      ABSL_LOG(WARNING) << "Failed to load tensor " << hf_name << ": "
-                        << tensor_or.status();
-      continue;
-    }
-    tensor_or->SetName(model_name);
-    tensors[model_name] = std::move(*tensor_or);
-    absl::string_view source_module = hf_name;
-    absl::string_view model_module = model_name;
-    if (absl::ConsumeSuffix(&source_module, ".weight") &&
-        absl::ConsumeSuffix(&model_module, ".weight")) {
-      for (absl::string_view suffix : {".input_scale", ".output_scale"}) {
-        const std::string source_name = absl::StrCat(source_module, suffix);
-        if (!tensor_infos_.contains(source_name)) continue;
-        LRT_TENSOR_ASSIGN_OR_RETURN(auto scale, LoadTensor(source_name));
-        const std::string destination_name = absl::StrCat(model_module, suffix);
-        scale.SetName(destination_name);
-        tensors[destination_name] = std::move(scale);
-      }
-    }
-  }
-  return tensors;
-}
 }  // namespace litert::tensor::examples

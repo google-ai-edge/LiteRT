@@ -113,7 +113,7 @@ if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
     echo "LITERT_PACKAGE_MODE=prebuilts requires a linux x86_64 host with TENSORFLOW_TARGET unset."
     exit 1
   fi
-  bazelisk ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} \
     //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so \
     //litert/vendors/mediatek/compiler:compiler_plugin_so \
@@ -137,7 +137,7 @@ if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
   # <site-packages>/ai_edge_litert_sdk_intel/vendors/intel_openvino/{compiler,dispatch}/.
   patchelf --set-rpath '$ORIGIN:$ORIGIN/../../../../openvino/libs' "${PREBUILTS_X86_DIR}"/*IntelOpenvino.so
 
-  bazelisk ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
     ${BAZEL_FLAGS} --config=cross_compile_linux_arm64 \
     ${CUSTOM_BAZEL_FLAGS} \
     //litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so \
@@ -169,7 +169,7 @@ if [[ "${LITERT_PACKAGE_MODE:-wheel}" == "prebuilts" ]]; then
   exit 0
 fi
 
-bazelisk ${BAZEL_STARTUP_OPTIONS} build "${BAZEL_BUILD_MODE_FLAGS[@]}" --cxxopt=-std=gnu++17 \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt --cxxopt=-std=gnu++17 \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:litert_wheel
 
 # Move the wheel file to the root directory since it is not accessible from the
@@ -191,7 +191,7 @@ if [ "${TEST_MANYLINUX_COMPLIANCE}" = "true" ]; then
     grep -q "manylinux_2_27_aarch64" /tmp/auditwheel.txt
   else
     echo "Testing manylinux compliance..."
-    bazelisk ${BAZEL_STARTUP_OPTIONS} test "${BAZEL_BUILD_MODE_FLAGS[@]}" \
+    bazel ${BAZEL_STARTUP_OPTIONS} test -c opt \
       ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/wheel:manylinux_compliance_test
   fi
 fi
@@ -199,20 +199,20 @@ fi
 # Vendor SDKs
 
 ## Qualcomm SDK
-bazelisk ${BAZEL_STARTUP_OPTIONS} build "${BAZEL_BUILD_MODE_FLAGS[@]}" \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
 
 ## Mediatek SDK
-bazelisk ${BAZEL_STARTUP_OPTIONS} build "${BAZEL_BUILD_MODE_FLAGS[@]}" \
+bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
   ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
 
 ## Google Tensor SDK
 if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
-  bazelisk ${BAZEL_STARTUP_OPTIONS} build "${BAZEL_BUILD_MODE_FLAGS[@]}" \
+  bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
     ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist
 
   mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/

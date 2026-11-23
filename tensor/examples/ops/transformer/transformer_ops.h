@@ -46,8 +46,7 @@ namespace litert::tensor {
 // The output is computed as: x * cos + rotated * sin.
 template <class... Mixins>
 Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
-                       const Tensor<Mixins...>& sin,
-                       bool dynamic_leading_dims = false) {
+                       const Tensor<Mixins...>& sin) {
   LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(x, cos, sin));
   graph::ScopeGuard scope("rope");
   scope.Bind("input", x.GetRaw())
@@ -69,7 +68,6 @@ Tensor<Mixins...> RoPE(const Tensor<Mixins...>& x, const Tensor<Mixins...>& cos,
   const int half_dim = x_shape[last_axis] / 2;
   const Shape slice_size = [&] {
     Shape s = x_shape;
-    if (dynamic_leading_dims) std::fill(s.begin(), s.end() - 1, -1);
     s.back() = half_dim;
     return s;
   }();

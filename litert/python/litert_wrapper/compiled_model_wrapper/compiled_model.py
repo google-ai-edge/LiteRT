@@ -354,17 +354,6 @@ class CompiledModel:
     """Returns whether the compiled model is fully accelerated."""
     return bool(self._model.IsFullyAccelerated())
 
-  def get_operator_delegations(self) -> list[dict[str, Any]]:
-    """Reports operator names and delegate ownership without running inference.
-
-    Each entry has subgraph_index, operator_index, operator_name, and
-    delegate_name. Composite/custom names are retained. An empty delegate name
-    means no active delegate partition claims the node. Entries include unused
-    decomposition subgraphs. Indices refer to the compiled interpreter and may
-    differ from the input model after rewriting; consumers must verify identity.
-    """
-    return self._model.GetOperatorDelegations()
-
   def is_non_cpu_fully_accelerated(self) -> bool:
     """Returns whether the model is 100% delegated to non-CPU hardware."""
     return bool(self._model.IsNonCpuFullyAccelerated())

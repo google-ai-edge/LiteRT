@@ -134,11 +134,11 @@ absl::Status DelegateKernel::Dispatch(TfLiteContext* context) {
 
   if (::ml_drift::IsTfLiteProfilerActive(context)) {
     ::ml_drift::ProfilingInfo profiling_info;
-    ABSL_RETURN_IF_ERROR(ctx_->DispatchWithProfiling(profiling_info));
+    ABSL_RETURN_IF_ERROR(ctx_->Profile(profiling_info));
     AddTfLiteProfilerEvents(context, &profiling_info);
-  } else {
-    ABSL_RETURN_IF_ERROR(ctx_->Dispatch());
   }
+
+  ABSL_RETURN_IF_ERROR(ctx_->Dispatch());
   if (kForceCompletion) {
     return backend_->WaitForCompletion();
   }

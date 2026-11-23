@@ -16,7 +16,6 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <atomic>
 #include <memory>
 #ifdef __EMSCRIPTEN__
 #include <algorithm>
@@ -90,31 +89,6 @@ namespace {
 constexpr absl::string_view kBackendName = "WebGPU";
 // Serialization data prefix. FYI, Jet uses "gpuv2_data_".
 constexpr absl::string_view kSerializedDataPrefix = "gpuv3_wgpu_data_";
-
-uint64_t NextCaptureId() {
-  static std::atomic<uint64_t> next{1};
-  return next.fetch_add(1, std::memory_order_relaxed);
-}
-
-class CaptureScope {
- public:
-  CaptureScope(const WebGpuCommandCapture* capture, const char* name,
-               uint64_t id, uint64_t context)
-      : capture_(capture), name_(name), id_(id), context_(context) {
-    if (capture_ && capture_->event) {
-      capture_->event('B', name_, id_, context_);
-    }
-  }
-  ~CaptureScope() {
-    if (capture_ && capture_->event) {
-      capture_->event('E', name_, id_, context_);
-    }
-  }
- private:
-  const WebGpuCommandCapture* capture_;
-  const char* name_;
-  uint64_t id_, context_;
-};
 
 // At least Adreno 730 and some Intel GPUs fail sometimes with 512(or more)
 // nodes per encoder.
@@ -449,8 +423,6 @@ GpuInferenceContextWebGpu::GpuInferenceContextWebGpu(
                      memory_manager)
                : std::make_unique<::ml_drift::webgpu::InferenceContext>()),
       async_upload_notifications_(GetAsyncUploadNotifications(create_info)),
-      command_capture_(backend->command_capture()),
-      capture_context_id_(command_capture_ ? NextCaptureId() : 0),
       next_command_buffers_(num_steps_of_command_buffer_preparations),
       num_nodes_per_command_encoder_(kNumNodesPerCommandEncoder) {}
 
@@ -461,8 +433,6 @@ GpuInferenceContextWebGpu::~GpuInferenceContextWebGpu() {
 
 void GpuInferenceContextWebGpu::JoinNextCommandBuffersThread() {
   if (next_command_buffers_thread_) {
-    CaptureScope scope(command_capture_.get(), "join_command_preparation",
-                       capture_context_id_, capture_context_id_);
     next_command_buffers_thread_->join();
     next_command_buffers_thread_.reset();
   }
@@ -576,30 +546,19 @@ absl::Status GpuInferenceContextWebGpu::UploadWeightsOnWeb(
 }
 
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffers(
-    PreparedCommandBuffers& command_buffers,
+    std::vector<wgpu::CommandBuffer>& command_buffers,
     bool submit_command_buffers) {
-  command_buffers.Clear();
-  command_buffers.preparation_id = command_capture_ ? NextCaptureId() : 0;
-  CaptureScope scope(command_capture_.get(), "prepare_command_buffers",
-                     command_buffers.preparation_id, capture_context_id_);
   absl::MutexLock lock(backend_->memory_manager_mutex());
-  if (command_capture_ && command_capture_->pool) {
-    command_buffers.capture = command_capture_->pool->TryAcquire();
-  }
-  auto buffers = ctx_->CreateCommandBuffers(
-      backend_->wgpu_env(), num_nodes_per_command_encoder_,
-      /*command_buffer_infos=*/nullptr, submit_command_buffers,
-      command_buffers.capture.get());
-  if (!buffers.ok()) {
-    command_buffers.Clear();
-    return buffers.status();
-  }
-  command_buffers.buffers = std::move(*buffers);
+  ABSL_ASSIGN_OR_RETURN(
+      command_buffers,
+      ctx_->CreateCommandBuffers(
+          backend_->wgpu_env(), num_nodes_per_command_encoder_,
+          /*command_buffer_infos=*/nullptr, submit_command_buffers));
   return absl::OkStatus();
 }
 
 absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
-    PreparedCommandBuffers& command_buffers) {
+    std::vector<wgpu::CommandBuffer>& command_buffers) {
   if (next_command_buffers_.empty()) {
     return PrepareCommandBuffers(command_buffers,
                                  /*submit_command_buffers=*/true);
@@ -618,14 +577,13 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
     next_command_buffers_index_ = 0;
     next_command_buffers_ready_ = false;
     for (auto& buffers : next_command_buffers_) {
-      buffers.Clear();
+      buffers.clear();
     }
   }
 
   if (next_command_buffers_ready_) {
     // Use cached command buffers since it's ready to use.
-    command_buffers.Swap(next_command_buffers_[next_command_buffers_index_]);
-    command_buffers.from_cache = true;
+    command_buffers.swap(next_command_buffers_[next_command_buffers_index_]);
   } else {
     // Prepare and use command buffers immediately since cached ones are not
     // ready to use yet.
@@ -660,36 +618,18 @@ absl::Status GpuInferenceContextWebGpu::PrepareCommandBuffersFromCached(
 }
 
 absl::Status GpuInferenceContextWebGpu::Dispatch() {
-  const uint64_t invocation_id = command_capture_ ? NextCaptureId() : 0;
-  CaptureScope scope(command_capture_.get(), "dispatch", invocation_id,
-                     capture_context_id_);
   // Waits for async upload notifications notified.
   for (auto& notification : async_upload_notifications_) {
     notification->WaitForNotification();
   }
   async_upload_notifications_.clear();
 
-  PreparedCommandBuffers command_buffers;
+  std::vector<wgpu::CommandBuffer> command_buffers;
   ABSL_RETURN_IF_ERROR(PrepareCommandBuffersFromCached(command_buffers));
 
-  {
-    CaptureScope submit(command_capture_.get(), "submit_cached_buffers",
-                        invocation_id, capture_context_id_);
-    for (auto& buffer : command_buffers.buffers) {
-      // Submit every buffer separately to avoid hangs
-      backend_->wgpu_env().queue().Submit(1, &buffer);
-    }
-  }
-  // Streaming preparation already submitted its buffers. Cached preparation
-  // does so above. Neither path waits or executes the graph a second time.
-  const bool captured = command_buffers.capture != nullptr;
-  if (captured) {
-    ABSL_RETURN_IF_ERROR(command_buffers.capture->ReadbackAsync(invocation_id));
-  }
-  if (command_capture_ && command_capture_->submitted) {
-    command_capture_->submitted(invocation_id, capture_context_id_,
-                                command_buffers.preparation_id,
-                                command_buffers.from_cache, captured);
+  for (int i = 0; i < command_buffers.size(); ++i) {
+    // Submit every buffer separately to avoid hangs
+    backend_->wgpu_env().queue().Submit(1, &command_buffers[i]);
   }
   return absl::OkStatus();
 }
@@ -736,30 +676,7 @@ absl::Status GpuInferenceContextWebGpu::PostConvert(bool input) {
 
 absl::Status GpuInferenceContextWebGpu::Profile(
     ::ml_drift::ProfilingInfo& profiling_info) {
-  // Profiling executes once. Never call the native replay-based benchmark
-  // profiler here: delegate graphs may contain persistent cache updates.
-  for (auto& notification : async_upload_notifications_) {
-    notification->WaitForNotification();
-  }
-  async_upload_notifications_.clear();
-  JoinNextCommandBuffersThread();
-  ABSL_RETURN_IF_ERROR(FlushPendingSpatialTensors());
-  next_command_buffers_index_ = 0;
-  next_command_buffers_ready_ = false;
-  for (auto& buffers : next_command_buffers_) {
-    buffers.Clear();
-  }
-  // Profiling changes shared resource bindings, so other contexts on this
-  // environment must invalidate their prepared command buffers on dispatch.
-  SharedWebGpuEnv::Get().SetLastContext(&backend_->wgpu_env(), this);
-  absl::MutexLock lock(backend_->memory_manager_mutex());
-  return ctx_->ProfileOnce(backend_->wgpu_env(), &profiling_info,
-                           num_nodes_per_command_encoder_);
-}
-
-absl::Status GpuInferenceContextWebGpu::DispatchWithProfiling(
-    ::ml_drift::ProfilingInfo& profiling_info) {
-  return Profile(profiling_info);
+  return ctx_->Profile(backend_->wgpu_env(), &profiling_info);
 }
 
 absl::StatusOr<size_t>

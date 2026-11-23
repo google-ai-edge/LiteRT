@@ -27,15 +27,6 @@ namespace ynnpack {
 bool IsRuntimeBmm(const TfLiteRegistration* registration,
                   const TfLiteNode* node);
 
-// Defines FP32 A times per-tensor affine INT8 B with FP32 output, using the same
-// dynamic activation quantization as runtime_bmm. The caller validates B's
-// scalar quantization metadata; value IDs/ranks describe operands after views.
-// Unlike constant weights, B may use the full INT8 range, including -128.
-TfLiteStatus DefineDynamicallyQuantizedMatMul(
-    TfLiteContext* context, ynn_subgraph_t subgraph, int rank_a, int rank_b,
-    uint32_t a_id, uint32_t b_id, const TfLiteTensor& b_tensor, bool adj_y,
-    uint32_t* output_id);
-
 TfLiteStatus IsBatchMatMulSupported(const TfLiteRegistration* registration,
                                     const TfLiteNode* node,
                                     TfLiteContext* context,
