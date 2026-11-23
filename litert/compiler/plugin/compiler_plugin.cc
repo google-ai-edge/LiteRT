@@ -28,6 +28,7 @@
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -69,8 +70,8 @@ namespace litert::internal {
 // CompiledResult
 //
 
-Expected<BufferRef<uint8_t>> CompiledResult::ByteCode(
-    LiteRtParamIndex byte_code_idx) const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<BufferRef<uint8_t>>
+CompiledResult::ByteCode(LiteRtParamIndex byte_code_idx) const {
   if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
                           get_compiled_result_byte_code)) {
     return litert::Error(kLiteRtStatusErrorUnsupported);
@@ -82,7 +83,8 @@ Expected<BufferRef<uint8_t>> CompiledResult::ByteCode(
   return BufferRef(data, size);
 }
 
-Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<LiteRtParamIndex>
+CompiledResult::NumByteCodeModules() const {
   if (compiled_result_handle_ == nullptr) {
     return 0;
   }
@@ -96,7 +98,8 @@ Expected<LiteRtParamIndex> CompiledResult::NumByteCodeModules() const {
   return byte_code_idx;
 }
 
-Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<LiteRtParamIndex>
+CompiledResult::NumCalls() const {
   if (compiled_result_handle_ == nullptr) {
     return 0;
   }
@@ -110,8 +113,8 @@ Expected<LiteRtParamIndex> CompiledResult::NumCalls() const {
   return num_calls;
 }
 
-Expected<CallInformation> CompiledResult::CallInfo(
-    LiteRtParamIndex call_idx) const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<CallInformation>
+CompiledResult::CallInfo(LiteRtParamIndex call_idx) const {
   if (!LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
                           get_compiled_result_call_info)) {
     return litert::Error(kLiteRtStatusErrorUnsupported);
@@ -127,8 +130,8 @@ Expected<CallInformation> CompiledResult::CallInfo(
   return ::litert::internal::CallInformation(call_info_str, byte_code_idx);
 }
 
-Expected<LiteRtJitExecutable> CompiledResult::GetHandle(
-    LiteRtParamIndex byte_code_idx) const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<LiteRtJitExecutable>
+CompiledResult::GetHandle(LiteRtParamIndex byte_code_idx) const {
   if (LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
                          get_compiled_result_handle)) {
     LiteRtJitExecutable handle = nullptr;
@@ -139,7 +142,7 @@ Expected<LiteRtJitExecutable> CompiledResult::GetHandle(
   return litert::Error(kLiteRtStatusErrorUnsupported);
 }
 
-CompiledResult::~CompiledResult() {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI CompiledResult::~CompiledResult() {
   if (compiled_result_handle_ != nullptr &&
       LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
                          destroy_compiled_result)) {
@@ -154,7 +157,8 @@ CompiledResult::CompiledResult(CompiledResult&& other) noexcept
   other.compiled_result_handle_ = nullptr;
 }
 
-CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI CompiledResult& CompiledResult::operator=(
+    CompiledResult&& other) noexcept {
   if (this != &other) {
     if (compiled_result_handle_ != nullptr &&
         LITERT_ABI_HAS_API(parent_v1_, /*req_major=*/1,
@@ -176,6 +180,13 @@ CompiledResult& CompiledResult::operator=(CompiledResult&& other) noexcept {
 
 namespace {
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI LiteRtStatus InvokeQueryInterface(
+    LiteRtCompilerPluginQueryInterfaceT query_interface,
+    LiteRtCompilerPluginInterfaceId interface_id, LiteRtApiVersion runtime_ver,
+    LiteRtInterface* out_interface) {
+  return query_interface(interface_id, runtime_ver, out_interface);
+}
+
 LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
                               const LiteRtCompilerPluginInterface_V1*& result,
                               LiteRtApiVersion& negotiated_version) {
@@ -194,6 +205,9 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
     return query_interface_res.Error().Status();
   }
   auto query_interface = *query_interface_res;
+  if (query_interface == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
 
   LiteRtApiVersion runtime_ver = {LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
                                   LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR,
@@ -201,7 +215,11 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
   LiteRtInterface basic_interface = nullptr;
 
   LiteRtStatus status = litert::internal::NegotiateInterface(
-      query_interface, kLiteRtCompilerPluginInterfaceBasic, runtime_ver,
+      [query_interface](LiteRtCompilerPluginInterfaceId interface_id,
+                        LiteRtApiVersion ver, LiteRtInterface* out) {
+        return InvokeQueryInterface(query_interface, interface_id, ver, out);
+      },
+      kLiteRtCompilerPluginInterfaceBasic, runtime_ver,
       /*expected_abi_major=*/LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR,
       &basic_interface, &negotiated_version);
   if (status != kLiteRtStatusOk || basic_interface == nullptr) {
@@ -217,7 +235,7 @@ LiteRtStatus ResolvePluginApi(SharedLibrary& lib,
   return kLiteRtStatusOk;
 }
 
-Expected<std::vector<std::string>> GetSocModels(
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<std::vector<std::string>> GetSocModels(
     const LiteRtCompilerPluginInterface_V1* api,
     LiteRtCompilerPlugin plugin_handle) {
   std::vector<std::string> soc_models;
@@ -269,9 +287,10 @@ void SortPlugins(std::vector<CompilerPlugin>& compiler_plugins) {
 
 }  // namespace
 
-Expected<CompilerPlugin> CompilerPlugin::LoadPlugin(
-    const absl::string_view lib_path, LiteRtEnvironmentOptions env,
-    LiteRtOptions options) {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<CompilerPlugin>
+CompilerPlugin::LoadPlugin(const absl::string_view lib_path,
+                           LiteRtEnvironmentOptions env,
+                           LiteRtOptions options) {
   CompilerPlugin plugin;
   LITERT_LOG(LITERT_INFO, "Loading plugin at: %s", lib_path.data());
 
@@ -382,7 +401,7 @@ CompilerPlugin& CompilerPlugin::operator=(CompilerPlugin&& other) {
   return *this;
 }
 
-CompilerPlugin::~CompilerPlugin() {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI CompilerPlugin::~CompilerPlugin() {
   if (plugin_handle_ != nullptr && plugin_api_v1_ != nullptr &&
       LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                          destroy_compiler_plugin)) {
@@ -400,7 +419,8 @@ std::string CompilerPlugin::DebugString() const {
                       ")");
 }
 
-Expected<LiteRtApiVersion> CompilerPlugin::ApiVersion() const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<LiteRtApiVersion>
+CompilerPlugin::ApiVersion() const {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           get_compiler_plugin_version)) {
     return Unexpected(kLiteRtStatusErrorUnsupported,
@@ -412,7 +432,8 @@ Expected<LiteRtApiVersion> CompilerPlugin::ApiVersion() const {
   return api_version;
 }
 
-Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<LiteRtHwAccelerators>
+CompilerPlugin::SupportedHardware() const {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           get_compiler_plugin_supported_hardware)) {
     return Unexpected(kLiteRtStatusErrorUnsupported,
@@ -424,7 +445,8 @@ Expected<LiteRtHwAccelerators> CompilerPlugin::SupportedHardware() const {
   return supported_hardware;
 }
 
-Expected<std::string> CompilerPlugin::SdkVersion() const {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<std::string>
+CompilerPlugin::SdkVersion() const {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           get_compiler_plugin_sdk_version)) {
     return std::string("");
@@ -438,7 +460,8 @@ Expected<std::string> CompilerPlugin::SdkVersion() const {
   return std::string(sdk_version);
 }
 
-Expected<void> CompilerPlugin::RegisterAllTransformations() {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<void>
+CompilerPlugin::RegisterAllTransformations() {
   // Clear previously registered transformations in case this CompilerPlugin
   // instance is reused across multiple models (e.g. in ATS test suites).
   transformations_.clear();
@@ -481,8 +504,8 @@ Expected<void> CompilerPlugin::RegisterAllTransformations() {
   return {};
 }
 
-Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
-    LiteRtModelT& model) {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<void>
+CompilerPlugin::GreedyPatternMatchAndRewrite(LiteRtModelT& model) {
   LITERT_LOG(LITERT_DEBUG, "GreedyPatternMatchAndRewrite, total patterns: %d",
              transformations_.size());
   for (auto& subgraph : model.Subgraphs()) {
@@ -538,8 +561,9 @@ Expected<void> CompilerPlugin::GreedyPatternMatchAndRewrite(
   return {};
 }
 
-Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
-    LiteRtSubgraph subgraph, absl::string_view soc_model) {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<std::vector<LiteRtOpWithPartitionIndex>>
+CompilerPlugin::Partition(LiteRtSubgraph subgraph,
+                          absl::string_view soc_model) {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           compiler_plugin_partition)) {
     return Unexpected(kLiteRtStatusErrorUnsupported,
@@ -553,8 +577,8 @@ Expected<std::vector<LiteRtOpWithPartitionIndex>> CompilerPlugin::Partition(
   return ops.Values();
 }
 
-Expected<CompiledResult> CompilerPlugin::Compile(LiteRtModel partitions,
-                                                 absl::string_view soc_model) {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<CompiledResult> CompilerPlugin::Compile(
+    LiteRtModel partitions, absl::string_view soc_model) {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           compiler_plugin_compile)) {
     return Unexpected(kLiteRtStatusErrorUnsupported,
@@ -1348,8 +1372,8 @@ Expected<CompilerPlugin> CompilerPlugin::FindPlugin(
                    soc_manufacturer));
 }
 
-Expected<bool> CompilerPlugin::CheckCompilerCompatibility(
-    absl::string_view soc_model) {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI Expected<bool>
+CompilerPlugin::CheckCompilerCompatibility(absl::string_view soc_model) {
   if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                           check_compiler_compatibility)) {
     return true;

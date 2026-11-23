@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -125,7 +126,7 @@ class CompilerPlugin {
   // Get the manufacturer associated with this plugin. NOTE: SocManufacturer
   // string returned by the underlying plugin are expected to have static
   // lifetime.
-  absl::string_view SocManufacturer() const {
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::string_view SocManufacturer() const {
     if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                             get_compiler_plugin_soc_manufacturer)) {
       return "";
