@@ -102,6 +102,46 @@ class CompilerAotTest : public testing::Test {
     return graph;
   }
 
+  // Eight EXP ops in a row over a 64 KiB tensor: one island by size, of an op
+  // that the Gated DeltaNet layers' gates use and the gemma4 and safe lists
+  // leave out.
+  LiteRtSubgraphT& AddExpChain(LiteRtModelT& model) {
+    auto& graph = model.EmplaceSubgraph();
+    auto* value = &graph.EmplaceTensor();
+    value->SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {128, 128}));
+    graph.Inputs().push_back(value);
+    for (int i = 0; i < 8; ++i) {
+      auto& output = graph.EmplaceTensor();
+      output.SetType(
+          MakeRankedTensorType(kLiteRtElementTypeFloat32, {128, 128}));
+      auto& exp = graph.EmplaceOp();
+      exp.SetOpCode(kLiteRtOpCodeTflExp);
+      tflite::BuiltinOptionsUnion options;
+      options.Set(tflite::ExpOptionsT{});
+      litert::internal::SetTflOptions(exp, std::move(options));
+      litert::internal::AttachInput(value, exp);
+      litert::internal::AttachOutput(&output, exp);
+      value = &output;
+    }
+    graph.Outputs().push_back(value);
+    return graph;
+  }
+
+  // The ops a partition of `graph` selects under `policy` (nullptr: unset).
+  size_t SelectedOps(LiteRtSubgraphT& graph, const char* policy) {
+    if (policy == nullptr) {
+      unsetenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
+    } else {
+      setenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY", policy, 1);
+    }
+    LiteRtOpListT selected;
+    EXPECT_EQ(api_->compiler_plugin_partition(plugin_, /*soc_model=*/nullptr,
+                                              &graph, &selected),
+              kLiteRtStatusOk);
+    unsetenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
+    return selected.Values().size();
+  }
+
   size_t CountFilesWithPrefix(const std::string& prefix) const {
     size_t count = 0;
     for (const auto& entry : std::filesystem::directory_iterator(directory_)) {
@@ -213,6 +253,16 @@ TEST_F(CompilerAotTest, ProducesIndependentShardsAndReusesCompleteManifest) {
     }
     EXPECT_EQ(CountFilesWithPrefix("tensorrt_aot_index_"), 1);
   }
+}
+
+TEST_F(CompilerAotTest, DefaultPolicyTakesTheValidatedLlmOps) {
+  LiteRtModelT model;
+  auto& graph = AddExpChain(model);
+  EXPECT_EQ(SelectedOps(graph, /*policy=*/nullptr), 8);
+  EXPECT_EQ(SelectedOps(graph, "qwen3_5"), 8);
+  EXPECT_EQ(SelectedOps(graph, "gemma4"), 0);
+  EXPECT_EQ(SelectedOps(graph, "safe"), 0);
+  EXPECT_EQ(SelectedOps(graph, "unknown"), 0);
 }
 
 TEST_F(CompilerAotTest, NonAotStillSharesOneWeightStoreAcrossEngines) {

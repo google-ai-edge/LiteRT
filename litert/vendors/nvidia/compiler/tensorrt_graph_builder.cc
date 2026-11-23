@@ -204,18 +204,23 @@ bool FuseGemvGroupsEnabled() {
 }
 
 // Whether the GEMMs over blockwise INT4 weights run on the int8 tensor cores
-// (trtllm/subbyte_gemm_int8.cu), as the per-channel ones do: with the qwen3_5
-// partition policy, whose greedy outputs it keeps, unless
-// LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM says otherwise (Gemma's blockwise
-// models stay on the fp16 kernel).
-bool Int8BlockwiseGemmRequested() {
+// (trtllm/subbyte_gemm_int8.cu), as the per-channel ones do: in a graph with
+// Gated DeltaNet layers (Qwen 3.5's hybrid stack), whose greedy outputs it
+// keeps, while Gemma's blockwise models stay on the fp16 kernel.
+// LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM says otherwise, and so does a
+// partition policy that is set: qwen3_5 turns it on, any other off.
+bool Int8BlockwiseGemmRequested(bool graph_has_gated_delta_net) {
   if (const char* value =
           std::getenv("LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM");
       value != nullptr && value[0] != '\0') {
     return std::strcmp(value, "0") != 0;
   }
-  const char* policy = std::getenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
-  return policy != nullptr && std::strcmp(policy, "qwen3_5") == 0;
+  if (const char* policy =
+          std::getenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
+      policy != nullptr && policy[0] != '\0') {
+    return std::strcmp(policy, "qwen3_5") == 0;
+  }
+  return graph_has_gated_delta_net;
 }
 
 bool NativeKvCacheUpdateEnabled() {
@@ -1666,10 +1671,14 @@ struct GatedDeltaUpdateOp {
   bool has_valid_len = false;
 };
 
-std::optional<GatedDeltaUpdateOp> ParseGatedDeltaUpdate(const Op& op) {
+bool IsGatedDeltaUpdateOp(const Op& op) {
   const auto code = op.CustomCode();
-  if (!code || (*code != "gated_delta_update" &&
-                *code != "custom_call.gated_delta_update")) {
+  return code && (*code == "gated_delta_update" ||
+                  *code == "custom_call.gated_delta_update");
+}
+
+std::optional<GatedDeltaUpdateOp> ParseGatedDeltaUpdate(const Op& op) {
+  if (!IsGatedDeltaUpdateOp(op)) {
     return std::nullopt;
   }
   if ((op.Inputs().size() != 6 && op.Inputs().size() != 7) ||
@@ -3617,6 +3626,15 @@ class TensorRtGraphBuilder {
                  "NVIDIA TensorRT-RTX the graph computes in FLOAT16: FP16 "
                  "activations");
     }
+    for (const auto& op : subgraph.Ops()) {
+      graph_has_gated_delta_net_ |= IsGatedDeltaUpdateOp(op);
+    }
+    if (Int8BlockwiseGemmRequested(graph_has_gated_delta_net_)) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX blockwise INT4 GEMMs run on the int8 "
+                 "tensor cores%s",
+                 graph_has_gated_delta_net_ ? " (Gated DeltaNet layers)" : "");
+    }
     LITERT_RETURN_IF_ERROR(
         FindReadOnlyValueCaches(subgraph, read_only_value_cache_inputs));
     LITERT_RETURN_IF_ERROR(
@@ -5336,7 +5354,7 @@ class TensorRtGraphBuilder {
         info.scale_block, scale_offset, norm != nullptr ? norm->eps : -1.0f,
         norm != nullptr ? norm->multiplier : 1.0f, row_positions,
         /*int8_blockwise=*/gemm && info.scale_block != 0 &&
-            Int8BlockwiseGemmRequested()));
+            Int8BlockwiseGemmRequested(graph_has_gated_delta_net_)));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to create CUDA subbyte GEMV plugin");
@@ -14720,6 +14738,9 @@ class TensorRtGraphBuilder {
   std::vector<std::string> output_names_;
   int next_name_id_ = 0;
   bool uses_cuda_subbyte_gemv_ = false;
+  // Whether the subgraph holds a gated_delta_update op, which puts its
+  // blockwise GEMMs on the int8 tensor cores by default: set by Build.
+  bool graph_has_gated_delta_net_ = false;
   // The weight store of the model, if the plugin weights stay out of the plan,
   // the plugin layers that read a segment of it, and the holders added for
   // those segments.

@@ -85,9 +85,10 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 28;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 29;
 
 enum class PartitionPolicy {
+  kDefault,
   kSafe,
   kGemma4,
   kQwen35,
@@ -267,12 +268,20 @@ bool LogUnsupportedOps() {
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
 }
 
+// The ops a partition may take (LITERT_NVIDIA_TENSORRT_PARTITION_POLICY). By
+// default the ops of the transformer exports the plugin is validated on
+// (IsValidatedLlmTensorRtOp); "safe" keeps a few elementwise ops in at most 8
+// islands, for a graph none of those exports resembles, and "gemma4" and
+// "qwen3_5" name the lists the default merges. An unknown value is "safe".
 PartitionPolicy GetPartitionPolicy() {
   const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
   if (value == nullptr || value[0] == '\0') {
-    return PartitionPolicy::kSafe;
+    return PartitionPolicy::kDefault;
   }
   const std::string policy(value);
+  if (policy == "safe") {
+    return PartitionPolicy::kSafe;
+  }
   if (policy == "all") {
     return PartitionPolicy::kAll;
   }
@@ -290,6 +299,8 @@ PartitionPolicy GetPartitionPolicy() {
 
 const char* PartitionPolicyName(PartitionPolicy policy) {
   switch (policy) {
+    case PartitionPolicy::kDefault:
+      return "default";
     case PartitionPolicy::kAll:
       return "all";
     case PartitionPolicy::kCompute:
@@ -392,11 +403,13 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
   }
 }
 
-// Qwen 3.5's hybrid stack in whole-signature islands, as for Gemma 4: its
-// attention layers use the same composites, and its Gated DeltaNet layers
-// add the gated_delta_update custom op, the short convolution composite and
-// the elementwise ops of their gates and decays.
-bool IsValidatedQwen35TensorRtOp(const litert::compiler::Op& op) {
+// Gemma 4's stack and Qwen 3.5's hybrid stack in whole-signature islands:
+// Qwen's attention layers use Gemma's composites, and its Gated DeltaNet
+// layers add the gated_delta_update custom op, the short convolution composite
+// and the elementwise ops of their gates and decays. No Gemma 4 export has
+// those elementwise ops outside the decompositions of the composites the
+// plugin lowers (odml.cache_update's GREATER), so its islands stay the same.
+bool IsValidatedLlmTensorRtOp(const litert::compiler::Op& op) {
   switch (op.Code()) {
     case kLiteRtOpCodeTflExp:
     case kLiteRtOpCodeTflGreater:
@@ -479,8 +492,9 @@ bool IsPolicyAllowedOp(const litert::compiler::Op& op, PartitionPolicy policy) {
       return IsComputeHeavyOp(op);
     case PartitionPolicy::kGemma4:
       return IsValidatedGemma4TensorRtOp(op);
+    case PartitionPolicy::kDefault:
     case PartitionPolicy::kQwen35:
-      return IsValidatedQwen35TensorRtOp(op);
+      return IsValidatedLlmTensorRtOp(op);
     case PartitionPolicy::kSafe:
       return IsSafeGemma4Op(op);
   }
