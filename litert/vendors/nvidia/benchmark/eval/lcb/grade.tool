@@ -19,12 +19,15 @@ scratch directory; a problem's tests stop at the first failure. A problem
 passes when every test passes (pass@1); "passed" counts the tests before
 the first failure.
 
-usage: grade.tool RUN_DIR... [--timeout S] [--json FILE [--merge]]
+usage: grade.tool RUN_DIR... [--timeout S] [--jobs N] [--json FILE [--merge]]
 Writes each run's grades to RUN_DIR/grades.json (what report/eval.tool reads); --json also
 collects them into one file (--merge keeps the runs already in it). Prints one line per
-problem and run, then the pass rate per run.
+problem and run, then the pass rate per run. --jobs grades that many problems at a time
+(default 1); a problem's tests still run one after another, and the lines and grades keep the
+selection's order.
 """
 import argparse
+import concurrent.futures
 import json
 import os
 import pathlib
@@ -179,6 +182,7 @@ def main():
                                    formatter_class=argparse.RawDescriptionHelpFormatter)
   parser.add_argument('runs', nargs='+')
   parser.add_argument('--timeout', type=float, default=6.0)
+  parser.add_argument('--jobs', type=int, default=1, help='problems graded at a time')
   parser.add_argument('--json')
   parser.add_argument('--merge', action='store_true',
                       help='retain other runs already saved in --json')
@@ -193,27 +197,38 @@ def main():
   for run in args.runs:
     run_dir = pathlib.Path(run)
     rows = []
-    for item in selection:
-      qid = item['question_id']
-      problem = json.load(open(HERE / 'problems' / f'{qid}.json'))
-      out = run_dir / f'{qid}.out'
-      if not out.exists():
-        rows.append({'question_id': qid, 'status': 'missing', 'passed': 0,
-                     'total': len(problem['tests'])})
-        continue
-      text = out.read_text(errors='replace')
-      result = grade_response(problem, text, args.timeout)
-      meta_path = run_dir / f'{qid}.json'
-      meta = json.load(open(meta_path)) if meta_path.exists() else {}
-      row = {'question_id': qid, 'platform': item['platform'],
-             'difficulty': item['difficulty'], **result,
-             'response_chars': len(text), **meta}
-      rows.append(row)
-      print(f"{run_dir.name:24} {qid:10} {item['platform']:9} {item['difficulty']:6} "
-            f"{row['status']:8} {row['passed']:3d}/{row['total']:<3d} "
-            f"{meta.get('decode_tokens', '?'):>5} tok "
-            f"{meta.get('decode_tokens_per_second', 0) or 0:6.1f} tok/s "
-            f"{(meta.get('acceptance') or 0) * 100:3.0f}%")
+    problems = {item['question_id']: json.load(open(HERE / 'problems' / f"{item['question_id']}.json"))
+                for item in selection}
+    # The tests run in subprocesses, so threads are enough to grade problems side by side.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=max(1, args.jobs)) as pool:
+      graded = {qid: pool.submit(grade_response, problem,
+                                 (run_dir / f'{qid}.out').read_text(errors='replace'), args.timeout)
+                for qid, problem in problems.items() if (run_dir / f'{qid}.out').exists()}
+      for item in selection:
+        qid = item['question_id']
+        problem = problems[qid]
+        if qid not in graded:
+          rows.append({'question_id': qid, 'status': 'missing', 'passed': 0,
+                       'total': len(problem['tests'])})
+          continue
+        text = (run_dir / f'{qid}.out').read_text(errors='replace')
+        result = graded[qid].result()
+        if args.jobs > 1 and result['status'] == 'fail':
+          # Tests run side by side are slower, and a test near the time limit can fail for
+          # that alone: a failure is graded again with nothing else running, as one job would.
+          pool.shutdown(wait=True)
+          result = grade_response(problem, text, args.timeout)
+        meta_path = run_dir / f'{qid}.json'
+        meta = json.load(open(meta_path)) if meta_path.exists() else {}
+        row = {'question_id': qid, 'platform': item['platform'],
+               'difficulty': item['difficulty'], **result,
+               'response_chars': len(text), **meta}
+        rows.append(row)
+        print(f"{run_dir.name:24} {qid:10} {item['platform']:9} {item['difficulty']:6} "
+              f"{row['status']:8} {row['passed']:3d}/{row['total']:<3d} "
+              f"{meta.get('decode_tokens', '?'):>5} tok "
+              f"{meta.get('decode_tokens_per_second', 0) or 0:6.1f} tok/s "
+              f"{(meta.get('acceptance') or 0) * 100:3.0f}%", flush=True)
     passed = sum(1 for r in rows if r['status'] == 'pass')
     print(f"{run_dir.name}: {passed}/{len(rows)} problems pass")
     report[run_dir.name] = {'rows': rows, 'pass': passed, 'total': len(rows)}

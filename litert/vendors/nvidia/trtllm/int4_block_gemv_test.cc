@@ -22,6 +22,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -128,6 +129,7 @@ std::vector<uint16_t> MakeScales(int n, int k, int seed) {
 }
 
 float Gelu(float x, int gate) {
+  if (gate == 3) return x / (1.0f + std::exp(-x));
   if (gate == 1) {
     return 0.5f * x *
            (1.0f +
@@ -161,9 +163,16 @@ float Reference(const std::vector<uint16_t>& activation,
 TEST(Int4BlockGemvTest, MatchesCpuReference) {
   // Every row count, over the input sizes of the 26B model's projections
   // (the expert down projection of 22 blocks runs on one warp) and a short
-  // odd case; 44 channels end in a partial tile of 4.
-  constexpr int kN = 44;
-  for (const int k : {64, 704, 2112, 2816}) {
+  // odd case; 44 channels end in a partial tile of 4. 10240 inputs run 44
+  // CTAs of sixteen warps, a row each (Qwen 4's hyper-connection down
+  // projection's form); 320 inputs into 8200 outputs run 32 rows a CTA in
+  // decode, ending in a partial tile (its up projection's form).
+  for (const auto [k, kN] : {std::pair<int, int>{64, 44},
+                             {704, 44},
+                             {2112, 44},
+                             {2816, 44},
+                             {10240, 44},
+                             {320, 8200}}) {
     const std::vector<uint8_t> weights = MakeInt4Weights(kN, k, 1);
     const std::vector<uint16_t> scales = MakeScales(kN, k, 1);
     for (int rows = 1; rows <= kLiteRtNvidiaInt4BlockGemvMaxRows; ++rows) {
@@ -490,6 +499,143 @@ TEST(Int4BlockGemvTest, VerifyRowsMatchEachRowAlone) {
   }
 }
 
+// Slot rows (a batched decode step: each row its own sequence) give every row
+// the bits it gets alone, plain, gated and with the fused norm.
+TEST(Int4BlockGemvTest, SlotRowsMatchEachRowAloneBitForBit) {
+  struct Case {
+    int n;
+    int k;
+    int gate;
+    bool norm;
+  };
+  const Case cases[] = {
+      {44, 704, 0, false},  {2816, 2112, 0, false}, {8192, 2816, 0, true},
+      {270, 2816, 1, true}, {136, 2112, 2, false},  {4096, 2816, 3, false},
+  };
+  for (const auto& c : cases) {
+    for (int rows = 1; rows <= kLiteRtNvidiaInt4BlockGemvMaxRows; ++rows) {
+      SCOPED_TRACE(::testing::Message()
+                   << "n=" << c.n << " k=" << c.k << " gate=" << c.gate
+                   << " norm=" << c.norm << " rows=" << rows);
+      const int channels = c.gate != 0 ? 2 * c.n : c.n;
+      const std::vector<uint8_t> weights = MakeInt4Weights(channels, c.k, 23);
+      const std::vector<uint16_t> scales = MakeScales(channels, c.k, 23);
+      std::vector<uint16_t> activation(static_cast<size_t>(rows) * c.k);
+      for (size_t i = 0; i < activation.size(); ++i) {
+        activation[i] = FloatToBf16Bits(
+            static_cast<float>(static_cast<int>((i * 41) % 223) - 111) /
+            (i % 89 == 0 ? 3.0f : 47.0f));
+      }
+      std::vector<float> norm_scale(c.k);
+      for (int i = 0; i < c.k; ++i) norm_scale[i] = 0.7f + 0.0031f * (i % 83);
+      auto d_w = AllocateCuda(weights.size());
+      auto d_s = AllocateCuda(scales.size() * 2);
+      auto d_a = AllocateCuda(activation.size() * 2);
+      auto d_ns = AllocateCuda(norm_scale.size() * 4);
+      auto d_rows = AllocateCuda(static_cast<size_t>(rows) * c.n * 2);
+      auto d_one = AllocateCuda(static_cast<size_t>(rows) * c.n * 2);
+      ASSERT_TRUE(d_w && d_s && d_a && d_ns && d_rows && d_one);
+      cudaMemcpy(d_w.get(), weights.data(), weights.size(),
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_s.get(), scales.data(), scales.size() * 2,
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_a.get(), activation.data(), activation.size() * 2,
+                 cudaMemcpyHostToDevice);
+      cudaMemcpy(d_ns.get(), norm_scale.data(), norm_scale.size() * 4,
+                 cudaMemcpyHostToDevice);
+      const float* ns =
+          c.norm ? static_cast<const float*>(d_ns.get()) : nullptr;
+      ASSERT_EQ(
+          LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+              d_a.get(), static_cast<const uint8_t*>(d_w.get()), d_s.get(), ns,
+              1e-6f, 0.75f, d_rows.get(), rows, c.k, c.n, c.gate, nullptr),
+          cudaSuccess);
+      for (int r = 0; r < rows; ++r) {
+        // The decode step's own launch: one row.
+        ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
+                      static_cast<const uint16_t*>(d_a.get()) +
+                          static_cast<size_t>(r) * c.k,
+                      static_cast<const uint8_t*>(d_w.get()), d_s.get(), ns,
+                      1e-6f, 0.75f,
+                      static_cast<uint16_t*>(d_one.get()) +
+                          static_cast<size_t>(r) * c.n,
+                      1, c.k, c.n, c.gate, nullptr),
+                  cudaSuccess);
+      }
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      std::vector<uint16_t> together(static_cast<size_t>(rows) * c.n);
+      std::vector<uint16_t> alone(together.size());
+      cudaMemcpy(together.data(), d_rows.get(), together.size() * 2,
+                 cudaMemcpyDeviceToHost);
+      cudaMemcpy(alone.data(), d_one.get(), alone.size() * 2,
+                 cudaMemcpyDeviceToHost);
+      EXPECT_EQ(together, alone);
+    }
+  }
+}
+
+// What slot rows cost against one row, the Gemma 4 26B-A4B decode shapes
+// (INT4_BLOCK_GEMV_TIMING=1).
+TEST(Int4BlockGemvTest, TimesSlotRows) {
+  if (std::getenv("INT4_BLOCK_GEMV_TIMING") == nullptr) {
+    GTEST_SKIP() << "Set INT4_BLOCK_GEMV_TIMING=1.";
+  }
+  struct Shape {
+    const char* name;
+    int n;
+    int k;
+    int gate;
+  };
+  const Shape shapes[] = {
+      {"qkv [8192 x 2816]", 8192, 2816, 0},
+      {"o [2816 x 4096]", 2816, 4096, 0},
+      {"gate+up [2112 x 2816], gated", 2112, 2816, 1},
+      {"down [2816 x 2112]", 2816, 2112, 0},
+      {"head [262144 x 2816]", 262144, 2816, 0},
+  };
+  cudaEvent_t start, stop;
+  cudaEventCreate(&start);
+  cudaEventCreate(&stop);
+  for (const auto& sh : shapes) {
+    const int channels = sh.gate != 0 ? 2 * sh.n : sh.n;
+    std::vector<uint8_t> weights(static_cast<size_t>(channels) * sh.k / 2,
+                                 0x5a);
+    std::vector<uint16_t> scales(static_cast<size_t>(channels) * (sh.k / 32),
+                                 FloatToHalfBits(0.01f));
+    std::vector<uint16_t> activation(8 * static_cast<size_t>(sh.k),
+                                     FloatToBf16Bits(0.5f));
+    auto d_w = AllocateCuda(weights.size());
+    auto d_s = AllocateCuda(scales.size() * 2);
+    auto d_a = AllocateCuda(activation.size() * 2);
+    auto d_o = AllocateCuda(8 * static_cast<size_t>(sh.n) * 2);
+    cudaMemcpy(d_w.get(), weights.data(), weights.size(),
+               cudaMemcpyHostToDevice);
+    cudaMemcpy(d_s.get(), scales.data(), scales.size() * 2,
+               cudaMemcpyHostToDevice);
+    cudaMemcpy(d_a.get(), activation.data(), activation.size() * 2,
+               cudaMemcpyHostToDevice);
+    for (int rows = 1; rows <= 4; ++rows) {
+      const auto launch = [&]() {
+        return LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+            d_a.get(), static_cast<const uint8_t*>(d_w.get()), d_s.get(),
+            nullptr, 0.0f, 1.0f, d_o.get(), rows, sh.k, sh.n, sh.gate, nullptr);
+      };
+      for (int i = 0; i < 200; ++i) ASSERT_EQ(launch(), cudaSuccess);
+      cudaEventRecord(start);
+      constexpr int kIterations = 50;
+      for (int i = 0; i < kIterations; ++i) ASSERT_EQ(launch(), cudaSuccess);
+      cudaEventRecord(stop);
+      ASSERT_EQ(cudaEventSynchronize(stop), cudaSuccess);
+      float ms = 0.0f;
+      cudaEventElapsedTime(&ms, start, stop);
+      std::printf("%-30s slot rows %d %8.1f us\n", sh.name, rows,
+                  ms * 1000.0f / kIterations);
+    }
+  }
+  cudaEventDestroy(start);
+  cudaEventDestroy(stop);
+}
+
 // The experts' weights in the model's interleaved layout: row o of expert e
 // is row o * experts + e.
 struct MoeCase {
@@ -646,6 +792,9 @@ TEST(Int4BlockGemvTest, MoeDecodeMatchesCpuReference) {
   RunMoeCase({1, 8, 16, 256, 64, 1});
   RunMoeCase({3, 4, 12, 2816, 704, 1});
   RunMoeCase({8, 2, 5, 128, 96, 2});
+  // SiLU experts (Qwen's).
+  RunMoeCase({1, 8, 16, 256, 64, 3});
+  RunMoeCase({4, 8, 64, 512, 128, 3});
 }
 
 TEST(Int4BlockGemvTest, MoePrefillMatchesCpuReference) {
@@ -655,6 +804,7 @@ TEST(Int4BlockGemvTest, MoePrefillMatchesCpuReference) {
   RunMoeCase({256, 8, 16, 704, 128, 2});
   RunMoeCase({130, 8, 128, 2816, 704, 1});
   RunMoeCase({1024, 8, 128, 2816, 704, 1});
+  RunMoeCase({256, 8, 64, 512, 128, 3});
 }
 
 // The fused block (router norm, router GEMV, softmax, top-k, renormalized
@@ -867,6 +1017,8 @@ TEST(Int4BlockGemvTest, MoeRejectsInvalidShapes) {
   EXPECT_TRUE(supports({4, 8, 16, 256, 96, 1}));
   EXPECT_FALSE(supports({64, 8, 16, 256, 96, 1}));
   EXPECT_FALSE(supports({1, 8, 128, 2816, 704, 0}));
+  EXPECT_TRUE(supports({1, 8, 128, 2816, 704, 3}));
+  EXPECT_FALSE(supports({1, 8, 128, 2816, 704, 4}));
   EXPECT_FALSE(supports({1, 8, 2048, 2816, 704, 1}));
   EXPECT_FALSE(LiteRtNvidiaMoeSupports(nullptr));
   EXPECT_EQ(LiteRtNvidiaMoeWorkspaceBytes(nullptr), 0u);
@@ -905,6 +1057,15 @@ TEST(Int4BlockGemvTest, TimesDecodeShapes) {
       {"gate+up, 5 rows", 5, 4224, 2816, 0},
       {"down, 5 rows", 5, 2816, 2112, 0},
       {"head, 5 rows", 5, 262144, 2816, 0},
+      // Qwen 4 at its widths (hidden 2560, hc 4, low rank 320): a
+      // hyper-connection mix's two projections, a PLE layer's key and value,
+      // a Gated DeltaNet layer's in and out projections.
+      {"Qwen 4 HC down [320 x 10240]", 1, 320, 10240, 0},
+      {"Qwen 4 HC up [10240 x 320]", 1, 10240, 320, 0},
+      {"Qwen 4 PLE key [10240 x 2560]", 1, 10240, 2560, 0},
+      {"Qwen 4 PLE value [2560 x 2560]", 1, 2560, 2560, 0},
+      {"Qwen 4 GDN qkvz [12288 x 2560]", 1, 12288, 2560, 0},
+      {"Qwen 4 GDN out [2560 x 4096]", 1, 2560, 4096, 0},
   };
   cudaEvent_t start, stop;
   cudaEventCreate(&start);

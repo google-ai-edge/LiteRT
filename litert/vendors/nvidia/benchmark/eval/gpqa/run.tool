@@ -5,7 +5,8 @@ its four-option prompt, its answer-extraction regexes tried in order with the la
 taken, zero-shot pass@1, temperature 0.6 (a reasoning model), the model's output limit.
 
 usage: run.tool --model PROFILE|FILE --label LABEL [--count N | --question ID|INDEX ...]
-                [--max-output-tokens 32768] [--runs DIR] [--rescore]
+                [--max-output-tokens 32768] [--runs DIR] [--rescore] [--one-process]
+                [--env NAME=VALUE ...] [--selected-signatures NAME,NAME] [--engines N]
 
 The data: GPQA's official release (fetch.sh: data/gpqa_diamond.csv). Each question is one CLI
 run through the platform's bench runner (bench.sh on Linux, windows/bench.tool on Windows),
@@ -14,6 +15,14 @@ pool of the measured runs. The questions stay out of printed output, as the auth
 A fixed sample of --count questions (seeded), or the questions named; --question takes a
 Record ID or a 1-based index into the CSV. Results: RUNS/LABEL/results.json (per question:
 the letters, tokens, rates, wall time) and RUNS/LABEL/<n>-<record>/ (the CLI run).
+
+--one-process (or EVAL_ONE_PROCESS=1; Linux) runs the pending questions in one process
+(../one_process.sh, ../engine_runner.tool): the model loads once and each question gets a fresh
+conversation configured as the CLI's, its cli.log and time.txt written as the CLI's run would
+have them; LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package; --engines N
+decodes N questions side by side there (an engine each, the weights held once). --env sets a
+runtime variable (a partition policy, say) in either mode; --selected-signatures the main
+model's signatures to load (default: bench.sh's rule, prefill_1024 and decode for 12b and 26b).
 """
 import argparse
 import csv
@@ -95,18 +104,59 @@ def score(entry, log):
   return entry
 
 
+# The method's sampler (the CLI's --sampler_* flags); the seed is the question's number.
+SAMPLER = {'top_k': 20, 'top_p': 0.95, 'temperature': 0.6}
+
+
 def bench_command(args, label, prompt_file, out, context, n):
   """The platform's bench runner, one iteration on the prompt file, benchmark mode on real
   text (actual token counts), the sampler of the method, the output limit."""
-  cli = ['--cli-arg=--sampler_top_k=20', '--cli-arg=--sampler_top_p=0.95', '--cli-arg=--sampler_temperature=0.6',
-         f'--cli-arg=--sampler_seed={n}', f'--cli-arg=--max_output_tokens={args.max_output_tokens}']
+  cli = [f'--cli-arg=--sampler_top_k={SAMPLER["top_k"]}', f'--cli-arg=--sampler_top_p={SAMPLER["top_p"]}',
+         f'--cli-arg=--sampler_temperature={SAMPLER["temperature"]}', f'--cli-arg=--sampler_seed={n}',
+         f'--cli-arg=--max_output_tokens={args.max_output_tokens}']
   if context > 32771:
     cli.append('--cli-arg=--allow_context_length_expansion=true')
+  if args.selected_signatures:
+    cli.append(f'--cli-arg=--selected_signatures={args.selected_signatures}')
+  cli += [f'--env={assignment}' for assignment in args.env]
   common = ['--model', args.model, '--out', str(out), '--label', label, '--workload', 'short', '--metric', 'latency',
             '--prompt-file', str(prompt_file), '--iterations', '1', '--context', str(context), *cli]
   if os.name == 'nt':
     return [sys.executable, str(ROOT / 'windows' / 'bench.tool'), *common]
   return ['bash', str(ROOT / 'bench.sh'), *common]
+
+
+def run_one_process(args, pending, out, context):
+  """The pending questions, (n, label, prompt file, ...), in one engine_runner.tool process
+  with bench.sh's settings for them: each question's cli.log as `> cli.log 2>&1` would have it
+  and time.txt as GNU time's. Returns {label: (exit status, wall seconds)}."""
+  if context > 32771:
+    raise SystemExit('--one-process cannot expand the context (LiteRT-LM\'s C API has no setting for it); '
+                     'lower --max-output-tokens or run the CLI per question')
+  selected = (args.selected_signatures.split(',') if args.selected_signatures
+              else ['prefill_1024', 'decode'] if args.model in ('12b', '26b') else None)
+  jobs = []
+  for n, label, prompt_file, *_ in pending:
+    (out / label).mkdir(exist_ok=True)
+    log = str(out / label / 'cli.log')
+    jobs.append({'name': label, 'prompt_file': str(prompt_file), 'max_output_tokens': args.max_output_tokens,
+                 'sampler': dict(SAMPLER, seed=n), 'stdout': log, 'stderr': log, 'time': str(out / label / 'time.txt')})
+  spec = {'engine': {'max_num_tokens': context, 'selected_signatures': selected, 'speculative_decoding': False,
+                     'min_log_severity': 0},
+          'jobs': jobs, 'engines': args.engines, 'summary': str(out / 'one_process.json')}
+  (out / 'jobs.json').write_text(json.dumps(spec, indent=1) + '\n')
+  command = ['bash', str(HERE.parent / 'one_process.sh'), args.model, str(out / 'jobs.json')]
+  for assignment in args.env:
+    command += ['--env', assignment]
+  subprocess.run(command, stdin=subprocess.DEVNULL)
+  timings = {}
+  for _, label, *_ in pending:
+    text = (out / label / 'time.txt').read_text() if (out / label / 'time.txt').exists() else ''
+    status = re.search(r'Exit status: (\d+)', text)
+    wall = re.search(r'Elapsed \(wall clock\) time \(h:mm:ss or m:ss\): (\S+)', text)
+    seconds = sum(float(p) * 60 ** i for i, p in enumerate(reversed(wall[1].split(':')))) if wall else None
+    timings[label] = (int(status[1]) if status else 1, seconds)
+  return timings
 
 
 def main():
@@ -119,6 +169,18 @@ def main():
   parser.add_argument('--runs', default=os.environ.get('EVAL_RUNS') or str(pathlib.Path(
       os.environ.get('LITERT_BENCH_ROOT', pathlib.Path.home() / '.local/state/litert-nvidia-benchmark-wl')) / 'eval' / 'gpqa' / 'runs'))
   parser.add_argument('--rescore', action='store_true', help='re-read the label\'s logs; run nothing')
+  parser.add_argument('--one-process', action='store_true', default=os.environ.get('EVAL_ONE_PROCESS') == '1',
+                      help='run the pending questions in one process: the model loads once (Linux)')
+  parser.add_argument('--env', action='append', default=[], metavar='NAME=VALUE',
+                      help='a runtime environment variable (bench.sh --env; repeatable)')
+  parser.add_argument('--selected-signatures', metavar='NAME,NAME',
+                      help='the main model signatures to load (default: bench.sh\'s rule)')
+  parser.add_argument('--engines', type=int, default=1,
+                      help='with --one-process: questions decoded side by side, an engine each')
+  parser.add_argument('--order-from', action='append', default=[], metavar='LABEL_DIR',
+                      help='with --one-process: earlier runs\' directories (repeatable); the questions '
+                           'go longest answer first by their output tokens there (unknown first), so '
+                           'that several engines do not end the run on one long answer')
   args = parser.parse_args()
   if not DATA.exists():
     raise SystemExit(f'{DATA} is missing: run eval/gpqa/fetch.sh')
@@ -140,10 +202,22 @@ def main():
   out.mkdir(parents=True, exist_ok=True)
   results_path = out / 'results.json'
   results = json.loads(results_path.read_text()) if results_path.exists() else []
+  if args.one_process and os.name == 'nt':
+    raise SystemExit('--one-process runs on Linux (one_process.sh); on Windows, run the CLI per question')
+  if args.engines < 1 or (args.engines != 1 and not args.one_process):
+    raise SystemExit('--engines is a positive number and needs --one-process')
   config = {'model': args.model, 'max_output_tokens': args.max_output_tokens, 'context': context,
             'sampler': {'top_k': 20, 'top_p': 0.95, 'temperature': 0.6, 'seed': 'the question number'},
             'method': 'Artificial Analysis intelligence-benchmarking methodology (GPQA prompt, extraction, pass@1)',
             'data': 'idavidrein/gpqa at 56686c0, gpqa_diamond.csv', 'questions': len(picked)}
+  if args.env:
+    config['environment'] = args.env
+  if args.selected_signatures:
+    config['selected_signatures'] = args.selected_signatures
+  if args.one_process:
+    config['one_process'] = True
+  if args.engines != 1:
+    config['engines'] = args.engines
   (out / 'run.json').write_text(json.dumps(config, indent=1) + '\n')
   if args.rescore:
     for entry in results:
@@ -153,6 +227,7 @@ def main():
     print(json.dumps(summary(results)))
     return
   done = {r['record_id'] for r in results if r.get('exit_code') == 0}
+  pending = []
   for n, index in enumerate(picked, 1):
     row = rows[index]
     rid = row['Record ID']
@@ -170,20 +245,48 @@ def main():
                                          **{letters[i]: choices[order[i]].strip() for i in range(4)}),
                            encoding='utf-8', newline='\n')
     label = f'{n:03d}-{rid}'
+    if args.one_process:
+      pending.append((n, label, prompt_file, row, correct))
+      continue
     started = time.time()
     result = subprocess.run(bench_command(args, label, prompt_file, out, context, n), stdin=subprocess.DEVNULL)
-    log_path = out / label / 'cli.log'
-    log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
-    entry = {'n': n, 'record_id': rid, 'domain': row.get('High-level domain'), 'subdomain': row.get('Subdomain'),
-             'correct': correct, 'exit_code': result.returncode, 'wall_s': round(time.time() - started, 1),
-             'run': str(out / label)}
-    score(entry, log)
-    entry['hit_output_limit'] = bool(entry.get('output_tokens')) and entry['output_tokens'] >= args.max_output_tokens
-    results = [r for r in results if r['record_id'] != rid] + [entry]
-    results_path.write_text(json.dumps(results, indent=1) + '\n')
-    print(json.dumps({k: entry[k] for k in ('n', 'domain', 'correct', 'chosen', 'is_correct', 'exit_code',
-                                             'output_tokens', 'decode_tokens_per_second', 'wall_s')}), flush=True)
+    results = record(args, results, results_path, out, n, row, correct, label, result.returncode,
+                     round(time.time() - started, 1))
+  if pending and args.order_from:
+    known = {}
+    for directory in args.order_from:
+      try:
+        earlier = json.loads((pathlib.Path(directory) / 'results.json').read_text())
+      except (OSError, ValueError):
+        continue
+      for entry in earlier:
+        tokens = entry.get('output_tokens')
+        if isinstance(tokens, int):
+          known[entry.get('record_id')] = max(known.get(entry.get('record_id'), 0), tokens)
+    pending.sort(key=lambda item: -known.get(item[3]['Record ID'], float('inf')))
+  if pending:
+    timings = run_one_process(args, pending, out, context)
+    for n, label, _, row, correct in pending:
+      exit_code, wall = timings[label]
+      results = record(args, results, results_path, out, n, row, correct, label, exit_code,
+                       round(wall, 1) if wall is not None else None)
   print(json.dumps(summary(results)))
+
+
+def record(args, results, results_path, out, n, row, correct, label, exit_code, wall):
+  """Scores question `n` from its run's log into the results, and saves them."""
+  rid = row['Record ID']
+  log_path = out / label / 'cli.log'
+  log = log_path.read_text(encoding='utf-8', errors='replace') if log_path.exists() else ''
+  entry = {'n': n, 'record_id': rid, 'domain': row.get('High-level domain'), 'subdomain': row.get('Subdomain'),
+           'correct': correct, 'exit_code': exit_code, 'wall_s': wall, 'run': str(out / label)}
+  score(entry, log)
+  entry['hit_output_limit'] = bool(entry.get('output_tokens')) and entry['output_tokens'] >= args.max_output_tokens
+  results = [r for r in results if r['record_id'] != rid] + [entry]
+  results_path.write_text(json.dumps(results, indent=1) + '\n')
+  print(json.dumps({k: entry[k] for k in ('n', 'domain', 'correct', 'chosen', 'is_correct', 'exit_code',
+                                           'output_tokens', 'decode_tokens_per_second', 'wall_s')}), flush=True)
+  return results
 
 
 def summary(results):

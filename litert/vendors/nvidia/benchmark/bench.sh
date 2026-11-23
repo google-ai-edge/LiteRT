@@ -44,6 +44,10 @@ while (($#)); do
     --pool) pool=$2; shift 2 ;;
     --cli-arg) extra+=("$2"); shift 2 ;;
     --env) env_extra+=("$2"); shift 2 ;;
+    # The one-word forms, which eval/gpqa/run.tool passes (windows/bench.tool's argparse needs
+    # them for values that start with a dash).
+    --cli-arg=*) extra+=("${1#--cli-arg=}"); shift ;;
+    --env=*) env_extra+=("${1#--env=}"); shift ;;
     -h|--help) sed -n '3,27p' "$0"; exit 0 ;;
     *) nb_die "Unknown option $1" ;;
   esac
@@ -209,8 +213,13 @@ export NB_WARMUPS=$warmups NB_BUILD_ID=$build_id NB_POOL=$pool
 # capacity, the prefill sizes and signatures, speculative decoding, extra flags and overrides shape
 # them), and the compiling process's rates read low. That run is kept apart as "prepare", once per
 # configuration (a marker in the pool), so the measured runs read warm caches (the cold metric is
-# that first run itself).
-shape="$context|$prefill|${selected[*]}|$mtp|${extra[*]}|${env_extra[*]}"
+# that first run itself). The sampler and the output limit compile nothing: a run that differs
+# only in them (a GPQA question's seed) is not a new configuration, and does not prepare again.
+shaping=()
+for arg in "${extra[@]}"; do
+  [[ $arg == --sampler_* || $arg == --max_output_tokens=* ]] || shaping+=("$arg")
+done
+shape="$context|$prefill|${selected[*]}|$mtp|${shaping[*]}|${env_extra[*]}"
 prepared=$pool/prepared/$(printf '%s' "$shape" | sha256sum | cut -c1-16)
 if [[ $metric != cold && ! -e $prepared ]]; then
   mapfile -t prep < <(benchmark_args 1)

@@ -33,7 +33,10 @@ cc_library(
 cc_library(
     name = "bytecode",
     srcs = ["bytecode.cc"],
-    hdrs = ["bytecode.h"],
+    hdrs = [
+        "bytecode.h",
+        "decode_slots.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
@@ -123,6 +126,7 @@ cc_test(
     }),
     deps = [
         ":memory_profile",
+        ":windows_compat",
         "//litert/vendors/nvidia/dispatch:dispatch_profiler",
         "@com_google_googletest//:gtest_main",
     ],

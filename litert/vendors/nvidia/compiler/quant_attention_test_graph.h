@@ -61,19 +61,21 @@ class Graph {
   Graph() : graph_(model_.EmplaceSubgraph()) {}
 
   LiteRtTensorT& Tensor(const char* name, LiteRtElementType type,
-                        std::vector<int32_t> dims, float scale = 0.0f) {
+                        std::vector<int32_t> dims, float scale = 0.0f,
+                        int64_t zero_point = 0) {
     auto& tensor = graph_.EmplaceTensor();
     tensor.SetName(name);
     tensor.SetType(MakeRankedTensorType(type, std::move(dims)));
     if (scale != 0.0f) {
-      tensor.SetQarams(MakePerTensorQuantization(scale, 0));
+      tensor.SetQarams(MakePerTensorQuantization(scale, zero_point));
     }
     return tensor;
   }
 
   LiteRtTensorT& Input(const char* name, LiteRtElementType type,
-                       std::vector<int32_t> dims, float scale = 0.0f) {
-    auto& tensor = Tensor(name, type, std::move(dims), scale);
+                       std::vector<int32_t> dims, float scale = 0.0f,
+                       int64_t zero_point = 0) {
+    auto& tensor = Tensor(name, type, std::move(dims), scale, zero_point);
     graph_.Inputs().push_back(&tensor);
     return tensor;
   }

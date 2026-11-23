@@ -289,6 +289,36 @@ inline int setenv(const char* name, const char* value, int overwrite) {
   }
   return 0;
 }
+inline int unsetenv(const char* name) {
+  // An empty value removes the variable.
+  const int result = _putenv_s(name, "");
+  if (result) {
+    errno = result;
+    return -1;
+  }
+  return 0;
+}
+// mkstemp's pattern, as a new directory.
+inline char* mkdtemp(char* pattern) {
+  const size_t n = strlen(pattern);
+  for (unsigned attempt = 0; attempt < 100; ++attempt) {
+    unsigned value = std::random_device{}();
+    static constexpr char digits[] = "0123456789abcdefghijklmnopqrstuvwxyz";
+    for (size_t i = n - 6; i < n; ++i) {
+      pattern[i] = digits[value % 36];
+      value /= 36;
+    }
+    if (CreateDirectoryA(NvidiaNativePath(pattern).c_str(), nullptr)) {
+      return pattern;
+    }
+    if (GetLastError() != ERROR_ALREADY_EXISTS) {
+      NvidiaWindowsError();
+      return nullptr;
+    }
+  }
+  errno = EEXIST;
+  return nullptr;
+}
 inline long sysconf(int) {
   SYSTEM_INFO info{};
   GetSystemInfo(&info);

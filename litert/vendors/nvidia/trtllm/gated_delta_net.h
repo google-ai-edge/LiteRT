@@ -33,7 +33,8 @@
 //   beta   = sigmoid(b), g = decay * log(1 + exp(min(a, 50)))  per value head
 //   o      = the gated delta rule (gated_delta.h) from `state`
 //   out    = rms_norm(o over a head's D values) * norm_weight (out_eps)
-//            * silu(z)                                   BF16 [t][value
+//            * silu(z), or sigmoid(z) with sigmoid_gate (Qwen 4's output
+//            gate)                                       BF16 [t][value
 //            head][D]
 // Rows from valid_len on (the padding of a prefill chunk) take no part, as in
 // the model where they are masked to zero: the states advance over the valid
@@ -53,6 +54,7 @@ struct LiteRtNvidiaGatedDeltaNetParams {
   float q_eps;
   float k_eps;
   float out_eps;
+  int32_t sigmoid_gate;  // the output gate: 0 silu(z), 1 sigmoid(z)
 };
 
 // The FP32 constants of a layer, in this order: decay [value_heads], q_scale,
