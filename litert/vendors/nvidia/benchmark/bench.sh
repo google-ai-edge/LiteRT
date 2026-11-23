@@ -44,6 +44,10 @@ while (($#)); do
     --pool) pool=$2; shift 2 ;;
     --cli-arg) extra+=("$2"); shift 2 ;;
     --env) env_extra+=("$2"); shift 2 ;;
+    # The one-word forms, which eval/gpqa/run.tool passes (windows/bench.tool's argparse needs
+    # them for values that start with a dash).
+    --cli-arg=*) extra+=("${1#--cli-arg=}"); shift ;;
+    --env=*) env_extra+=("${1#--env=}"); shift ;;
     -h|--help) sed -n '3,27p' "$0"; exit 0 ;;
     *) nb_die "Unknown option $1" ;;
   esac
