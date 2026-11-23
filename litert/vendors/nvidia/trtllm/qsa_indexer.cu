@@ -1,0 +1,506 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/nvidia/trtllm/qsa_indexer.h"
+
+#include <cuda_bf16.h>
+#include <cuda_fp16.h>
+
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+
+#include "litert/vendors/nvidia/trtllm/qsa_common.cuh"
+
+namespace {
+
+using litert::nvidia::qsa::BlockReduceMax;
+using litert::nvidia::qsa::BlockReduceSum;
+using litert::nvidia::qsa::kBlock;
+using litert::nvidia::qsa::LoadAsFloat;
+using litert::nvidia::qsa::StoreFromFloat;
+using litert::nvidia::qsa::ToFloat;
+
+constexpr int kMaxIndexDim = 256;
+constexpr int kMaxIndexHeads = 32;
+constexpr int kMaxTopk = 4096;
+// Scores of at most this many bytes are kept at once; longer prefill chunks
+// score and select their rows in chunks.
+constexpr size_t kScoreBytes = size_t{32} << 20;
+// The score of a block a row cannot see, and the bound below which a score
+// marks such a block (the GPU delegate's sentinels).
+constexpr float kHiddenScore = -1.0e4f;
+constexpr float kHiddenBelow = -9999.0f;
+
+// The diagonal entry of a mask row: whether the step's row t holds a real
+// token (right padding hides its own key).
+__device__ __forceinline__ bool DiagonalVisible(const void* mask, int32_t type,
+                                                int64_t index) {
+  if (type == kLiteRtNvidiaQsaMaskBool) {
+    return static_cast<const uint8_t*>(mask)[index] != 0;
+  }
+  return static_cast<const float*>(mask)[index] > -1.0f;
+}
+
+// Whether all four keys of block `block` are visible to a row whose mask row
+// starts at `row`.
+__device__ __forceinline__ bool BlockComplete(const void* mask, int32_t type,
+                                              int64_t row, int32_t block) {
+  const int64_t at = row + int64_t{4} * block;
+  if (type == kLiteRtNvidiaQsaMaskBool) {
+    const uint8_t* m = static_cast<const uint8_t*>(mask) + at;
+    return m[0] != 0 && m[1] != 0 && m[2] != 0 && m[3] != 0;
+  }
+  const float* m = static_cast<const float*>(mask) + at;
+  return m[0] == 0.0f && m[1] == 0.0f && m[2] == 0.0f && m[3] == 0.0f;
+}
+
+// The step's tokens up to the last one whose own key the mask shows.
+__device__ int32_t ValidRows(const LiteRtNvidiaQsaIndexerParams& p,
+                             const void* mask, int32_t pos0, float* scratch) {
+  int32_t valid = 0;
+  for (int32_t t = threadIdx.x; t < p.rows; t += blockDim.x) {
+    const int64_t column = int64_t{pos0} + t;
+    if (column < p.mask_len &&
+        DiagonalVisible(mask, p.mask_type,
+                        int64_t{t} * p.mask_len + column)) {
+      valid = t + 1;
+    }
+  }
+  return static_cast<int32_t>(
+      BlockReduceMax(static_cast<float>(valid), scratch));
+}
+
+// One CTA per block the step can complete, starting with the block of
+// start_pos, which alone reads the incoming ring and writes the new one.
+template <typename State>
+__global__ void __launch_bounds__(kBlock) QsaPoolUpdateKernel(
+    LiteRtNvidiaQsaIndexerParams p, const void* __restrict__ k_new,
+    State* ring, State* pool, const float* __restrict__ norm_weight,
+    const float* __restrict__ cos, const float* __restrict__ sin,
+    const int32_t* __restrict__ start_pos, const void* __restrict__ mask) {
+  __shared__ float old_ring[kLiteRtNvidiaQsaBlockTokens][kMaxIndexDim];
+  __shared__ float pooled[kMaxIndexDim];
+  __shared__ float scratch[32];
+  const int32_t dim = p.index_dim;
+  const int32_t pos0 = max(start_pos[0], 0);
+  const int32_t start_blk = pos0 / kLiteRtNvidiaQsaBlockTokens;
+  const int32_t block = start_blk + static_cast<int32_t>(blockIdx.x);
+  const bool owns_ring = blockIdx.x == 0;
+
+  if (owns_ring) {
+    for (int32_t i = threadIdx.x; i < kLiteRtNvidiaQsaBlockTokens * dim;
+         i += blockDim.x) {
+      old_ring[i / dim][i % dim] = ToFloat(ring[i]);
+    }
+  }
+  const int32_t valid = ValidRows(p, mask, pos0, scratch);  // synchronizes
+  const int32_t end_pos = pos0 + valid;
+  const int32_t end_blk = end_pos / kLiteRtNvidiaQsaBlockTokens;
+
+  if (block < end_blk && block < p.max_blocks) {
+    const int32_t base = block * kLiteRtNvidiaQsaBlockTokens;
+    float square = 0.0f;
+    for (int32_t d = threadIdx.x; d < dim; d += blockDim.x) {
+      float sum = 0.0f;
+      for (int r = 0; r < kLiteRtNvidiaQsaBlockTokens; ++r) {
+        const int32_t token = base + r;
+        sum += token >= pos0
+                   ? LoadAsFloat(k_new, p.q_type,
+                                 int64_t{token - pos0} * dim + d)
+                   : old_ring[r][d];
+      }
+      const float mean = sum * (1.0f / kLiteRtNvidiaQsaBlockTokens);
+      pooled[d] = mean;
+      square += mean * mean;
+    }
+    const float total = BlockReduceSum(square, scratch);
+    const float inv_rms =
+        rsqrtf(total * (1.0f / static_cast<float>(dim)) + p.rms_norm_eps);
+    for (int32_t d = threadIdx.x; d < dim; d += blockDim.x) {
+      pooled[d] = pooled[d] * inv_rms * norm_weight[d];
+    }
+    __syncthreads();
+    const int32_t half = p.rotary_dim / 2;
+    const float* c = cos + int64_t{block} * p.rotary_dim;
+    const float* s = sin + int64_t{block} * p.rotary_dim;
+    State* out = pool + int64_t{block} * dim;
+    for (int32_t d = threadIdx.x; d < dim; d += blockDim.x) {
+      float value = pooled[d];
+      if (d < p.rotary_dim) {
+        const float partner = d < half ? -pooled[d + half] : pooled[d - half];
+        value = value * c[d] + partner * s[d];
+      }
+      StoreFromFloat(value, out + d);
+    }
+  }
+
+  if (owns_ring && valid > 0) {
+    const int32_t base = end_blk * kLiteRtNvidiaQsaBlockTokens;
+    for (int32_t i = threadIdx.x; i < kLiteRtNvidiaQsaBlockTokens * dim;
+         i += blockDim.x) {
+      const int32_t r = i / dim;
+      const int32_t d = i % dim;
+      const int32_t token = base + r;
+      float value = 0.0f;
+      if (token >= pos0 && token < end_pos) {
+        value = LoadAsFloat(k_new, p.q_type, int64_t{token - pos0} * dim + d);
+      } else if (token < pos0 && end_blk == start_blk) {
+        value = old_ring[r][d];
+      }
+      StoreFromFloat(value, ring + i);
+    }
+  }
+}
+
+// The scores of rows [row0, row0 + chunk) against the blocks: a warp per
+// pool row at a time, each lane holding four of its dims per 128, with the
+// rows' queries staged in shared memory as FP32.
+constexpr int kScoreWarps = kBlock / 32;
+
+template <typename State>
+__global__ void __launch_bounds__(kBlock) QsaScoreKernel(
+    LiteRtNvidiaQsaIndexerParams p, int32_t row0, int32_t group_rows,
+    const void* __restrict__ q, const State* __restrict__ pool,
+    const int32_t* __restrict__ start_pos, const void* __restrict__ mask,
+    float* __restrict__ scores) {
+  extern __shared__ float staged[];  // [group_rows][heads][dim]
+  const int32_t dim = p.index_dim;
+  const int32_t heads = p.index_heads;
+  const int32_t pos0 = max(start_pos[0], 0);
+  const int32_t bound = min(
+      max((pos0 + p.rows) / kLiteRtNvidiaQsaBlockTokens, 0), p.max_blocks);
+  const bool dense = bound <= p.block_topk;
+  const int32_t first = row0 + static_cast<int32_t>(blockIdx.y) * group_rows;
+  const int32_t count = min(group_rows, p.rows - first);
+  if (count <= 0) return;
+  if (!dense) {
+    const int32_t values = count * heads * dim;
+    for (int32_t i = threadIdx.x; i < values; i += blockDim.x) {
+      staged[i] = LoadAsFloat(q, p.q_type, int64_t{first} * heads * dim + i);
+    }
+    __syncthreads();
+  }
+  const int lane = threadIdx.x % 32;
+  const int warp = threadIdx.x / 32;
+  const int32_t stride = static_cast<int32_t>(gridDim.x) * kScoreWarps;
+  for (int32_t block = static_cast<int32_t>(blockIdx.x) * kScoreWarps + warp;
+       block < bound; block += stride) {
+    // This lane's dims of the block: 4 per 128 (dim <= 256).
+    float key[2][4];
+    const State* row = pool + int64_t{block} * dim;
+#pragma unroll
+    for (int c = 0; c < 2; ++c) {
+      const int32_t d = c * 128 + lane * 4;
+#pragma unroll
+      for (int j = 0; j < 4; ++j) {
+        key[c][j] = (!dense && d + j < dim) ? ToFloat(row[d + j]) : 0.0f;
+      }
+    }
+    for (int32_t r = 0; r < count; ++r) {
+      const int32_t q_row = first + r;
+      const bool complete =
+          BlockComplete(mask, p.mask_type, int64_t{q_row} * p.mask_len, block);
+      float score = kHiddenScore;
+      if (complete && dense) {
+        score = 0.0f;
+      } else if (complete) {
+        float sum = 0.0f;
+        for (int32_t h = 0; h < heads; ++h) {
+          const float* qh = staged + (int64_t{r} * heads + h) * dim;
+          float dot = 0.0f;
+#pragma unroll
+          for (int c = 0; c < 2; ++c) {
+            const int32_t d = c * 128 + lane * 4;
+#pragma unroll
+            for (int j = 0; j < 4; ++j) {
+              if (d + j < dim) dot = fmaf(qh[d + j], key[c][j], dot);
+            }
+          }
+#pragma unroll
+          for (int offset = 16; offset > 0; offset >>= 1) {
+            dot += __shfl_xor_sync(0xffffffffu, dot, offset);
+          }
+          sum += fmaxf(dot, 0.0f);
+        }
+        score = sum * p.scale;
+      }
+      if (lane == 0) {
+        scores[int64_t{q_row - row0} * p.max_blocks + block] = score;
+      }
+    }
+  }
+}
+
+// An order-preserving key of a score: larger scores have larger keys, -0
+// and +0 the same one.
+__device__ __forceinline__ uint32_t ScoreKey(float score) {
+  const uint32_t bits = __float_as_uint(score + 0.0f);
+  return (bits & 0x80000000u) != 0 ? ~bits : (bits | 0x80000000u);
+}
+
+constexpr int kSelectThreads = 1024;
+
+// Exclusive prefix sum over the CTA, in thread order; `total` gets the sum.
+__device__ int32_t BlockExclusiveScan(int32_t value, int32_t* warp_sums,
+                                      int32_t* total) {
+  const int lane = threadIdx.x % 32;
+  const int warp = threadIdx.x / 32;
+  int32_t inclusive = value;
+#pragma unroll
+  for (int offset = 1; offset < 32; offset <<= 1) {
+    const int32_t other = __shfl_up_sync(0xffffffffu, inclusive, offset);
+    if (lane >= offset) inclusive += other;
+  }
+  __syncthreads();
+  if (lane == 31) warp_sums[warp] = inclusive;
+  __syncthreads();
+  if (warp == 0) {
+    const int warps = blockDim.x / 32;
+    int32_t sum = lane < warps ? warp_sums[lane] : 0;
+#pragma unroll
+    for (int offset = 1; offset < 32; offset <<= 1) {
+      const int32_t other = __shfl_up_sync(0xffffffffu, sum, offset);
+      if (lane >= offset) sum += other;
+    }
+    if (lane < warps) warp_sums[lane] = sum;  // inclusive over warps
+  }
+  __syncthreads();
+  const int32_t before = warp == 0 ? 0 : warp_sums[warp - 1];
+  *total = warp_sums[blockDim.x / 32 - 1];
+  return before + inclusive - value;
+}
+
+// A row's top blocks by radix selection of the k-th largest key (four passes
+// of eight bits), then their indices in ascending order: every block above
+// the threshold and the lowest-indexed ones equal to it.
+__global__ void __launch_bounds__(kSelectThreads) QsaSelectKernel(
+    LiteRtNvidiaQsaIndexerParams p, int32_t row0,
+    const int32_t* __restrict__ start_pos, const float* __restrict__ scores,
+    int32_t* __restrict__ topk) {
+  __shared__ int32_t histogram[256];
+  __shared__ int32_t warp_sums[32];
+  __shared__ int32_t shared_digit;
+  __shared__ int32_t shared_remaining;
+  const int32_t row = row0 + static_cast<int32_t>(blockIdx.x);
+  const int32_t pos0 = max(start_pos[0], 0);
+  const int32_t bound = min(
+      max((pos0 + p.rows) / kLiteRtNvidiaQsaBlockTokens, 0), p.max_blocks);
+  const float* s = scores + int64_t{blockIdx.x} * p.max_blocks;
+  int32_t* out = topk + int64_t{row} * p.block_topk;
+
+  int32_t valid_local = 0;
+  for (int32_t b = threadIdx.x; b < bound; b += blockDim.x) {
+    valid_local += s[b] > kHiddenBelow ? 1 : 0;
+  }
+  int32_t valid = 0;
+  BlockExclusiveScan(valid_local, warp_sums, &valid);
+  const int32_t target = min(valid, p.block_topk);
+
+  uint32_t prefix = 0;
+  uint32_t prefix_mask = 0;
+  int32_t remaining = target;  // keys equal to the threshold still to take
+  if (target > 0) {
+    for (int shift = 24; shift >= 0; shift -= 8) {
+      for (int i = threadIdx.x; i < 256; i += blockDim.x) histogram[i] = 0;
+      __syncthreads();
+      // Whole warps step together so the ballot sees all their lanes.
+      for (int32_t base = 0; base < bound; base += blockDim.x) {
+        const int32_t b = base + static_cast<int32_t>(threadIdx.x);
+        const float score = b < bound ? s[b] : kHiddenScore;
+        const uint32_t key = ScoreKey(score);
+        const bool counted =
+            score > kHiddenBelow && (key & prefix_mask) == prefix;
+        const uint32_t digit = (key >> shift) & 0xFFu;
+        // One shared atomic per distinct digit of the warp: the scores of a
+        // row crowd into few digits.
+        const uint32_t active = __ballot_sync(0xffffffffu, counted);
+        if (counted) {
+          const uint32_t same = __match_any_sync(active, digit);
+          if (static_cast<int>(threadIdx.x % 32) == __ffs(same) - 1) {
+            atomicAdd(&histogram[digit], __popc(same));
+          }
+        }
+      }
+      __syncthreads();
+      if (threadIdx.x == 0) {
+        int32_t above = 0;
+        int32_t digit = 255;
+        for (; digit > 0; --digit) {
+          if (above + histogram[digit] >= remaining) break;
+          above += histogram[digit];
+        }
+        shared_digit = digit;
+        shared_remaining = remaining - above;
+      }
+      __syncthreads();
+      prefix |= static_cast<uint32_t>(shared_digit) << shift;
+      prefix_mask |= 0xFFu << shift;
+      remaining = shared_remaining;
+      __syncthreads();
+    }
+  }
+  const uint32_t threshold = prefix;
+
+  // Contiguous runs of blocks per thread keep the output in block order.
+  const int32_t per = (bound + kSelectThreads - 1) / kSelectThreads;
+  const int32_t lo = min(bound, static_cast<int32_t>(threadIdx.x) * per);
+  const int32_t hi = min(bound, lo + per);
+  int32_t above = 0;
+  int32_t equal = 0;
+  if (target > 0) {
+    for (int32_t b = lo; b < hi; ++b) {
+      const float score = s[b];
+      if (score <= kHiddenBelow || !(score == score)) continue;
+      const uint32_t key = ScoreKey(score);
+      above += key > threshold ? 1 : 0;
+      equal += key == threshold ? 1 : 0;
+    }
+  }
+  int32_t unused = 0;
+  const int32_t equal_before = BlockExclusiveScan(equal, warp_sums, &unused);
+  const int32_t take_equal =
+      min(max(remaining - equal_before, 0), equal);
+  int32_t offset = BlockExclusiveScan(above + take_equal, warp_sums, &unused);
+  if (target > 0) {
+    int32_t equal_left = take_equal;
+    for (int32_t b = lo; b < hi; ++b) {
+      const float score = s[b];
+      if (score <= kHiddenBelow || !(score == score)) continue;
+      const uint32_t key = ScoreKey(score);
+      if (key > threshold || (key == threshold && equal_left > 0)) {
+        if (key == threshold) --equal_left;
+        out[offset++] = b;
+      }
+    }
+  }
+  for (int32_t i = target + threadIdx.x; i < p.block_topk; i += blockDim.x) {
+    out[i] = -1;
+  }
+}
+
+int32_t MultiprocessorCount() {
+  static const int32_t count = [] {
+    int device = 0;
+    int value = 0;
+    if (cudaGetDevice(&device) != cudaSuccess ||
+        cudaDeviceGetAttribute(&value, cudaDevAttrMultiProcessorCount,
+                               device) != cudaSuccess ||
+        value <= 0) {
+      return 84;
+    }
+    return value;
+  }();
+  return count;
+}
+
+bool ValidTypes(const LiteRtNvidiaQsaIndexerParams& p) {
+  return (p.q_type == kLiteRtNvidiaQsaFloat32 ||
+          p.q_type == kLiteRtNvidiaQsaFloat16 ||
+          p.q_type == kLiteRtNvidiaQsaBFloat16) &&
+         (p.state_type == kLiteRtNvidiaQsaFloat32 ||
+          p.state_type == kLiteRtNvidiaQsaFloat16) &&
+         (p.mask_type == kLiteRtNvidiaQsaMaskBool ||
+          p.mask_type == kLiteRtNvidiaQsaMaskFloat);
+}
+
+int32_t ChunkRows(const LiteRtNvidiaQsaIndexerParams& p) {
+  const size_t row_bytes = static_cast<size_t>(p.max_blocks) * sizeof(float);
+  const size_t rows = std::max<size_t>(1, kScoreBytes / row_bytes);
+  return static_cast<int32_t>(std::min<size_t>(rows, p.rows));
+}
+
+// Rows per CTA of the score kernel: as many as fit 32 KB of queries, at most
+// 8.
+int32_t GroupRows(const LiteRtNvidiaQsaIndexerParams& p) {
+  const int32_t per_row = p.index_heads * p.index_dim;
+  return std::max(1, std::min(8, 8192 / per_row));
+}
+
+template <typename State>
+cudaError_t Launch(const LiteRtNvidiaQsaIndexerParams& p, const void* q,
+                   const void* k_new, State* ring, State* pool,
+                   const float* norm_weight, const float* cos, const float* sin,
+                   const int32_t* start_pos, const void* mask, int32_t* topk,
+                   float* scores, cudaStream_t stream) {
+  const int32_t candidates = std::max(
+      1, std::min(p.max_blocks, p.rows / kLiteRtNvidiaQsaBlockTokens + 2));
+  QsaPoolUpdateKernel<State><<<candidates, kBlock, 0, stream>>>(
+      p, k_new, ring, pool, norm_weight, cos, sin, start_pos, mask);
+  const int32_t chunk = ChunkRows(p);
+  const int32_t group = GroupRows(p);
+  const size_t staged_bytes =
+      static_cast<size_t>(group) * p.index_heads * p.index_dim * sizeof(float);
+  // Enough CTAs over the pool to keep every multiprocessor busy (the blocks
+  // a step can see are only known on the device); each warp loops over pool
+  // rows.
+  const int32_t pool_ctas = std::max(
+      1, std::min(4 * MultiprocessorCount(),
+                  (p.max_blocks + kScoreWarps - 1) / kScoreWarps));
+  for (int32_t row0 = 0; row0 < p.rows; row0 += chunk) {
+    const int32_t rows = std::min(chunk, p.rows - row0);
+    const dim3 grid(pool_ctas, (rows + group - 1) / group);
+    QsaScoreKernel<State><<<grid, kBlock, staged_bytes, stream>>>(
+        p, row0, group, q, pool, start_pos, mask, scores);
+    QsaSelectKernel<<<rows, kSelectThreads, 0, stream>>>(p, row0, start_pos,
+                                                         scores, topk);
+  }
+  return cudaPeekAtLastError();
+}
+
+}  // namespace
+
+extern "C" bool LiteRtNvidiaQsaIndexerSupports(
+    const LiteRtNvidiaQsaIndexerParams* params) {
+  if (params == nullptr) return false;
+  const auto& p = *params;
+  return ValidTypes(p) && p.rows >= 1 && p.index_heads >= 1 &&
+         p.index_heads <= kMaxIndexHeads && p.index_dim >= 4 &&
+         p.index_dim <= kMaxIndexDim && p.index_dim % 4 == 0 &&
+         p.rotary_dim >= 2 && p.rotary_dim <= p.index_dim &&
+         p.rotary_dim % 2 == 0 && p.max_blocks >= 1 && p.block_topk >= 1 &&
+         p.block_topk <= kMaxTopk &&
+         int64_t{p.mask_len} >=
+             int64_t{p.max_blocks} * kLiteRtNvidiaQsaBlockTokens;
+}
+
+extern "C" size_t LiteRtNvidiaQsaIndexerWorkspaceBytes(
+    const LiteRtNvidiaQsaIndexerParams* params) {
+  if (!LiteRtNvidiaQsaIndexerSupports(params)) return 0;
+  return static_cast<size_t>(ChunkRows(*params)) * params->max_blocks *
+         sizeof(float);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerUpdate(
+    const LiteRtNvidiaQsaIndexerParams* params, const void* q,
+    const void* k_new, void* ring, void* pool, const float* norm_weight,
+    const float* cos, const float* sin, const int32_t* start_pos,
+    const void* mask, int32_t* topk, void* workspace, cudaStream_t stream) {
+  if (!LiteRtNvidiaQsaIndexerSupports(params) || q == nullptr ||
+      k_new == nullptr || ring == nullptr || pool == nullptr ||
+      norm_weight == nullptr || cos == nullptr || sin == nullptr ||
+      start_pos == nullptr || mask == nullptr || topk == nullptr ||
+      workspace == nullptr) {
+    return cudaErrorInvalidValue;
+  }
+  float* scores = static_cast<float*>(workspace);
+  if (params->state_type == kLiteRtNvidiaQsaFloat16) {
+    return Launch(*params, q, k_new, static_cast<__half*>(ring),
+                  static_cast<__half*>(pool), norm_weight, cos, sin, start_pos,
+                  mask, topk, scores, stream);
+  }
+  return Launch(*params, q, k_new, static_cast<float*>(ring),
+                static_cast<float*>(pool), norm_weight, cos, sin, start_pos,
+                mask, topk, scores, stream);
+}
