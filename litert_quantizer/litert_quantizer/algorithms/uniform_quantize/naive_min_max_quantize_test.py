@@ -620,6 +620,72 @@ class NaiveMinMaxQuantizeTest(parameterized.TestCase):
         naive_min_max_quantize.compute_activation_histogram(content)
     )
 
+  @parameterized.named_parameters(
+      dict(
+          testcase_name="channelwise_explicit_centered",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          alg_params={"centered": True},
+          expected_scale=[[1.0], [2.0]],
+          expected_zp=[[-0.5]],
+          expected_q=[[-2, -1, 0, 1], [1, 0, -1, -2]],
+      ),
+      dict(
+          testcase_name="tensorwise_explicit_centered",
+          granularity=qtyping.QuantGranularity.TENSORWISE,
+          alg_params={"centered": True},
+          expected_scale=[[2.0]],
+          expected_zp=[[-0.5]],
+          expected_q=[[-1, -1, 0, 0], [1, 0, -1, -2]],
+      ),
+      dict(
+          testcase_name="channelwise_default_mid_tread",
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+          expected_scale=[[1.5], [3.0]],
+          expected_zp=[[0], [0]],
+          expected_q=[[-1, 0, 0, 1], [1, 0, 0, -1]],
+      ),
+  )
+  def test_get_tensor_quant_params_int2_weights(
+      self,
+      granularity,
+      expected_scale,
+      expected_zp,
+      expected_q,
+      alg_params=None,
+  ):
+    fc_op = self._test_model.subgraphs[0].operators[3]
+    tensor_config = _TensorQuantConfig(
+        num_bits=2,
+        granularity=granularity,
+        **({"algorithm_params": alg_params} if alg_params is not None else {}),
+    )
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=_TFLOpName.FULLY_CONNECTED,
+        subgraph_op_index=3,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=tensor_config
+        ),
+    )
+    test_data = np.array(
+        [[-1.5, -0.5, 0.5, 1.5], [3.0, 1.0, -1.0, -3.0]], dtype=np.float32
+    )
+    quant_params = naive_min_max_quantize.get_tensor_quant_params(
+        op_info=op_info,
+        tensor_quant_config=tensor_config,
+        tensor_content=test_data,
+    )
+    np.testing.assert_allclose(
+        quant_params.scale,
+        np.array(expected_scale, dtype=np.float32),
+        rtol=1e-6,
+        atol=1e-6,
+    )
+    np.testing.assert_array_equal(quant_params.zero_point, expected_zp)
+    np.testing.assert_array_equal(
+        cast(np.ndarray, quant_params.quantized_data),
+        np.array(expected_q, dtype=np.int8),
+    )
 
 if __name__ == "__main__":
   absltest.main()
