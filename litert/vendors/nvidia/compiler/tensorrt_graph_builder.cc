@@ -1195,12 +1195,30 @@ std::optional<SwigluGate> ParseSwiglu(const Op& op) {
   return gate;
 }
 
+// A composite's boolean attribute, false when absent.
+bool CompositeBoolAttribute(const Op& op, const char* name) {
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value()) {
+    return false;
+  }
+  const auto value = options.attributes_map.value()[name];
+  return value.IsBool() && value.AsBool();
+}
+
 std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
-  if (op.Inputs().size() != 5 || op.Outputs().size() != 1) {
+  // q, k, v, then a bool mask and the params tensor, or the params tensor
+  // alone (ML Drift's form without a mask: the keys up to the params' active
+  // count, causal with is_causal; MaskFromSdpaParams).
+  const bool masked = op.Inputs().size() == 5;
+  if ((!masked && op.Inputs().size() != 4) || op.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  if (!masked && !TensorHasShape(op.Inputs()[3], {1, 1, 1, 7})) {
     return std::nullopt;
   }
   std::array<std::array<int32_t, 4>, 4> dims;
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < (masked ? 4 : 3); ++i) {
     auto type = op.Inputs()[i].RankedTensorType();
     if (!type || type->Layout().Rank() != 4) {
       return std::nullopt;
@@ -1220,6 +1238,7 @@ std::optional<int32_t> SdpaTransposedGroup(const Op& op) {
   const auto& q = dims[0];
   const auto& k = dims[1];
   const auto& v = dims[2];
+  if (!masked) dims[3] = {1, 1, 1, k[2]};
   const auto& mask = dims[3];
   if (q[0] != 1 || k[0] != 1 || v[0] != 1 || k[1] < 1 || q[1] % k[1] != 0 ||
       k[3] != q[3] || v[1] != k[1] || v[2] != k[3] || v[3] != k[2] ||
@@ -7939,6 +7958,10 @@ class TensorRtGraphBuilder {
     LiteRtTensor k_out = nullptr;  // the key cache the block reads
     LiteRtTensor v_out = nullptr;
     LiteRtTensor mask = nullptr;
+    // Without a mask: the params tensor the mask comes from, and is_causal
+    // (MaskFromSdpaParams).
+    LiteRtTensor params = nullptr;
+    bool causal = false;
     LiteRtTensor k_new = nullptr;  // the chunk's keys, for a ring cache
     LiteRtTensor v_new = nullptr;
     std::optional<Tensor> output;
@@ -7990,7 +8013,12 @@ class TensorRtGraphBuilder {
       block.q = op.Inputs()[0].Get();
       block.k_out = op.Inputs()[1].Get();
       block.v_out = op.Inputs()[2].Get();
-      block.mask = op.Inputs()[3].Get();
+      if (op.Inputs().size() == 5) {
+        block.mask = op.Inputs()[3].Get();
+      } else {
+        block.params = op.Inputs()[3].Get();
+        block.causal = CompositeBoolAttribute(op, "is_causal");
+      }
       block.output = op.Outputs()[0];
       block.fill = kSdpaTransposedFill;
       block.group = *group;
@@ -9460,6 +9488,91 @@ class TensorRtGraphBuilder {
     return concat->getOutput(0);
   }
 
+  // The bool mask [1, 1, 1 or tokens, keys] of an odml.sdpa_transposed
+  // without one, from its params [1, 1, 1, 7] as ML Drift's kernels read them
+  // (sdpa_transposed_kernel.cc, GenerateImplicitCausalBoundCode): the keys
+  // below the active count params[2] (all keys when it is out of (0, keys]),
+  // and with is_causal over several tokens, for token x, below
+  // min(active, q_start + x + 1), q_start = params[0] when in (0, active),
+  // else active - tokens; a token at or past the active count sees no key.
+  Expected<nvinfer1::ITensor*> MaskFromSdpaParams(nvinfer1::ITensor* params,
+                                                  int32_t tokens, int32_t keys,
+                                                  bool causal) {
+    if (params->getType() != nvinfer1::DataType::kINT32) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "odml.sdpa_transposed params must be int32");
+    }
+    const auto constant = [&](const std::vector<int32_t>& values,
+                              nvinfer1::Dims dims,
+                              const char* name) -> nvinfer1::ITensor* {
+      owned_weights_.emplace_back(values.size() * sizeof(int32_t));
+      std::memcpy(owned_weights_.back().data(), values.data(),
+                  owned_weights_.back().size());
+      nvinfer1::Weights weights{nvinfer1::DataType::kINT32,
+                                owned_weights_.back().data(),
+                                static_cast<int64_t>(values.size())};
+      auto* layer = network_->addConstant(dims, weights);
+      if (layer == nullptr) return nullptr;
+      layer->getOutput(0)->setName(KeepName(UniqueName(name)));
+      return layer->getOutput(0);
+    };
+    const nvinfer1::Dims one{4, {1, 1, 1, 1}};
+    const auto binary =
+        [&](nvinfer1::ITensor* a, nvinfer1::ITensor* b,
+            nvinfer1::ElementWiseOperation operation) -> nvinfer1::ITensor* {
+      if (a == nullptr || b == nullptr) return nullptr;
+      auto* layer = network_->addElementWise(*a, *b, operation);
+      return layer == nullptr ? nullptr : layer->getOutput(0);
+    };
+    const auto select = [&](nvinfer1::ITensor* condition, nvinfer1::ITensor* a,
+                            nvinfer1::ITensor* b) -> nvinfer1::ITensor* {
+      if (condition == nullptr || a == nullptr || b == nullptr) return nullptr;
+      auto* layer = network_->addSelect(*condition, *a, *b);
+      return layer == nullptr ? nullptr : layer->getOutput(0);
+    };
+    using Op = nvinfer1::ElementWiseOperation;
+    LITERT_ASSIGN_OR_RETURN(auto* q_start,
+                            SliceTensorStatic(params, 3, 0, 1, "sdpa_q_start"));
+    LITERT_ASSIGN_OR_RETURN(auto* count,
+                            SliceTensorStatic(params, 3, 2, 1, "sdpa_active"));
+    nvinfer1::ITensor* zero = constant({0}, one, "sdpa_zero");
+    nvinfer1::ITensor* all = constant({keys}, one, "sdpa_keys");
+    nvinfer1::ITensor* active =
+        select(binary(binary(count, zero, Op::kGREATER),
+                      binary(all, count, Op::kLESS), Op::kXOR),
+               count, all);
+    // (count > 0) xor (keys < count): in range exactly when count > 0 and
+    // count <= keys, since keys < count implies count > 0.
+    std::vector<int32_t> iota(keys);
+    for (int32_t j = 0; j < keys; ++j) iota[j] = j;
+    nvinfer1::ITensor* key = constant(iota, {4, {1, 1, 1, keys}}, "sdpa_key");
+    nvinfer1::ITensor* bound = active;
+    if (causal && tokens > 1) {
+      nvinfer1::ITensor* fallback =
+          binary(active, constant({tokens}, one, "sdpa_tokens"), Op::kSUB);
+      nvinfer1::ITensor* start =
+          select(binary(binary(q_start, zero, Op::kGREATER),
+                        binary(q_start, active, Op::kLESS), Op::kAND),
+                 q_start, fallback);
+      std::vector<int32_t> rows(tokens);
+      for (int32_t x = 0; x < tokens; ++x) rows[x] = x;
+      nvinfer1::ITensor* position = binary(
+          start, constant(rows, {4, {1, 1, tokens, 1}}, "sdpa_row"), Op::kSUM);
+      nvinfer1::ITensor* causal_bound = binary(
+          active, binary(position, constant({1}, one, "sdpa_one"), Op::kSUM),
+          Op::kMIN);
+      bound = select(binary(position, active, Op::kLESS), causal_bound, zero);
+    }
+    nvinfer1::ITensor* mask = binary(key, bound, Op::kLESS);
+    if (mask == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to build the odml.sdpa_transposed mask from its "
+                   "params");
+    }
+    mask->setName(KeepName(UniqueName("sdpa_params_mask")));
+    return mask;
+  }
+
   Expected<void> LowerDecodeAttentionMember(size_t index) {
     auto& block = attention_blocks_[index];
     if (block.emitted) {
@@ -9467,7 +9580,7 @@ class TensorRtGraphBuilder {
     }
     const bool new_keys = block.k_new != nullptr;
     for (LiteRtTensor input : {block.q, block.k_out, block.v_out, block.mask,
-                               block.k_new, block.v_new}) {
+                               block.params, block.k_new, block.v_new}) {
       if (input != nullptr && tensor_map_.find(input) == tensor_map_.end()) {
         return {};
       }
@@ -9491,7 +9604,16 @@ class TensorRtGraphBuilder {
     const nvinfer1::Dims q_dims_in = q->getDimensions();
     const int32_t tokens = static_cast<int32_t>(q_dims_in.d[2]);
     const int32_t depth = static_cast<int32_t>(q_dims_in.d[3]);
-    nvinfer1::ITensor* mask_in = tensor_map_[block.mask];
+    nvinfer1::ITensor* mask_in = nullptr;
+    if (block.mask != nullptr) {
+      mask_in = tensor_map_[block.mask];
+    } else {
+      LITERT_ASSIGN_OR_RETURN(
+          mask_in, MaskFromSdpaParams(
+                       tensor_map_[block.params], tokens,
+                       static_cast<int32_t>(k_cache->getDimensions().d[2]),
+                       block.causal));
+    }
     // A windowed block keeps the full caches and mask: the plugin reads
     // `window` keys from the start it is handed as a fifth input.
     int32_t window = 0;
