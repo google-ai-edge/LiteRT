@@ -34,6 +34,21 @@ enum LiteRtNvidiaQsaMask : int32_t {
   kLiteRtNvidiaQsaMaskFloat = 1,
 };
 
+// The row model shared by the attention kernels of the batched and the tree
+// steps: row r sees the keys [0, context_len[r]) of its slot's caches and
+// the keys the step's rows j it may see wrote at write_index[j]: those of bit
+// j of ancestors[r] (at most 64 rows), or, with no ancestors, every row
+// j <= r of the same slot (a linear chain). A row's own bit is its own key.
+// Slot s's caches start s * slot_stride elements into k and v (one buffer
+// with a slot stride; slot 0 when `slot` is null).
+struct LiteRtNvidiaQsaRows {
+  const int32_t* context_len;  // [rows]
+  const uint64_t* ancestors;   // [rows] or null
+  const int32_t* write_index;  // [rows]
+  const int32_t* slot;         // [rows] or null
+  int64_t slot_stride;
+};
+
 // Tokens per compressed block of Qwen 4's sparse attention (QSA): the only
 // compress ratio the composites define.
 inline constexpr int32_t kLiteRtNvidiaQsaBlockTokens = 4;
@@ -92,5 +107,33 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerUpdate(
     const void* k_new, void* ring, void* pool, const float* norm_weight,
     const float* cos, const float* sin, const int32_t* start_pos,
     const void* mask, int32_t* topk, void* workspace, cudaStream_t stream);
+
+// The indexer for the rows of the row model (LiteRtNvidiaQsaRows): the
+// batched and tree steps. Row r is the token at position context_len[r] + n
+// of slot slot[r] (0 when null), n the rows of the step it sees besides
+// itself (the rows of its ancestors, or with no ancestors the earlier rows
+// of its slot); its key is k_new[r]. A slot's ring and pool start
+// slot * ring_stride and slot * pool_stride elements into ring and pool
+// and hold the slot's first context_len tokens. Each row's selection is that
+// of a decode step at its position along its path: the blocks complete at
+// its position, the slot's pooled ones and those its path completes (from
+// the slot's ring and the path's keys, pooled as the pool would hold them).
+// With no ancestors (linear chains, each slot's rows consecutive and in
+// order) the launch then writes each slot's rows into its ring and pool. With
+// ancestors (a tree; at most 64 rows) the state stays; once a path is taken,
+// a launch without ancestors over its rows with null q and topk writes them.
+// Unused fields of params: mask_len, mask_type.
+extern "C" bool LiteRtNvidiaQsaIndexerRowsSupports(
+    const LiteRtNvidiaQsaIndexerParams* params,
+    const LiteRtNvidiaQsaRows* rows);
+
+extern "C" size_t LiteRtNvidiaQsaIndexerRowsWorkspaceBytes(
+    const LiteRtNvidiaQsaIndexerParams* params);
+
+extern "C" cudaError_t LiteRtNvidiaLaunchQsaIndexerRows(
+    const LiteRtNvidiaQsaIndexerParams* params, const LiteRtNvidiaQsaRows* rows,
+    int64_t ring_stride, int64_t pool_stride, const void* q, const void* k_new,
+    void* ring, void* pool, const float* norm_weight, const float* cos,
+    const float* sin, int32_t* topk, void* workspace, cudaStream_t stream);
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_QSA_INDEXER_H_

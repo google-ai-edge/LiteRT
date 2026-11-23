@@ -22,23 +22,8 @@
 #include "litert/vendors/nvidia/trtllm/qsa_indexer.h"
 
 // Visibility from the row model of the attention kernels instead of a mask
-// (LiteRtNvidiaQsaRows).
+// (LiteRtNvidiaQsaRows, qsa_indexer.h).
 inline constexpr int32_t kLiteRtNvidiaQsaMaskRows = 2;
-
-// The row model shared by the attention kernels of the batched and the tree
-// steps: row r sees the keys [0, context_len[r]) of its slot's caches and
-// the keys the step's rows j it may see wrote at write_index[j]: those of bit
-// j of ancestors[r] (at most 64 rows), or, with no ancestors, every row
-// j <= r of the same slot (a linear chain). A row's own bit is its own key.
-// Slot s's caches start s * slot_stride elements into k and v (one buffer
-// with a slot stride; slot 0 when `slot` is null).
-struct LiteRtNvidiaQsaRows {
-  const int32_t* context_len;  // [rows]
-  const uint64_t* ancestors;   // [rows] or null
-  const int32_t* write_index;  // [rows]
-  const int32_t* slot;         // [rows] or null
-  int64_t slot_stride;
-};
 
 // odml.sparse_sdpa_transposed, Qwen 4's sparse attention: query row r attends
 // with softmax(scale * q . k) over the keys of its selected blocks (topk
@@ -61,8 +46,9 @@ struct LiteRtNvidiaQsaRows {
 // mask row), one attends over them split into chunks, and with more than one
 // chunk a third combines them. A single row runs on CUDA cores in FP32, the
 // query heads of a KV head sharing each key and value load. Several rows
-// over FP16 caches holding values as rows (with a mask) run on tensor cores:
-// tiles of up to 16 rows walk the union of their blocks, each key and value
+// over FP16 caches holding values as rows run on tensor cores: tiles of up to
+// 16 rows (with the row model, consecutive rows of one slot, each slot's
+// rows consecutive) walk the union of their blocks, each key and value
 // loaded once for all of them, with the queries and the probabilities in
 // FP16 and FP32 accumulation. The result does not depend on the device.
 struct LiteRtNvidiaQsaAttentionParams {

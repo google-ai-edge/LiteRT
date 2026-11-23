@@ -556,6 +556,264 @@ TEST(QsaIndexerTest, ModelShapesMatchTheReference) {
 }
 
 // ---------------------------------------------------------------------------
+// The indexer's row model (LiteRtNvidiaLaunchQsaIndexerRows)
+// ---------------------------------------------------------------------------
+
+// One slot of a row-model indexer case: its state before the step and its
+// committed tokens.
+struct SlotState {
+  int context = 0;
+  std::vector<float> ring, pool;
+};
+
+// A decode step of row `row` against a slot's state (updated), as the
+// single-sequence reference computes it: its scores and selection.
+ref::IndexerResult DecodeRow(const ref::IndexerShape& rows_shape,
+                             const IndexerCase& c, int row, int position,
+                             std::vector<float>& ring,
+                             std::vector<float>& pool) {
+  ref::IndexerShape shape = rows_shape;
+  shape.rows = 1;
+  const int dim = shape.index_dim;
+  const std::vector<float> q(
+      c.q.begin() + static_cast<size_t>(row) * shape.index_heads * dim,
+      c.q.begin() + static_cast<size_t>(row + 1) * shape.index_heads * dim);
+  const std::vector<float> k(
+      c.k_new.begin() + static_cast<size_t>(row) * dim,
+      c.k_new.begin() + static_cast<size_t>(row + 1) * dim);
+  HostMask mask(1, shape.mask_len);
+  mask.Causal(position, 1);
+  return ref::IndexerUpdate(shape, q, k, ring, pool, c.norm, c.cos, c.sin,
+                            position, mask.View(true));
+}
+
+struct RowsRun {
+  std::vector<float> ring, pool;
+  std::vector<int32_t> topk;
+};
+
+RowsRun RunIndexerRows(const IndexerCase& c,
+                       const std::vector<SlotState>& slots,
+                       const std::vector<int32_t>& slot_of,
+                       const std::vector<int32_t>& context_len,
+                       const std::vector<uint64_t>& ancestors, bool score) {
+  const auto& s = c.shape;
+  const int32_t state_type =
+      s.fp16_state ? kLiteRtNvidiaQsaFloat16 : kLiteRtNvidiaQsaFloat32;
+  LiteRtNvidiaQsaIndexerParams params = {};
+  params.rows = s.rows;
+  params.index_heads = s.index_heads;
+  params.index_dim = s.index_dim;
+  params.rotary_dim = s.rotary_dim;
+  params.max_blocks = s.max_blocks;
+  params.block_topk = s.block_topk;
+  params.q_type = c.q_type;
+  params.state_type = state_type;
+  params.rms_norm_eps = s.eps;
+  params.scale = s.scale;
+  std::vector<float> ring, pool;
+  for (const auto& slot : slots) {
+    ring.insert(ring.end(), slot.ring.begin(), slot.ring.end());
+    pool.insert(pool.end(), slot.pool.begin(), slot.pool.end());
+  }
+  const Typed q = AsType(c.q, c.q_type);
+  const Typed k_new = AsType(c.k_new, c.q_type);
+  const Typed ring_t = AsType(ring, state_type);
+  const Typed pool_t = AsType(pool, state_type);
+  Device q_d = Upload(q.bytes), k_d = Upload(k_new.bytes);
+  Device ring_d = Upload(ring_t.bytes), pool_d = Upload(pool_t.bytes);
+  Device norm_d = Upload(c.norm), cos_d = Upload(c.cos), sin_d = Upload(c.sin);
+  Device slot_d = Upload(slot_of), context_d = Upload(context_len);
+  Device ancestors_d = Allocate(8);
+  LiteRtNvidiaQsaRows rows = {};
+  rows.context_len = static_cast<const int32_t*>(context_d.get());
+  rows.slot = static_cast<const int32_t*>(slot_d.get());
+  if (!ancestors.empty()) {
+    ancestors_d = Upload(ancestors);
+    rows.ancestors = static_cast<const uint64_t*>(ancestors_d.get());
+  }
+  EXPECT_TRUE(LiteRtNvidiaQsaIndexerRowsSupports(&params, &rows));
+  Device topk_d = Allocate(static_cast<size_t>(s.rows) * s.block_topk * 4);
+  Device work_d = Allocate(LiteRtNvidiaQsaIndexerRowsWorkspaceBytes(&params));
+  EXPECT_EQ(LiteRtNvidiaLaunchQsaIndexerRows(
+                &params, &rows, 4 * s.index_dim,
+                static_cast<int64_t>(s.max_blocks) * s.index_dim,
+                score ? q_d.get() : nullptr, k_d.get(), ring_d.get(),
+                pool_d.get(), static_cast<const float*>(norm_d.get()),
+                static_cast<const float*>(cos_d.get()),
+                static_cast<const float*>(sin_d.get()),
+                score ? static_cast<int32_t*>(topk_d.get()) : nullptr,
+                work_d.get(), nullptr),
+            cudaSuccess);
+  EXPECT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  RowsRun run;
+  run.ring =
+      FromType(Download<uint8_t>(ring_d, ring_t.bytes.size()), state_type);
+  run.pool =
+      FromType(Download<uint8_t>(pool_d, pool_t.bytes.size()), state_type);
+  if (score) {
+    run.topk =
+        Download<int32_t>(topk_d, static_cast<size_t>(s.rows) * s.block_topk);
+  }
+  return run;
+}
+
+// A case of `rows` rows with random queries and keys, and `slots` random
+// states with the given contexts (the ring holding the incomplete block's
+// keys, the pool the complete blocks).
+IndexerCase MakeRowsCase(const ref::IndexerShape& shape,
+                         std::vector<SlotState>* slots,
+                         const std::vector<int>& contexts, uint32_t seed) {
+  IndexerCase c = MakeIndexerCase(shape, 0, seed);
+  Random random(seed + 1);
+  const int dim = shape.index_dim;
+  slots->clear();
+  for (int context : contexts) {
+    SlotState slot;
+    slot.context = context;
+    slot.ring.assign(4 * dim, 0.0f);
+    for (int t = 0; t < context % 4; ++t) {
+      for (int d = 0; d < dim; ++d)
+        slot.ring[t * dim + d] = random.Uniform(-1, 1);
+    }
+    slot.pool.assign(static_cast<size_t>(shape.max_blocks) * dim, 0.0f);
+    for (int b = 0; b < context / 4; ++b) {
+      for (int d = 0; d < dim; ++d) {
+        slot.pool[static_cast<size_t>(b) * dim + d] = random.Uniform(-1, 1);
+      }
+    }
+    if (shape.fp16_state) {
+      slot.ring = AsType(slot.ring, kLiteRtNvidiaQsaFloat16).held;
+      slot.pool = AsType(slot.pool, kLiteRtNvidiaQsaFloat16).held;
+    }
+    slots->push_back(std::move(slot));
+  }
+  HoldInTypes(c);
+  return c;
+}
+
+void ExpectTopk(const ref::IndexerResult& want, const int32_t* got, int k,
+                const std::string& what) {
+  std::string why;
+  EXPECT_TRUE(ref::IsTopk(want.scores.data(), want.bound, got, k, 2e-5, &why))
+      << what << ": " << why;
+}
+
+void CheckLinearRows(bool fp16_state, int32_t q_type) {
+  ref::IndexerShape shape;
+  shape.index_heads = 4;
+  shape.index_dim = 32;
+  shape.rotary_dim = 16;
+  shape.max_blocks = 64;
+  shape.block_topk = 8;
+  shape.mask_len = 256;
+  shape.scale = 0.2f;
+  shape.fp16_state = fp16_state;
+  // Three slots: 3 rows from 41 (completing a block), one row from 99
+  // (completing one), 4 rows from 62; and a slot of one row in its dense
+  // start.
+  const std::vector<int> contexts = {41, 99, 62, 9};
+  const std::vector<int32_t> slot_of = {0, 0, 0, 1, 2, 2, 2, 2, 3};
+  shape.rows = static_cast<int>(slot_of.size());
+  std::vector<SlotState> slots;
+  IndexerCase c = MakeRowsCase(shape, &slots, contexts, 77);
+  c.q_type = q_type;
+  HoldInTypes(c);
+  std::vector<int32_t> context_len;
+  for (int32_t s : slot_of) context_len.push_back(contexts[s]);
+  const RowsRun run = RunIndexerRows(c, slots, slot_of, context_len, {}, true);
+  const int dim = shape.index_dim;
+  for (int s = 0; s < static_cast<int>(slots.size()); ++s) {
+    std::vector<float> ring = slots[s].ring, pool = slots[s].pool;
+    int rank = 0;
+    for (int r = 0; r < shape.rows; ++r) {
+      if (slot_of[r] != s) continue;
+      const auto want =
+          DecodeRow(shape, c, r, contexts[s] + rank++, ring, pool);
+      ExpectTopk(want,
+                 run.topk.data() + static_cast<size_t>(r) * shape.block_topk,
+                 shape.block_topk, "row " + std::to_string(r));
+    }
+    const float tolerance = fp16_state ? 2e-3f : 2e-5f;
+    ExpectClose(std::vector<float>(run.ring.begin() + s * 4 * dim,
+                                   run.ring.begin() + (s + 1) * 4 * dim),
+                ring, tolerance, "ring of slot " + std::to_string(s));
+    ExpectClose(
+        std::vector<float>(
+            run.pool.begin() + static_cast<size_t>(s) * shape.max_blocks * dim,
+            run.pool.begin() +
+                static_cast<size_t>(s + 1) * shape.max_blocks * dim),
+        pool, tolerance, "pool of slot " + std::to_string(s));
+  }
+}
+
+TEST(QsaIndexerTest, RowModelSlotsMatchDecodeStepByStep) {
+  CheckLinearRows(/*fp16_state=*/false, kLiteRtNvidiaQsaFloat32);
+  CheckLinearRows(/*fp16_state=*/true, kLiteRtNvidiaQsaBFloat16);
+}
+
+TEST(QsaIndexerTest, RowModelTreeScoresEachPathThenCommitsOne) {
+  ref::IndexerShape shape;
+  shape.index_heads = 4;
+  shape.index_dim = 32;
+  shape.rotary_dim = 16;
+  shape.max_blocks = 64;
+  shape.block_topk = 8;
+  shape.mask_len = 256;
+  shape.scale = 0.2f;
+  shape.rows = 7;
+  // From context 58: 0 is the root (58), 1 and 2 its children (59), 3 under
+  // 1 and 4 under 2 (60, completing block 14 along either path), 5 under 4
+  // (61), 6 under 3 (61).
+  const int parent[7] = {-1, 0, 0, 1, 2, 4, 3};
+  const int context = 58;
+  std::vector<SlotState> slots;
+  IndexerCase c = MakeRowsCase(shape, &slots, {context}, 91);
+  std::vector<uint64_t> ancestors(7, 0);
+  for (int j = 0; j < 7; ++j) {
+    for (int a = j; a >= 0; a = parent[a]) ancestors[j] |= uint64_t{1} << a;
+  }
+  const std::vector<int32_t> slot_of(7, 0), context_len(7, context);
+  const RowsRun run =
+      RunIndexerRows(c, slots, slot_of, context_len, ancestors, true);
+  // The state stays.
+  EXPECT_EQ(run.ring, slots[0].ring);
+  EXPECT_EQ(run.pool, slots[0].pool);
+  for (int r = 0; r < 7; ++r) {
+    std::vector<float> ring = slots[0].ring, pool = slots[0].pool;
+    std::vector<int> path;
+    for (int a = r; a >= 0; a = parent[a]) path.insert(path.begin(), a);
+    ref::IndexerResult want;
+    for (size_t i = 0; i < path.size(); ++i) {
+      want = DecodeRow(shape, c, path[i], context + static_cast<int>(i), ring,
+                       pool);
+    }
+    ExpectTopk(want,
+               run.topk.data() + static_cast<size_t>(r) * shape.block_topk,
+               shape.block_topk, "tree row " + std::to_string(r));
+  }
+  // The path 0, 2, 4, 5 taken: a linear launch over its rows writes them.
+  const std::vector<int> taken = {0, 2, 4, 5};
+  IndexerCase commit = c;
+  commit.shape.rows = static_cast<int>(taken.size());
+  commit.k_new.clear();
+  const int dim = shape.index_dim;
+  for (int r : taken) {
+    commit.k_new.insert(commit.k_new.end(), c.k_new.begin() + r * dim,
+                        c.k_new.begin() + (r + 1) * dim);
+  }
+  const RowsRun committed =
+      RunIndexerRows(commit, slots, std::vector<int32_t>(taken.size(), 0),
+                     std::vector<int32_t>(taken.size(), context), {}, false);
+  std::vector<float> ring = slots[0].ring, pool = slots[0].pool;
+  for (size_t i = 0; i < taken.size(); ++i) {
+    DecodeRow(shape, c, taken[i], context + static_cast<int>(i), ring, pool);
+  }
+  ExpectClose(committed.ring, ring, 2e-5f, "committed ring");
+  ExpectClose(committed.pool, pool, 2e-5f, "committed pool");
+}
+
+// ---------------------------------------------------------------------------
 // odml.sparse_sdpa_transposed
 // ---------------------------------------------------------------------------
 
@@ -794,7 +1052,11 @@ TEST(QsaAttentionTest, ModelShapesMatchTheReference) {
 
 // The row model: a linear chain gives what the mask gives; a tree's rows see
 // their ancestors' keys at their scratch indices; two slots in one buffer.
-TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
+// The row model on the CUDA-core path (FP32 caches) and on the tensor-core
+// path (FP16 caches, values as rows).
+void CheckRowModel(int32_t cache_type) {
+  const bool tensor_cores = cache_type == kLiteRtNvidiaQsaFloat16;
+  const float tolerance = tensor_cores ? 2e-3f : 2e-5f;
   ref::AttentionShape shape;
   shape.rows = 6;
   shape.q_heads = 8;
@@ -807,6 +1069,9 @@ TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
 
   // Linear chain: rows at 101..106 written at their positions.
   AttentionCase c = MakeAttentionCase(shape, 9);
+  c.cache_type = cache_type;
+  c.k = AsType(c.k, cache_type).held;
+  c.v = AsType(c.v, cache_type).held;
   c.mask.Causal(context, 6);
   SelectRandomBlocks(c, context, 10);
   std::vector<int32_t> context_len(6, context);
@@ -816,7 +1081,8 @@ TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
   LiteRtNvidiaQsaRows rows = {};
   rows.context_len = static_cast<const int32_t*>(context_d.get());
   rows.write_index = static_cast<const int32_t*>(write_d.get());
-  ExpectClose(RunAttention(c, &rows), RunAttention(c), 1e-6f, "linear chain");
+  ExpectClose(RunAttention(c, &rows), RunAttention(c),
+              tensor_cores ? 1e-3f : 1e-6f, "linear chain");
 
   // A tree: 0 is the root, 1 and 2 its children, 3 under 1, 4 and 5 under
   // 2; rows write to scratch indices 200 + j.
@@ -841,7 +1107,7 @@ TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
   };
   const std::vector<float> tree_want =
       ref::SparseAttention(c.shape, c.q, c.k, c.v, c.topk, visible);
-  ExpectClose(RunAttention(c, &rows), tree_want, 2e-5f, "tree");
+  ExpectClose(RunAttention(c, &rows), tree_want, tolerance, "tree");
 
   // Two slots: rows 0..2 in slot 0, 3..5 in slot 1, each a linear chain of
   // its own; slot 1's caches follow slot 0's in the same buffers.
@@ -849,8 +1115,10 @@ TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
   const size_t per_slot =
       static_cast<size_t>(shape.kv_heads) * shape.cache_len * shape.head_dim;
   Random random(12);
-  const std::vector<float> k1 = random.Values(per_slot, -1.0f, 1.0f);
-  const std::vector<float> v1 = random.Values(per_slot, -1.0f, 1.0f);
+  const std::vector<float> k1 =
+      AsType(random.Values(per_slot, -1.0f, 1.0f), cache_type).held;
+  const std::vector<float> v1 =
+      AsType(random.Values(per_slot, -1.0f, 1.0f), cache_type).held;
   slots.k.insert(slots.k.end(), k1.begin(), k1.end());
   slots.v.insert(slots.v.end(), v1.begin(), v1.end());
   std::vector<int32_t> slot_of = {0, 0, 0, 1, 1, 1};
@@ -889,7 +1157,83 @@ TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
     const std::vector<float> slice(
         got.begin() + static_cast<size_t>(slot) * 3 * 8 * 128,
         got.begin() + static_cast<size_t>(slot + 1) * 3 * 8 * 128);
-    ExpectClose(slice, want, 2e-5f, "slot " + std::to_string(slot));
+    ExpectClose(slice, want, tolerance, "slot " + std::to_string(slot));
+  }
+}
+
+TEST(QsaAttentionTest, RowModelLinearChainTreeAndSlots) {
+  CheckRowModel(kLiteRtNvidiaQsaFloat32);
+  CheckRowModel(kLiteRtNvidiaQsaFloat16);
+}
+
+// Batched decode: a row per slot, each slot's caches its own.
+TEST(QsaAttentionTest, RowModelBatchedDecode) {
+  ref::AttentionShape shape;
+  shape.rows = 5;
+  shape.q_heads = 8;
+  shape.kv_heads = 2;
+  shape.head_dim = 128;
+  shape.cache_len = 512;
+  shape.block_topk = 16;
+  shape.scale = 0.1f;
+  for (int32_t cache_type :
+       {kLiteRtNvidiaQsaFloat32, kLiteRtNvidiaQsaFloat16}) {
+    const size_t per_slot =
+        static_cast<size_t>(shape.kv_heads) * shape.cache_len * shape.head_dim;
+    AttentionCase c = MakeAttentionCase(shape, 31);
+    c.cache_type = cache_type;
+    Random random(32);
+    c.k = AsType(random.Values(per_slot * 5, -1.0f, 1.0f), cache_type).held;
+    c.v = AsType(random.Values(per_slot * 5, -1.0f, 1.0f), cache_type).held;
+    const std::vector<int32_t> slot_of = {3, 0, 4, 1, 2};
+    const std::vector<int32_t> context_len = {300, 17, 511, 64, 129};
+    std::vector<int32_t> write_index(5);
+    for (int r = 0; r < 5; ++r) write_index[r] = context_len[r];
+    c.mask.Causal(0, 0);
+    SelectRandomBlocks(c, 0, 33);
+    for (int r = 0; r < 5; ++r) {
+      // Complete blocks below each row's own position.
+      Random pick(40 + r);
+      const int complete = (context_len[r] + 1) / 4;
+      for (int i = 0; i < shape.block_topk; ++i) {
+        c.topk[static_cast<size_t>(r) * shape.block_topk + i] =
+            i < complete ? pick.Int(0, complete - 1) : -1;
+      }
+    }
+    Device slot_d = Upload(slot_of), context_d = Upload(context_len);
+    Device write_d = Upload(write_index);
+    LiteRtNvidiaQsaRows rows = {};
+    rows.context_len = static_cast<const int32_t*>(context_d.get());
+    rows.write_index = static_cast<const int32_t*>(write_d.get());
+    rows.slot = static_cast<const int32_t*>(slot_d.get());
+    rows.slot_stride = static_cast<int64_t>(per_slot);
+    const std::vector<float> got = RunAttention(c, &rows);
+    for (int r = 0; r < 5; ++r) {
+      AttentionCase one = c;
+      one.shape.rows = 1;
+      one.q.clear();
+      for (int h = 0; h < shape.q_heads; ++h) {
+        const float* row =
+            c.q.data() + (static_cast<size_t>(h) * 5 + r) * shape.head_dim;
+        one.q.insert(one.q.end(), row, row + shape.head_dim);
+      }
+      one.topk.assign(c.topk.begin() + r * shape.block_topk,
+                      c.topk.begin() + (r + 1) * shape.block_topk);
+      one.k.assign(c.k.begin() + slot_of[r] * per_slot,
+                   c.k.begin() + (slot_of[r] + 1) * per_slot);
+      one.v.assign(c.v.begin() + slot_of[r] * per_slot,
+                   c.v.begin() + (slot_of[r] + 1) * per_slot);
+      const int position = context_len[r];
+      const auto want = ref::SparseAttention(
+          one.shape, one.q, one.k, one.v, one.topk,
+          [&](int, int token) { return token <= position; });
+      const size_t width = static_cast<size_t>(shape.q_heads) * shape.head_dim;
+      const std::vector<float> slice(got.begin() + r * width,
+                                     got.begin() + (r + 1) * width);
+      ExpectClose(slice, want,
+                  cache_type == kLiteRtNvidiaQsaFloat16 ? 2e-3f : 2e-5f,
+                  "batched row " + std::to_string(r));
+    }
   }
 }
 

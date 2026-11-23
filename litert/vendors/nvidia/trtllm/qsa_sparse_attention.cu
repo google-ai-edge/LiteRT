@@ -202,19 +202,59 @@ __global__ void __launch_bounds__(kListThreads) QsaListKernel(
                 counts + row, warp_sums);
 }
 
+// The tiles of the row model's rows: runs of up to tile_rows consecutive
+// rows of one slot (a tile's rows read one slot's caches). tile_map[0] is
+// their count, then each tile's first row and rows.
+__global__ void QsaRowTilesKernel(LiteRtNvidiaQsaAttentionParams p,
+                                  LiteRtNvidiaQsaRows model, int32_t tile_rows,
+                                  int32_t* __restrict__ tile_map) {
+  if (threadIdx.x != 0) return;
+  int32_t tiles = 0;
+  int32_t start = 0;
+  for (int32_t r = 1; r <= p.rows; ++r) {
+    if (r == p.rows || r - start == tile_rows ||
+        (model.slot != nullptr && model.slot[r] != model.slot[start])) {
+      tile_map[1 + 2 * tiles] = start;
+      tile_map[2 + 2 * tiles] = r - start;
+      ++tiles;
+      start = r;
+    }
+  }
+  tile_map[0] = tiles;
+}
+
+// A tile's first row and rows: from the tile map, or tile_rows rows each.
+// False for a tile past the map's.
+__device__ __forceinline__ bool TileRows(const int32_t* tile_map,
+                                         int32_t tile, int32_t tile_rows,
+                                         int32_t rows, int32_t* row0,
+                                         int32_t* count) {
+  if (tile_map != nullptr) {
+    if (tile >= tile_map[0]) return false;
+    *row0 = tile_map[1 + 2 * tile];
+    *count = tile_map[2 + 2 * tile];
+    return true;
+  }
+  *row0 = tile * tile_rows;
+  *count = min(tile_rows, rows - *row0);
+  return true;
+}
+
 // The blocks some row of a tile of rows attends to, in ascending order (the
 // union of the rows' bitmaps), each with the rows that attend to it (bit r
 // for row r of the tile, in `members`).
 __global__ void __launch_bounds__(kListThreads) QsaTileListKernel(
     LiteRtNvidiaQsaAttentionParams p, int32_t tile_rows,
+    const int32_t* __restrict__ tile_map,
     const uint32_t* __restrict__ bitmaps, int32_t capacity,
     int32_t* __restrict__ lists, uint32_t* __restrict__ members,
     int32_t* __restrict__ counts) {
   extern __shared__ uint32_t bitmap[];
   __shared__ int32_t warp_sums[32];
   const int32_t tile = blockIdx.x;
-  const int32_t row0 = tile * tile_rows;
-  const int32_t rows = min(tile_rows, p.rows - row0);
+  int32_t row0 = 0;
+  int32_t rows = 0;
+  if (!TileRows(tile_map, tile, tile_rows, p.rows, &row0, &rows)) return;
   const int32_t words = ((p.cache_len + 3) / 4 + 31) / 32;
   for (int32_t w = threadIdx.x; w < words; w += blockDim.x) {
     uint32_t any = 0;
@@ -547,6 +587,7 @@ constexpr int kMaxTileRows = 16;
 template <int kDim>
 __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
     QsaAttendTileKernel(LiteRtNvidiaQsaAttentionParams p, int32_t tile_rows,
+                        const int32_t* __restrict__ tile_map,
                         int32_t m_pad, int32_t splits,
                         const void* __restrict__ q,
                         const __half* __restrict__ k,
@@ -578,8 +619,9 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   const int32_t kv_head = blockIdx.x;
   const int32_t tile = blockIdx.y;
   const int32_t split = blockIdx.z;
-  const int32_t row0 = tile * tile_rows;
-  const int32_t rows = min(tile_rows, p.rows - row0);
+  int32_t row0 = 0;
+  int32_t rows = 0;
+  if (!TileRows(tile_map, tile, tile_rows, p.rows, &row0, &rows)) return;
   const int32_t vectors = rows * group;  // vector m: row m / group, head m % group
 
 #pragma unroll 2
@@ -613,7 +655,14 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   const int32_t hi = min(count, lo + per);
   const int32_t* list = tile_lists + int64_t{tile} * tile_capacity;
   const uint32_t* members = tile_members + int64_t{tile} * tile_capacity;
-  const int64_t head = int64_t{kv_head} * p.cache_len * kDim;
+  // A tile's rows share a slot (QsaRowTilesKernel).
+  const int64_t head =
+      int64_t{kv_head} * p.cache_len * kDim +
+      (p.mask_type == kLiteRtNvidiaQsaMaskRows &&
+               visibility.model.slot != nullptr
+           ? int64_t{visibility.model.slot[row0]} *
+                 visibility.model.slot_stride
+           : 0);
   __syncthreads();
 
   // The keys (and values) of the four blocks list[c .. c + 4) and which of
@@ -887,17 +936,18 @@ Plan MakePlan(const LiteRtNvidiaQsaAttentionParams& p) {
   Plan plan = {};
   plan.capacity = Capacity(p);
   const int32_t group = p.q_heads / p.kv_heads;
-  // The row model's slots may give the rows of a tile caches of their own:
-  // it takes the per-row kernel.
   plan.tiled = p.rows >= 2 && p.cache_type == kLiteRtNvidiaQsaFloat16 &&
-               p.value_columns == 0 && group <= kMaxTileVectors &&
-               p.mask_type != kLiteRtNvidiaQsaMaskRows;
+               p.value_columns == 0 && group <= kMaxTileVectors;
   int64_t base = 0;
   int64_t useful = 0;
   if (plan.tiled) {
     plan.tile_rows = std::min({p.rows, kMaxTileRows,
                                std::max(1, kMaxTileVectors / group)});
-    plan.tiles = (p.rows + plan.tile_rows - 1) / plan.tile_rows;
+    // The row model's tiles do not cross slots: as many as rows at most
+    // (QsaRowTilesKernel maps them).
+    plan.tiles = p.mask_type == kLiteRtNvidiaQsaMaskRows
+                     ? p.rows
+                     : (p.rows + plan.tile_rows - 1) / plan.tile_rows;
     plan.tile_capacity = static_cast<int32_t>(std::min<int64_t>(
         (p.cache_len + 3) / 4, int64_t{plan.tile_rows} * plan.capacity));
     plan.m_pad = (plan.tile_rows * group + 15) / 16 * 16;
@@ -926,11 +976,15 @@ int32_t Words(const LiteRtNvidiaQsaAttentionParams& p) {
 size_t ListBytes(const LiteRtNvidiaQsaAttentionParams& p, const Plan& plan) {
   size_t bytes = 0;
   if (plan.tiled) {
-    // Bitmaps, then the tiles' lists, members and counts.
+    // Bitmaps, then the tiles' lists, members and counts, and the row
+    // model's tile map.
     bytes = static_cast<size_t>(p.rows) * Words(p) * sizeof(uint32_t) +
             (2 * static_cast<size_t>(plan.tiles) * plan.tile_capacity +
              plan.tiles) *
                 sizeof(int32_t);
+    if (p.mask_type == kLiteRtNvidiaQsaMaskRows) {
+      bytes += (1 + 2 * static_cast<size_t>(plan.tiles)) * sizeof(int32_t);
+    }
   } else {
     bytes = (static_cast<size_t>(p.rows) * plan.capacity + p.rows) *
             sizeof(int32_t);
@@ -959,6 +1013,7 @@ size_t TileSharedBytes(int32_t m_pad) {
 template <int kDim>
 void LaunchTile(const LiteRtNvidiaQsaAttentionParams& p, const Plan& plan,
                 const void* q, const void* k, const void* v,
+                const int32_t* tile_map,
                 const uint32_t* tile_members, const int32_t* tile_lists,
                 const int32_t* tile_counts, const Visibility& visibility,
                 void* out, float* partial, cudaStream_t stream) {
@@ -971,7 +1026,7 @@ void LaunchTile(const LiteRtNvidiaQsaAttentionParams& p, const Plan& plan,
   const dim3 grid(p.kv_heads, plan.tiles, plan.splits);
   const int threads = std::max(4, plan.m_pad / 16) * 32;
   kernel<<<grid, threads, shared, stream>>>(
-      p, plan.tile_rows, plan.m_pad, plan.splits, q,
+      p, plan.tile_rows, tile_map, plan.m_pad, plan.splits, q,
       static_cast<const __half*>(k),
       static_cast<const __half*>(v), tile_members, tile_lists, tile_counts,
       plan.tile_capacity, visibility, out, partial);
@@ -1111,22 +1166,28 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQsaAttention(
         tile_lists + static_cast<size_t>(plan.tiles) * plan.tile_capacity);
     int32_t* tile_counts = reinterpret_cast<int32_t*>(
         tile_members + static_cast<size_t>(plan.tiles) * plan.tile_capacity);
+    int32_t* tile_map = nullptr;
+    if (rows_model) {
+      tile_map = tile_counts + plan.tiles;
+      QsaRowTilesKernel<<<1, 32, 0, stream>>>(p, *row_model, plan.tile_rows,
+                                              tile_map);
+    }
     QsaListKernel<<<p.rows, kListThreads, bitmap_bytes, stream>>>(
         p, topk, visibility, plan.capacity, nullptr, nullptr, bitmaps);
     QsaTileListKernel<<<plan.tiles, kListThreads, bitmap_bytes, stream>>>(
-        p, plan.tile_rows, bitmaps, plan.tile_capacity, tile_lists,
+        p, plan.tile_rows, tile_map, bitmaps, plan.tile_capacity, tile_lists,
         tile_members, tile_counts);
     switch (p.head_dim) {
       case 64:
-        LaunchTile<64>(p, plan, q, k, v, tile_members, tile_lists, tile_counts,
-                       visibility, out, partial, stream);
+        LaunchTile<64>(p, plan, q, k, v, tile_map, tile_members, tile_lists,
+                       tile_counts, visibility, out, partial, stream);
         break;
       case 128:
-        LaunchTile<128>(p, plan, q, k, v, tile_members, tile_lists,
+        LaunchTile<128>(p, plan, q, k, v, tile_map, tile_members, tile_lists,
                         tile_counts, visibility, out, partial, stream);
         break;
       default:
-        LaunchTile<256>(p, plan, q, k, v, tile_members, tile_lists,
+        LaunchTile<256>(p, plan, q, k, v, tile_map, tile_members, tile_lists,
                         tile_counts, visibility, out, partial, stream);
         break;
     }
