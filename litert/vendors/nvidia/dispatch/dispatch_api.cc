@@ -42,6 +42,7 @@
 #include <string>
 #include <system_error>
 #include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -1272,12 +1273,79 @@ LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   return kLiteRtStatusOk;
 }
 
+// Several LiteRT-LM engines in one process each call into the dispatch from
+// their own thread, and TensorRT-RTX captures a context's CUDA graph in the
+// default (global) capture mode: while one thread captures, another thread's
+// allocation, copy, clear or device synchronization would fail and invalidate
+// that capture. The tensor buffer calls run with this thread's interaction
+// mode relaxed: they touch none of the capturing streams (non-blocking ones).
+// The streams of the invocation contexts, by the host thread that last
+// invoked each: a runtime's steps all run on one thread (each LiteRT-LM
+// engine's own), so what a clear on that thread must wait for is on these.
+class InvocationStreams {
+ public:
+  static InvocationStreams& Get() {
+    static auto* streams = new InvocationStreams();
+    return *streams;
+  }
+
+  void Note(const void* context, cudaStream_t stream) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_[context] = {std::this_thread::get_id(), stream};
+  }
+
+  void Forget(const void* context) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_.erase(context);
+  }
+
+  // Waits for the work of the calling thread's contexts; the whole device
+  // when this thread invoked none. Unlike a device synchronization, waiting
+  // for these streams leaves another thread's graph capture alone.
+  cudaError_t SynchronizeCallingThread() {
+    std::vector<cudaStream_t> streams;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (const auto& [context, entry] : entries_) {
+        if (entry.first == std::this_thread::get_id()) {
+          streams.push_back(entry.second);
+        }
+      }
+    }
+    if (streams.empty()) return cudaDeviceSynchronize();
+    for (cudaStream_t stream : streams) {
+      if (cudaError_t status = cudaStreamSynchronize(stream);
+          status != cudaSuccess) {
+        return status;
+      }
+    }
+    return cudaSuccess;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, std::pair<std::thread::id, cudaStream_t>>
+      entries_;
+};
+
+class RelaxedCaptureScope {
+ public:
+  RelaxedCaptureScope() { cudaThreadExchangeStreamCaptureMode(&mode_); }
+  ~RelaxedCaptureScope() { cudaThreadExchangeStreamCaptureMode(&mode_); }
+  RelaxedCaptureScope(const RelaxedCaptureScope&) = delete;
+  RelaxedCaptureScope& operator=(const RelaxedCaptureScope&) = delete;
+
+ private:
+  cudaStreamCaptureMode mode_ = cudaStreamCaptureModeRelaxed;
+};
+
 LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
                                     LiteRtGpuQueueId queue_id,
                                     const LiteRtRankedTensorType* tensor_type,
                                     LiteRtTensorBufferType buffer_type,
                                     size_t bytes, size_t packed_bytes,
                                     HwMemoryInfoPtr* hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   (void)device_id;
   (void)queue_id;
   (void)tensor_type;
@@ -1318,6 +1386,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
                                     HwMemoryHandle hw_buffer_handle,
                                     size_t bytes, size_t packed_bytes,
                                     HwMemoryInfoPtr* hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   (void)device_id;
   (void)queue_id;
   (void)tensor_type;
@@ -1343,6 +1412,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
 }
 
 LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusOk;
@@ -1380,6 +1450,7 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
                                   LiteRtTensorBufferLockMode mode,
                                   void** host_memory_ptr) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr || host_memory_ptr == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1413,6 +1484,7 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 }
 
 LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1442,6 +1514,7 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 }
 
 LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1458,9 +1531,10 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   // step the previous one ran ahead may still be writing them on its own
   // (non-blocking) stream: the zeros go in after every such write, or a
   // state rewritten in place (a gated-DeltaNet layer's) starts the next
-  // conversation dirty.
-  LITERT_RETURN_IF_ERROR(CudaStatus(cudaDeviceSynchronize(),
-                                    "cudaDeviceSynchronize before a clear"));
+  // conversation dirty. The runtime's steps ran on this thread's contexts.
+  LITERT_RETURN_IF_ERROR(
+      CudaStatus(InvocationStreams::Get().SynchronizeCallingThread(),
+                 "synchronizing the invocations before a clear"));
   LITERT_RETURN_IF_ERROR(
       CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
                  "cudaMemset CUDA tensor buffer"));
@@ -2727,6 +2801,7 @@ class LiteRtDispatchDeviceContextT {
   // holding its own. Contexts re-bind when the arena is reallocated (grown).
   Expected<std::pair<void*, uint64_t>> EnsureSharedActivationArena(
       size_t bytes) {
+    RelaxedCaptureScope relaxed_capture;
     if (bytes > arena_size_) {
       if (arena_ptr_ != nullptr) {
         // cudaFree synchronizes the device, so no in-flight work can still
@@ -2863,12 +2938,77 @@ int64_t DispatchSlotsWaitUs() {
   return wait;
 }
 
+// With batched decode steps, the contexts that are no decode step (a
+// prefill's) of every engine in the process share one activation arena
+// instead of one per engine: each engine's own would hold a prefill's
+// activations (the 26B's: 475 MB) for every slot. Its users run one after
+// the other on the device (each stream waits for the previous user's work),
+// the host does not wait.
+class ProcessActivationArena {
+ public:
+  static ProcessActivationArena& Get() {
+    static auto* arena = new ProcessActivationArena();
+    return *arena;
+  }
+
+  std::unique_lock<std::mutex> Lock() {
+    return std::unique_lock<std::mutex>(mutex_);
+  }
+
+  // Under Lock(): the arena of at least `bytes`, its version, and its size;
+  // `stream` waits for the previous user.
+  Expected<std::tuple<void*, uint64_t, size_t>> Acquire(size_t bytes,
+                                                        cudaStream_t stream) {
+    RelaxedCaptureScope relaxed_capture;
+    if (event_ == nullptr) {
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaEventCreateWithFlags(&event_, cudaEventDisableTiming),
+                 "cudaEventCreate process arena"));
+    }
+    if (bytes > size_) {
+      if (ptr_ != nullptr) {
+        LITERT_RETURN_IF_ERROR(CudaOk(cudaEventSynchronize(event_),
+                                      "cudaEventSynchronize process arena"));
+        LITERT_RETURN_IF_ERROR(
+            CudaOk(cudaFree(ptr_), "cudaFree process arena"));
+        ptr_ = nullptr;
+        size_ = 0;
+      }
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaMalloc(&ptr_, bytes), "cudaMalloc process arena"));
+      size_ = bytes;
+      ++version_;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch: one activation arena of %zu bytes for the "
+                 "prefills of every engine",
+                 bytes);
+    }
+    LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamWaitEvent(stream, event_, 0),
+                                  "cudaStreamWaitEvent process arena"));
+    return std::make_tuple(ptr_, version_, size_);
+  }
+
+  // Under Lock(): the work `stream` enqueued is the arena's last user.
+  Expected<void> Release(cudaStream_t stream) {
+    return CudaOk(cudaEventRecord(event_, stream),
+                  "cudaEventRecord process arena");
+  }
+
+ private:
+  std::mutex mutex_;
+  void* ptr_ = nullptr;
+  size_t size_ = 0;
+  uint64_t version_ = 0;
+  cudaEvent_t event_ = nullptr;
+};
+
 // One batched engine of n slots, its weights mapped from the store the decode
 // engines share.
 class SlotEngine {
  public:
   static Expected<std::unique_ptr<SlotEngine>> Open(const std::string& path,
                                                     int slots) {
+    RelaxedCaptureScope relaxed_capture;
     auto engine = std::unique_ptr<SlotEngine>(new SlotEngine());
     engine->slots_ = slots;
     if (!ReadBinaryFile(path, &engine->file_) || engine->file_.empty()) {
@@ -3338,6 +3478,7 @@ class LiteRtDispatchInvocationContextT {
 
   ~LiteRtDispatchInvocationContextT() {
     ForgetTokenTableWaiter(this);
+    InvocationStreams::Get().Forget(this);
     if (slot_group_) {
       slot_group_->Leave(this);
       slot_group_.reset();
@@ -3512,6 +3653,12 @@ class LiteRtDispatchInvocationContextT {
       // must not evict this engine or reuse its activation arena mid-enqueue.
       residency_lock = std::unique_lock<std::mutex>(aot_residency_->mutex);
       LITERT_RETURN_IF_ERROR(EnsureAotEngineResident());
+    }
+    if (noted_thread_ != std::this_thread::get_id() ||
+        noted_stream_ != stream_) {
+      noted_thread_ = std::this_thread::get_id();
+      noted_stream_ = stream_;
+      InvocationStreams::Get().Note(this, stream_);
     }
     const bool memory_profile =
         memory_profiler_.enabled() && invocation_count_ == 0;
@@ -3761,6 +3908,20 @@ class LiteRtDispatchInvocationContextT {
           aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
     }
     LITERT_ASSIGN_OR_RETURN(const bool batched, StepWithSlots());
+    std::unique_lock<std::mutex> process_arena_lock;
+    if (UsesProcessArena()) {
+      process_arena_lock = ProcessActivationArena::Get().Lock();
+      LITERT_ASSIGN_OR_RETURN(
+          auto arena, ProcessActivationArena::Get().Acquire(
+                          static_cast<size_t>(device_memory_bytes_), stream_));
+      if (std::get<0>(arena) != bound_arena_ptr_ ||
+          std::get<1>(arena) != bound_arena_version_) {
+        execution_context_->setDeviceMemoryV2(
+            std::get<0>(arena), static_cast<int64_t>(std::get<2>(arena)));
+        bound_arena_ptr_ = std::get<0>(arena);
+        bound_arena_version_ = std::get<1>(arena);
+      }
+    }
     if (!batched) LITERT_RETURN_IF_ERROR(EnqueueStep());
     if (invocation_count_ == 1 && whole_graph_capture_ && !slot_group_ &&
         bytecode_.step_feed.has_value() && !UpdatesStateInPlace() &&
@@ -3781,6 +3942,10 @@ class LiteRtDispatchInvocationContextT {
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
       }
       LITERT_RETURN_IF_ERROR(EnqueueStep());
+    }
+    if (process_arena_lock) {
+      LITERT_RETURN_IF_ERROR(ProcessActivationArena::Get().Release(stream_));
+      process_arena_lock.unlock();
     }
     profile_metrics.cpu_enqueue_call_ms = enqueue_call_timer.ElapsedMs();
     if (profile) {
@@ -4070,6 +4235,8 @@ class LiteRtDispatchInvocationContextT {
     }
     aux_streams_.clear();
     if (stream_ != nullptr) {
+      InvocationStreams::Get().Forget(this);
+      noted_stream_ = nullptr;
       cudaStreamDestroy(stream_);
       stream_ = nullptr;
     }
@@ -7753,7 +7920,15 @@ class LiteRtDispatchInvocationContextT {
                values[1], values[2], values[3], checksum);
   }
 
+  // A context that is no decode step, with batched decode steps on: it binds
+  // the process's arena (ProcessActivationArena) when it enqueues.
+  bool UsesProcessArena() const {
+    return DispatchSlots() >= 2 && device_memory_bytes_ > 0 &&
+           !bytecode_.step_feed.has_value() && !aot_residency_;
+  }
+
   Expected<void> BindSharedActivationArena() {
+    if (UsesProcessArena()) return {};
     if (device_memory_bytes_ <= 0) {
       // Nothing to bind: the engine has no activation memory (or the context
       // owns its own allocation).
@@ -7917,6 +8092,9 @@ class LiteRtDispatchInvocationContextT {
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
+  // The thread and stream InvocationStreams knows this context by.
+  std::thread::id noted_thread_;
+  cudaStream_t noted_stream_ = nullptr;
   // The batched decode steps this context takes part in (StepWithSlots).
   std::string aot_path_;
   std::shared_ptr<DecodeSlotGroup> slot_group_;
@@ -8104,6 +8282,7 @@ LiteRtStatus InvocationContextCreate(
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  RelaxedCaptureScope relaxed_capture;
   auto context = LiteRtDispatchInvocationContextT::Create(
       runtime_context, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
@@ -8123,6 +8302,7 @@ LiteRtStatus InvocationContextCreate(
 
 LiteRtStatus InvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context) {
+  RelaxedCaptureScope relaxed_capture;
   delete invocation_context;
   return kLiteRtStatusOk;
 }
