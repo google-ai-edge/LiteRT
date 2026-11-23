@@ -2066,6 +2066,41 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
       input_size, output_size, gate, stream);
 }
 
+namespace {
+
+bool ValidRowsLaunch(const void* activation, const uint8_t* packed_weights,
+                     const void* scales, const float* norm_scale,
+                     float norm_eps, const void* output, int rows,
+                     int input_size, int output_size, int gate) {
+  using namespace litert::nvidia::int4_block;
+  return !(activation == nullptr || packed_weights == nullptr ||
+           scales == nullptr || output == nullptr || rows <= 0 ||
+           rows > kLiteRtNvidiaInt4BlockGemvMaxRows || input_size <= 0 ||
+           input_size % kBlock != 0 || output_size <= 0 || gate < 0 ||
+           gate > 3 || (norm_scale != nullptr && norm_eps < 0.0f));
+}
+
+}  // namespace
+
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int rows, int input_size, int output_size, int gate,
+    cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (!ValidRowsLaunch(activation, packed_weights, scales, norm_scale,
+                       norm_eps, output, rows, input_size, output_size,
+                       gate)) {
+    return cudaErrorInvalidValue;
+  }
+  // DenseKernel keeps each row's accumulation in the order of a row alone.
+  const DenseNorm norm = {norm_scale, norm_eps, norm_multiplier};
+  return LaunchDenseFp32(static_cast<const __nv_bfloat16*>(activation),
+                         packed_weights, static_cast<const __half*>(scales),
+                         norm, static_cast<__nv_bfloat16*>(output), rows,
+                         input_size, output_size, gate, stream);
+}
+
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
     const void* activation, const uint8_t* packed_weights, const void* scales,
     const float* norm_scale, float norm_eps, float norm_multiplier,

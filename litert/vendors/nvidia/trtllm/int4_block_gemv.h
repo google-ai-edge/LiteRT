@@ -60,6 +60,17 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
     void* output, int rows, int input_size, int output_size, int gate,
     cudaStream_t stream);
 
+// The same product for rows that are separate sequences (a batched decode
+// step: one row per sequence slot): every row's sums are the ones the row
+// gets alone (rows 1), bit for bit, on the CUDA cores, while the weights are
+// still read once for all the rows. Rows 1 to
+// kLiteRtNvidiaInt4BlockGemvMaxRows.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int rows, int input_size, int output_size, int gate,
+    cudaStream_t stream);
+
 // Mixture-of-experts feed-forward over blockwise INT4 experts (the "moe"
 // custom op of Gemma 4 26B-A4B): for every activation row r and each of its
 // top_k routed experts e = top_indices[r][j],
