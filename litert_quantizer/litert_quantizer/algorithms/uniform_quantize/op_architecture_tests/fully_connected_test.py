@@ -72,6 +72,54 @@ class FullyConnectedTest(op_test_utils.BaseQuantizeTest):
     )
     self._op_test_info.op_tensor_names = op_tensor_names
 
+  def _assert_materialize_fully_connected_succeeds(
+      self,
+      num_bits_weight,
+      granularity,
+      get_tensor_quant_params_func,
+      symmetric_weight,
+      test_case,
+      algorithm_params=None,
+  ):
+    compute_precision, is_srq, explicit_dequantize = test_case
+
+    # Read from Model Explorer.
+    subgraph0 = self._op_test_info.test_model.subgraphs[0]
+    subgraph_op_id = 3
+    fc_op = subgraph0.operators[subgraph_op_id]
+    activation_tensor_config = None
+    # Check if SRQ.
+    if compute_precision == _ComputePrecision.INTEGER and is_srq:
+      activation_tensor_config = _DEFAULT_ACTIVATION_QUANT_SETTING
+    op_info = qtyping.OpInfo(
+        op=fc_op,
+        op_name=qtyping.TFLOperationName.FULLY_CONNECTED,
+        subgraph_op_index=subgraph_op_id,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            activation_tensor_config=activation_tensor_config,
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=num_bits_weight,
+                symmetric=symmetric_weight,
+                granularity=granularity,
+                **(
+                    {"algorithm_params": algorithm_params}
+                    if algorithm_params is not None
+                    else {}
+                ),
+            ),
+            compute_precision=compute_precision,
+            explicit_dequantize=explicit_dequantize,
+        ),
+    )
+
+    self._test_fc_bmm_conv(
+        op_info,
+        self._graph_info,
+        self._op_test_info,
+        common_quantize.materialize_fc_conv,
+        get_tensor_quant_params_func,
+    )
+
   # TODO(rewu): add int16 tests.
   @parameterized.product(
       num_bits_weight=(4, 8),
@@ -101,38 +149,50 @@ class FullyConnectedTest(op_test_utils.BaseQuantizeTest):
       test_case,
   ):
     get_tensor_quant_params_func, symmetric_weight = algos
-    compute_precision, is_srq, explicit_dequantize = test_case
-
-    # Read from Model Explorer.
-    subgraph0 = self._op_test_info.test_model.subgraphs[0]
-    subgraph_op_id = 3
-    fc_op = subgraph0.operators[subgraph_op_id]
-    activation_tensor_config = None
-    # Check if SRQ.
-    if compute_precision == _ComputePrecision.INTEGER and is_srq:
-      activation_tensor_config = _DEFAULT_ACTIVATION_QUANT_SETTING
-    op_info = qtyping.OpInfo(
-        op=fc_op,
-        op_name=qtyping.TFLOperationName.FULLY_CONNECTED,
-        subgraph_op_index=subgraph_op_id,
-        op_quant_config=qtyping.OpQuantizationConfig(
-            activation_tensor_config=activation_tensor_config,
-            weight_tensor_config=_TensorQuantConfig(
-                num_bits=num_bits_weight,
-                symmetric=symmetric_weight,
-                granularity=granularity,
-            ),
-            compute_precision=compute_precision,
-            explicit_dequantize=explicit_dequantize,
-        ),
+    self._assert_materialize_fully_connected_succeeds(
+        num_bits_weight,
+        granularity,
+        get_tensor_quant_params_func,
+        symmetric_weight,
+        test_case,
     )
 
-    self._test_fc_bmm_conv(
-        op_info,
-        self._graph_info,
-        self._op_test_info,
-        common_quantize.materialize_fc_conv,
+  @parameterized.product(
+      granularity=(
+          qtyping.QuantGranularity.CHANNELWISE,
+          qtyping.QuantGranularity.TENSORWISE,
+      ),
+      # get_tensor_quant_params_func, symmetric_weight, algorithm_params
+      algos=(
+          (naive_min_max_quantize.get_tensor_quant_params, True, None),
+          (
+              naive_min_max_quantize.get_tensor_quant_params,
+              True,
+              {"centered": True},
+          ),
+          (naive_min_max_quantize.get_tensor_quant_params, False, None),
+          (octav.get_tensor_quant_params, True, None),
+      ),
+      test_case=(
+          # 2-bit FULLY_CONNECTED only supports weight-only and DRQ (not SRQ).
+          (_ComputePrecision.FLOAT, False, True),
+          (_ComputePrecision.INTEGER, False, False),
+      ),
+  )
+  def test_materialize_fully_connected_int2_succeeds(
+      self,
+      granularity,
+      algos,
+      test_case,
+  ):
+    get_tensor_quant_params_func, symmetric_weight, algorithm_params = algos
+    self._assert_materialize_fully_connected_succeeds(
+        2,
+        granularity,
         get_tensor_quant_params_func,
+        symmetric_weight,
+        test_case,
+        algorithm_params=algorithm_params,
     )
 
   @parameterized.product(

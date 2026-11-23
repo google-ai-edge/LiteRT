@@ -58,6 +58,58 @@ class EmbeddingLookupTest(op_test_utils.BaseQuantizeTest):
         buffers=self._op_test_info.test_model.buffers,
     )
 
+  def _assert_embedding_lookup_succeeds(
+      self,
+      num_bits_weight,
+      granularity,
+      get_quant_params_func,
+      symmetric_weight,
+      test_case,
+      algorithm_params=None,
+  ):
+    compute_precision, explicit_dequantize = test_case
+
+    # Read from Model Explorer.
+    subgraph0 = self._op_test_info.test_model.subgraphs[0]
+    subgraph_op_id = 0
+    op = subgraph0.operators[subgraph_op_id]
+    op_tensor_names = {}
+    op_tensor_names["weight"] = (
+        "jit(export_func)/jit(main)/...y,yz->...z/dot_general;jit(export_func)/jit(main)/jit(_one_hot)/eq;jit(export_func)/jit(main)/jit(_one_hot)/convert_element_type"
+    )
+    op_tensor_names["input"] = "lookup"
+    op_tensor_names["output"] = "Identity_1"
+    self._op_test_info.op_tensor_names = op_tensor_names
+    self._op_test_info.quantized_dimension = 0
+
+    op_info = qtyping.OpInfo(
+        op=op,
+        op_name=qtyping.TFLOperationName.EMBEDDING_LOOKUP,
+        subgraph_op_index=subgraph_op_id,
+        op_quant_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TensorQuantConfig(
+                num_bits=num_bits_weight,
+                symmetric=symmetric_weight,
+                granularity=granularity,
+                **(
+                    {"algorithm_params": algorithm_params}
+                    if algorithm_params is not None
+                    else {}
+                ),
+            ),
+            compute_precision=compute_precision,
+            explicit_dequantize=explicit_dequantize,
+        ),
+    )
+    # TODO: b/335913710 - Rename the test function.
+    self._test_fc_bmm_conv(
+        op_info,
+        self._graph_info,
+        self._op_test_info,
+        common_quantize.materialize_embedding_lookup,
+        get_quant_params_func,
+    )
+
   @parameterized.product(
       num_bits_weight=(4, 8),
       granularity=(
@@ -85,42 +137,50 @@ class EmbeddingLookupTest(op_test_utils.BaseQuantizeTest):
       test_case,
   ):
     get_quant_params_func, symmetric_weight = algos
-    compute_precision, explicit_dequantize = test_case
-
-    # Read from Model Explorer.
-    subgraph0 = self._op_test_info.test_model.subgraphs[0]
-    subgraph_op_id = 0
-    op = subgraph0.operators[subgraph_op_id]
-    op_tensor_names = {}
-    op_tensor_names["weight"] = (
-        "jit(export_func)/jit(main)/...y,yz->...z/dot_general;jit(export_func)/jit(main)/jit(_one_hot)/eq;jit(export_func)/jit(main)/jit(_one_hot)/convert_element_type"
-    )
-    op_tensor_names["input"] = "lookup"
-    op_tensor_names["output"] = "Identity_1"
-    self._op_test_info.op_tensor_names = op_tensor_names
-    self._op_test_info.quantized_dimension = 0
-
-    op_info = qtyping.OpInfo(
-        op=op,
-        op_name=qtyping.TFLOperationName.EMBEDDING_LOOKUP,
-        subgraph_op_index=subgraph_op_id,
-        op_quant_config=qtyping.OpQuantizationConfig(
-            weight_tensor_config=_TensorQuantConfig(
-                num_bits=num_bits_weight,
-                symmetric=symmetric_weight,
-                granularity=granularity,
-            ),
-            compute_precision=compute_precision,
-            explicit_dequantize=explicit_dequantize,
-        ),
-    )
-    # TODO: b/335913710 - Rename the test function.
-    self._test_fc_bmm_conv(
-        op_info,
-        self._graph_info,
-        self._op_test_info,
-        common_quantize.materialize_embedding_lookup,
+    self._assert_embedding_lookup_succeeds(
+        num_bits_weight,
+        granularity,
         get_quant_params_func,
+        symmetric_weight,
+        test_case,
+    )
+
+  @parameterized.product(
+      granularity=(
+          qtyping.QuantGranularity.CHANNELWISE,
+          qtyping.QuantGranularity.TENSORWISE,
+      ),
+      # get_quant_params_func, symmetric_weight, algorithm_params
+      algos=(
+          (naive_min_max_quantize.get_tensor_quant_params, True, None),
+          (
+              naive_min_max_quantize.get_tensor_quant_params,
+              True,
+              {"centered": True},
+          ),
+          (naive_min_max_quantize.get_tensor_quant_params, False, None),
+          (octav.get_tensor_quant_params, True, None),
+      ),
+      test_case=(
+          # Tuple holds compute precision and explicit dequantize.
+          (_ComputePrecision.FLOAT, True),
+          (_ComputePrecision.INTEGER, False),
+      ),
+  )
+  def test_embedding_lookup_int2_succeeds(
+      self,
+      granularity,
+      algos,
+      test_case,
+  ):
+    get_quant_params_func, symmetric_weight, algorithm_params = algos
+    self._assert_embedding_lookup_succeeds(
+        2,
+        granularity,
+        get_quant_params_func,
+        symmetric_weight,
+        test_case,
+        algorithm_params=algorithm_params,
     )
 
 
