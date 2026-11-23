@@ -374,6 +374,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
 struct LiteRtCompiledResultT {
   std::vector<std::string> byte_codes;
   std::vector<std::string> per_op_data;
+  bool is_odc = false;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
@@ -390,8 +391,9 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
                static_cast<int>(compiled_result->byte_codes.size()));
     return kLiteRtStatusErrorIndexOOB;
   }
-  *byte_code = compiled_result->byte_codes[0].data();
-  *byte_code_size = compiled_result->byte_codes[0].size();
+  const size_t idx = compiled_result->is_odc ? byte_code_idx : 0;
+  *byte_code = compiled_result->byte_codes[idx].data();
+  *byte_code_size = compiled_result->byte_codes[idx].size();
   return kLiteRtStatusOk;
 }
 
@@ -421,7 +423,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = compiled_result->is_odc ? call_idx : 0;
 
   return kLiteRtStatusOk;
 }
@@ -820,7 +822,7 @@ void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
 // Clones the given subgraph's operations, tensors, and connectivity into a
 // temporary model container and serializes it to a FlatBuffer byte stream.
 litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
-    LiteRtSubgraph subgraph) {
+    LiteRtSubgraph subgraph, absl::string_view signature_key = "") {
   LiteRtModelT temp_model;
   LiteRtSubgraphT& dest_subgraph = temp_model.EmplaceSubgraph();
   absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
@@ -888,6 +890,29 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
                                 "Output tensor not found in map");
     }
     dest_subgraph.Outputs().push_back(it->second);
+  }
+
+  if (!signature_key.empty()) {
+    std::vector<std::string> input_names;
+    std::vector<LiteRtTensor> input_tensors;
+    input_names.reserve(dest_subgraph.NumInputs());
+    input_tensors.reserve(dest_subgraph.NumInputs());
+    for (LiteRtTensor tensor : dest_subgraph.Inputs()) {
+      input_names.push_back(std::string(tensor->Name()));
+      input_tensors.push_back(tensor);
+    }
+    std::vector<std::string> output_names;
+    std::vector<LiteRtTensor> output_tensors;
+    output_names.reserve(dest_subgraph.NumOutputs());
+    output_tensors.reserve(dest_subgraph.NumOutputs());
+    for (LiteRtTensor tensor : dest_subgraph.Outputs()) {
+      output_names.push_back(std::string(tensor->Name()));
+      output_tensors.push_back(tensor);
+    }
+    temp_model.EmplaceSignature(
+        &dest_subgraph, std::move(input_names), std::move(input_tensors),
+        std::move(output_names), std::move(output_tensors),
+        std::string(signature_key));
   }
 
   ReconstructTflOpCodes(temp_model);
@@ -1242,6 +1267,75 @@ void FreeSignatureKeys(size_t num_subgraphs, char** signature_keys) {
   ::free(signature_keys);
 }
 
+// Compiles each partition subgraph individually for On-Device Compilation
+// (ODC), populating one standalone compiled module per partition.
+// TODO(b/462579220): Compile all subgraphs in a single call once the ODC
+// backend supports multi-subgraph models natively.
+LiteRtStatus CompilePartitionsOdc(LiteRtCompilerPlugin compiler_plugin,
+                                  const char* soc_model,
+                                  litert::compiler::Model& model,
+                                  size_t num_partitions,
+                                  litert::google_tensor::Adapter& adapter,
+                                  LiteRtCompiledResult* compiled_result) {
+  LITERT_ASSIGN_OR_RETURN(GoogleTensorOptions google_tensor_options,
+                          GetGoogleTensorOptions(compiler_plugin));
+  LITERT_RETURN_IF_ERROR(PopulateCompilerConfig(
+      compiler_plugin, soc_model ? soc_model : "", google_tensor_options));
+
+  std::string google_tensor_options_str;
+  if (!google_tensor_options.SerializeToString(&google_tensor_options_str)) {
+    LITERT_LOG(LITERT_ERROR, "%s",
+               "Failed to serialize opaque options proto.");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  auto result = std::make_unique<LiteRtCompiledResultT>();
+  result->is_odc = true;
+  result->byte_codes.reserve(num_partitions);
+  result->per_op_data.reserve(num_partitions);
+
+  for (size_t i = 0; i < num_partitions; ++i) {
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+    const std::string signature_key = absl::StrCat("subgraph_", i, "_fn");
+    LITERT_ASSIGN_OR_RETURN(auto serialized_subgraph,
+                            SerializeSubgraph(subgraph.Get(), signature_key));
+
+    char** compiled_code_data = nullptr;
+    size_t* compiled_code_sizes = nullptr;
+    size_t num_bytecodes = 0;
+    absl::Cleanup code_cleanup = [&] {
+      if (compiled_code_data) {
+        adapter.FreeCompiledCode(compiled_code_data, compiled_code_sizes,
+                                 num_bytecodes);
+      }
+    };
+
+    const auto compile_status = adapter.Compile(
+        reinterpret_cast<const char*>(serialized_subgraph.Data()),
+        serialized_subgraph.Size(), google_tensor_options_str.data(),
+        google_tensor_options_str.size(), &compiled_code_data,
+        &compiled_code_sizes, &num_bytecodes);
+    if (!compile_status) {
+      LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());
+      return compile_status.Error().Status();
+    }
+    if (num_bytecodes != 1) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Compiler returned unexpected number of bytecodes. "
+                 "Expected: 1, Actual: %zu",
+                 num_bytecodes);
+      return kLiteRtStatusErrorRuntimeFailure;
+    }
+
+    result->byte_codes.emplace_back(compiled_code_data[0],
+                                    compiled_code_sizes[0]);
+    result->per_op_data.push_back(signature_key);
+  }
+
+  *compiled_result = result.release();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -1264,12 +1358,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (soc_model == nullptr) {
       soc_model = "Unspecified";
     }
-    // Currently ODC only supports Single subgraph models.
-    if (num_partitions > 1) {
-      LITERT_LOG(LITERT_ERROR, "%s",
-                 "ODC mode does not support multiple subgraphs");
-      return kLiteRtStatusErrorInvalidArgument;
-    }
   }
 
   LITERT_LOG(LITERT_INFO,
@@ -1280,6 +1368,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_ERROR,
                "No subgraphs selected for GoogleTensor compilation.");
     return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  if (!adapter->IsAot()) {
+    return CompilePartitionsOdc(compiler_plugin, soc_model, model,
+                                num_partitions, *adapter, compiled_result);
   }
 
   // Serialize model.
