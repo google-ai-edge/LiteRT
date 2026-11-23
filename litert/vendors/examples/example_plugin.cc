@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
@@ -427,12 +428,16 @@ LiteRtStatus LiteRtCompilerPluginDummy(LiteRtCompilerPlugin compiler_plugin) {
 
 namespace {
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Simulates a plugin built against a future minor version of the compiler
+// plugin ABI, one past LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR: the official
+// LiteRtCompilerPluginInterface_V1 members, in order, followed by a member
+// (`dummy`) that the current table does not have. Used to test minor version
+// append-only extensibility (abi_header at offset 0, new members appended at
+// the end).
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1NextMinor {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -460,17 +465,31 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+  LiteRtCompilerPluginPartitionV2T compiler_plugin_partition_v2;
+  LiteRtCompilerPluginCompileV2T compiler_plugin_compile_v2;
 
-  // Appended in V1.1:
+  // Appended in the next minor version:
   LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+} LiteRtCompilerPluginInterface_V1NextMinor;
 
-static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
+// The extension must not overlap members of the official table.
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_partition_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_partition_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_compile_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_compile_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor, dummy) ==
+              sizeof(LiteRtCompilerPluginInterface_V1));
+
+const LiteRtCompilerPluginInterface_V1NextMinor kExamplePluginInterface = {
     .abi_header =
         {
-            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1_1),
+            .struct_size = sizeof(LiteRtCompilerPluginInterface_V1NextMinor),
             .major_version = 1,
-            .minor_version = 1,
+            .minor_version = LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1,
             .reserved = 0,
         },
     .get_compiler_plugin_version = LiteRtGetCompilerPluginVersion,
@@ -497,6 +516,8 @@ static const LiteRtCompilerPluginInterface_V1_1 ExamplePluginInterface_V1_1 = {
     .get_compiled_result_handle = LiteRtGetCompiledResultHandle,
     .check_compiler_compatibility =
         LiteRtCompilerPluginCheckCompilerCompatibility,
+    .compiler_plugin_partition_v2 = nullptr,
+    .compiler_plugin_compile_v2 = nullptr,
     .dummy = LiteRtCompilerPluginDummy,
 };
 
@@ -510,7 +531,7 @@ extern "C" LITERT_CAPI_EXPORT LiteRtStatus LiteRtCompilerPluginQueryInterface(
   }
   if (litert_runtime_version.major >= 1) {
     if (interface_id == kLiteRtCompilerPluginInterfaceBasic) {
-      *out_interface = &ExamplePluginInterface_V1_1;
+      *out_interface = &kExamplePluginInterface;
       return kLiteRtStatusOk;
     }
   }
