@@ -65,6 +65,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -81,9 +82,11 @@
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/experimental/custom_ops/gated_delta_net/gated_delta_update_litert_custom_op.h"
+#include "litert/vendors/nvidia/cache_layout.h"
 #include "litert/vendors/nvidia/tools/qsa_decompositions.h"
 #include "litert/vendors/nvidia/tools/tflite_builder.h"
 #include "tflite/schema/schema_generated.h"
@@ -151,6 +154,23 @@ constexpr int kInter = 5120;
 constexpr int kVocab = 512;
 constexpr int kHc = 4;
 constexpr int kStreams = kHc * kWidth;
+// The MTP drafter (sglang's qwen4_exp_mtp.py) in LiteRT-LM's drafter contract
+// (llm_litert_mtp_drafter.cc, as Gemma 4's exports carry it): a `verify`
+// signature of 1 + kDraftSteps rows, `activations` out of decode and verify,
+// and a `draft` signature. Only with a QSA last layer (not the wide model).
+constexpr bool kMtp = !kIsGdn[kNumLayers - 1];
+constexpr int kQsaLayer = kNumLayers - 1;
+constexpr int kDraftSteps = 3;
+constexpr int kVerifyRows = kDraftSteps + 1;
+// The activations a token carries to the drafter: the hc streams before the
+// final mixer, then the drafter's shared QSA selection (kTopk blocks as
+// floats) and its flag (index_share_for_mtp_iteration: the first draft step
+// selects, the others reuse it). LiteRT-LM copies the embedding and the
+// activations in chunks of the embedding's width: an embedder for this
+// contract writes kActivations values per token (the hc copies of the
+// embedding, then zeros).
+constexpr int kShare = kTopk + 1;
+constexpr int kActivations = kStreams + kShare;
 constexpr int kGdnDim = 128;
 constexpr int kKeyDim = kGdnKeyHeads * kGdnDim;
 constexpr int kValueDim = kGdnValueHeads * kGdnDim;
@@ -167,6 +187,10 @@ constexpr int kPrompt = 40;
 constexpr int kAttnProjection = 2 * kQueryHeads * kDepth +
                                 2 * kKvHeads * kDepth +
                                 kIndexHeads * kIndexDim + kIndexDim;
+// The drafter's: q, its gate, the indexer's q and k (it reads the model's
+// QSA caches: LiteRT-LM's drafter writes no state).
+constexpr int kDraftProjection =
+    2 * kQueryHeads * kDepth + kIndexHeads * kIndexDim + kIndexDim;
 
 std::string StateName(const std::string& kind, int layer) {
   return absl::StrCat("kv_cache_", kind, "_", layer);
@@ -264,10 +288,20 @@ struct LayerWeights {
   std::vector<float> gate_up, down;
 };
 
+// The MTP drafter: X0 = fc_embedding(rms(e)) + fc_hidden(rms(X) per stream)
+// (sglang's _fuse_residual_linear_shared, Gemma norms), one QSA layer with
+// its hyper-connections, its final mixer; the head is the model's.
+struct DraftWeights {
+  std::vector<float> norm_embedding, norm_hidden, fc_embedding, fc_hidden;
+  LayerWeights layer;
+  HcWeights final_mixer;
+};
+
 struct Weights {
   std::vector<float> embedding, head;
   std::vector<LayerWeights> layers;
   HcWeights final_mixer;
+  DraftWeights draft;
 };
 
 Weights MakeWeights() {
@@ -317,6 +351,24 @@ Weights MakeWeights() {
     w.layers.push_back(std::move(lw));
   }
   w.final_mixer = MakeHc(random);
+  if (kMtp) {
+    DraftWeights& d = w.draft;
+    d.norm_embedding = Ones(kWidth, 0.2f, random);
+    d.norm_hidden = Ones(kStreams, 0.2f, random);
+    d.fc_embedding = Matrix(random, kWidth, kWidth);
+    d.fc_hidden = Matrix(random, kWidth, kWidth);
+    LayerWeights& lw = d.layer;
+    lw.attn_hc = MakeHc(random);
+    lw.mlp_hc = MakeHc(random);
+    lw.projection = Matrix(random, kDraftProjection, kWidth);
+    lw.o = Matrix(random, kWidth, kQueryHeads * kDepth, 0.5f);
+    lw.k_norm_idx = Ones(kIndexDim, 0.2f, random);
+    lw.cos = w.layers[kQsaLayer].cos;
+    lw.sin = w.layers[kQsaLayer].sin;
+    lw.gate_up = Matrix(random, 2 * kInter, kWidth);
+    lw.down = Matrix(random, kWidth, kInter, 0.5f);
+    d.final_mixer = MakeHc(random);
+  }
   return w;
 }
 
@@ -454,12 +506,17 @@ class Model {
 
   int32_t Fc(int32_t x, const std::vector<float>& weights, int out_dim,
              int in_dim, const std::vector<float>* bias = nullptr) {
+    return Fc(x, weights, out_dim, in_dim, {1, n_, out_dim}, bias);
+  }
+  // The same over any rows: `shape` is the output's ([.., out_dim]).
+  int32_t Fc(int32_t x, const std::vector<float>& weights, int out_dim,
+             int in_dim, const Shape& shape,
+             const std::vector<float>* bias = nullptr) {
     const int32_t weight =
         int8_weights_ ? b_.ConstInt8PerRow(absl::StrCat("fc_w_", counter_++),
                                            out_dim, in_dim, weights)
                       : Const("fc", {out_dim, in_dim}, weights);
-    const int32_t out =
-        b_.F32(absl::StrCat("fc_", counter_++), {1, n_, out_dim});
+    const int32_t out = b_.F32(absl::StrCat("fc_", counter_++), shape);
     auto& op =
         b_.Op(tflite::BuiltinOperator_FULLY_CONNECTED,
               {x, weight, bias ? Const("bias", {out_dim}, *bias) : -1}, {out});
@@ -808,6 +865,85 @@ class Model {
     return Fc(gated, w.o, kWidth, kQueryHeads * kDepth);
   }
 
+  // The activations a token carries to the drafter (kActivations): the
+  // streams, then an empty selection (flag 0).
+  int32_t Activations(int32_t streams) {
+    return b_.Concat(
+        {streams,
+         Const("no_selection", {1, n_, kShare},
+               std::vector<float>(static_cast<size_t>(n_) * kShare, 0.0f))},
+        2, {1, n_, kActivations});
+  }
+
+  // The drafter's QSA attention of one token at `start` over the model's QSA
+  // layer caches `state` (ring, pool, k, v; read, not written): the indexer
+  // selects (its ring and pool results, `dropped`, are no state), unless
+  // `flag` [1, 1, 1] says the round's first draft step selected `carried`
+  // [1, 1, kTopk] already, which it then takes
+  // (index_share_for_mtp_iteration).
+  int32_t DraftAttention(int32_t x, const LayerWeights& w, int32_t start,
+                         int32_t mask, const std::vector<int32_t>& state,
+                         int32_t carried, int32_t flag, int32_t* topk_out,
+                         std::vector<int32_t>* dropped, int32_t indexer,
+                         int32_t sparse) {
+    const int32_t projected = Fc(x, w.projection, kDraftProjection, kWidth);
+    int offset = 0;
+    const auto part = [&](int width) {
+      const int32_t slice = b_.Slice(projected, {0, 0, offset}, {1, 1, width});
+      offset += width;
+      return slice;
+    };
+    const int32_t q = b_.Transpose(
+        b_.Reshape(part(kQueryHeads * kDepth), {1, 1, kQueryHeads, kDepth}),
+        {0, 2, 1, 3}, {1, kQueryHeads, 1, kDepth});
+    const int32_t gate = part(kQueryHeads * kDepth);
+    const int32_t q_idx = b_.Reshape(part(kIndexHeads * kIndexDim),
+                                     {1, 1, kIndexHeads, kIndexDim});
+    const int32_t k_idx = b_.Reshape(part(kIndexDim), {1, 1, kIndexDim});
+    const int32_t selected =
+        b_.I32(absl::StrCat("draft_topk_", counter_++), {1, 1, kTopk});
+    const int32_t ring =
+        b_.F32(absl::StrCat("draft_ring_", counter_++), {1, 4, kIndexDim});
+    const int32_t pool = b_.F32(absl::StrCat("draft_pool_", counter_++),
+                                {1, kBlocks, kIndexDim});
+    b_.Composite(
+        "odml.qsa_indexer_update", indexer,
+        [&](flexbuffers::Builder* a) {
+          a->Int("block_topk", kTopk);
+          a->Int("compress_ratio", 4);
+          a->Float("rms_norm_eps", kEps);
+          a->Float("scale", 1.0f / std::sqrt(static_cast<float>(kIndexDim)));
+        },
+        {q_idx, k_idx, state[0], state[1],
+         Const("k_norm", {kIndexDim}, w.k_norm_idx),
+         Const("block_cos", {1, kBlocks, kRotary}, w.cos),
+         Const("block_sin", {1, kBlocks, kRotary}, w.sin), start, mask},
+        {selected, ring, pool});
+    *dropped = {ring, pool};
+    const int32_t shared = b_.Compare(tflite::BuiltinOperator_GREATER, flag,
+                                      Const("half", {1}, {0.5f}), {1, 1, 1});
+    const int32_t topk = b_.Select(shared, b_.Cast(carried, TensorType_INT32),
+                                   selected, TensorType_INT32, {1, 1, kTopk});
+    const int32_t attention =
+        b_.F32(absl::StrCat("draft_attention_", counter_++),
+               {1, 1, kQueryHeads, kDepth});
+    b_.Composite("odml.sparse_sdpa_transposed", sparse,
+                 [&](flexbuffers::Builder* a) {
+                   a->Int("block_topk", kTopk);
+                   a->Int("compress_ratio", 4);
+                   a->Int("k_ts_idx", 2);
+                   a->Float("scale",
+                            1.0f / std::sqrt(static_cast<float>(kDepth)));
+                   a->Int("v_ts_idx", 3);
+                 },
+                 {q, state[2], state[3], topk, mask}, {attention});
+    *topk_out = topk;
+    const Shape s = {1, 1, kQueryHeads * kDepth};
+    const int32_t gated =
+        b_.MulF(b_.Reshape(attention, s), Sigmoid(gate, s), s);
+    return Fc(gated, w.o, kWidth, kQueryHeads * kDepth);
+  }
+
   int32_t FeedForward(int32_t x, const LayerWeights& w) {
     const int32_t gate_up = Fc(x, w.gate_up, 2 * kInter, kWidth);
     const int32_t act =
@@ -834,7 +970,7 @@ class Model {
 
 void AddSignature(Builder& b, Decompositions& d, const std::string& key,
                   int rows, bool prefill, const Weights& weights,
-                  bool sigmoid_gate) {
+                  bool sigmoid_gate, bool activations = false) {
   const int32_t indexer = AddIndexerDecomposition(
       b, rows, 1.0f / std::sqrt(static_cast<float>(kIndexDim)));
   const int32_t cache_update = AddCacheUpdateDecomposition(b, rows);
@@ -953,6 +1089,7 @@ void AddSignature(Builder& b, Decompositions& d, const std::string& key,
   }
   auto [h, unused] = m.Mix(x, weights.final_mixer);
   output("logits", m.Fc(h, weights.head, kVocab, kWidth));
+  if (activations) output("activations", m.Activations(x));
   // The n-gram context's next value, the last two real tokens (on the CPU,
   // after the engine).
   const int32_t last = prefill ? valid : b.OneI32("one_row", 1);
@@ -967,13 +1104,113 @@ void AddSignature(Builder& b, Decompositions& d, const std::string& key,
   b.Signature(key, graph, inputs, outputs);
 }
 
+// The `draft` signature (LiteRT-LM's drafter contract): `activations`
+// [1, 1, 2 kActivations] (the embedding chunk, of which the drafter reads the
+// first stream, then the carried activations), `input_pos` (the position
+// before the round's first token, for every draft step), the decode mask of
+// that position and the QSA layer's caches; out `logits` and
+// `projected_activations` (the drafter's streams and the shared selection).
+void AddDraftSignature(Builder& b, Decompositions& d, const Weights& weights,
+                       bool sigmoid_gate) {
+  const int32_t indexer = AddIndexerDecomposition(
+      b, 1, 1.0f / std::sqrt(static_cast<float>(kIndexDim)));
+  const int32_t sparse = AddSparseDecomposition(
+      b, 1, 1.0f / std::sqrt(static_cast<float>(kDepth)));
+  const int32_t graph = b.NewSubgraph("draft");
+  Model m(b, d, weights, 1, false, sigmoid_gate);
+  const DraftWeights& w = weights.draft;
+  std::vector<std::pair<std::string, int32_t>> inputs, outputs;
+  const auto input = [&](const std::string& name, int32_t tensor) {
+    b.Input(tensor);
+    inputs.push_back({name, tensor});
+    return tensor;
+  };
+  const auto output = [&](const std::string& name, int32_t tensor) {
+    b.Output(tensor);
+    outputs.push_back({name, tensor});
+  };
+  const int32_t activations =
+      input("activations", b.F32("activations", {1, 1, 2 * kActivations}));
+  const int32_t position = input("input_pos", b.I32("input_pos", {1}));
+  const int32_t mask = input("mask", b.Bool("mask", {1, 1, 1, kCacheLen}));
+  std::vector<int32_t> state;
+  for (const auto& [kind, shape] : std::vector<std::pair<const char*, Shape>>{
+           {"qsa_ring", {1, 4, kIndexDim}},
+           {"qsa_pool", {1, kBlocks, kIndexDim}},
+           {"k", {1, kKvHeads, kCacheLen, kDepth}},
+           {"v", {1, kKvHeads, kDepth, kCacheLen}}}) {
+    const std::string name = StateName(kind, kQsaLayer);
+    state.push_back(input(name, b.F32(name, shape)));
+  }
+  const int32_t e = b.Slice(activations, {0, 0, 0}, {1, 1, kWidth});
+  const int32_t hidden =
+      b.Slice(activations, {0, 0, kActivations}, {1, 1, kStreams});
+  const int32_t carried =
+      b.Slice(activations, {0, 0, kActivations + kStreams}, {1, 1, kTopk});
+  const int32_t flag =
+      b.Slice(activations, {0, 0, kActivations + kStreams + kTopk}, {1, 1, 1});
+  const Shape s1 = {1, 1, kWidth};
+  const int32_t embedded =
+      m.Fc(m.RmsNorm(e, s1, w.norm_embedding), w.fc_embedding, kWidth, kWidth);
+  const int32_t normed_hidden = b.Reshape(
+      m.RmsNorm(hidden, {1, 1, kStreams}, w.norm_hidden), {1, kHc, kWidth});
+  const int32_t per_stream =
+      m.Fc(normed_hidden, w.fc_hidden, kWidth, kWidth, {1, kHc, kWidth});
+  int32_t x = b.Reshape(
+      b.AddF(b.Reshape(embedded, {1, 1, 1, kWidth}),
+             b.Reshape(per_stream, {1, 1, kHc, kWidth}), {1, 1, kHc, kWidth}),
+      {1, 1, kStreams});
+  auto [a, normed] = m.Mix(x, w.layer.attn_hc);
+  int32_t topk = -1;
+  std::vector<int32_t> dropped;
+  const int32_t o = m.DraftAttention(a, w.layer, position, mask, state, carried,
+                                     flag, &topk, &dropped, indexer, sparse);
+  x = m.Combine(x, normed, o, w.layer.attn_hc);
+  auto [f, normed2] = m.Mix(x, w.layer.mlp_hc);
+  x = m.Combine(x, normed2, m.FeedForward(f, w.layer), w.layer.mlp_hc);
+  auto [h, unused] = m.Mix(x, w.final_mixer);
+  output("logits", m.Fc(h, weights.head, kVocab, kWidth));
+  output("projected_activations",
+         b.Concat({x, b.Cast(topk, TensorType_FLOAT32),
+                   b.ConstF32("selected_flag", {1, 1, 1}, {1.0f})},
+                  2, {1, 1, kActivations}));
+  output("topk_0", topk);
+  // The indexer's ring and pool with the draft token's key, which no step
+  // reads: outputs, since LiteRT's CPU leaves an unread composite result
+  // without data.
+  output("indexer_ring", dropped[0]);
+  output("indexer_pool", dropped[1]);
+  b.Signature("draft", graph, inputs, outputs);
+}
+
 std::string BuildModel(bool sigmoid_gate) {
   const Weights weights = MakeWeights();
   Builder b;
   Decompositions d(b);
   AddSignature(b, d, "prefill_16", kRows, true, weights, sigmoid_gate);
-  AddSignature(b, d, "decode", 1, false, weights, sigmoid_gate);
+  AddSignature(b, d, "decode", 1, false, weights, sigmoid_gate, kMtp);
+  if (kMtp) {
+    AddSignature(b, d, "verify", kVerifyRows, true, weights, sigmoid_gate,
+                 true);
+  }
   return b.Pack();
+}
+
+// The drafter, a model of its own as in Gemma 4's MTP exports (their
+// tf_lite_mtp_drafter section).
+std::string BuildDrafter(bool sigmoid_gate) {
+  const Weights weights = MakeWeights();
+  Builder b;
+  Decompositions d(b);
+  AddDraftSignature(b, d, weights, sigmoid_gate);
+  return b.Pack();
+}
+
+// The drafter's file beside the model's: FILE.tflite -> FILE_drafter.tflite.
+std::string DrafterPath(const std::string& model) {
+  const size_t dot = model.rfind(".tflite");
+  return dot == std::string::npos ? model + "_drafter"
+                                  : model.substr(0, dot) + "_drafter.tflite";
 }
 
 // ---------------------------------------------------------------------------
@@ -1019,19 +1256,68 @@ Expected<std::string> Bytes(litert::TensorBuffer& buffer) {
   return std::string(reinterpret_cast<const char*>(lock.second), size);
 }
 
+enum class Kind { kPrefill, kDecode, kVerify, kDraft };
+
+// A call of a signature: its rows from `start` (a draft step's start is the
+// position before its round's first token), the real ones, and for a draft
+// step the position in the token sequence of the token it embeds.
 struct Step {
-  bool prefill;
+  Kind kind;
   int start;
   int valid;
+  int token = 0;
+  bool prefill() const { return kind == Kind::kPrefill; }
+  int rows() const {
+    switch (kind) {
+      case Kind::kPrefill:
+        return kRows;
+      case Kind::kVerify:
+        return kVerifyRows;
+      default:
+        return 1;
+    }
+  }
+  const char* signature() const {
+    switch (kind) {
+      case Kind::kPrefill:
+        return "prefill_16";
+      case Kind::kDecode:
+        return "decode";
+      case Kind::kVerify:
+        return "verify";
+      default:
+        return "draft";
+    }
+  }
 };
 
+constexpr int kMtpRounds = 2;
+
+// The prompt in chunks, the decode steps, then (with the drafter) MTP rounds
+// as LiteRT-LM runs them (llm_litert_mtp_drafter.cc): kDraftSteps draft
+// steps, each embedding the last token (the round's token, then the previous
+// draft) with the activations of the last verified row (then the previous
+// step's projected activations), all at the position before the round's
+// token; then the verify pass over the round's token and the drafts. The
+// drafts are the sequence's next tokens (teacher forcing: both backends verify
+// the same rows) and all are accepted.
 std::vector<Step> Script(int decode_steps) {
   std::vector<Step> steps;
   for (int start = 0; start < kPrompt; start += kRows) {
-    steps.push_back({true, start, std::min(kRows, kPrompt - start)});
+    steps.push_back({Kind::kPrefill, start, std::min(kRows, kPrompt - start)});
   }
   for (int i = 0; i < decode_steps; ++i) {
-    steps.push_back({false, kPrompt + i, 1});
+    steps.push_back({Kind::kDecode, kPrompt + i, 1});
+  }
+  if (kMtp) {
+    int position = kPrompt + decode_steps;
+    for (int r = 0; r < kMtpRounds; ++r) {
+      for (int i = 0; i < kDraftSteps; ++i) {
+        steps.push_back({Kind::kDraft, position - 1, 1, position + i});
+      }
+      steps.push_back({Kind::kVerify, position, kVerifyRows});
+      position += kVerifyRows;
+    }
   }
   return steps;
 }
@@ -1073,10 +1359,63 @@ Expected<void> Run() {
   LITERT_ASSIGN_OR_RETURN(
       auto model,
       litert::CompiledModel::Create(env, absl::GetFlag(FLAGS_model), options));
+  // The drafter as LiteRT-LM compiles it (AddNvidiaSharedValueCacheOptions):
+  // its KV caches are the model's, kept in place by the model's engines, and
+  // a value cache those hold as rows is read as rows.
+  std::optional<litert::CompiledModel> drafter;
+  std::vector<const char*> shared_names, transposed_names;
+  LiteRtNvidiaSharedCacheInputs shared_payload{};
+  LiteRtNvidiaReadOnlyValueCacheOptions transposed_payload{};
+  if (kMtp) {
+    LITERT_ASSIGN_OR_RETURN(auto draft_options, litert::Options::Create());
+    LITERT_RETURN_IF_ERROR(draft_options.SetHardwareAccelerators(
+        npu ? litert::HwAccelerators::kNpu | litert::HwAccelerators::kCpu
+            : litert::HwAcceleratorSet(litert::HwAccelerators::kCpu)));
+    if (npu) {
+      // The KV caches (the QSA ring and pool are FP32 states either way).
+      static const std::string kShared[] = {StateName("k", kQsaLayer),
+                                            StateName("v", kQsaLayer)};
+      for (const auto& name : kShared) shared_names.push_back(name.c_str());
+      LITERT_ASSIGN_OR_RETURN(auto requirements,
+                              model.GetOutputBufferRequirements(
+                                  "decode", StateName("v", kQsaLayer)));
+      LITERT_ASSIGN_OR_RETURN(auto strides, requirements.Strides());
+      if (!strides.empty() && strides.back() != 1) {
+        transposed_names.push_back(kShared[1].c_str());
+      }
+      shared_payload = {static_cast<uint32_t>(shared_names.size()),
+                        shared_names.data()};
+      LITERT_ASSIGN_OR_RETURN(
+          auto shared,
+          litert::OpaqueOptions::Create(LITERT_NVIDIA_SHARED_CACHE_INPUTS_ID,
+                                        &shared_payload, [](void*) {}));
+      LITERT_RETURN_IF_ERROR(
+          shared.SetHash(litert::nvidia::HashSharedCacheInputs));
+      LITERT_RETURN_IF_ERROR(draft_options.AddOpaqueOptions(std::move(shared)));
+      if (!transposed_names.empty()) {
+        transposed_payload = {static_cast<uint32_t>(transposed_names.size()),
+                              transposed_names.data()};
+        LITERT_ASSIGN_OR_RETURN(
+            auto transposed, litert::OpaqueOptions::Create(
+                                 LITERT_NVIDIA_READ_ONLY_VALUE_CACHE_OPTIONS_ID,
+                                 &transposed_payload, [](void*) {}));
+        LITERT_RETURN_IF_ERROR(
+            transposed.SetHash(litert::nvidia::HashReadOnlyValueCacheOptions));
+        LITERT_RETURN_IF_ERROR(
+            draft_options.AddOpaqueOptions(std::move(transposed)));
+      }
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        auto compiled,
+        litert::CompiledModel::Create(
+            env, DrafterPath(absl::GetFlag(FLAGS_model)), draft_options));
+    drafter.emplace(std::move(compiled));
+  }
   LITERT_ASSIGN_OR_RETURN(const size_t prefill,
                           model.GetSignatureIndex("prefill_16"));
-  LITERT_ASSIGN_OR_RETURN(const size_t decode,
-                          model.GetSignatureIndex("decode"));
+  const Weights weights = MakeWeights();
+  // The activations of the last verified row, then of the last draft step.
+  std::vector<float> carried(kActivations, 0.0f);
   std::vector<std::string> state_names;
   LITERT_ASSIGN_OR_RETURN(auto prefill_inputs,
                           model.GetSignatureInputNames(prefill));
@@ -1102,14 +1441,19 @@ Expected<void> Run() {
   const std::string out_dir = absl::GetFlag(FLAGS_out_dir);
   int index = 0;
   for (const Step& step : steps) {
-    const size_t signature = step.prefill ? prefill : decode;
-    const int n = step.prefill ? kRows : 1;
+    const bool draft = step.kind == Kind::kDraft;
+    litert::CompiledModel& compiled = draft ? *drafter : model;
+    LITERT_ASSIGN_OR_RETURN(const size_t signature,
+                            compiled.GetSignatureIndex(step.signature()));
+    const int n = step.rows();
     LITERT_ASSIGN_OR_RETURN(auto input_names,
-                            model.GetSignatureInputNames(signature));
+                            compiled.GetSignatureInputNames(signature));
     LITERT_ASSIGN_OR_RETURN(auto output_names,
-                            model.GetSignatureOutputNames(signature));
-    LITERT_ASSIGN_OR_RETURN(auto inputs, model.CreateInputBuffers(signature));
-    LITERT_ASSIGN_OR_RETURN(auto outputs, model.CreateOutputBuffers(signature));
+                            compiled.GetSignatureOutputNames(signature));
+    LITERT_ASSIGN_OR_RETURN(auto inputs,
+                            compiled.CreateInputBuffers(signature));
+    LITERT_ASSIGN_OR_RETURN(auto outputs,
+                            compiled.CreateOutputBuffers(signature));
     const auto input = [&](const std::string& name) -> litert::TensorBuffer& {
       for (size_t i = 0; i < input_names.size(); ++i) {
         if (input_names[i] == name) return inputs[i];
@@ -1122,36 +1466,59 @@ Expected<void> Run() {
       }
       ABSL_LOG(FATAL) << "No output " << name;
     };
-    std::vector<int32_t> tokens(n, kEos), positions(n, 0);
-    for (int t = 0; t < step.valid; ++t) {
-      tokens[t] = sequence[step.start + t];
-      positions[t] = step.start + t;
-    }
-    LITERT_RETURN_IF_ERROR(Fill(input("input_tokens"), tokens));
-    LITERT_RETURN_IF_ERROR(Fill(input("input_pos"), positions));
-    LITERT_RETURN_IF_ERROR(
-        Fill(input("start_pos"), std::vector<int32_t>{step.start}));
     std::vector<uint8_t> mask(static_cast<size_t>(n) * kCacheLen, 0);
     for (int t = 0; t < step.valid; ++t) {
       for (int c = 0; c <= step.start + t; ++c) mask[t * kCacheLen + c] = 1;
     }
     LITERT_RETURN_IF_ERROR(Fill(input("mask"), mask));
-    LITERT_RETURN_IF_ERROR(
-        Fill(input("param_tensor"),
-             std::vector<int32_t>{step.start, step.start + step.valid, 0, 0, 0,
-                                  0, 0}));
-    LITERT_RETURN_IF_ERROR(
-        Fill(input("k_start"), std::vector<int32_t>{0, 0, step.start, 0}));
-    LITERT_RETURN_IF_ERROR(
-        Fill(input("v_start"), std::vector<int32_t>{0, 0, 0, step.start}));
+    if (draft) {
+      // LiteRT-LM's concatenation: the embedding chunk (the hc copies of the
+      // token's embedding, then zeros), then the carried activations.
+      std::vector<float> activations(2 * kActivations, 0.0f);
+      const int32_t token = sequence[step.token];
+      for (int c = 0; c < kHc; ++c) {
+        std::copy_n(
+            weights.embedding.begin() + static_cast<size_t>(token) * kWidth,
+            kWidth, activations.begin() + c * kWidth);
+      }
+      std::copy(carried.begin(), carried.end(),
+                activations.begin() + kActivations);
+      LITERT_RETURN_IF_ERROR(Fill(input("activations"), activations));
+      LITERT_RETURN_IF_ERROR(
+          Fill(input("input_pos"), std::vector<int32_t>{step.start}));
+    } else {
+      std::vector<int32_t> tokens(n, kEos), positions(n, 0);
+      for (int t = 0; t < step.valid; ++t) {
+        tokens[t] = sequence[step.start + t];
+        positions[t] = step.start + t;
+      }
+      LITERT_RETURN_IF_ERROR(Fill(input("input_tokens"), tokens));
+      LITERT_RETURN_IF_ERROR(Fill(input("input_pos"), positions));
+      LITERT_RETURN_IF_ERROR(
+          Fill(input("start_pos"), std::vector<int32_t>{step.start}));
+      LITERT_RETURN_IF_ERROR(
+          Fill(input("param_tensor"),
+               std::vector<int32_t>{step.start, step.start + step.valid, 0, 0,
+                                    0, 0, 0}));
+      LITERT_RETURN_IF_ERROR(
+          Fill(input("k_start"), std::vector<int32_t>{0, 0, step.start, 0}));
+      LITERT_RETURN_IF_ERROR(
+          Fill(input("v_start"), std::vector<int32_t>{0, 0, 0, step.start}));
+    }
+    // The drafter reads the QSA layer's states, written by nobody.
+    const auto has_input = [&](const std::string& name) {
+      return std::find(input_names.begin(), input_names.end(), name) !=
+             input_names.end();
+    };
     for (size_t s = 0; s < states.size(); ++s) {
+      if (!has_input(state_names[s])) continue;
       LITERT_ASSIGN_OR_RETURN(input(state_names[s]), states[s].Duplicate());
-      if (npu) {
+      if (npu && !draft) {
         LITERT_ASSIGN_OR_RETURN(outputs[output_index(state_names[s])],
                                 states[s].Duplicate());
       }
     }
-    LITERT_RETURN_IF_ERROR(model.Run(signature, inputs, outputs));
+    LITERT_RETURN_IF_ERROR(compiled.Run(signature, inputs, outputs));
     const std::string prefix =
         absl::StrCat(out_dir, "/step", index < 10 ? "0" : "", index);
     for (const auto& name : output_names) {
@@ -1162,7 +1529,20 @@ Expected<void> Run() {
           WriteFile(absl::StrCat(prefix, ".", std::string(name), ".raw"),
                     bytes.data(), bytes.size()));
     }
+    for (const char* name : {"activations", "projected_activations"}) {
+      if (std::find(output_names.begin(), output_names.end(), name) ==
+          output_names.end()) {
+        continue;
+      }
+      LITERT_ASSIGN_OR_RETURN(const std::string bytes,
+                              Bytes(outputs[output_index(name)]));
+      const int row = draft ? 0 : step.valid - 1;
+      std::memcpy(carried.data(),
+                  bytes.data() + static_cast<size_t>(row) * kActivations * 4,
+                  kActivations * 4);
+    }
     for (size_t s = 0; s < states.size(); ++s) {
+      if (draft) continue;
       if (!npu) {
         LITERT_ASSIGN_OR_RETURN(const std::string bytes,
                                 Bytes(outputs[output_index(state_names[s])]));
@@ -1174,8 +1554,8 @@ Expected<void> Run() {
           WriteFile(absl::StrCat(prefix, ".", state_names[s], ".raw"),
                     bytes.data(), bytes.size()));
     }
-    ABSL_LOG(INFO) << prefix << (step.prefill ? " prefill" : " decode")
-                   << " start " << step.start << " rows " << step.valid;
+    ABSL_LOG(INFO) << prefix << " " << step.signature() << " start "
+                   << step.start << " rows " << step.valid;
     ++index;
   }
   return {};
@@ -1201,13 +1581,13 @@ Expected<bool> Compare() {
   const double tolerance = absl::GetFlag(FLAGS_tolerance);
   bool ok = true;
   const auto steps = Script(absl::GetFlag(FLAGS_decode_steps));
+  int draft_first = 0;  // the first draft step of the current round
   for (size_t index = 0; index < steps.size(); ++index) {
     const Step& step = steps[index];
     const std::string prefix =
         absl::StrCat("/step", index < 10 ? "0" : "", index, ".");
-    std::string line =
-        absl::StrCat("step ", index, step.prefill ? " prefill" : " decode",
-                     " start ", step.start, ":");
+    std::string line = absl::StrCat("step ", index, " ", step.signature(),
+                                    " start ", step.start, ":");
     const auto compare = [&](const std::string& name, size_t first,
                              size_t count) -> Expected<void> {
       LITERT_ASSIGN_OR_RETURN(const std::string a,
@@ -1232,6 +1612,54 @@ Expected<bool> Compare() {
     };
     LITERT_RETURN_IF_ERROR(
         compare("logits", 0, static_cast<size_t>(step.valid) * kVocab));
+    // The selections of a step's rows as sets: the rows differing.
+    const auto selections = [&](const std::string& a, const std::string& b,
+                                size_t offset, size_t stride) {
+      int differing = 0;
+      for (int r = 0; r < step.valid; ++r) {
+        std::vector<int32_t> x(kTopk), y(kTopk);
+        std::memcpy(x.data(), a.data() + offset + r * stride, kTopk * 4);
+        std::memcpy(y.data(), b.data() + offset + r * stride, kTopk * 4);
+        std::sort(x.begin(), x.end());
+        std::sort(y.begin(), y.end());
+        differing += x != y;
+      }
+      return differing;
+    };
+    if (step.kind == Kind::kDraft) {
+      // The drafter's streams, its selection (the first step's, shared by the
+      // others: each run against its round's first step) and the backends'.
+      LITERT_RETURN_IF_ERROR(compare("projected_activations", 0, kStreams));
+      LITERT_ASSIGN_OR_RETURN(const std::string ta,
+                              ReadFile(cpu + prefix + "topk_0.raw"));
+      LITERT_ASSIGN_OR_RETURN(const std::string tb,
+                              ReadFile(npu + prefix + "topk_0.raw"));
+      const int differing = selections(ta, tb, 0, kTopk * 4);
+      if (absl::GetFlag(FLAGS_strict_selection)) ok &= differing == 0;
+      absl::StrAppend(&line, " topk rows differing ", differing);
+      if (index > 0 && steps[index - 1].kind == Kind::kDraft) {
+        const std::string first = absl::StrCat(
+            "/step", draft_first < 10 ? "0" : "", draft_first, ".topk_0.raw");
+        for (const std::string& dir : {cpu, npu}) {
+          LITERT_ASSIGN_OR_RETURN(const std::string mine,
+                                  ReadFile(dir + prefix + "topk_0.raw"));
+          LITERT_ASSIGN_OR_RETURN(const std::string theirs,
+                                  ReadFile(dir + first));
+          ok &= mine == theirs;
+          absl::StrAppend(&line, dir == cpu ? " cpu" : " npu",
+                          mine == theirs ? " shares" : " does not share (!)",
+                          " step ", draft_first, "'s selection");
+        }
+      } else {
+        draft_first = static_cast<int>(index);
+      }
+      std::printf("%s\n", line.c_str());
+      continue;
+    }
+    if (step.kind != Kind::kPrefill) {
+      LITERT_RETURN_IF_ERROR(compare(
+          "activations", 0, static_cast<size_t>(step.valid) * kActivations));
+    }
     for (int l = 0; l < kNumLayers; ++l) {
       if (kHasPle[l] && absl::GetFlag(FLAGS_ple)) {
         LITERT_RETURN_IF_ERROR(compare(StateName("ple", l), 0, SIZE_MAX));
@@ -1257,15 +1685,7 @@ Expected<bool> Compare() {
                             ReadFile(cpu + prefix + "topk_0.raw"));
     LITERT_ASSIGN_OR_RETURN(const std::string tb,
                             ReadFile(npu + prefix + "topk_0.raw"));
-    int differing = 0;
-    for (int r = 0; r < step.valid; ++r) {
-      std::vector<int32_t> x(kTopk), y(kTopk);
-      std::memcpy(x.data(), ta.data() + r * kTopk * 4, kTopk * 4);
-      std::memcpy(y.data(), tb.data() + r * kTopk * 4, kTopk * 4);
-      std::sort(x.begin(), x.end());
-      std::sort(y.begin(), y.end());
-      differing += x != y;
-    }
+    const int differing = selections(ta, tb, 0, kTopk * 4);
     if (absl::GetFlag(FLAGS_strict_selection)) ok &= differing == 0;
     absl::StrAppend(&line, " topk rows differing ", differing);
     std::printf("%s\n", line.c_str());
@@ -1285,6 +1705,13 @@ int main(int argc, char** argv) {
       return EXIT_FAILURE;
     }
     const std::string bytes = BuildModel(gate == "sigmoid");
+    if (kMtp) {
+      const std::string drafter = BuildDrafter(gate == "sigmoid");
+      if (!WriteFile(DrafterPath(absl::GetFlag(FLAGS_write_model)),
+                     drafter.data(), drafter.size())) {
+        return EXIT_FAILURE;
+      }
+    }
     if (!WriteFile(absl::GetFlag(FLAGS_write_model), bytes.data(),
                    bytes.size())) {
       return EXIT_FAILURE;
