@@ -25,6 +25,7 @@
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "flatbuffers/buffer.h"  // from @flatbuffers
 #include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
+#include "litert/c/litert_op_code.h"
 #include "tflite/schema/schema_generated.h"
 #include "tflite/stderr_reporter.h"
 #include "tflite/version.h"
@@ -1239,6 +1240,20 @@ INSTANTIATE_TEST_SUITE_P(
                 tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES),
             tflite::BuiltinOperator_BROADCAST_TO,
             absl::StatusCode::kOk,
+        },
+        OperatorCodeVerifierCase{
+            "ValidLiteRtOpCodeMaxValue",
+            static_cast<int8_t>(
+                tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES),
+            static_cast<tflite::BuiltinOperator>(kLiteRtOpCodeMaxValue),
+            absl::StatusCode::kOk,
+        },
+        OperatorCodeVerifierCase{
+            "AboveLiteRtOpCodeMaxValue",
+            static_cast<int8_t>(
+                tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES),
+            static_cast<tflite::BuiltinOperator>(kLiteRtOpCodeMaxValue + 1),
+            absl::StatusCode::kInvalidArgument,
         }),
     [](const ::testing::TestParamInfo<OperatorCodeVerifierCase>& info) {
       return info.param.test_name;

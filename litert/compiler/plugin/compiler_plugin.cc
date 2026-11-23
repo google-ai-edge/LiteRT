@@ -57,6 +57,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/options.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/core/version.h"
@@ -796,6 +797,7 @@ Expected<PartitionResult> PartitionModel(
         continue;
       }
       selected_composite_subgraph_indexes.push_back(info->subgraph);
+      ClearCompositeDecomposition(*op.first);
     }
     auto num_selected_ops = selected_ops->size();
     auto num_ops = subgraph->Ops().size();
@@ -842,7 +844,8 @@ Expected<PartitionResult> PartitionModel(
   ABSL_DCHECK_LE(selected_composite_subgraph_indexes.size(), input_num_sgs);
   input_num_sgs -= selected_composite_subgraph_indexes.size();
   // Remove all decomposition subgraphs from the model.
-  model.Yank(std::move(selected_composite_subgraph_indexes));
+  LITERT_RETURN_IF_ERROR(
+      model.DiscardSubgraphs(std::move(selected_composite_subgraph_indexes)));
 
   // Collect all npu_call ops, and their decomposition subgraphs indexes.
   // Note:  we do this after partitioning and removing decomposition subgraphs,
@@ -860,20 +863,40 @@ Expected<PartitionResult> PartitionModel(
 
   // Add collect all the subgraphs to be compiled. These are the bodies of
   // outlined partitions or npu_calls.
+  //
+  // Yank moves the subgraphs in ascending index order, so in the new model the
+  // npu_call bodies (subgraphs of the input model) come first, by index, and
+  // the outlined partitions (appended to the model) follow. Dispatch op i must
+  // be the op whose body is subgraph i of the new model, so the npu_call
+  // dispatch ops are ordered by body index and put before the outlined ones.
+  std::sort(
+      npu_calls.begin(), npu_calls.end(),
+      [](const auto& a, const auto& b) { return a.subgraph < b.subgraph; });
+  std::vector<LiteRtOp> npu_dispatch_ops;
   std::vector<size_t> decomps_to_compile;
   for (auto& npu_call : npu_calls) {
-    auto* op = npu_call.op;
-    MakeDispatchOp(*op);
-    dispatch_ops.push_back(op);
+    MakeDispatchOp(*npu_call.op);
+    npu_dispatch_ops.push_back(npu_call.op);
     decomps_to_compile.push_back(npu_call.subgraph);
   }
+  dispatch_ops.insert(dispatch_ops.begin(), npu_dispatch_ops.begin(),
+                      npu_dispatch_ops.end());
   for (auto i = input_num_sgs; i < model.NumSubgraphs(); ++i) {
     // Outlined subgraphs are pushed to the back of the model.
     decomps_to_compile.push_back(i);
   }
 
+  // Clear composite decompositions inside subgraphs being yanked so strict
+  // Yank does not see cross-model references from v1 partitions.
+  for (const size_t idx : decomps_to_compile) {
+    for (LiteRtOp op : model.Subgraph(idx).Ops()) {
+      ClearCompositeDecomposition(*op);
+    }
+  }
+
   // Create a new model split from the input model.
-  auto new_model = model.Yank(std::move(decomps_to_compile));
+  LITERT_ASSIGN_OR_RETURN(auto new_model,
+                          model.Yank(std::move(decomps_to_compile)));
 
   return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
@@ -897,7 +920,8 @@ Expected<PartitionResult> PartitionModelDirect(
     // Outlined subgraphs are pushed to the back of the model.
     decomps_to_compile.push_back(i);
   }
-  auto new_model = model.Yank(std::move(decomps_to_compile));
+  LITERT_ASSIGN_OR_RETURN(auto new_model,
+                          model.Yank(std::move(decomps_to_compile)));
 
   return PartitionResult{std::move(dispatch_ops), std::move(new_model)};
 }
@@ -918,6 +942,14 @@ Expected<void> ApplyPluginWithPartition(CompilerPlugin& compiler_plugin,
 
   CompiledResult& stored_result = *compiled_result;
   bool has_jit_handles = false;
+
+  // Dispatch op i takes call i, so the counts must match.
+  if (auto num_calls = stored_result.NumCalls();
+      num_calls.HasValue() && *num_calls != dispatch_ops.size()) {
+    return Error(kLiteRtStatusErrorRuntimeFailure,
+                 absl::StrCat("Plugin emitted ", *num_calls, " calls for ",
+                              dispatch_ops.size(), " dispatch ops"));
+  }
 
   // Register byte code buffers as external buffers. Map the byte code indices
   // to the registered buffer ids.
@@ -1104,11 +1136,41 @@ Expected<bool> ApplyCompilerOptionsInputShapes(
   return true;
 }
 
+Expected<void> TransformModelImpl(CompilerPlugin& compiler_plugin,
+                                  LiteRtModelT& model,
+                                  absl::string_view soc_model,
+                                  bool* model_modified) {
+  auto status = compiler_plugin.RegisterAllTransformations();
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
+             compiler_plugin.GetNumTransformations());
+  if (compiler_plugin.GetNumTransformations() == 0) {
+    return {};
+  }
+  if (model_modified != nullptr) {
+    *model_modified = true;
+  }
+  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
+  if (!status) {
+    return status;
+  }
+  LITERT_LOG(LITERT_INFO, "Applied transformations.");
+  return {};
+}
+
+// Applies `compiler_plugin` to `model`. If it fails, `*model_modified` (if
+// given) tells whether `model` may already have been changed: transformation,
+// partitioning and compilation modify it in place and are not undone.
 Expected<void> ApplySinglePlugin(
     CompilerPlugin& compiler_plugin, LiteRtModelT& model,
     absl::string_view soc_model,
     const absl::flat_hash_set<uint32_t>& subgraphs_to_partition,
-    ApplyPluginsResult& result) {
+    ApplyPluginsResult& result, bool* model_modified = nullptr) {
+  if (model_modified != nullptr) {
+    *model_modified = false;
+  }
   if (auto sdk_version = compiler_plugin.SdkVersion(); sdk_version.HasValue()) {
     if (!sdk_version->empty()) {
       LITERT_LOG(LITERT_INFO, "Applying plugin with SDK version: %s",
@@ -1135,9 +1197,15 @@ Expected<void> ApplySinglePlugin(
   }
 
   // Compiler Plugin: Transformation, apply transformations to model.
-  auto status = TransformModel(compiler_plugin, model, soc_model);
+  auto status =
+      TransformModelImpl(compiler_plugin, model, soc_model, model_modified);
   if (!status) {
     return status.Error();
+  }
+
+  // From here on, partitioning and compilation modify `model` in place.
+  if (model_modified != nullptr) {
+    *model_modified = true;
   }
 
   // Compiler Plugin: Partitioning, collect partitions to pass to compilation.
@@ -1170,20 +1238,8 @@ Expected<bool> ApplyCompilerOptionsInputShapes(
 Expected<void> TransformModel(CompilerPlugin& compiler_plugin,
                               LiteRtModelT& model,
                               absl::string_view soc_model) {
-  auto status = compiler_plugin.RegisterAllTransformations();
-  if (!status) {
-    return status;
-  }
-  LITERT_LOG(LITERT_INFO, "Registered %d transformations.",
-             compiler_plugin.GetNumTransformations());
-
-  status = compiler_plugin.GreedyPatternMatchAndRewrite(model);
-
-  if (!status) {
-    return status;
-  }
-  LITERT_LOG(LITERT_INFO, "Applied transformations.");
-  return {};
+  return TransformModelImpl(compiler_plugin, model, soc_model,
+                            /*model_modified=*/nullptr);
 }
 
 Expected<void> ApplyPlugin(
@@ -1264,11 +1320,20 @@ Expected<ApplyPluginsResult> ApplyPlugins(
     }
 
     if (*plugin_supported_hardware & selected_hw_accelerators) {
-      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result);
+      bool model_modified = false;
+      auto status = ApplySinglePlugin(compiler_plugin, *model, "", {}, result,
+                                      &model_modified);
 
       if (!status) {
         error_messages.push_back(
             absl::StrCat(plugin_name, " ", status.Error().Message()));
+        if (model_modified) {
+          // The model may be half partitioned (e.g. dispatch ops without
+          // byte code). Applying further plugins to it is pointless; the
+          // caller must not use it.
+          result.model_invalidated = true;
+          break;
+        }
         continue;
       }
 

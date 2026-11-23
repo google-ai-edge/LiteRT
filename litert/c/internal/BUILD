@@ -177,6 +177,7 @@ cc_library(
         "//litert/c:litert_op_options_impl",
         "//litert/c:litert_opaque_options_impl",
         "//litert/c:litert_options_impl",
+        "//litert/core/model",
     ],
 )
 
@@ -198,6 +199,22 @@ cc_library(
         "//litert/c:litert_op_options",
         "//litert/c:litert_opaque_options",
         "//litert/c:litert_options",
+    ],
+)
+
+cc_test(
+    name = "litert_compiler_context_test",
+    srcs = ["litert_compiler_context_test.cc"],
+    deps = [
+        ":litert_abi_header",
+        ":litert_compiler_context",
+        "//litert/c:litert_common",
+        "//litert/c:litert_op_code",
+        "//litert/core/model",
+        "//litert/core/util:flatbuffer_tools",
+        "//litert/test:matchers",
+        "//tflite/converter/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 
