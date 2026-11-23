@@ -225,12 +225,27 @@ cc_test(
     ],
 )
 
+# A TFLite model writer and the QSA decompositions of the artifact tools.
+cc_library(
+    name = "tflite_builder",
+    hdrs = [
+        "qsa_decompositions.h",
+        "tflite_builder.h",
+    ],
+    deps = [
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+    ],
+)
+
 # A model with Qwen 4's attention layers at reduced sizes, its CPU and NVIDIA
 # runs and their comparison (qsa_artifact.cc).
 cc_binary(
     name = "qsa_artifact",
     srcs = ["qsa_artifact.cc"],
     deps = [
+        ":tflite_builder",
         "//litert/c:litert_common",
         "//litert/cc:litert_common",
         "//litert/cc:litert_compiled_model",
