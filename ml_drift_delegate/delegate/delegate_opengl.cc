@@ -29,8 +29,6 @@
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
-#include "ml_drift/common/gpu_info.h"  // from @ml_drift
-#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/gl/egl_environment.h"  // from @ml_drift
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -446,38 +444,8 @@ TfLiteDelegatePtr CreateMlDriftOpenGlDelegate(MlDriftDelegateOptionsPtr options,
   delegate_data->shared_backend = std::make_shared<GpuBackendOpenGl>(
       (*delegate_env)->egl_env.get(), runtime_context);
 
-  switch (delegate_data->options->precision) {
-    case kDefault: {
-      const auto& gpu_info = (*delegate_env)->egl_env->gpu_info();
-      const bool is_old_powervr =
-          gpu_info.IsPowerVR() &&
-          !gpu_info.powervr_info.IsBetterThan(
-              ::ml_drift::PowerVRGpu::kRogueGm9xxx);
-      if (is_old_powervr) {
-        // PowerVR Rogue GE8xxx and older have precision issues (RTZ) with FP16
-        // leading to accuracy failures (b/274571359).
-        delegate_data->calculation_precision =
-            ::ml_drift::CalculationsPrecision::kF32;
-      } else {
-        delegate_data->calculation_precision =
-            gpu_info.SupportsFP16() ? ::ml_drift::CalculationsPrecision::kF16
-                                    : ::ml_drift::CalculationsPrecision::kF32;
-      }
-      break;
-    }
-    case kFp16:
-      delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::kF16;
-      break;
-    case kFp32:
-      delegate_data->calculation_precision =
-          ::ml_drift::CalculationsPrecision::kF32;
-      break;
-  }
-  if (delegate_data->options->use_f32_accum_for_fp16) {
-    delegate_data->calculation_precision =
-        ::ml_drift::CalculationsPrecision::kF32F16;
-  }
+  delegate_data->calculation_precision = ResolveOpenGlCalculationPrecision(
+      (*delegate_env)->egl_env->gpu_info(), *delegate_data->options);
 
   const bool hint_fully_delegated_to_single_delegate =
       delegate_data->options->hint_fully_delegated_to_single_delegate;
