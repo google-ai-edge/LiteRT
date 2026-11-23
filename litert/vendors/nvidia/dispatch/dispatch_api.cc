@@ -254,9 +254,13 @@ struct StepSamplerState {
   int32_t count = 0;
 };
 
+// One per thread: a runtime samples and invokes an engine's decode steps on one
+// thread, and a process with several engines (an evaluation decoding several
+// prompts side by side) gives each its own; one engine's draws must not steer
+// another's steps ahead.
 StepSamplerState& GetStepSamplerState() {
-  static auto* state = new StepSamplerState;
-  return *state;
+  thread_local StepSamplerState state;
+  return state;
 }
 
 // The local attention's sliding window the runtime told (token_table_c_api.h),
@@ -269,9 +273,10 @@ std::atomic<uint32_t>& StepFeedLocalWindow() {
 // The decode invocations the host will still make after its next one
 // (step_sampler_c_api.h, StepFeedSetBudget): the steps ahead stop there. A
 // budget is for the invocation it was told before: a step feed's invocation
-// takes it when it starts (UINT32_MAX, no bound, stays for one not told).
+// takes it when it starts (UINT32_MAX, no bound, stays for one not told). Per
+// thread, as the sampler's state above.
 std::atomic<uint32_t>& StepFeedBudget() {
-  static std::atomic<uint32_t> budget{UINT32_MAX};
+  thread_local std::atomic<uint32_t> budget{UINT32_MAX};
   return budget;
 }
 
