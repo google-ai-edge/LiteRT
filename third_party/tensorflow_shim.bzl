@@ -181,9 +181,9 @@ def tensorflow_shim_repositories(with_tensorflow = False):
     if with_tensorflow:
         tensorflow_source_repo(
             name = "org_tensorflow",
-            sha256 = "357683c8aef12158dc0f75c3b397ccf6f88d1675c9760ab32762ca6bb4ba683a",
-            strip_prefix = "tensorflow-b7df43a7caa4deb9aa60a5470c64660708300db7",
-            urls = ["https://github.com/tensorflow/tensorflow/archive/b7df43a7caa4deb9aa60a5470c64660708300db7.tar.gz"],
+            sha256 = "c0953922acf8b1384713017dbae9491182d33ffb3aae0dd7e4eb3441f9aa3ea2",
+            strip_prefix = "tensorflow-2b1a2b68725aa6363c5d6c31ab131eb489a9e124",
+            urls = ["https://github.com/tensorflow/tensorflow/archive/2b1a2b68725aa6363c5d6c31ab131eb489a9e124.tar.gz"],
         )
         return
     _tensorflow_shim_repository(
