@@ -67,6 +67,12 @@ ShortConvStepAttributes ParseShortConvStepAttributes(
     if (!flexbuffer_map["channels_last"].IsNull()) {
       attr.channels_last = flexbuffer_map["channels_last"].AsBool();
     }
+    if (!flexbuffer_map["num_heads"].IsNull()) {
+      attr.num_heads = flexbuffer_map["num_heads"].AsInt32();
+    }
+    if (!flexbuffer_map["residual_scale"].IsNull()) {
+      attr.residual_scale = flexbuffer_map["residual_scale"].AsFloat();
+    }
   }
   return attr;
 }
@@ -153,6 +159,46 @@ absl::Status CheckShortConvStepSupported(const TfLiteContext* context,
     return absl::UnimplementedError(
         absl::StrCat("ShortConvStep expects ", hidden_size,
                      " output channels, but got ", DimsToString(*out)));
+  }
+  if (attr.num_heads < 0) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "ShortConvStep num_heads must be >= 0, got ", attr.num_heads));
+  }
+  if (attr.num_heads > 0) {
+    if (attr.is_gated) {
+      return absl::UnimplementedError(
+          "ShortConvStep with dynamic num_heads does not support is_gated.");
+    }
+    if (taps != 4) {
+      return absl::UnimplementedError(absl::StrCat(
+          "ShortConvStep with dynamic num_heads requires conv_L_cache == 4, "
+          "got ",
+          taps));
+    }
+    if (hidden_size % attr.num_heads != 0 ||
+        (hidden_size / attr.num_heads) % 4 != 0) {
+      return absl::UnimplementedError(absl::StrCat(
+          "ShortConvStep with dynamic num_heads requires head_dim divisible by "
+          "4, got hidden_size=",
+          hidden_size, " num_heads=", attr.num_heads));
+    }
+    if (tflite_node->inputs->size < 4 || tflite_node->inputs->size > 5) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "ShortConvStep with dynamic num_heads expects 4 or 5 inputs, got ",
+          tflite_node->inputs->size));
+    }
+    ABSL_ASSIGN_OR_RETURN(const TfLiteIntArray* in_proj,
+                          GetDims(context, tflite_node->inputs, 0, "in_proj"));
+    ABSL_ASSIGN_OR_RETURN(
+        const TfLiteIntArray* dyn_w,
+        GetDims(context, tflite_node->inputs, 3, "dyn_weight"));
+    if (in_proj->size != 3 || dyn_w->size != 3 || dyn_w->data[0] != 1 ||
+        dyn_w->data[1] != in_proj->data[1] ||
+        dyn_w->data[2] != attr.num_heads * taps) {
+      return absl::UnimplementedError(absl::StrCat(
+          "ShortConvStep expects dyn_weight [1, T, ", attr.num_heads * taps,
+          "], but got ", DimsToString(*dyn_w)));
+    }
   }
   return absl::OkStatus();
 }

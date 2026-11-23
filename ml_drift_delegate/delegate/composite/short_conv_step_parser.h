@@ -37,6 +37,11 @@ struct ShortConvStepAttributes {
   // The optional `channels_last` attribute; only channels-last (true or
   // absent) is supported.
   bool channels_last = true;
+  // Optional per-head dynamic tap count (> 0 enables runtime `dyn_weight`
+  // `[1, T, num_heads * conv_L_cache]` added to static `conv_weight`).
+  int32_t num_heads = 0;
+  // Optional fused residual + scale (`> 0` emits `(conv_out + x) * scale`).
+  float residual_scale = 0.0f;
 };
 
 ShortConvStepAttributes ParseShortConvStepAttributes(

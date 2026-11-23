@@ -658,6 +658,138 @@ TEST_P(ShortConvStepFloatTest, PrefillNumValidTokensVariants) {
                                      .use_silu = true}));
 }
 
+TEST_P(ShortConvStepFloatTest, DynamicHeadsAndResidualScaleDecodeAndPrefill) {
+  constexpr int kHiddenSize = 64;
+  constexpr int kNumHeads = 4;
+  constexpr int kHeadDim = kHiddenSize / kNumHeads;
+  constexpr int kTaps = 4;
+  constexpr int kStateTaps = kTaps - 1;
+  constexpr float kResidualScale = 0.33333334f;
+  const ::ml_drift::DataType data_type =
+      ::ml_drift::DeduceDataTypeFromPrecision(precision());
+  const float tol =
+      (precision() == ::ml_drift::CalculationsPrecision::kF16) ? 2e-2f : 1e-4f;
+
+  for (int seq_len : {1, 6}) {
+    for (bool with_dyn : {false, true}) {
+      std::optional<int> num_valid =
+          seq_len > 1 ? std::optional<int>(4) : std::nullopt;
+      ::ml_drift::TensorDescriptor in_proj_desc = MakeTensorDesc(
+          data_type, storage(), ::ml_drift::BHWC(1, 1, seq_len, kHiddenSize));
+      ::ml_drift::TensorDescriptor conv_weight_desc = MakeTensorDesc(
+          data_type, storage(), ::ml_drift::BHWC(1, 1, kTaps, kHiddenSize));
+      std::unique_ptr<::ml_drift::TensorDescriptor> dyn_weight_desc;
+      if (with_dyn) {
+        dyn_weight_desc = std::make_unique<::ml_drift::TensorDescriptor>(
+            MakeTensorDesc(data_type, storage(),
+                           ::ml_drift::BHWC(1, 1, seq_len, kNumHeads * kTaps)));
+      }
+      std::unique_ptr<::ml_drift::TensorDescriptor> num_valid_desc;
+      if (num_valid.has_value()) {
+        num_valid_desc = std::make_unique<::ml_drift::TensorDescriptor>(
+            MakeTensorDesc(::ml_drift::DataType::kInt32, storage(),
+                           ::ml_drift::BHWC(1, 1, 1, 1)));
+      }
+      ::ml_drift::TensorDescriptor dst_desc = MakeTensorDesc(
+          data_type, storage(), ::ml_drift::BHWC(1, 1, seq_len, kHiddenSize));
+      ::ml_drift::TensorDescriptor next_state_desc =
+          MakeTensorDesc(data_type, storage(),
+                         ::ml_drift::BHWC(1, 1, kStateTaps, kHiddenSize));
+
+      auto op = CreateFusedShortConvStep(
+          in_proj_desc, conv_weight_desc, /*conv_bias_desc=*/nullptr, dst_desc,
+          next_state_desc, /*num_slices=*/kHiddenSize / 4, kHiddenSize, kTaps,
+          /*is_gated=*/false, /*use_silu=*/false, num_valid_desc.get(),
+          with_dyn ? kNumHeads : 0, kResidualScale, dyn_weight_desc.get());
+
+      std::vector<float> in_data(seq_len * kHiddenSize);
+      for (int t = 0; t < seq_len; ++t) {
+        for (int c = 0; c < kHiddenSize; ++c) {
+          in_data[t * kHiddenSize + c] = -0.5f + 0.1f * ((c + 3 * t) % 9);
+        }
+      }
+      std::vector<float> state_data(kStateTaps * kHiddenSize);
+      for (int j = 0; j < kStateTaps; ++j) {
+        for (int c = 0; c < kHiddenSize; ++c) {
+          state_data[j * kHiddenSize + c] = -0.3f + 0.08f * ((c + 5 * j) % 7);
+        }
+      }
+      std::vector<float> weight_data(kTaps * kHiddenSize);
+      for (int k = 0; k < kTaps; ++k) {
+        for (int c = 0; c < kHiddenSize; ++c) {
+          weight_data[k * kHiddenSize + c] =
+              (k % 2 == 0 ? 0.2f : -0.15f) + 0.02f * ((c + k) % 5);
+        }
+      }
+      std::vector<float> dyn_data(seq_len * kNumHeads * kTaps, 0.0f);
+      if (with_dyn) {
+        for (int t = 0; t < seq_len; ++t) {
+          for (int h = 0; h < kNumHeads; ++h) {
+            for (int lag = 0; lag < kTaps; ++lag) {
+              dyn_data[(t * kNumHeads + h) * kTaps + lag] =
+                  -0.25f + 0.09f * ((t + 2 * h + 3 * lag) % 7);
+            }
+          }
+        }
+        dyn_weight_desc->UploadData(dyn_data.data());
+      }
+      std::vector<int32_t> valid_data;
+      if (num_valid.has_value()) {
+        valid_data = {*num_valid};
+        num_valid_desc->UploadData(valid_data.data());
+      }
+      in_proj_desc.UploadData(in_data.data());
+      conv_weight_desc.UploadData(weight_data.data());
+      const std::vector<float> dst_init(seq_len * kHiddenSize, -99.0f);
+      dst_desc.UploadData(dst_init.data());
+      next_state_desc.UploadData(state_data.data());
+
+      std::vector<::ml_drift::TensorDescriptor*> src_cpu = {&in_proj_desc,
+                                                            &conv_weight_desc};
+      if (with_dyn) src_cpu.push_back(dyn_weight_desc.get());
+      if (num_valid.has_value()) src_cpu.push_back(num_valid_desc.get());
+      std::vector<::ml_drift::TensorDescriptor*> dst_cpu = {&dst_desc,
+                                                            &next_state_desc};
+      ASSERT_OK(exec_env->ExecuteGPUOperation(src_cpu, dst_cpu, std::move(op)));
+
+      std::vector<float> dst_out(seq_len * kHiddenSize);
+      dst_desc.DownloadData(dst_out.data());
+      std::vector<float> state_out(kStateTaps * kHiddenSize);
+      next_state_desc.DownloadData(state_out.data());
+
+      auto padded = [&](int c, int p) {
+        return p < kStateTaps ? state_data[p * kHiddenSize + c]
+                              : in_data[(p - kStateTaps) * kHiddenSize + c];
+      };
+      for (int t = 0; t < seq_len; ++t) {
+        for (int c = 0; c < kHiddenSize; ++c) {
+          const int h = c / kHeadDim;
+          float acc = 0.0f;
+          for (int k = 0; k < kTaps; ++k) {
+            float w = weight_data[k * kHiddenSize + c];
+            if (with_dyn) {
+              const int lag = kStateTaps - k;
+              w += dyn_data[(t * kNumHeads + h) * kTaps + lag];
+            }
+            acc += w * padded(c, t + k);
+          }
+          const float expected =
+              (acc + in_data[t * kHiddenSize + c]) * kResidualScale;
+          ASSERT_OK(CheckNear("y", t, c, expected, dst_out[t * kHiddenSize + c],
+                              tol));
+        }
+      }
+      const int n = num_valid.value_or(seq_len);
+      for (int c = 0; c < kHiddenSize; ++c) {
+        for (int j = 0; j < kStateTaps; ++j) {
+          ASSERT_OK(CheckNear("next_state", c, j, padded(c, n + j),
+                              state_out[j * kHiddenSize + c], tol));
+        }
+      }
+    }
+  }
+}
+
 INSTANTIATE_TEST_SUITE_P(
     ShortConvStepFloatTestSuite, ShortConvStepFloatTest,
     Combine(ValuesIn({::ml_drift::CalculationsPrecision::kF32,

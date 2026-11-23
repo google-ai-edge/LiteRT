@@ -162,7 +162,8 @@ void RewriteDenormalScales(const GpuInfo& gpu_info,
 
 constexpr char kMoeExpertsOpType[] = "moe_experts";
 
-// Returns true if `value_id` is consumed by a single moe_experts op.
+// Returns true if `value_id` is consumed exclusively by one or more
+// moe_experts ops (including repeated passes of a looped MoE layer).
 // moe_experts receives its quantization scales as separate op inputs, so its
 // shared weights are packed regardless of the TFLite quantization type (e.g.
 // multi-axis quantization, which is not handled for other ops).
@@ -170,8 +171,10 @@ bool IsMoeExpertsWeights(const GraphAdapter& graph_adapter,
                          uint32_t value_id) {
   const std::vector<uint32_t> consumers =
       graph_adapter.FindConsumerOps(value_id);
-  return consumers.size() == 1 &&
-         graph_adapter.GetOpTypeName(consumers[0]) == kMoeExpertsOpType;
+  return !consumers.empty() &&
+         std::all_of(consumers.begin(), consumers.end(), [&](uint32_t op_id) {
+           return graph_adapter.GetOpTypeName(op_id) == kMoeExpertsOpType;
+         });
 }
 
 // Returns true if `tensor` is a float block-scale input of a moe_experts op
@@ -768,7 +771,8 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
     const ValueId& shared_tensor_id, uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor,
     absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-    bool is_weight_sum_i_required, uint32_t fc_op_id, DataType data_type,
+    const std::vector<uint32_t>& weight_consumers,
+    const std::vector<bool>& consumer_needs_weight_sum_i, DataType data_type,
     const OHWI& weights_shape) {
   TfLiteAffineQuantization* quant_params =
       static_cast<TfLiteAffineQuantization*>(tflite_tensor.quantization.params);
@@ -789,55 +793,81 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
   RewriteDenormalScales(gpu_info_, create_info_, scales.data(), scales.size());
 
   shared_tensor->scale_global_tensor_id = ++next_const_tensor_id_;
+  const uint32_t scale_global_id =
+      shared_tensor->scale_global_tensor_id.value();
   ABSL_ASSIGN_OR_RETURN(
       ValueId scale_value_id,
-      AddInputWithData(shared_tensor->scale_global_tensor_id.value(),
-                       scale_shape, fc_op_id, scales.data(), data_type));
+      AddInputWithData(scale_global_id, scale_shape, weight_consumers[0],
+                       scales.data(), data_type));
   // We refresh the shared_tensor pointer as the object could have been moved
-  // after AddInputWithData() call added  a scale tensor to the
+  // after AddInputWithData() call added a scale tensor to the
   // buffer_id_to_spatial_tensor_.
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  (*external_tensors)[scale_value_id] =
-      GlobalId::BuildParamId(shared_tensor->scale_global_tensor_id.value());
+  (*external_tensors)[scale_value_id] = GlobalId::BuildParamId(scale_global_id);
+  for (size_t i = 1; i < weight_consumers.size(); ++i) {
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId extra_scale_id,
+        AddInputNode(scale_global_id, BHWC(1, 1, 1, scale_shape.v),
+                     weight_consumers[i], data_type));
+    (*external_tensors)[extra_scale_id] =
+        GlobalId::BuildParamId(scale_global_id);
+  }
 
   shared_tensor->zero_point_global_tensor_id = ++next_const_tensor_id_;
+  const uint32_t zp_global_id =
+      shared_tensor->zero_point_global_tensor_id.value();
   Linear zero_point_shape(zero_points.size());
   ABSL_ASSIGN_OR_RETURN(
       ValueId zero_point_value_id,
-      AddInputWithData(shared_tensor->zero_point_global_tensor_id.value(),
-                       zero_point_shape, fc_op_id, zero_points.data(),
-                       data_type));
+      AddInputWithData(zp_global_id, zero_point_shape, weight_consumers[0],
+                       zero_points.data(), data_type));
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
-      shared_tensor->zero_point_global_tensor_id.value());
+  (*external_tensors)[zero_point_value_id] =
+      GlobalId::BuildParamId(zp_global_id);
+  for (size_t i = 1; i < weight_consumers.size(); ++i) {
+    ABSL_ASSIGN_OR_RETURN(
+        ValueId extra_zp_id,
+        AddInputNode(zp_global_id, BHWC(1, 1, 1, zero_point_shape.v),
+                     weight_consumers[i], data_type));
+    (*external_tensors)[extra_zp_id] = GlobalId::BuildParamId(zp_global_id);
+  }
 
   // Checks serialized cache for weights_sum_i if not already populated.
-  if (is_weight_sum_i_required) {
+  size_t first_sum_i_idx = weight_consumers.size();
+  for (size_t i = 0; i < consumer_needs_weight_sum_i.size(); ++i) {
+    if (consumer_needs_weight_sum_i[i]) {
+      first_sum_i_idx = i;
+      break;
+    }
+  }
+  if (first_sum_i_idx < weight_consumers.size()) {
+    const uint32_t first_sum_op_id = weight_consumers[first_sum_i_idx];
     shared_tensor->weights_sum_i_global_tensor_id = ++next_const_tensor_id_;
+    const uint32_t sum_i_global_id =
+        shared_tensor->weights_sum_i_global_tensor_id.value();
     ValueId weights_sum_i_value_id;
 
     TensorDescriptor serialized_tensor_desc;
     bool serialized_tensor_found =
         serialization_cache_ &&
         serialization_cache_
-            ->LookUp(shared_tensor->weights_sum_i_global_tensor_id.value(),
+            ->LookUp(sum_i_global_id,
                      /*is_quantization_param_tensor=*/true,
                      serialized_tensor_desc)
             .ok();
 
     if (serialized_tensor_found) {
-      ABSL_ASSIGN_OR_RETURN(
-          weights_sum_i_value_id,
-          AddInputWithData<int32_t>(
-              shared_tensor->weights_sum_i_global_tensor_id.value(),
-              scale_shape, fc_op_id, nullptr, DataType::kInt32));
+      ABSL_ASSIGN_OR_RETURN(weights_sum_i_value_id,
+                            AddInputWithData<int32_t>(
+                                sum_i_global_id, scale_shape, first_sum_op_id,
+                                nullptr, DataType::kInt32));
     } else if (weights_manager_) {
       BHWC scale_or_zero_point_shape = BHWC(
           1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
       ABSL_ASSIGN_OR_RETURN(
           weights_sum_i_value_id,
-          AddInputNode(shared_tensor->weights_sum_i_global_tensor_id.value(),
-                       scale_or_zero_point_shape, fc_op_id, DataType::kInt32));
+          AddInputNode(sum_i_global_id, scale_or_zero_point_shape,
+                       first_sum_op_id, DataType::kInt32));
       DataType src_data_type = DataType::kInt4;
       if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
         src_data_type = DataType::kInt8;
@@ -853,9 +883,9 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
       auto* weights_sum_i_data = shared_tensor->weights_sum_i.data.empty()
                                      ? nullptr
                                      : shared_tensor->weights_sum_i.data.data();
-      absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
-          shared_tensor->weights_sum_i_global_tensor_id.value(), scale_shape,
-          fc_op_id, weights_sum_i_data, DataType::kInt32);
+      absl::StatusOr<ValueId> status_or_value_id =
+          AddInputWithData(sum_i_global_id, scale_shape, first_sum_op_id,
+                           weights_sum_i_data, DataType::kInt32);
 
       // If the weights_sum_i is empty and there is no entry in the cache, we
       // will get an error when trying to add the input. In this case, we
@@ -870,8 +900,19 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
       weights_sum_i_value_id = status_or_value_id.value();
     }
     shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-    (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
-        shared_tensor->weights_sum_i_global_tensor_id.value());
+    (*external_tensors)[weights_sum_i_value_id] =
+        GlobalId::BuildParamId(sum_i_global_id);
+    for (size_t i = first_sum_i_idx + 1; i < weight_consumers.size(); ++i) {
+      if (!consumer_needs_weight_sum_i[i]) {
+        continue;
+      }
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId extra_sum_i_id,
+          AddInputNode(sum_i_global_id, BHWC(1, 1, 1, scale_shape.v),
+                       weight_consumers[i], DataType::kInt32));
+      (*external_tensors)[extra_sum_i_id] =
+          GlobalId::BuildParamId(sum_i_global_id);
+    }
   }
   return absl::OkStatus();
 }
@@ -879,8 +920,8 @@ absl::Status SharedMemoryManager::CreateAffineQuantizationParams(
 absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
     const ValueId& shared_tensor_id, uint32_t global_tensor_id,
     const TfLiteTensor& tflite_tensor,
-    absl::flat_hash_map<ValueId, GlobalId>* external_tensors, uint32_t fc_op_id,
-    DataType data_type) {
+    absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
+    const std::vector<uint32_t>& weight_consumers, DataType data_type) {
   TfLiteBlockwiseQuantization* quant_params =
       static_cast<TfLiteBlockwiseQuantization*>(
           tflite_tensor.quantization.params);
@@ -953,26 +994,42 @@ absl::Status SharedMemoryManager::CreateBlockwiseQuantizationParams(
     zero_point_data = zero_points.data();
   }
 
+  const BHWC bhwc_scale_shape =
+      BHWC(1, 1, DivideRoundUp(num_channels, 4), 4 * num_blocks);
   shared_tensor->scale_global_tensor_id = ++next_const_tensor_id_;
+  const uint32_t scale_global_id =
+      shared_tensor->scale_global_tensor_id.value();
   ABSL_ASSIGN_OR_RETURN(
       ValueId scale_value_id,
-      AddScaleNodeWithData(shared_tensor->scale_global_tensor_id.value(),
-                           fc_op_id, scale_data, data_type, num_channels,
-                           num_blocks));
+      AddScaleNodeWithData(scale_global_id, weight_consumers[0], scale_data,
+                           data_type, num_channels, num_blocks));
   shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-  (*external_tensors)[scale_value_id] =
-      GlobalId::BuildParamId(shared_tensor->scale_global_tensor_id.value());
+  (*external_tensors)[scale_value_id] = GlobalId::BuildParamId(scale_global_id);
+  for (size_t i = 1; i < weight_consumers.size(); ++i) {
+    ABSL_ASSIGN_OR_RETURN(ValueId extra_scale_id,
+                          AddInputNode(scale_global_id, bhwc_scale_shape,
+                                       weight_consumers[i], data_type));
+    (*external_tensors)[extra_scale_id] =
+        GlobalId::BuildParamId(scale_global_id);
+  }
 
   if (zero_point_data != nullptr) {
     shared_tensor->zero_point_global_tensor_id = ++next_const_tensor_id_;
+    const uint32_t zp_global_id =
+        shared_tensor->zero_point_global_tensor_id.value();
     ABSL_ASSIGN_OR_RETURN(
         ValueId zero_point_value_id,
-        AddScaleNodeWithData(shared_tensor->zero_point_global_tensor_id.value(),
-                             fc_op_id, zero_point_data, data_type, num_channels,
-                             num_blocks));
+        AddScaleNodeWithData(zp_global_id, weight_consumers[0], zero_point_data,
+                             data_type, num_channels, num_blocks));
     shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
-    (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
-        shared_tensor->zero_point_global_tensor_id.value());
+    (*external_tensors)[zero_point_value_id] =
+        GlobalId::BuildParamId(zp_global_id);
+    for (size_t i = 1; i < weight_consumers.size(); ++i) {
+      ABSL_ASSIGN_OR_RETURN(ValueId extra_zp_id,
+                            AddInputNode(zp_global_id, bhwc_scale_shape,
+                                         weight_consumers[i], data_type));
+      (*external_tensors)[extra_zp_id] = GlobalId::BuildParamId(zp_global_id);
+    }
   }
 
   return absl::OkStatus();
@@ -995,9 +1052,9 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
                      shared_const_shape.w, shared_const_shape.c);
   std::vector<uint32_t> weight_consumers =
       graph_adapter_->FindConsumerOps(shared_tensor_id);
-  if (weight_consumers.size() != 1) {
+  if (weight_consumers.empty()) {
     return absl::InternalError(
-        "Expected to have only one shared weight consumer.");
+        "Expected to have at least one shared weight consumer.");
   }
   uint32_t fc_op_id = weight_consumers[0];
   DataType data_type = data_type_;
@@ -1012,45 +1069,51 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   auto* shared_tensor = &buffer_id_to_spatial_tensor_.at(global_tensor_id);
 
   bool is_weight_sum_i_required = false;
+  std::vector<bool> consumer_needs_weight_sum_i(weight_consumers.size(), false);
   uint32_t external_buffer_id = MaybeGetExternalBufferId(shared_tensor_id);
   bool is_streamed = IsValidExternalBufferId(external_buffer_id);
   // When weights are streamed, they have null data pointers
   // (tflite_tensor.data.int8 is null). Bypassing weights_sum_i calculation is
   // required to avoid dereferencing null data during initialization.
   if (!is_streamed) {
-    if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::kFullyConnectedInt8) ||
-        graph_adapter_->GetOpTypeName(fc_op_id) ==
-            ToString(OperationType::kFullyConnectedInt4)) {
-      const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
-      const bool is_conv_int8_supported =
-          IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
-          tflite_tensor.quantization.type ==
-              TfLiteQuantizationType::kTfLiteAffineQuantization;
+    for (size_t i = 0; i < weight_consumers.size(); ++i) {
+      const uint32_t op_id = weight_consumers[i];
+      if (graph_adapter_->GetOpTypeName(op_id) ==
+              ToString(OperationType::kFullyConnectedInt8) ||
+          graph_adapter_->GetOpTypeName(op_id) ==
+              ToString(OperationType::kFullyConnectedInt4)) {
+        const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(op_id);
+        const bool is_conv_int8_supported =
+            IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
+            tflite_tensor.quantization.type ==
+                TfLiteQuantizationType::kTfLiteAffineQuantization;
 
-      // In case of preparing weights (repacking and computing intermediate
-      // constants like weights_sum_i) on Gpu, we always compute weights_sum_i
-      // for quantized FullyConnected ops if weights_sum_i is supported.
-      //
-      // This improves performance for preparing weights on Gpu, because it puts
-      // weight-repacking and weights_sum_i computations for LLM's shared
-      // weights into one single InferenceContext:
-      // * The Gpu memory allocation is reduced, because in the same
-      //   InferenceContext, the SRC weights on Gpu can be reused between
-      //   weight-repacking and weights_sum_i computations.
-      // * The latency is reduced, because (1) saves time to allocate Gpu memory
-      //   for the identical SRC weights in different InferenceContexts; (2)
-      //   eliminates the latency to build and execute the second
-      //   InferenceContext for LLMs' weights preparation, as the first
-      //   InferenceContext for weights preparation already covers all the
-      //   weights preparation requests.
-      const bool is_conv_int8_recommended =
-          IsConvInt8KernelRecommendedForFullyConnectedOp(
-              create_info_, gpu_info_, fc_src_shape) ||
-          weights_manager_;
+        // In case of preparing weights (repacking and computing intermediate
+        // constants like weights_sum_i) on Gpu, we always compute weights_sum_i
+        // for quantized FullyConnected ops if weights_sum_i is supported.
+        //
+        // This improves performance for preparing weights on Gpu, because it
+        // puts weight-repacking and weights_sum_i computations for LLM's shared
+        // weights into one single InferenceContext:
+        // * The Gpu memory allocation is reduced, because in the same
+        //   InferenceContext, the SRC weights on Gpu can be reused between
+        //   weight-repacking and weights_sum_i computations.
+        // * The latency is reduced, because (1) saves time to allocate Gpu
+        //   memory for the identical SRC weights in different
+        //   InferenceContexts; (2) eliminates the latency to build and execute
+        //   the second InferenceContext for LLMs' weights preparation, as the
+        //   first InferenceContext for weights preparation already covers all
+        //   the weights preparation requests.
+        const bool is_conv_int8_recommended =
+            IsConvInt8KernelRecommendedForFullyConnectedOp(
+                create_info_, gpu_info_, fc_src_shape) ||
+            weights_manager_;
 
-      is_weight_sum_i_required =
-          is_conv_int8_supported && is_conv_int8_recommended;
+        if (is_conv_int8_supported && is_conv_int8_recommended) {
+          consumer_needs_weight_sum_i[i] = true;
+          is_weight_sum_i_required = true;
+        }
+      }
     }
   }
 
@@ -1069,7 +1132,11 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
   }
 
   // moe_experts consumes its block scales as separate op inputs.
-  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+  if (std::all_of(weight_consumers.begin(), weight_consumers.end(),
+                  [&](uint32_t op_id) {
+                    return graph_adapter_->GetOpTypeName(op_id) ==
+                           kMoeExpertsOpType;
+                  })) {
     return absl::OkStatus();
   }
 
@@ -1077,12 +1144,13 @@ absl::Status SharedMemoryManager::CreateQuantizedTensorWithScaleAndZeroPoint(
       TfLiteQuantizationType::kTfLiteAffineQuantization) {
     return CreateAffineQuantizationParams(
         shared_tensor_id, global_tensor_id, tflite_tensor, external_tensors,
-        is_weight_sum_i_required, fc_op_id, data_type, weights_shape);
+        weight_consumers, consumer_needs_weight_sum_i, data_type,
+        weights_shape);
   } else if (tflite_tensor.quantization.type ==
              TfLiteQuantizationType::kTfLiteBlockwiseQuantization) {
     return CreateBlockwiseQuantizationParams(shared_tensor_id, global_tensor_id,
                                              tflite_tensor, external_tensors,
-                                             fc_op_id, data_type);
+                                             weight_consumers, data_type);
   } else {
     return absl::UnimplementedError(
         "Only affine quantization is supported for the shared tensors.");
@@ -1199,11 +1267,15 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   std::vector<uint32_t> weight_consumers =
       graph_adapter_->FindConsumerOps(shared_tensor_id);
 
-  if (weight_consumers.size() != 1) {
-    return absl::InternalError("Expected to have only one weights consumer.");
+  if (weight_consumers.empty()) {
+    return absl::InternalError(
+        "Expected to have at least one weights consumer.");
   }
-  uint32_t fc_op_id = weight_consumers[0];
-  if (graph_adapter_->GetOpTypeName(fc_op_id) == kMoeExpertsOpType) {
+  if (std::all_of(weight_consumers.begin(), weight_consumers.end(),
+                  [&](uint32_t op_id) {
+                    return graph_adapter_->GetOpTypeName(op_id) ==
+                           kMoeExpertsOpType;
+                  })) {
     if (weights_manager_ &&
         !IsMoeExpertsBlockScales(*graph_adapter_, shared_tensor_id,
                                  tflite_tensor)) {
@@ -1236,157 +1308,161 @@ absl::Status SharedMemoryManager::RetrieveTensorWithScaleAndZeroPoint(
   if (!shared_tensor.scale_global_tensor_id.has_value()) {
     return absl::InternalError("Expected scale tensor id to be set.");
   }
-  DataType data_type = data_type_;
-  if (data_type_ == DataType::kFloat32) {
-    if (graph_adapter_->OpHasInputs(fc_op_id)) {
-      data_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
-    }
-  }
-  bool is_weight_sum_i_required = false;
-  if (graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::kFullyConnectedInt8) ||
-      graph_adapter_->GetOpTypeName(fc_op_id) ==
-          ToString(OperationType::kFullyConnectedInt4)) {
-    const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
-    const bool is_conv_int8_supported =
-        IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
-        tflite_tensor.quantization.type ==
-            TfLiteQuantizationType::kTfLiteAffineQuantization;
-    is_weight_sum_i_required = is_conv_int8_supported &&
-                               IsConvInt8KernelRecommendedForFullyConnectedOp(
-                                   create_info_, gpu_info_, fc_src_shape);
-  }
-
-  if (tflite_tensor.quantization.type ==
-      TfLiteQuantizationType::kTfLiteAffineQuantization) {
-    if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
-      return absl::InternalError("Expected zero point tensor id to be set.");
-    }
-    TfLiteAffineQuantization* quant_params =
-        static_cast<TfLiteAffineQuantization*>(
-            tflite_tensor.quantization.params);
-    BHWC scale_or_zero_point_shape = BHWC(
-        1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
-
-    ABSL_ASSIGN_OR_RETURN(
-        ValueId scale_value_id,
-        AddInputNode(shared_tensor.scale_global_tensor_id.value(),
-                     scale_or_zero_point_shape, fc_op_id, data_type));
-    (*external_tensors)[scale_value_id] =
-        GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
-
-    ABSL_ASSIGN_OR_RETURN(
-        ValueId zero_point_value_id,
-        AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                     scale_or_zero_point_shape, fc_op_id, data_type));
-    (*external_tensors)[zero_point_value_id] =
-      GlobalId::BuildParamId(shared_tensor.zero_point_global_tensor_id.value());
-
-    if (is_weight_sum_i_required) {
-      if (shared_tensor.weights_sum_i_global_tensor_id.has_value()) {
-        // If the weights_sum_i is already populated, call AddInputNode() for
-        // it.
-        ABSL_ASSIGN_OR_RETURN(
-            ValueId weights_sum_i_value_id,
-            AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                         scale_or_zero_point_shape, fc_op_id,
-                         DataType::kInt32));
-        (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
-            shared_tensor.weights_sum_i_global_tensor_id.value());
-      } else {
-        // If the weights_sum_i is not already populated, and we can support,
-        // create it here. This can happen in the case the shared weight creator
-        // was an op that didn't support weights_sum_i.
-        shared_tensor.weights_sum_i_global_tensor_id = ++next_const_tensor_id_;
-
-        ValueId weights_sum_i_value_id;
-        if (weights_manager_) {
-          ABSL_ASSIGN_OR_RETURN(
-              weights_sum_i_value_id,
-              AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
-                           scale_or_zero_point_shape, fc_op_id,
-                           DataType::kInt32));
-
-          OHWI weights_shape = OHWI(shared_const_shape.b, shared_const_shape.h,
-                                    shared_const_shape.w, shared_const_shape.c);
-          DataType src_data_type = DataType::kInt4;
-          if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
-            src_data_type = DataType::kInt8;
-          } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
-            src_data_type = DataType::kInt4;
-          } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
-            src_data_type = DataType::kInt2;
-          }
-          weights_manager_->RegisterWeightsSumIConversion(
-              {weights_sum_i_value_id}, weights_shape, src_data_type,
-              tflite_tensor.data.int8);
-
-        } else {
-          if (shared_tensor.weights_sum_i.data.empty()) {
-            // Check if serialized or need to calculate.
-            TensorDescriptor serialized_tensor_desc;
-            bool serialized_tensor_found =
-                serialization_cache_ &&
-                serialization_cache_
-                    ->LookUp(
-                        shared_tensor.weights_sum_i_global_tensor_id.value(),
-                        /*is_quantization_param_tensor=*/true,
-                        serialized_tensor_desc)
-                    .ok();
-            // If we do not have the weights_sum_i cached in RAM and it was not
-            // serialized, calculate it here.
-            if (!serialized_tensor_found) {
-              ABSL_RETURN_IF_ERROR(
-                  CalculateWeightsSumI(tflite_tensor, shared_const_shape,
-                                       &shared_tensor.weights_sum_i));
-            }
-          }
-          auto* weights_sum_i_data =
-              (shared_tensor.weights_sum_i.data.empty())
-                  ? nullptr
-                  : shared_tensor.weights_sum_i.data.data();
-          Linear weights_sum_i_shape = Linear(
-              tflite_tensor.dims->data[quant_params->quantized_dimension]);
-          absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
-              shared_tensor.weights_sum_i_global_tensor_id.value(),
-              weights_sum_i_shape, fc_op_id, weights_sum_i_data,
-              DataType::kInt32);
-          if (!status_or_value_id.ok()) {
-            return status_or_value_id.status();
-          }
-          weights_sum_i_value_id = status_or_value_id.value();
-        }
-        (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
-            shared_tensor.weights_sum_i_global_tensor_id.value());
+  for (uint32_t fc_op_id : weight_consumers) {
+    DataType data_type = data_type_;
+    if (data_type_ == DataType::kFloat32) {
+      if (graph_adapter_->OpHasInputs(fc_op_id)) {
+        data_type = graph_adapter_->GetOpFirstInputType(fc_op_id);
       }
     }
-  } else if (tflite_tensor.quantization.type ==
-             TfLiteQuantizationType::kTfLiteBlockwiseQuantization) {
-    TfLiteBlockwiseQuantization* quant_params =
-        static_cast<TfLiteBlockwiseQuantization*>(
-            tflite_tensor.quantization.params);
-    BHWC bhwc_shape =
-        BHWC(1, 1, DivideRoundUp(tflite_tensor.dims->data[0], 4),
-             4 * tflite_tensor.dims->data[1] / quant_params->blocksize);
+    bool is_weight_sum_i_required = false;
+    if (graph_adapter_->GetOpTypeName(fc_op_id) ==
+            ToString(OperationType::kFullyConnectedInt8) ||
+        graph_adapter_->GetOpTypeName(fc_op_id) ==
+            ToString(OperationType::kFullyConnectedInt4)) {
+      const BHWC fc_src_shape = graph_adapter_->GetOpFirstInputShape(fc_op_id);
+      const bool is_conv_int8_supported =
+          IsConvInt8Supported(create_info_, gpu_info_, fc_src_shape) &&
+          tflite_tensor.quantization.type ==
+              TfLiteQuantizationType::kTfLiteAffineQuantization;
+      is_weight_sum_i_required = is_conv_int8_supported &&
+                                 IsConvInt8KernelRecommendedForFullyConnectedOp(
+                                     create_info_, gpu_info_, fc_src_shape);
+    }
 
-    ABSL_ASSIGN_OR_RETURN(
-        ValueId scale_value_id,
-        AddInputNode(shared_tensor.scale_global_tensor_id.value(), bhwc_shape,
-                     fc_op_id, data_type));
-    (*external_tensors)[scale_value_id] =
-        GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
+    if (tflite_tensor.quantization.type ==
+        TfLiteQuantizationType::kTfLiteAffineQuantization) {
+      if (!shared_tensor.zero_point_global_tensor_id.has_value()) {
+        return absl::InternalError("Expected zero point tensor id to be set.");
+      }
+      TfLiteAffineQuantization* quant_params =
+          static_cast<TfLiteAffineQuantization*>(
+              tflite_tensor.quantization.params);
+      BHWC scale_or_zero_point_shape = BHWC(
+          1, 1, 1, tflite_tensor.dims->data[quant_params->quantized_dimension]);
 
-    if (shared_tensor.zero_point_global_tensor_id.has_value()) {
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId scale_value_id,
+          AddInputNode(shared_tensor.scale_global_tensor_id.value(),
+                       scale_or_zero_point_shape, fc_op_id, data_type));
+      (*external_tensors)[scale_value_id] =
+          GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
+
       ABSL_ASSIGN_OR_RETURN(
           ValueId zero_point_value_id,
           AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
-                       bhwc_shape, fc_op_id, data_type));
+                       scale_or_zero_point_shape, fc_op_id, data_type));
       (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
           shared_tensor.zero_point_global_tensor_id.value());
+
+      if (is_weight_sum_i_required) {
+        if (shared_tensor.weights_sum_i_global_tensor_id.has_value()) {
+          // If the weights_sum_i is already populated, call AddInputNode() for
+          // it.
+          ABSL_ASSIGN_OR_RETURN(
+              ValueId weights_sum_i_value_id,
+              AddInputNode(shared_tensor.weights_sum_i_global_tensor_id.value(),
+                           scale_or_zero_point_shape, fc_op_id,
+                           DataType::kInt32));
+          (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
+              shared_tensor.weights_sum_i_global_tensor_id.value());
+        } else {
+          // If the weights_sum_i is not already populated, and we can support,
+          // create it here. This can happen in the case the shared weight
+          // creator was an op that didn't support weights_sum_i.
+          shared_tensor.weights_sum_i_global_tensor_id =
+              ++next_const_tensor_id_;
+
+          ValueId weights_sum_i_value_id;
+          if (weights_manager_) {
+            ABSL_ASSIGN_OR_RETURN(
+                weights_sum_i_value_id,
+                AddInputNode(
+                    shared_tensor.weights_sum_i_global_tensor_id.value(),
+                    scale_or_zero_point_shape, fc_op_id, DataType::kInt32));
+
+            OHWI weights_shape =
+                OHWI(shared_const_shape.b, shared_const_shape.h,
+                     shared_const_shape.w, shared_const_shape.c);
+            DataType src_data_type = DataType::kInt4;
+            if (tflite_tensor.type == TfLiteType::kTfLiteInt8) {
+              src_data_type = DataType::kInt8;
+            } else if (tflite_tensor.type == TfLiteType::kTfLiteInt4) {
+              src_data_type = DataType::kInt4;
+            } else if (tflite_tensor.type == TfLiteType::kTfLiteInt2) {
+              src_data_type = DataType::kInt2;
+            }
+            weights_manager_->RegisterWeightsSumIConversion(
+                {weights_sum_i_value_id}, weights_shape, src_data_type,
+                tflite_tensor.data.int8);
+
+          } else {
+            if (shared_tensor.weights_sum_i.data.empty()) {
+              // Check if serialized or need to calculate.
+              TensorDescriptor serialized_tensor_desc;
+              bool serialized_tensor_found =
+                  serialization_cache_ &&
+                  serialization_cache_
+                      ->LookUp(
+                          shared_tensor.weights_sum_i_global_tensor_id.value(),
+                          /*is_quantization_param_tensor=*/true,
+                          serialized_tensor_desc)
+                      .ok();
+              // If we do not have the weights_sum_i cached in RAM and it was
+              // not serialized, calculate it here.
+              if (!serialized_tensor_found) {
+                ABSL_RETURN_IF_ERROR(
+                    CalculateWeightsSumI(tflite_tensor, shared_const_shape,
+                                         &shared_tensor.weights_sum_i));
+              }
+            }
+            auto* weights_sum_i_data =
+                (shared_tensor.weights_sum_i.data.empty())
+                    ? nullptr
+                    : shared_tensor.weights_sum_i.data.data();
+            Linear weights_sum_i_shape = Linear(
+                tflite_tensor.dims->data[quant_params->quantized_dimension]);
+            absl::StatusOr<ValueId> status_or_value_id = AddInputWithData(
+                shared_tensor.weights_sum_i_global_tensor_id.value(),
+                weights_sum_i_shape, fc_op_id, weights_sum_i_data,
+                DataType::kInt32);
+            if (!status_or_value_id.ok()) {
+              return status_or_value_id.status();
+            }
+            weights_sum_i_value_id = status_or_value_id.value();
+          }
+          (*external_tensors)[weights_sum_i_value_id] = GlobalId::BuildParamId(
+              shared_tensor.weights_sum_i_global_tensor_id.value());
+        }
+      }
+    } else if (tflite_tensor.quantization.type ==
+               TfLiteQuantizationType::kTfLiteBlockwiseQuantization) {
+      TfLiteBlockwiseQuantization* quant_params =
+          static_cast<TfLiteBlockwiseQuantization*>(
+              tflite_tensor.quantization.params);
+      BHWC bhwc_shape =
+          BHWC(1, 1, DivideRoundUp(tflite_tensor.dims->data[0], 4),
+               4 * tflite_tensor.dims->data[1] / quant_params->blocksize);
+
+      ABSL_ASSIGN_OR_RETURN(
+          ValueId scale_value_id,
+          AddInputNode(shared_tensor.scale_global_tensor_id.value(), bhwc_shape,
+                       fc_op_id, data_type));
+      (*external_tensors)[scale_value_id] =
+          GlobalId::BuildParamId(shared_tensor.scale_global_tensor_id.value());
+
+      if (shared_tensor.zero_point_global_tensor_id.has_value()) {
+        ABSL_ASSIGN_OR_RETURN(
+            ValueId zero_point_value_id,
+            AddInputNode(shared_tensor.zero_point_global_tensor_id.value(),
+                         bhwc_shape, fc_op_id, data_type));
+        (*external_tensors)[zero_point_value_id] = GlobalId::BuildParamId(
+            shared_tensor.zero_point_global_tensor_id.value());
+      }
+    } else {
+      return absl::UnimplementedError(
+          "Only affine quantization is supported for the shared tensors.");
     }
-  } else {
-    return absl::UnimplementedError(
-        "Only affine quantization is supported for the shared tensors.");
   }
 
   if (weights_manager_) {
@@ -1688,6 +1764,14 @@ absl::Status SharedMemoryManager::RegisterExternalConstantTensors(
           BHWC(weights->Batch(), weights->Height(), weights->Width(),
                weights->Channels()),
           weights->GetDescriptor().GetDataType());
+    }
+  } else if (!new_spatial_tensor_inserted) {
+    // Ensure subsequent local ValueIds sharing this non-quantized GPU tensor
+    // (e.g., repeated passes of a looped layer or across subgraphs) match the
+    // uploaded SpatialTensor's precision/dtype.
+    if (auto* weights = tensor_it->second.GetWeights(); weights != nullptr) {
+      graph_adapter_->SetValueType(shared_tensor_id,
+                                   weights->GetDescriptor().GetDataType());
     }
   }
   return absl::OkStatus();

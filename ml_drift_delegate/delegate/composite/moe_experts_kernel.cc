@@ -55,12 +55,75 @@ class ScaleWithBatchIdsOp : public ::ml_drift::GPUOperation {
   ScaleWithBatchIdsOp& operator=(const ScaleWithBatchIdsOp&) = delete;
 };
 
+std::unique_ptr<::ml_drift::GPUOperation> CreateFusedMoeActivation(
+    const ::ml_drift::TensorDescriptor& gate_desc,
+    const ::ml_drift::TensorDescriptor& ff1_desc,
+    const ::ml_drift::TensorDescriptor& dst_desc,
+    MoeExpertsAttributes::Activation activation, float gate_softcap,
+    float up_softcap) {
+  ::ml_drift::GPUOperation op;
+  op.AddSrcTensor("gate", gate_desc);
+  op.AddSrcTensor("ff1", ff1_desc);
+  op.AddDstTensor("dst", dst_desc);
+  op.tensor_to_grid_ = ::ml_drift::TensorToGrid::kWBToX_HDToY_SToZ;
+
+  std::string body = R"(
+MAIN_FUNCTION($0) {
+  int linear_id = ucl::GetGlobalId<0>();
+  int x = linear_id / args.dst.Batch();
+  int b = linear_id % args.dst.Batch();
+  int y = ucl::GetGlobalId<1>();
+  int s = ucl::GetGlobalId<2>();
+  if (x >= args.dst.Width() || y >= args.dst.Height() ||
+      s >= args.dst.Slices()) {
+    return;
+  }
+  float4 g = ucl::Convert<float4>(args.gate.Read(x, y, s, b));
+  float4 u = ucl::Convert<float4>(args.ff1.Read(x, y, s, b));
+)";
+  if (activation == MoeExpertsAttributes::Activation::kSilu) {
+    body +=
+        "  float4 sig = ucl::Init<float4>(1.0f) / "
+        "(ucl::Init<float4>(1.0f) + exp(-g));\n";
+    if (gate_softcap > 0.0f) {
+      op.args_.AddFloat("inv_gate_cap", 1.0f / gate_softcap);
+      op.args_.AddFloat("gate_cap", gate_softcap);
+      body +=
+          "  float4 g_clamped = clamp(g * args.inv_gate_cap, "
+          "ucl::Init<float4>(-10.0f), ucl::Init<float4>(10.0f));\n"
+          "  float4 act = (tanh(g_clamped) * args.gate_cap) * sig;\n";
+    } else {
+      body += "  float4 act = g * sig;\n";
+    }
+  } else {
+    // gelu_tanh(g) = g * sigmoid(2 * sqrt(2/pi) * (g + 0.044715 * g^3)).
+    body +=
+        "  float4 inner = 1.5957691216057308f * "
+        "(g + 0.044715f * g * g * g);\n"
+        "  float4 act = g / (ucl::Init<float4>(1.0f) + exp(-inner));\n";
+  }
+  if (up_softcap > 0.0f) {
+    op.args_.AddFloat("inv_up_cap", 1.0f / up_softcap);
+    op.args_.AddFloat("up_cap", up_softcap);
+    body +=
+        "  float4 u_clamped = clamp(u * args.inv_up_cap, "
+        "ucl::Init<float4>(-10.0f), ucl::Init<float4>(10.0f));\n"
+        "  u = tanh(u_clamped) * args.up_cap;\n";
+  }
+  body += R"(  args.dst::type res_value = ucl::Convert<args.dst::type>(act * u);
+  args.dst.Write(res_value, x, y, s, b);
+}
+)";
+  op.code_ = std::move(body);
+  return std::make_unique<::ml_drift::GPUOperation>(std::move(op));
+}
+
 std::unique_ptr<::ml_drift::GPUOperation> CreateScaleWithBatchIds(
     const ::ml_drift::TensorDescriptor& input,
     const ::ml_drift::TensorDescriptor& active_ids,
     const ::ml_drift::TensorDescriptor& active_scales,
     const ::ml_drift::TensorDescriptor& scales,
-    const ::ml_drift::TensorDescriptor& dst) {
+    const ::ml_drift::TensorDescriptor& dst, bool transposed_ae_s) {
   ScaleWithBatchIdsOp op;
   op.AddSrcTensor("input", input);
   op.AddSrcTensor("active_ids", active_ids);
@@ -68,6 +131,11 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateScaleWithBatchIds(
   op.AddSrcTensor("scales", scales);
   op.AddDstTensor("dst", dst);
   op.tensor_to_grid_ = ::ml_drift::TensorToGrid::kWBToX_HDToY_SToZ;
+  const std::string loop_bound =
+      transposed_ae_s ? "args.input.Height()" : "args.input.Width()";
+  const std::string read_expr = transposed_ae_s
+                                    ? "args.input.Read(x, ae_id, s, b)"
+                                    : "args.input.Read(ae_id, x, s, b)";
   op.code_ = R"(
 MAIN_FUNCTION($0) {
   int linear_id = ucl::GetGlobalId<0>();
@@ -80,12 +148,14 @@ MAIN_FUNCTION($0) {
     return;
   }
   float4 sum = ucl::Init<float4>(0.0f);
-  for (int ae_id = 0; ae_id < args.input.Width(); ++ae_id) {
+  for (int ae_id = 0; ae_id < )" +
+             loop_bound + R"(; ++ae_id) {
     int expert_id;
     args.active_ids.ReadPerChannel<int>(expert_id, x, 0, ae_id, b);
     float scale_value;
     args.scales.ReadPerChannel<float>(scale_value, 0, 0, expert_id, 0);
-    float4 in_value = ucl::Convert<float4>(args.input.Read(ae_id, x, s, b));
+    float4 in_value = ucl::Convert<float4>()" +
+             read_expr + R"();
     float active_scale;
     args.active_scales.ReadPerChannel<float>(active_scale, x, 0, ae_id, b);
     sum += in_value * (scale_value * active_scale);
@@ -134,26 +204,28 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
     const ::ml_drift::GpuModelBuilder::TensorHandle& input,
     const ::ml_drift::GpuModelBuilder::TensorHandle& active_ids,
     const ::ml_drift::GpuModelBuilder::TensorHandle& active_scales,
-    const ::ml_drift::GpuModelBuilder::TensorHandle& scales) {
+    const ::ml_drift::GpuModelBuilder::TensorHandle& scales,
+    bool transposed_ae_s) {
   const ::ml_drift::BHWC input_shape = input.tensor_desc.GetBHWCShape();
   const ::ml_drift::BHWC ids_shape = active_ids.tensor_desc.GetBHWCShape();
   const ::ml_drift::BHWC weights_shape =
       active_scales.tensor_desc.GetBHWCShape();
-  if (input_shape.h != ids_shape.w || input_shape.w != ids_shape.c ||
+  const int input_seq = transposed_ae_s ? input_shape.w : input_shape.h;
+  const int input_ae = transposed_ae_s ? input_shape.h : input_shape.w;
+  if (input_seq != ids_shape.w || input_ae != ids_shape.c ||
       ids_shape != weights_shape) {
     return absl::InvalidArgumentError(
-        "MoE ScaleWithBatchIds requires input [B, S, AE, D] and active_ids / "
-        "active_scales [B, 1, S, AE].");
+        "MoE ScaleWithBatchIds requires input [B, S, AE, D] (or [B, AE, S, D] "
+        "when transposed) and active_ids / active_scales [B, 1, S, AE].");
   }
-  const ::ml_drift::BHWC dst_shape(input_shape.b, 1, input_shape.h,
-                                   input_shape.c);
+  const ::ml_drift::BHWC dst_shape(input_shape.b, 1, input_seq, input_shape.c);
   ::ml_drift::GpuModelBuilder::TensorHandle dst =
       model_builder->AddTensor(dst_shape, input.tensor_desc.GetDataType());
   model_builder->AddGpuOperation(
       {input, active_ids, active_scales, scales}, {dst},
       CreateScaleWithBatchIds(input.tensor_desc, active_ids.tensor_desc,
                               active_scales.tensor_desc, scales.tensor_desc,
-                              dst.tensor_desc),
+                              dst.tensor_desc, transposed_ae_s),
       "moe_scale_with_batch_ids");
   return dst;
 }
@@ -235,7 +307,8 @@ absl::Status BuildMoeExpertsGpuGraph(
     const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale,
     int model_dim, int hidden_dim, int num_experts, int num_active_experts,
     MoeExpertsAttributes::WeightType weight_type,
-    MoeExpertsAttributes::Activation activation, ::ml_drift::ValueId output_id,
+    MoeExpertsAttributes::Activation activation, float gate_softcap,
+    float up_softcap, ::ml_drift::ValueId output_id,
     const ::ml_drift::BHWC& output_shape) {
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
   const int sequence_size = src_shape.w;
@@ -295,16 +368,20 @@ absl::Status BuildMoeExpertsGpuGraph(
       auto gate,
       run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
                             gate_shared_scale, model_dim, hidden_dim));
-  if (activation == MoeExpertsAttributes::Activation::kSilu) {
-    gate = model_builder->SiLU(gate);
-  } else {
-    gate = model_builder->MakeGeluTanh(gate);
-  }
-
   ABSL_ASSIGN_OR_RETURN(
       auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
                                       ff1_shared_scale, model_dim, hidden_dim));
-  auto hidden = model_builder->Multiplication(ff1, gate);
+  // Fuse gated activation (SiLU/GELU-tanh + optional gate/up softcaps) and
+  // elementwise multiply into a single GPU kernel to avoid up to 9 dispatches
+  // and intermediate tensor round-trips per MoE layer.
+  auto hidden = model_builder->AddTensor(gate.tensor_desc.GetBHWCShape(),
+                                         gate.tensor_desc.GetDataType());
+  model_builder->AddGpuOperation(
+      {gate, ff1}, {hidden},
+      CreateFusedMoeActivation(gate.tensor_desc, ff1.tensor_desc,
+                               hidden.tensor_desc, activation, gate_softcap,
+                               up_softcap),
+      "moe_fused_activation");
 
   ABSL_ASSIGN_OR_RETURN(
       auto expert_outputs,
@@ -329,8 +406,9 @@ absl::Status BuildMoeExpertsGpuGraph(
     model_builder->AddGpuOperation({expert_outputs, experts_packed_remap},
                                    {remapped_dst}, std::move(remap_from),
                                    "experts_remap_from");
-    expert_outputs =
-        model_builder->Transpose(remapped_dst, ::ml_drift::BHWC(0, 2, 1, 3));
+    // Pass `[B, AE, S, D]` directly into ScaleWithBatchIds (transposed_ae_s)
+    // to avoid a full `[B, AE, S, D] -> [B, S, AE, D]` transpose copy.
+    expert_outputs = remapped_dst;
   } else {
     expert_outputs = model_builder->Reshape(
         expert_outputs,
@@ -345,9 +423,9 @@ absl::Status BuildMoeExpertsGpuGraph(
       per_expert_scale, ::ml_drift::BHWC(1, 1, 1, num_experts));
 
   ABSL_ASSIGN_OR_RETURN(
-      auto combined,
-      ScaleWithBatchIds(model_builder, expert_outputs, active_ids,
-                        active_scales, expert_scales));
+      auto combined, ScaleWithBatchIds(model_builder, expert_outputs,
+                                       active_ids, active_scales, expert_scales,
+                                       /*transposed_ae_s=*/use_packed_groups));
   if (combined.tensor_desc.GetBHWCShape() != output_shape) {
     combined = model_builder->Reshape(combined, output_shape);
   }
@@ -441,7 +519,8 @@ absl::Status CreateMoeExpertsFromNode(
       linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
       linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
       attr.num_experts, attr.num_active_experts, attr.weight_type,
-      attr.activation, outputs[0]->id, outputs[0]->tensor.shape);
+      attr.activation, attr.gate_softcap, attr.up_softcap, outputs[0]->id,
+      outputs[0]->tensor.shape);
 }
 
 absl::Status CreateMoeExpertsFromIrOp(
@@ -452,7 +531,8 @@ absl::Status CreateMoeExpertsFromIrOp(
     ::ml_drift::GpuModelBuilder* model_builder) {
   const ir::MoeExpertsAttributes& attr =
       std::any_cast<const ir::MoeExpertsAttributes&>(node.attr);
-  if (inputs.size() != 7 || outputs.size() != 1) {
+  const bool has_shared_scales = inputs.size() == 10;
+  if ((inputs.size() != 7 && !has_shared_scales) || outputs.size() != 1) {
     return absl::InvalidArgumentError(
         "MoE experts operation received an unexpected input/output count.");
   }
@@ -470,12 +550,31 @@ absl::Status CreateMoeExpertsFromIrOp(
   const MoeScaleTensor* gate_scale_ptr = nullptr;
   const MoeScaleTensor* ff1_scale_ptr = nullptr;
   const MoeScaleTensor* linear_scale_ptr = nullptr;
+  ::ml_drift::GpuModelBuilder::TensorHandle gate_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle ff1_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle linear_shared_scale;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* gate_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* ff1_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale_ptr =
+      nullptr;
 
-  ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-  ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
-  ABSL_ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
-  ABSL_ASSIGN_OR_RETURN(per_expert_scale,
-                        model_builder->GetTensor(inputs[6]->id));
+  if (has_shared_scales) {
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[7]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[9]->id));
+  } else {
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[6]->id));
+  }
 
   if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8 ||
       attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
@@ -487,6 +586,23 @@ absl::Status CreateMoeExpertsFromIrOp(
     gate_scale_ptr = &attr.ff_gate_scale.value();
     ff1_scale_ptr = &attr.ff1_scale.value();
     linear_scale_ptr = &attr.linear_scale.value();
+    if (has_shared_scales) {
+      if (gate_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(gate_shared_scale,
+                              model_builder->GetTensor(inputs[4]->id));
+        gate_shared_scale_ptr = &gate_shared_scale;
+      }
+      if (ff1_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(ff1_shared_scale,
+                              model_builder->GetTensor(inputs[6]->id));
+        ff1_shared_scale_ptr = &ff1_shared_scale;
+      }
+      if (linear_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(linear_shared_scale,
+                              model_builder->GetTensor(inputs[8]->id));
+        linear_shared_scale_ptr = &linear_shared_scale;
+      }
+    }
   }
 
   auto legacy_weight_type =
@@ -503,11 +619,11 @@ absl::Status CreateMoeExpertsFromIrOp(
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
       linear_weight, per_expert_scale, gate_scale_ptr, ff1_scale_ptr,
-      linear_scale_ptr, /*gate_shared_scale=*/nullptr,
-      /*ff1_shared_scale=*/nullptr, /*linear_shared_scale=*/nullptr,
-      attr.model_dim, attr.hidden_dim, attr.num_experts,
-      attr.num_active_experts, legacy_weight_type, legacy_activation,
-      outputs[0]->id, outputs[0]->desc.GetBHWCShape());
+      linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
+      linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
+      attr.num_experts, attr.num_active_experts, legacy_weight_type,
+      legacy_activation, attr.gate_softcap, attr.up_softcap, outputs[0]->id,
+      outputs[0]->desc.GetBHWCShape());
 }
 
 }  // namespace litert::ml_drift

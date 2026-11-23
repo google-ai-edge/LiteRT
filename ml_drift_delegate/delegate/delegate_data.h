@@ -26,6 +26,7 @@
 #include "ml_drift_delegate/delegate/incrementable_blocking_counter.h"
 #include "ml_drift_delegate/delegate/serialization_weight_cache/serialization_weight_cache.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
+#include "ml_drift_delegate/delegate/weight_content_deduplicator.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 
 namespace weight_loader {
@@ -98,6 +99,11 @@ struct MlDriftDelegateData {
 
   // Shared weight cache for all subgraphs of the model.
   std::unique_ptr<::ml_drift::SerializationWeightCache> serialization_cache;
+
+  // Content-hash deduplicator mapping duplicate constant weight buffers (across
+  // subgraphs or across unrolled passes of looped layers) to one canonical
+  // buffer ID so weights are packed and allocated once on GPU.
+  WeightContentDeduplicator weight_content_deduplicator;
 };
 
 }  // namespace litert::ml_drift

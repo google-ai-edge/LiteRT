@@ -887,7 +887,7 @@ TEST_F(ConvertMoeExpertsTest,
 }
 
 TEST_F(ConvertMoeExpertsTest,
-       SharesQuantizedWeightsAndExcludesScalesFromSharedTensors) {
+       SharesQuantizedWeightsAndBlockScalesInSharedTensors) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
   builder.SetCustomName("moe");
   AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
@@ -911,19 +911,63 @@ TEST_F(ConvertMoeExpertsTest,
       *interpreter, internal_buffer_map, &shared_tensors);
   ASSERT_NE(ir_model, nullptr);
 
-  // Only the 3 quantized expert weight tensors (inputs 3, 5, 7) remain in
-  // shared_tensors; the 3 block-scale tensors (inputs 4, 6, 8) and
-  // per_expert_scale (input 9) are excluded.
+  // All 3 quantized expert weight tensors (inputs 3, 5, 7) and all 3
+  // block-scale tensors (inputs 4, 6, 8) are shared via SharedMemoryManager,
+  // while per_expert_scale (input 9) stays embedded as a constant op.
   std::vector<int> shared_tflite_tensor_ids;
   for (const auto& [ir_tensor_id, shared_info] : shared_tensors) {
     shared_tflite_tensor_ids.push_back(shared_info.tflite_tensor_id);
   }
   EXPECT_THAT(shared_tflite_tensor_ids,
-              UnorderedElementsAre(node.inputs->data[3], node.inputs->data[5],
-                                   node.inputs->data[7]));
+              UnorderedElementsAre(node.inputs->data[3], node.inputs->data[4],
+                                   node.inputs->data[5], node.inputs->data[6],
+                                   node.inputs->data[7], node.inputs->data[8]));
   ASSERT_THAT(ir_model->ops(), SizeIs(2));
+  EXPECT_THAT(ir_model->ops()[0]->inputs, SizeIs(10));
+  const auto* attr =
+      std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  ASSERT_TRUE(attr->ff_gate_scale.has_value());
+  EXPECT_TRUE(attr->ff_gate_scale->data.empty());
   EXPECT_THAT(ir_model->ops()[1]->name,
               Eq(ToString(::ml_drift::OperationType::kConstant)));
+}
+
+TEST_F(ConvertMoeExpertsTest, ParsesGateAndUpSoftcaps) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("moe");
+  AddInt8MoeInputs(builder, /*gate_blocks=*/1, /*ff1_blocks=*/1,
+                   /*linear_blocks=*/1);
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("num_experts", kNumExperts);
+    fbb.Int("num_active_experts", kNumActiveExperts);
+    fbb.Int("model_dim", kModelDim);
+    fbb.Int("hidden_dim", kHiddenDim);
+    fbb.String("weight_type", "int8");
+    fbb.String("activation", "silu");
+    fbb.Bool("renormalized_top_weights", true);
+    fbb.Float("gate_softcap", 4.0f);
+    fbb.Float("up_softcap", 25.0f);
+  });
+  fbb.Finish();
+  auto buffer = fbb.GetBuffer();
+  void* block = calloc(1, buffer.size());
+  memcpy(block, buffer.data(), buffer.size());
+  builder.SetCustomData(block, buffer.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_NE(ir_model, nullptr);
+  const auto* attr =
+      std::any_cast<MoeExpertsAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_FLOAT_EQ(attr->gate_softcap, 4.0f);
+  EXPECT_FLOAT_EQ(attr->up_softcap, 25.0f);
 }
 
 }  // namespace

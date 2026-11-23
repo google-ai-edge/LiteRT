@@ -294,6 +294,12 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
   attr.num_active_experts = map["num_active_experts"].AsInt32();
   attr.model_dim = map["model_dim"].AsInt32();
   attr.hidden_dim = map["hidden_dim"].AsInt32();
+  if (!IsMissing(map, "gate_softcap")) {
+    attr.gate_softcap = map["gate_softcap"].AsFloat();
+  }
+  if (!IsMissing(map, "up_softcap")) {
+    attr.up_softcap = map["up_softcap"].AsFloat();
+  }
   const std::string weight_type = map["weight_type"].AsString().str();
   if (weight_type == "fp32") {
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
@@ -609,19 +615,36 @@ bool IsNonSharedFloatWeightOrScaleInput(
   return input_index == kInputInt8PerExpertScale;
 }
 
-// TODO(b/481055324): Share quantized block-scale tensors across subgraphs via
-// SharedMemoryManager (mirroring AddBlockScaleConstInput / *_shared_scale in
-// the GraphFloat32 path from cl/996729016) instead of materializing a copy per
-// subgraph in MoeExpertsAttributes.
-MoeScaleTensor ReadScaleTensor(const TfLiteContext& context,
-                               const TfLiteNode& tflite_node, int index) {
+MoeScaleTensor ReadScaleTensorShapeOnly(const TfLiteContext& context,
+                                        const TfLiteNode& tflite_node,
+                                        int index) {
   const TfLiteTensor* t = &context.tensors[tflite_node.inputs->data[index]];
   auto shape = ::litert::ml_drift::ExtractTensorShape(t);
   MoeScaleTensor res;
+  res.id = tflite_node.inputs->data[index];
   res.shape = ::ml_drift::OHWI(shape.b, shape.h, shape.w, shape.c);
+  return res;
+}
+
+MoeScaleTensor ReadScaleTensor(const TfLiteContext& context,
+                               const TfLiteNode& tflite_node, int index) {
+  MoeScaleTensor res = ReadScaleTensorShapeOnly(context, tflite_node, index);
+  const TfLiteTensor* t = &context.tensors[tflite_node.inputs->data[index]];
   res.data.resize(res.shape.DimensionsProduct());
   ::litert::ml_drift::ir::CopyFloat32Data(t, res.data.data());
   return res;
+}
+
+bool IsSharedIrTensor(
+    const ::ml_drift::ir::IrModel& ir_model,
+    const absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>& tensor_map,
+    const TfLiteNode& tflite_node, int input_index) {
+  const int tfl_id = tflite_node.inputs->data[input_index];
+  if (tfl_id == kTfLiteOptionalTensor) return false;
+  auto it = tensor_map.find(tfl_id);
+  if (it == tensor_map.end()) return false;
+  const ::ml_drift::ir::IrTensor* t = ir_model.tensor(it->second);
+  return t != nullptr && t->buffer_source.is_shared;
 }
 
 void MoeExpertsConvert(
@@ -635,21 +658,37 @@ void MoeExpertsConvert(
 
   absl::StatusOr<MoeExpertsAttributes> attr =
       ReadAttributesOrInfer(&context, &tflite_node, &registration);
+  bool share_block_scales = false;
   if (attr.ok()) {
     if (attr->weight_type == MoeExpertsAttributes::WeightType::kInt8 ||
         attr->weight_type == MoeExpertsAttributes::WeightType::kInt4) {
-      attr->ff_gate_scale =
-          ReadScaleTensor(context, tflite_node, kInputInt8GateScale);
-      attr->ff1_scale =
-          ReadScaleTensor(context, tflite_node, kInputInt8Ff1Scale);
-      attr->linear_scale =
-          ReadScaleTensor(context, tflite_node, kInputInt8LinearScale);
+      share_block_scales = IsSharedIrTensor(ir_model, tensor_map, tflite_node,
+                                            kInputInt8GateScale) &&
+                           IsSharedIrTensor(ir_model, tensor_map, tflite_node,
+                                            kInputInt8Ff1Scale) &&
+                           IsSharedIrTensor(ir_model, tensor_map, tflite_node,
+                                            kInputInt8LinearScale);
+      if (share_block_scales) {
+        attr->ff_gate_scale =
+            ReadScaleTensorShapeOnly(context, tflite_node, kInputInt8GateScale);
+        attr->ff1_scale =
+            ReadScaleTensorShapeOnly(context, tflite_node, kInputInt8Ff1Scale);
+        attr->linear_scale = ReadScaleTensorShapeOnly(context, tflite_node,
+                                                      kInputInt8LinearScale);
+      } else {
+        attr->ff_gate_scale =
+            ReadScaleTensor(context, tflite_node, kInputInt8GateScale);
+        attr->ff1_scale =
+            ReadScaleTensor(context, tflite_node, kInputInt8Ff1Scale);
+        attr->linear_scale =
+            ReadScaleTensor(context, tflite_node, kInputInt8LinearScale);
+      }
     }
     op->attr = *attr;
   }
 
   for (int i = 0; i < tflite_node.inputs->size; ++i) {
-    if (attr.ok() &&
+    if (attr.ok() && !share_block_scales &&
         (attr->weight_type == MoeExpertsAttributes::WeightType::kInt8 ||
          attr->weight_type == MoeExpertsAttributes::WeightType::kInt4)) {
       if (i == kInputInt8GateScale || i == kInputInt8Ff1Scale ||
