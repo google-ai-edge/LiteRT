@@ -33,10 +33,11 @@ Y = X * W^T = (X * H) * (W * H)^T
 
 import dataclasses
 import enum
-from typing import Any, Optional
+from typing import Any
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import octav
+from litert_quantizer.algorithms.uniform_quantize import uniform_quantize_tensor
 from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 
@@ -64,29 +65,38 @@ DECOMPOSED_ALGORITHM_KEY = "DECOMPOSED_HADAMARD_ROTATION"
 _HYBRID_MAX_DIM = 48
 
 
-class _AutoLowerNameEnum(enum.Enum):
-  """Enum base whose `enum.auto()` values are lowercase member names."""
+def _lowercase_enum_value(
+    name: str, start: int, count: int, last_values: list[str]
+) -> str:
+  """Maps an `enum.auto()` member name to its lowercase string value.
 
-  @staticmethod
-  def _generate_next_value_(
-      name: str, start: int, count: int, last_values: list[str]
-  ) -> str:
-    del start, count, last_values
-    return name.lower()
+  Args:
+    name: The enum member name.
+    start: The initial value passed to `enum.auto()` (unused).
+    count: The number of existing enum members (unused).
+    last_values: Previously assigned enum member values (unused).
+
+  Returns:
+    The lowercase enum member name.
+  """
+  del start, count, last_values
+  return name.lower()
 
 
 @enum.unique
-class QInitMode(_AutoLowerNameEnum):
+class QInitMode(enum.Enum):
   """Cross-block orthogonal matrix initializer mode (`Q_1` in `(Q_1, H_d)`)."""
 
+  _generate_next_value_ = _lowercase_enum_value
   NONE = enum.auto()
   AUTO = enum.auto()
 
 
 @enum.unique
-class SizingMode(_AutoLowerNameEnum):
+class SizingMode(enum.Enum):
   """Hadamard block size (`d`) strategy for `QInitMode.AUTO`."""
 
+  _generate_next_value_ = _lowercase_enum_value
   MIN_COMPUTE = enum.auto()
   MAX_POWER_OF_TWO = enum.auto()
 
@@ -115,7 +125,7 @@ def _as_non_bool_int(value: _IntLike, name: str) -> int:
 
 
 def _get_max_hadamard_size(
-    dim: _IntLike, max_size: Optional[_IntLike] = None
+    dim: _IntLike, max_size: _IntLike | None = None
 ) -> int:
   """Returns the largest power of 2 that divides `dim`, capped at `max_size`.
 
@@ -152,7 +162,7 @@ def _get_max_hadamard_size(
 
 def _select_kronecker_hadamard_size(
     dim: _IntLike,
-    max_size: Optional[_IntLike] = None,
+    max_size: _IntLike | None = None,
     sizing_mode: SizingMode | str = SizingMode.MIN_COMPUTE,
 ) -> int:
   """Selects power-of-2 divisor `d | dim` using the specified `sizing_mode`."""
@@ -176,7 +186,7 @@ def _select_kronecker_hadamard_size(
 
 def get_hadamard_block_size(
     dim: _IntLike,
-    max_hadamard_size: Optional[_IntLike] = None,
+    max_hadamard_size: _IntLike | None = None,
     q_init_mode: QInitMode | str = QInitMode.NONE,
     sizing_mode: SizingMode | str = SizingMode.MIN_COMPUTE,
 ) -> int:
@@ -291,7 +301,7 @@ def make_cross_block_matrix(
     m: _IntLike,
     q_init_mode: QInitMode | str,
     seed: _IntLike = 0,
-) -> Optional[np.ndarray]:
+) -> np.ndarray | None:
   """Constructs the cross-block orthogonal matrix `Q_1` of shape `(m, m)`.
 
   Exposes the deterministic cross-block orthogonal factor `Q_1` used by 2-stage
@@ -428,30 +438,12 @@ def _rotate_with_diagonal_hadamard(
   )
 
 
-# Motivation for `int2_in_int4` (temporary 4-level 2-bit mid-riser emulation in
-# INT4):
-# Standard symmetric 2-bit quantization (`num_bits=2, symmetric=True`) in
-# LiteRT/TFLite uses the grid `{-2, -1, 0, +1} * scale` with `scale = clip` (so
-# `-2` is only reached below `-1.5 * clip`, leaving effectively 3 levels
-# `{-1, 0, +1} * scale` within `[-clip, clip]` to preserve `zero_point=0`),
-# which places a wide deadzone bin at zero and incurs high quantization error on
-# continuous Hadamard/Kronecker-rotated weight distributions that peak near zero
-# (~30% higher Relative RMSE / ~2x higher MSE than a 4-level symmetric grid). A
-# 4-level symmetric mid-riser codebook `{-1.5, -0.5, +0.5, +1.5} * delta` uses
-# all 4 states symmetrically around zero without a zero bin.
-#
-# Because TFLite/LiteRT FlatBuffers and runtime kernels (`XNNPACK`, CPU, GPU)
-# do not yet implement native 2-bit mid-riser unpacking and dequantization,
-# `int2_in_int4=True` is a temporary evaluation/emulation mode that encodes the
-# 4 mid-riser levels as odd integers `{-3, -1, +1, +3}` with half-step scale
-# `scale = delta / 2 = clip / 4` (`{-3, -1, +1, +3} * scale =
-# {-1.5, -0.5, +0.5, +1.5} * delta`) inside a standard signed `INT4` container
-# (`num_bits=4, symmetric=True, zero_point=0`). This enables end-to-end
-# accuracy evaluation and mixed-precision (`W2`/`W4`/`W8`) bit-allocation recipe
-# prototyping on existing `INT4` kernels before dedicated 2-bit mid-riser
-# kernels land. Because weights remain stored in `INT4` containers during this
-# emulation, `int2_in_int4=True` provides no FlatBuffer file size or runtime
-# memory reduction over `INT4`.
+# `int2_in_int4=True` encodes the 4-level mid-riser grid {-1.5, -0.5, 0.5, 1.5}
+# (centered INT2 with zero_point=-0.5) as odd INT4 codes {-3, -1, +1, +3}
+# (scale = clip / 4, zero_point = 0) for delegates such as XNNPACK that support
+# INT4 but not centered INT2 (BlockwiseQuantization). Because weights remain in
+# INT4 containers, it provides no FlatBuffer storage reduction over INT4. See
+# `hadamard_rotation.md` section 2.2 for details.
 
 
 def _quantize_mse_chunk(
@@ -460,28 +452,33 @@ def _quantize_mse_chunk(
     qmin: float,
     qmax: float,
     int2_in_int4: bool,
+    code_offset: np.float32,
 ) -> np.ndarray:
   """Quantizes a weight chunk during MSE scale refinement.
 
   When `int2_in_int4=True`, candidate scales must be evaluated on the 4-level
   odd mid-riser codebook `{-3, -1, 1, 3}` (step `2 * s_chunk`) rather than the
   full `[-8, 7]` `INT4` grid; otherwise `scale_refinement="mse_grid"` would
-  overwrite the 2-bit emulation with 4-bit codes.
+  overwrite the 2-bit emulation with 4-bit codes. Otherwise rounds
+  `w_chunk / s_chunk - code_offset` onto `[qmin, qmax]`, preserving centered
+  `INT2` (`code_offset=0.5`, `zero_point=-0.5`) and standard `zero_point=0`
+  grids (`code_offset=0.0`).
 
   Args:
     w_chunk: Float32 rotated weight chunk `[rows, cols]`.
     s_chunk: Candidate per-row scale `[rows, 1]`.
     qmin: Minimum integer code for standard uniform rounding.
     qmax: Maximum integer code for standard uniform rounding.
-    int2_in_int4: Whether to restrict codes to `{-3, -1, 1, 3}`.
+    int2_in_int4: Whether to restrict `INT4` codes to `{-3, -1, 1, 3}`.
+    code_offset: Offset added to quantized codes during dequantization (`0.5`
+      for centered `INT2` with `zero_point=-0.5`, `0.0` when `zero_point=0`).
 
   Returns:
     Quantized float32 codes matching `w_chunk` shape.
   """
   if int2_in_int4:
-    # pylint: disable-next=protected-access
-    return octav._to_odd_int4_codes(w_chunk, s_chunk).astype(np.float32)
-  return np.clip(np.rint(w_chunk / s_chunk), qmin, qmax)
+    return octav.to_odd_int4_codes(w_chunk, s_chunk).astype(np.float32)
+  return np.clip(np.rint(w_chunk / s_chunk - code_offset), qmin, qmax)
 
 
 def _refine_quant_params_mse(
@@ -491,11 +488,11 @@ def _refine_quant_params_mse(
 ) -> qtyping.UniformQuantParams:
   """Refines per-channel symmetric scale and quantized_data for L2 MSE.
 
-  When `int2_in_int4=True` (temporary 4-level 2-bit mid-riser emulation inside
-  an `INT4` container), both the multiplier grid search and the 2-step
-  alternating least-squares (ALS) update round candidate scales onto the odd
-  codebook `{-3, -1, 1, 3}` instead of the full `[-8, 7]` `INT4` grid so the
-  2-bit emulation is preserved.
+  Preserves both the centered `INT2` grid (`(q + 0.5) * scale` for `q in
+  {-2, -1, 0, 1}` when `zero_point = -0.5`) and the odd `INT4` mid-riser grid
+  (`q * scale` for `q in {-3, -1, 1, 3}` when `int2_in_int4=True`) across both
+  the multiplier grid search and the 2-step alternating least-squares (ALS)
+  update.
 
   Args:
     w_rotated: Rotated weight tensor `[m_rows, d_cols]`.
@@ -505,8 +502,13 @@ def _refine_quant_params_mse(
   Returns:
     Refined `UniformQuantParams`.
   """
+  centered_int2 = uniform_quantize_tensor.is_centered_int2_zero_point(
+      uniform_quantize_tensor.IntType(qparams.num_bits, signed=qparams.signed),
+      qparams.zero_point,
+  )
   if (
       not qparams.symmetric
+      or not (np.all(qparams.zero_point == 0) or centered_int2)
       or qparams.block_size != 0
       or qparams.quantized_dimension != 0
       or w_rotated.ndim != 2
@@ -518,6 +520,7 @@ def _refine_quant_params_mse(
   orig_scale_shape = qparams.scale.shape
   orig_scale_dtype = qparams.scale.dtype
   orig_q_dtype = qparams.quantized_data.dtype
+  code_offset = np.float32(0.5) if centered_int2 else np.float32(0.0)
 
   qmax = float((1 << (qparams.num_bits - 1)) - 1)
   narrow = qparams.symmetric and qparams.num_bits >= 8
@@ -542,12 +545,20 @@ def _refine_quant_params_mse(
     s_cur = best_scale[start:end].copy()
     s_base_chunk = base_scale[start:end]
     q_cur = best_q[start:end].astype(np.float32)
-    err_cur = np.sum((w_chunk - q_cur * s_cur) ** 2, axis=1, keepdims=True)
+    err_cur = np.sum(
+        (w_chunk - (q_cur + code_offset) * s_cur) ** 2, axis=1, keepdims=True
+    )
 
     for alpha in alphas:
       s_cand = np.maximum(s_base_chunk * alpha, 1e-9)
-      q_cand = _quantize_mse_chunk(w_chunk, s_cand, qmin, qmax, int2_in_int4)
-      err_cand = np.sum((w_chunk - q_cand * s_cand) ** 2, axis=1, keepdims=True)
+      q_cand = _quantize_mse_chunk(
+          w_chunk, s_cand, qmin, qmax, int2_in_int4, code_offset
+      )
+      err_cand = np.sum(
+          (w_chunk - (q_cand + code_offset) * s_cand) ** 2,
+          axis=1,
+          keepdims=True,
+      )
       improved = err_cand < err_cur
       err_cur = np.where(improved, err_cand, err_cur)
       s_cur = np.where(improved, s_cand, s_cur)
@@ -556,12 +567,19 @@ def _refine_quant_params_mse(
     # Perform 2 final alternating least-squares steps with exact re-rounding
     s_cand = s_cur
     for _ in range(2):
-      qq = np.sum(q_cur * q_cur, axis=1, keepdims=True)
-      wq = np.sum(w_chunk * q_cur, axis=1, keepdims=True)
+      q_eff = q_cur + code_offset
+      qq = np.sum(q_eff * q_eff, axis=1, keepdims=True)
+      wq = np.sum(w_chunk * q_eff, axis=1, keepdims=True)
       s_cand = np.where(qq > 0.0, wq / np.maximum(qq, 1e-12), s_cand)
       s_cand = np.maximum(s_cand, 1e-9)
-      q_cand = _quantize_mse_chunk(w_chunk, s_cand, qmin, qmax, int2_in_int4)
-      err_cand = np.sum((w_chunk - q_cand * s_cand) ** 2, axis=1, keepdims=True)
+      q_cand = _quantize_mse_chunk(
+          w_chunk, s_cand, qmin, qmax, int2_in_int4, code_offset
+      )
+      err_cand = np.sum(
+          (w_chunk - (q_cand + code_offset) * s_cand) ** 2,
+          axis=1,
+          keepdims=True,
+      )
       improved = err_cand < err_cur
       err_cur = np.where(improved, err_cand, err_cur)
       s_cur = np.where(improved, s_cand, s_cur)
@@ -580,8 +598,8 @@ def _refine_quant_params_mse(
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Returns the quantization parameters for a tensor.
 
@@ -590,10 +608,22 @@ def get_tensor_quant_params(
 
   Args:
     op_info: Aggregated information about the op (e.g., quantization config).
-    tensor_quant_config: The quantization config for the tensor.
+    tensor_quant_config: The quantization config for the tensor. When
+      `num_bits=2` and `symmetric=True` for signed weight tensors,
+      `algorithm_params['centered']` defaults to `True` to quantize rotated
+      weights onto the centered 2-bit mid-riser grid `{-1.5, -0.5, 0.5, 1.5} *
+      scale` (`{-2, -1, 0, 1}` with `zero_point=-0.5`); pass
+      `algorithm_params={'centered': False}` to opt out for legacy mid-tread
+      quantization (`zero_point=0`). Also supports
+      `algorithm_params={'int2_in_int4': True}` when `num_bits=4` and
+      `symmetric=True`.
     tensor_content: The content of the tensor. When None, it means the tensor is
       not a weight tensor (e.g. static quantization).
     tensor_qsv: A dictionary containing the min/max of the tensor.
+
+  Returns:
+    The computed `UniformQuantParams`, including `hadamard` rotation metadata
+    and quantized tensor data.
 
   Raises:
     ValueError: If the blockwise quantization is requested.
@@ -604,6 +634,9 @@ def get_tensor_quant_params(
       less than 2.
     ValueError: If `int2_in_int4` is not a boolean or is enabled without
       symmetric 4-bit quantization.
+    ValueError: If `centered` is not a boolean or is enabled without symmetric
+      2-bit quantization.
+    ValueError: If `scale_refinement` is not in `VALID_SCALE_REFINEMENTS`.
   """
   if tensor_content is None:
     raise ValueError("Hadamard rotation is only supported for weight tensors.")
@@ -640,7 +673,7 @@ def get_tensor_quant_params(
       sizing_mode=alg_params.get("sizing_mode", SizingMode.MIN_COMPUTE),
   )
 
-  # Get the quantized values of the rotated tensor (validates int2_in_int4).
+  # Quantize the rotated tensor (validates int2_in_int4 and centered).
   qparams = octav.get_tensor_quant_params(
       op_info, tensor_quant_config, w_rotated, tensor_qsv
   )
@@ -679,7 +712,7 @@ def _materialize_fully_connected(
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
     is_decomposed: bool = False,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   """Materialize the fully_connected op.
 
@@ -697,6 +730,7 @@ def _materialize_fully_connected(
     Quantization configuration for the tensors associated with the op (e.g.,
     weights, bias).
   """
+  del tensor_name_to_qsv
   if op_info.op_quant_config.weight_tensor_config is None:
     raise ValueError(
         "Weight tensor quantization config is not provided for Hadamard"
@@ -806,7 +840,7 @@ def materialize_fully_connected_custom_op(
     op_info: qtyping.OpInfo,
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   return _materialize_fully_connected(
       op_info,
@@ -821,7 +855,7 @@ def materialize_fully_connected_decomposed(
     op_info: qtyping.OpInfo,
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   return _materialize_fully_connected(
       op_info,
@@ -837,7 +871,7 @@ def _materialize_embedding_lookup(
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
     is_decomposed: bool = False,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,  # pylint: disable=unused-argument
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   """Materialize the embedding_lookup op.
 
@@ -855,6 +889,7 @@ def _materialize_embedding_lookup(
     Quantization configuration for the tensors associated with the op (e.g.,
     weights, bias).
   """
+  del tensor_name_to_qsv
   op_tensor_params = []
 
   # Materialize lookup.
@@ -945,7 +980,7 @@ def materialize_embedding_lookup_custom_op(
     op_info: qtyping.OpInfo,
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   return _materialize_embedding_lookup(
       op_info,
@@ -960,7 +995,7 @@ def materialize_embedding_lookup_decomposed(
     op_info: qtyping.OpInfo,
     graph_info: qtyping.GraphInfo,
     tensor_quant_params_cache: common_utils.TensorQuantParamsCache,
-    tensor_name_to_qsv: Optional[dict[str, Any]] = None,
+    tensor_name_to_qsv: dict[str, Any] | None = None,
 ) -> list[qtyping.TensorTransformationParams]:
   return _materialize_embedding_lookup(
       op_info,
