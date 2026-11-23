@@ -32,6 +32,7 @@ namespace {
 
 using testing::AllOf;
 using testing::HasSubstr;
+using testing::Not;
 using testing::Property;
 using testing::litert::IsError;
 
@@ -409,6 +410,99 @@ TEST(LiteRtErrorStatusBuilderTest, ConvertToAbslStatusOr) {
   EXPECT_FALSE(error_2.ok());
   EXPECT_EQ(error_2.status().code(), absl::StatusCode::kInvalidArgument);
   EXPECT_THAT(error_2.status().message(), HasSubstr("An error message."));
+}
+
+TEST(LiteRtErrorStatusBuilderTest, ExposesStatusAndMessage) {
+  ErrorStatusBuilder builder(
+      Unexpected(Status::kErrorNotFound, "An error message."));
+  builder << "Extra message";
+
+  EXPECT_EQ(builder.StatusValue(), Status::kErrorNotFound);
+  EXPECT_EQ(builder.Message(), "An error message.");
+}
+
+TEST(LiteRtErrorStatusBuilderTest, SetStatusReplacesStatusAndKeepsMessage) {
+  ErrorStatusBuilder builder(
+      Unexpected(Status::kErrorCompilation, "An error message."));
+  builder.SetStatus(Status::kErrorInvalidArgument) << "Extra message";
+
+  EXPECT_EQ(builder.StatusValue(), Status::kErrorInvalidArgument);
+  EXPECT_EQ(builder.Message(), "An error message.");
+
+  const Expected<void> expected = builder;
+  ASSERT_THAT(expected, IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      expected.Error().Message(),
+      AllOf(HasSubstr("Extra message"), HasSubstr("An error message.")));
+}
+
+TEST(LiteRtReturnIfErrorTest, SetStatusReplacesReturnedStatus) {
+  EXPECT_EQ(
+      []() -> LiteRtStatus {
+        LITERT_RETURN_IF_ERROR(Unexpected(Status::kErrorCompilation))
+            .SetStatus(Status::kErrorInvalidArgument);
+        return kLiteRtStatusOk;
+      }(),
+      kLiteRtStatusErrorInvalidArgument);
+
+  const Expected<void> expected = []() -> Expected<void> {
+    LITERT_RETURN_IF_ERROR(
+        Unexpected(Status::kErrorCompilation, "An error message."))
+            .SetStatus(Status::kErrorInvalidArgument)
+        << "Extra message";
+    return {};
+  }();
+  ASSERT_THAT(expected, IsError(kLiteRtStatusErrorInvalidArgument));
+  EXPECT_THAT(
+      expected.Error().Message(),
+      AllOf(HasSubstr("Extra message"), HasSubstr("An error message.")));
+}
+
+TEST(LiteRtAssignOrReturnTest, SetStatusReplacesReturnedStatus) {
+  auto replace_status = [](Expected<int> input) -> absl::StatusOr<int> {
+    LITERT_ASSIGN_OR_RETURN(int value, std::move(input),
+                            _.SetStatus(Status::kErrorInvalidArgument)
+                                << "Extra message");
+    return value;
+  };
+
+  const absl::StatusOr<int> error = replace_status(Expected<int>(
+      Unexpected(Status::kErrorCompilation, "An error message.")));
+  EXPECT_EQ(error.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(error.status().message(), AllOf(HasSubstr("Extra message"),
+                                              HasSubstr("An error message.")));
+
+  const absl::StatusOr<int> value = replace_status(Expected<int>(1));
+  ASSERT_TRUE(value.ok());
+  EXPECT_EQ(*value, 1);
+}
+
+TEST(LiteRtAssignOrReturnTest, RemapsOnlyTheMatchingStatus) {
+  auto remap_compilation_error =
+      [](Expected<int> input) -> absl::StatusOr<int> {
+    LITERT_ASSIGN_OR_RETURN(int value, std::move(input),
+                            _.StatusValue() == Status::kErrorCompilation
+                                ? _.SetStatus(Status::kErrorInvalidArgument)
+                                      << "Extra message"
+                                : _);
+    return value;
+  };
+
+  const absl::StatusOr<int> remapped = remap_compilation_error(Expected<int>(
+      Unexpected(Status::kErrorCompilation, "An error message.")));
+  EXPECT_EQ(remapped.status().code(), absl::StatusCode::kInvalidArgument);
+  EXPECT_THAT(
+      remapped.status().message(),
+      AllOf(HasSubstr("Extra message"), HasSubstr("An error message.")));
+
+  const absl::StatusOr<int> not_remapped = remap_compilation_error(
+      Expected<int>(Unexpected(Status::kErrorNotFound, "An error message.")));
+  EXPECT_EQ(not_remapped.status().code(), absl::StatusCode::kNotFound);
+  EXPECT_THAT(not_remapped.status().message(), Not(HasSubstr("Extra message")));
+
+  const absl::StatusOr<int> value = remap_compilation_error(Expected<int>(1));
+  ASSERT_TRUE(value.ok());
+  EXPECT_EQ(*value, 1);
 }
 
 }  // namespace
