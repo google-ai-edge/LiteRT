@@ -472,28 +472,43 @@ LiteRtStatus LiteRtClearMetalMemory(HwMemoryInfoPtr hw_memory_info) {
                          range:NSMakeRange(0, gpu_tensor.GetMemorySizeInBytes())
                          value:0];
     } else if (auto texture = gpu_tensor.GetTextureHandle(); texture != nil) {
-      absl_status =
-          ::ml_drift::metal::CreateBuffer(memory_info->packed_bytes,
-                                          /*data=*/nullptr, command_queue.device, &temp_buffer);
-      if (absl_status.ok()) {
-        [blit_encoder fillBuffer:temp_buffer.GetMemoryPtr()
-                           range:NSMakeRange(0, memory_info->packed_bytes)
-                           value:0];
-        [blit_encoder copyFromBuffer:temp_buffer.GetMemoryPtr()
-                        sourceOffset:0
-                   sourceBytesPerRow:memory_info->packed_bytes / texture.height
-                 sourceBytesPerImage:memory_info->packed_bytes
-                          sourceSize:MTLSizeMake(texture.width, texture.height, texture.depth)
-                           toTexture:texture
-                    destinationSlice:0
-                    destinationLevel:0
-                   destinationOrigin:MTLOriginMake(0, 0, 0)];
+      // The zero source must cover the whole texture, which holds padded RGBA
+      // texels, so size it from the pixel format and dimensions, not from
+      // `packed_bytes` (the host-side size, which is smaller).
+      const int pixel_size = ::ml_drift::metal::PixelFormatToSizeInBytes(texture.pixelFormat);
+      if (pixel_size <= 0) {
+        absl_status = absl::UnimplementedError("Unsupported texture pixel format for clearing");
+      } else {
+        const size_t bytes_per_row = static_cast<size_t>(pixel_size) * texture.width;
+        const size_t bytes_per_image = bytes_per_row * texture.height;
+        const size_t zero_bytes = bytes_per_image * texture.depth;
+        absl_status = ::ml_drift::metal::CreateBuffer(zero_bytes, /*data=*/nullptr,
+                                                      command_queue.device, &temp_buffer);
+        if (absl_status.ok()) {
+          [blit_encoder fillBuffer:temp_buffer.GetMemoryPtr()
+                             range:NSMakeRange(0, zero_bytes)
+                             value:0];
+          // Every slice of a 2D array texture reuses the same zero image.
+          for (NSUInteger slice = 0; slice < texture.arrayLength; ++slice) {
+            [blit_encoder copyFromBuffer:temp_buffer.GetMemoryPtr()
+                            sourceOffset:0
+                       sourceBytesPerRow:bytes_per_row
+                     sourceBytesPerImage:bytes_per_image
+                              sourceSize:MTLSizeMake(texture.width, texture.height, texture.depth)
+                               toTexture:texture
+                        destinationSlice:slice
+                        destinationLevel:0
+                       destinationOrigin:MTLOriginMake(0, 0, 0)];
+          }
+        }
       }
     } else {
       absl_status = absl::UnimplementedError("Unsupported tensor spatial format");
     }
+    // End encoding on every path: Metal requires it before the encoder is
+    // released, even if the command buffer is never committed.
+    [blit_encoder endEncoding];
     if (absl_status.ok()) {
-      [blit_encoder endEncoding];
       [command_buffer commit];
       [command_buffer waitUntilCompleted];
     }

@@ -17,11 +17,13 @@
 
 #include <malloc/malloc.h>
 #include <unistd.h>
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_environment.h"
 #include "litert/c/litert_environment_options.h"
@@ -426,6 +428,61 @@
   }
   status = LiteRtUnlockMetalMemory(memoryInfo);
   XCTAssertEqual(status, kLiteRtStatusOk);
+
+  status = LiteRtDestroyMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+}
+
+- (void)testClearMetalMemoryTextureZeroesEveryTexel {
+  if (!_device) return;
+
+  // A 1-channel tensor is stored as RGBA32F texels, so the texture (32 KiB) is
+  // 4x larger than the packed tensor (8 KiB). The clear must zero every texel,
+  // including the padding channels, in every row.
+  constexpr int kHeight = 2;
+  constexpr int kWidth = 1024;
+  constexpr int kTexelFloats = 4;
+  LiteRtRankedTensorType tensorType;
+  tensorType.element_type = kLiteRtElementTypeFloat32;
+  tensorType.layout.rank = 4;
+  tensorType.layout.dimensions[0] = 1;
+  tensorType.layout.dimensions[1] = kHeight;
+  tensorType.layout.dimensions[2] = kWidth;
+  tensorType.layout.dimensions[3] = 1;
+  tensorType.layout.has_strides = false;
+  const size_t bytes = kHeight * kWidth * sizeof(float);
+
+  MTLTextureDescriptor* desc = [[MTLTextureDescriptor alloc] init];
+  desc.textureType = MTLTextureType2D;
+  desc.pixelFormat = MTLPixelFormatRGBA32Float;
+  desc.width = kWidth;
+  desc.height = kHeight;
+  desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+  desc.storageMode = MTLStorageModeShared;
+  id<MTLTexture> texture = [_device newTextureWithDescriptor:desc];
+  XCTAssertNotNil(texture);
+
+  const NSUInteger bytesPerRow = kWidth * kTexelFloats * sizeof(float);
+  const MTLRegion region = MTLRegionMake2D(0, 0, kWidth, kHeight);
+  std::vector<float> texels(kHeight * kWidth * kTexelFloats, 1.0f);
+  [texture replaceRegion:region mipmapLevel:0 withBytes:texels.data() bytesPerRow:bytesPerRow];
+
+  HwMemoryInfoPtr memoryInfo = nullptr;
+  LiteRtStatus status = LiteRtImportMetalMemory(
+      (__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+      kLiteRtTensorBufferTypeMetalTexture, (__bridge void*)texture, bytes, bytes, &memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  status = LiteRtClearMetalMemory(memoryInfo);
+  XCTAssertEqual(status, kLiteRtStatusOk);
+
+  std::fill(texels.begin(), texels.end(), -1.0f);
+  [texture getBytes:texels.data() bytesPerRow:bytesPerRow fromRegion:region mipmapLevel:0];
+  size_t nonZeroCount = 0;
+  for (float value : texels) {
+    if (value != 0.0f) ++nonZeroCount;
+  }
+  XCTAssertEqual(nonZeroCount, 0u);
 
   status = LiteRtDestroyMetalMemory(memoryInfo);
   XCTAssertEqual(status, kLiteRtStatusOk);

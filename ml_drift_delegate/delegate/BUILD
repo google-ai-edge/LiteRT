@@ -1513,6 +1513,9 @@ ios_unit_test(
 
 macos_unit_test(
     name = "buffer_handler_metal_test_macos",
+    # Metal API validation turns invalid blits (e.g. out-of-bounds buffer
+    # reads, which otherwise go unnoticed) into test failures.
+    env = {"MTL_DEBUG_LAYER": "1"},
     minimum_os_version = "12.0",
     deps = [":buffer_handler_metal_test_lib"],
 )
