@@ -267,8 +267,10 @@ cc_library(
         ":shared_memory_manager",
         "//ml_drift_delegate/delegate:unowned_tensor_desc",
         "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",
         "@com_google_absl//absl/types:span",
@@ -336,6 +338,18 @@ cc_library(
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/webgpu:execution_environment",
         "@ml_drift//ml_drift/webgpu:spatial_tensor",
+    ],
+)
+
+cc_test(
+    name = "shared_memory_manager_webgpu_common_test",
+    srcs = ["shared_memory_manager_webgpu_common_test.cc"],
+    deps = [
+        ":shared_memory_manager_webgpu_common",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:types",
     ],
 )
 
