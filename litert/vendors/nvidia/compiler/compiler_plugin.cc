@@ -405,12 +405,82 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
   }
 }
 
+// The single user of `tensor`, if it has one of code `code`.
+std::optional<litert::compiler::Op> OnlyUser(
+    const litert::compiler::Tensor& tensor, LiteRtOpCode code) {
+  const auto uses = tensor.Uses();
+  if (uses.size() != 1 || uses[0].user.Code() != code) return std::nullopt;
+  return uses[0].user;
+}
+
+// The producer of `tensor`, if of code `code`.
+std::optional<litert::compiler::Op> ProducerOf(
+    const litert::compiler::Tensor& tensor, LiteRtOpCode code) {
+  if (tensor.IsSubgraphInput() || tensor.HasWeights()) return std::nullopt;
+  const auto op = tensor.GetDefiningOp();
+  if (!op || op->Code() != code) return std::nullopt;
+  return *op;
+}
+
+// Whether `mul` is the product sign(g) * sqrt(max(abs(g), c)) of Qwen 4's PLE
+// gate (sigmoid of it): SIGN and ABS of one tensor, MAXIMUM with a constant,
+// SQRT, MUL.
+bool IsSignedRootProduct(const litert::compiler::Op& mul) {
+  if (mul.Code() != kLiteRtOpCodeTflMul || mul.Inputs().size() != 2) {
+    return false;
+  }
+  for (int i = 0; i < 2; ++i) {
+    const auto sign = ProducerOf(mul.Inputs()[i], kLiteRtOpCodeTflSign);
+    const auto root = ProducerOf(mul.Inputs()[1 - i], kLiteRtOpCodeTflSqrt);
+    if (!sign || !root) continue;
+    const auto floor = ProducerOf(root->Inputs()[0], kLiteRtOpCodeTflMaximum);
+    if (!floor || floor->Inputs().size() != 2) continue;
+    for (int j = 0; j < 2; ++j) {
+      const auto abs = ProducerOf(floor->Inputs()[j], kLiteRtOpCodeTflAbs);
+      if (abs && floor->Inputs()[1 - j].HasWeights() &&
+          abs->Inputs()[0].Get() == sign->Inputs()[0].Get()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// SIGN, ABS and SQRT are taken only as parts of that product: the Gemma 4
+// vision encoders' SIGN ops keep their place.
+bool IsSignedRootOp(const litert::compiler::Op& op) {
+  const auto result = [](const litert::compiler::Op& o) {
+    return o.Outputs()[0];
+  };
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflSign: {
+      const auto mul = OnlyUser(result(op), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    case kLiteRtOpCodeTflSqrt: {
+      const auto mul = OnlyUser(result(op), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    case kLiteRtOpCodeTflAbs: {
+      const auto floor = OnlyUser(result(op), kLiteRtOpCodeTflMaximum);
+      if (!floor) return false;
+      const auto root = OnlyUser(result(*floor), kLiteRtOpCodeTflSqrt);
+      if (!root) return false;
+      const auto mul = OnlyUser(result(*root), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    default:
+      return false;
+  }
+}
+
 // Gemma 4's stack and Qwen 3.5's hybrid stack in whole-signature islands:
 // Qwen's attention layers use Gemma's composites, and its Gated DeltaNet
 // layers add the gated_delta_update custom op, the short convolution composite
 // and the elementwise ops of their gates and decays. No Gemma 4 export has
 // those elementwise ops outside the decompositions of the composites the
 // plugin lowers (odml.cache_update's GREATER), so its islands stay the same.
+// Qwen 4 adds the SIGN, ABS and SQRT of its PLE gate, there only.
 bool IsValidatedLlmTensorRtOp(const litert::compiler::Op& op) {
   switch (op.Code()) {
     case kLiteRtOpCodeTflExp:
@@ -418,6 +488,10 @@ bool IsValidatedLlmTensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflLog:
     case kLiteRtOpCodeTflLogistic:
       return true;
+    case kLiteRtOpCodeTflSign:
+    case kLiteRtOpCodeTflAbs:
+    case kLiteRtOpCodeTflSqrt:
+      return IsSignedRootOp(op);
     default:
       return IsValidatedGemma4TensorRtOp(op);
   }

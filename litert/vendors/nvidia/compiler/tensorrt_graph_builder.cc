@@ -7213,7 +7213,14 @@ class TensorRtGraphBuilder {
         operation = nvinfer1::UnaryOperation::kCOS;
         break;
       case kLiteRtOpCodeTflRsqrt:
+      case kLiteRtOpCodeTflSqrt:
         operation = nvinfer1::UnaryOperation::kSQRT;
+        break;
+      case kLiteRtOpCodeTflAbs:
+        operation = nvinfer1::UnaryOperation::kABS;
+        break;
+      case kLiteRtOpCodeTflSign:
+        operation = nvinfer1::UnaryOperation::kSIGN;
         break;
       case kLiteRtOpCodeTflExp:
         operation = nvinfer1::UnaryOperation::kEXP;
@@ -15728,6 +15735,9 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflLogistic:
       case kLiteRtOpCodeTflExp:
       case kLiteRtOpCodeTflLog:
+      case kLiteRtOpCodeTflSqrt:
+      case kLiteRtOpCodeTflAbs:
+      case kLiteRtOpCodeTflSign:
         return LowerUnary(op);
       case kLiteRtOpCodeTflGelu:
         return LowerGelu(op);
@@ -15960,6 +15970,9 @@ bool IsTensorRtOpSupported(const Op& op) {
     case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflExp:
     case kLiteRtOpCodeTflLog:
+    case kLiteRtOpCodeTflSqrt:
+    case kLiteRtOpCodeTflAbs:
+    case kLiteRtOpCodeTflSign:
       result = IsUnaryActivationSupported(op);
       break;
     case kLiteRtOpCodeTflGelu:
