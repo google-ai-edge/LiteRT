@@ -100,9 +100,11 @@ Each run directory holds the CLI's log and benchmark report (`cli.log`), GNU tim
 (`meta.json`). Compiled engines, runtime caches and the CUDA JIT cache live in a pool under
 `$LITERT_BENCH_ROOT/cache/models/<model>/<build id>`, the build id being the two trees' commits
 (a `+` marks local changes), so a changed tree compiles afresh and an unchanged one starts warm.
-The TensorRT-RTX settings of a pool (`nb_runtime_env` in `env.sh`: the Gemma 4 partition policy,
-BF16 activations, the CUDA GEMV plugins, the shared weight store) are the same for every model;
-`--env NAME=VALUE` overrides one for an experiment, in a pool of its own (`--pool DIR`).
+A pool's TensorRT-RTX environment (`nb_runtime_env` in `env.sh`) is its paths alone: the model
+file and the AOT and runtime cache directories. The compiler's and dispatch's defaults are the
+settings of every model (the validated LLM partition policy, BF16 activations, the CUDA GEMV
+plugins, the shared weight store); `--env NAME=VALUE` overrides one for an experiment, in a pool
+of its own (`--pool DIR`).
 
 Use one `LITERT_BENCH_ROOT` for the standalone scripts and any measurement or evaluation
 wrapper. Source/build identities already separate model pools; a branch does not need a
