@@ -2165,8 +2165,15 @@ Expected<void> PersistSlotPlans(
                                 weights, pending.View(head, feed)));
     const std::string path =
         litert::nvidia::SlotArtifactPath(decode_artifact, plan.slots);
-    LITERT_RETURN_IF_ERROR(
-        PersistArtifactFile(path, shard.data(), shard.size()));
+    // The path is the decode artifact's, not this plan's content: a compile
+    // that asks for another slot count rebuilds the plan, and TensorRT-RTX's
+    // build may give other bytes for the same engine. The newer plan
+    // replaces the older (a reader holds its own copy, SlotEngine::Open).
+    if (!PersistArtifactFile(path, shard.data(), shard.size())) {
+      unlink(path.c_str());
+      LITERT_RETURN_IF_ERROR(
+          PersistArtifactFile(path, shard.data(), shard.size()));
+    }
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX persisted the batched decode engine of %d "
                "slots: artifact_bytes=%zu path=%s",
