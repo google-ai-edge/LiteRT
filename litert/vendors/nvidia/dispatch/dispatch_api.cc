@@ -1292,6 +1292,17 @@ class InvocationStreams {
   void Note(const void* context, cudaStream_t stream) {
     std::lock_guard<std::mutex> lock(mutex_);
     entries_[context] = {std::this_thread::get_id(), stream};
+    for (const auto& [other, entry] : entries_) {
+      if (entry.first != std::this_thread::get_id()) {
+        several_threads_.store(true, std::memory_order_relaxed);
+      }
+    }
+  }
+
+  // Whether contexts were ever invoked from two threads (several engines in
+  // the process).
+  bool SeveralThreads() const {
+    return several_threads_.load(std::memory_order_relaxed);
   }
 
   void Forget(const void* context) {
@@ -1331,16 +1342,35 @@ class InvocationStreams {
   std::mutex mutex_;
   std::unordered_map<const void*, std::pair<std::thread::id, cudaStream_t>>
       entries_;
+  std::atomic<bool> several_threads_{false};
 };
 
+// Only once contexts run on several threads: one engine's calls stay as they
+// were.
 class RelaxedCaptureScope {
  public:
-  RelaxedCaptureScope() { cudaThreadExchangeStreamCaptureMode(&mode_); }
-  ~RelaxedCaptureScope() { cudaThreadExchangeStreamCaptureMode(&mode_); }
+  RelaxedCaptureScope()
+      : active_(InvocationStreams::Get().SeveralThreads() ||
+                DispatchSlotsSet()) {
+    if (active_) cudaThreadExchangeStreamCaptureMode(&mode_);
+  }
+  ~RelaxedCaptureScope() {
+    if (active_) cudaThreadExchangeStreamCaptureMode(&mode_);
+  }
   RelaxedCaptureScope(const RelaxedCaptureScope&) = delete;
   RelaxedCaptureScope& operator=(const RelaxedCaptureScope&) = delete;
 
  private:
+  // LITERT_NVIDIA_DISPATCH_SLOTS is set (DispatchSlots reads it too).
+  static bool DispatchSlotsSet() {
+    static const bool set = [] {
+      const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
+      return value != nullptr && value[0] != '\0';
+    }();
+    return set;
+  }
+
+  const bool active_;
   cudaStreamCaptureMode mode_ = cudaStreamCaptureModeRelaxed;
 };
 
