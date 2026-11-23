@@ -3393,6 +3393,7 @@ class DecodeSlotGroup {
   }
 
   ~DecodeSlotGroup() {
+    if (loader_.joinable()) loader_.join();
     if (decisions_ > 0) {
       LITERT_LOG(LITERT_INFO,
                  "NVIDIA dispatch: the slot group of %s ran alone after %llu "
@@ -3503,9 +3504,9 @@ class DecodeSlotGroup {
   // and measures again (and at once when the number of contexts stepping
   // changes). Either way every step's outputs are the same.
   bool Batching(Clock::time_point now) {
-    // Decode steps only: a verify's batch saves more than the host's work
-    // per round costs (E4B, four engines: 509 tokens/s batched, 449 alone).
-    if (!DispatchSlotsProbe() || !decode_) return true;
+    // Once the batched engines are loaded (they load in the background and
+    // the steps run alone meanwhile).
+    if (!DispatchSlotsProbe() || !loaded_) return true;
     const size_t active = ActiveParticipants(now);
     if (active < 2) return true;
     if (active != probe_active_) {
@@ -3581,21 +3582,40 @@ class DecodeSlotGroup {
     return active;
   }
 
+  // The batched engine of `slots` slots, under the lock; null while the
+  // engines load (the steps run alone meanwhile). The first call starts a
+  // thread that loads the engines of every count, 2 to DispatchSlots(), so
+  // that no step waits for one to load and the measurements (Batching) see
+  // them all loaded.
   SlotEngine* EngineFor(int slots) {
-    auto& engine = engines_[slots];
-    if (!engine && !failed_[slots]) {
+    if (!loader_.joinable()) {
+      int device = 0;
+      cudaGetDevice(&device);
+      loader_ = std::thread([this, device] { LoadEngines(device); });
+    }
+    if (!loaded_) return nullptr;
+    auto it = engines_.find(slots);
+    return it == engines_.end() ? nullptr : it->second.get();
+  }
+
+  void LoadEngines(int device) {
+    cudaSetDevice(device);
+    std::map<int, std::unique_ptr<SlotEngine>> engines;
+    for (int slots = 2; slots <= DispatchSlots(); ++slots) {
       auto opened = SlotEngine::Open(
           litert::nvidia::SlotArtifactPath(artifact_, slots), slots);
       if (opened) {
-        engine = std::move(*opened);
+        engines[slots] = std::move(*opened);
       } else {
-        failed_[slots] = true;
         LITERT_LOG(LITERT_WARNING,
-                   "NVIDIA dispatch: no batched decode engine of %d slots: %s",
-                   slots, opened.Error().Message().c_str());
+                   "NVIDIA dispatch: no batched engine of %d slots: %s", slots,
+                   opened.Error().Message().c_str());
       }
     }
-    return engine.get();
+    std::lock_guard<std::mutex> lock(mutex_);
+    engines_ = std::move(engines);
+    loaded_ = true;
+    StartPhase(Phase::kMeasureBatched, Clock::now());
   }
 
   std::mutex mutex_;
@@ -3608,7 +3628,8 @@ class DecodeSlotGroup {
   std::vector<Arrival*> pending_;
   Clock::time_point first_arrival_;
   std::map<int, std::unique_ptr<SlotEngine>> engines_;
-  std::map<int, bool> failed_;
+  std::thread loader_;
+  bool loaded_ = false;  // under mutex_
   double wait_ms_ = 0.0;
   uint64_t waits_ = 0;
   bool decode_ = true;
