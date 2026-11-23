@@ -838,3 +838,47 @@ cc_test(
         "@local_tensorrt_rtx//:tensorrt_rtx_stub",
     ],
 )
+
+# The plugin layers of a batched decode step that serve every sequence slot
+# in one launch (the "slots twins" of the single-sequence step's plugins).
+cc_library(
+    name = "slot_plugins",
+    srcs = ["slot_plugins.cc"],
+    hdrs = ["slot_plugins.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:slot_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "slot_plugins_test",
+    srcs = ["slot_plugins_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":decode_attention_plugin",
+        ":slot_plugins",
+        ":subbyte_gemv_plugin",  # TensorRT-RTX addPluginV3 compatibility header.
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)

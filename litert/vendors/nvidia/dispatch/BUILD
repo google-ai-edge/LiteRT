@@ -399,6 +399,7 @@ litert_dispatch_api(
         "//litert/vendors/nvidia/compiler:qsa_attention_plugin",
         "//litert/vendors/nvidia/compiler:quant_attention_plugin",
         "//litert/vendors/nvidia/compiler:quant_linear_plugin",
+        "//litert/vendors/nvidia/compiler:slot_plugins",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",
         "//litert/vendors/nvidia/experimental/megakernel:megakernel_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",

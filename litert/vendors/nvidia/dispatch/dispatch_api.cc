@@ -80,6 +80,7 @@
 #include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
+#include "litert/vendors/nvidia/compiler/slot_plugins.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/decode_slots.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
@@ -4402,6 +4403,7 @@ class LiteRtDispatchInvocationContextT {
     litert::nvidia::EnsureQsaPluginsRegistered();
     litert::nvidia::EnsureQuantAttentionPluginRegistered();
     litert::nvidia::EnsureQuantLinearPluginRegistered();
+    litert::nvidia::EnsureSlotPluginsRegistered();
     // Execution contexts of this process load their expert arenas.
     litert::nvidia::SetMoeArenaLoadingEnabled(true);
     LITERT_LOG(LITERT_INFO,
