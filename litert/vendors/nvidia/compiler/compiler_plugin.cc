@@ -1651,6 +1651,71 @@ std::vector<LiteRtOpWithPartitionIndex> FilterSmallPartitions(
   return filtered;
 }
 
+// Qwen 4's PLE n-gram hash (BITWISE_XOR of token products, FLOOR_MOD by the
+// table sizes, offsets, and the table GATHERs) runs on LiteRT's CPU with its
+// tables. Its integer ops that TensorRT could take (SLICE, MUL, EQUAL, SELECT,
+// FLOOR_MOD, ADD, CONCATENATION, RESHAPE) would split the layers around every
+// PLE layer into engines of their own (GPU -> CPU -> GPU): an integer op all of
+// whose results go only to ops on the CPU stays on the CPU, repeated up the
+// chain. Only in subgraphs with a BITWISE_XOR (no other model has one).
+std::vector<LiteRtOpWithPartitionIndex> KeepIntegerChainsOnCpu(
+    const litert::compiler::Subgraph& graph,
+    const std::vector<LiteRtOpWithPartitionIndex>& candidate_ops) {
+  const auto ops = graph.Ops();
+  const bool has_hash = std::any_of(ops.begin(), ops.end(), [](const auto& op) {
+    return op.Code() == kLiteRtOpCodeTflBitwiseXor;
+  });
+  if (!has_hash) return candidate_ops;
+  std::unordered_set<LiteRtOp> selected;
+  for (const auto& op : candidate_ops) selected.insert(op.first);
+  const auto integer = [](const litert::compiler::Tensor& tensor) {
+    switch (tensor.ElementType()) {
+      case litert::ElementType::Int32:
+      case litert::ElementType::Int64:
+      case litert::ElementType::Bool:
+        return true;
+      default:
+        return false;
+    }
+  };
+  size_t moved = 0;
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+      const auto& op = *it;
+      if (selected.find(op.Get()) == selected.end()) continue;
+      bool cpu_only = !op.Outputs().empty();
+      for (const auto& output : op.Outputs()) {
+        if (!integer(output)) {
+          cpu_only = false;
+          break;
+        }
+        const auto uses = output.Uses();
+        if (uses.empty()) cpu_only = false;
+        for (const auto& use : uses) {
+          if (selected.find(use.user.Get()) != selected.end()) cpu_only = false;
+        }
+        if (!cpu_only) break;
+      }
+      if (cpu_only) {
+        selected.erase(op.Get());
+        ++moved;
+        changed = true;
+      }
+    }
+  }
+  if (moved == 0) return candidate_ops;
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX n-gram hash: %zu integer ops stay on the "
+             "CPU with it",
+             moved);
+  std::vector<LiteRtOpWithPartitionIndex> kept;
+  for (const auto& op : candidate_ops) {
+    if (selected.find(op.first) != selected.end()) kept.push_back(op);
+  }
+  return kept;
+}
+
 }  // namespace
 
 struct LiteRtCompiledResultT {
@@ -1954,6 +2019,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                "NVIDIA TensorRT-RTX selected-op cap skipped op: %s count=%d",
                std::string(litert::GetOpCodeStringView(code)).c_str(), count);
   }
+  candidate_ops = KeepIntegerChainsOnCpu(graph, candidate_ops);
   auto filtered_ops = FilterSmallPartitions(compiler_plugin->ctx, candidate_ops,
                                             subgraph, policy);
   for (const auto& op : filtered_ops) {
