@@ -91,9 +91,11 @@ litert_lib(
     name = "adapter_odc",
     srcs = [
         "adapter_odc.cc",
+    ],
+    hdrs = [
+        "adapter.h",
         "adapter_odc.h",
     ],
-    hdrs = ["adapter.h"],
     defines = ["LITERT_GOOGLE_TENSOR_ODC=1"],
     deps = [
         ":edgetpu_compiler_api",
@@ -108,6 +110,26 @@ litert_lib(
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "adapter_odc_test",
+    srcs = ["adapter_odc_test.cc"],
+    target_compatible_with = select({
+        "//litert:android": [],
+        "//litert:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":adapter_odc",
+        ":edgetpu_compiler_options_cc_proto",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_expected",
+        "//litert/cc/internal:litert_logging",
+        "//litert/test:matchers",
+        "//litert/vendors/google_tensor/compiler:google_tensor_options_cc_proto",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

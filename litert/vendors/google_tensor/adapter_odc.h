@@ -24,8 +24,18 @@
 #include "litert/cc/litert_expected.h"
 #include "litert/vendors/google_tensor/adapter.h"
 #include "litert/vendors/google_tensor/edgetpu_compiler_api.h"
+#include "litert/vendors/google_tensor/edgetpu_compiler_options.pb.h"
 
 namespace litert::google_tensor {
+
+// Builds the `EdgeTpuCompilerOptions` sent to the on-device compiler from a
+// serialized `GoogleTensorOptions` proto (`options`, `options_size`). Only the
+// fields supported by single-buffer on-device compilation are forwarded. An
+// empty payload (`options_size == 0`) yields default options; a null pointer
+// with non-zero size or an unparsable payload returns an invalid-argument
+// error.
+Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
+    const char* options, size_t options_size);
 
 // This class adapts the google tensor compiler API for dynamic loading.
 class AdapterOdc : public Adapter {

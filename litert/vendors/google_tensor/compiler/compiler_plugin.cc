@@ -181,6 +181,7 @@ constexpr auto kNumPluginSocModels =
 constexpr int kDefaultMaxLoggedOffloadReasons = 5;
 constexpr char kMaxLoggedOffloadReasonsEnvVar[] =
     "LITERT_MAX_LOGGED_OFFLOAD_REASONS";
+constexpr char kPluginSdkVersion[] = "1.0.0";
 
 }  // namespace google_tensor
 
@@ -361,9 +362,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
     LITERT_LOG(LITERT_ERROR, "%s", "compiler_plugin or sdk_version is nullptr");
     return kLiteRtStatusErrorInvalidArgument;
   }
-  // No-op implementation for Google Tensor plugin.
-  // TODO: Add the SDK version to the plugin.
-  *sdk_version = "";
+  *sdk_version = google_tensor::kPluginSdkVersion;
   return kLiteRtStatusOk;
 }
 
