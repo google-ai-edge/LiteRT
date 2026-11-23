@@ -213,8 +213,13 @@ export NB_WARMUPS=$warmups NB_BUILD_ID=$build_id NB_POOL=$pool
 # capacity, the prefill sizes and signatures, speculative decoding, extra flags and overrides shape
 # them), and the compiling process's rates read low. That run is kept apart as "prepare", once per
 # configuration (a marker in the pool), so the measured runs read warm caches (the cold metric is
-# that first run itself).
-shape="$context|$prefill|${selected[*]}|$mtp|${extra[*]}|${env_extra[*]}"
+# that first run itself). The sampler and the output limit compile nothing: a run that differs
+# only in them (a GPQA question's seed) is not a new configuration, and does not prepare again.
+shaping=()
+for arg in "${extra[@]}"; do
+  [[ $arg == --sampler_* || $arg == --max_output_tokens=* ]] || shaping+=("$arg")
+done
+shape="$context|$prefill|${selected[*]}|$mtp|${shaping[*]}|${env_extra[*]}"
 prepared=$pool/prepared/$(printf '%s' "$shape" | sha256sum | cut -c1-16)
 if [[ $metric != cold && ! -e $prepared ]]; then
   mapfile -t prep < <(benchmark_args 1)
