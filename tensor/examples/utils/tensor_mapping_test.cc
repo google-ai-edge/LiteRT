@@ -256,5 +256,22 @@ TEST(LazyTensorMappingTest, OnNotFoundErrorStopsTheChain) {
   EXPECT_THAT(log, IsEmpty());
 }
 
+TEST(LazyTensorMappingTest, ReleaseCachedLoaderTensorsSkipsPinnedAndInMemory) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping loaded,
+                                  CreateMappingTestMapping(file));
+  ASSERT_THAT(loaded.Get("model.a"), IsOk());
+  ASSERT_THAT(loaded.Set("model.pinned", MappingTestTensor()), IsOk());
+  EXPECT_EQ(loaded.ReleaseCachedLoaderTensors(), 1);
+  // Loader-backed tensor is reloaded on demand; pinned tensor stays intact.
+  ASSERT_THAT(loaded.Get("model.a"), IsOk());
+  ASSERT_THAT(loaded.Get("model.pinned"), IsOk());
+
+  // In-memory mappings without a loader never drop preloaded tensors.
+  LazyTensorMapping in_memory({{"model.mem", MappingTestTensor()}});
+  EXPECT_EQ(in_memory.ReleaseCachedLoaderTensors(), 0);
+  ASSERT_THAT(in_memory.Get("model.mem"), IsOk());
+}
+
 }  // namespace
 }  // namespace litert::tensor::examples
