@@ -121,13 +121,29 @@ TEST_P(NumInputOutputTest, Rejects2Outputs) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_P(NumInputOutputTest, SupportsVersionsUpTo6) {
+  const TfLiteBuiltinOperator op = GetParam();
+  for (int version = 1; version <= 6; ++version) {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, version, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0))
+        << "version=" << version;
+  }
+}
+
 TEST_P(NumInputOutputTest, RejectsUnsupportedVersion) {
   const TfLiteBuiltinOperator op = GetParam();
   StubContextBuilder context_builder;
   const int a =
       context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
   const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
-  context_builder.SetOp(op, /*version=*/4, /*params=*/nullptr,
+  context_builder.SetOp(op, /*version=*/7, /*params=*/nullptr,
                         /*inputs=*/{a}, /*outputs=*/{b});
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
@@ -177,9 +193,65 @@ INSTANTIATE_TEST_SUITE_P(
             ValuesIn<TfLiteType>({
                 // clang-format off
                 // go/keep-sorted start numeric=yes
+                kTfLiteInt2,
+                kTfLiteInt4,
+                kTfLiteInt8,
+                kTfLiteUInt4,
+                kTfLiteUInt8,
+                // go/keep-sorted end
+                // clang-format on
+            }),
+            // output_dtype
+            ValuesIn<TfLiteType>({
+                // clang-format off
+                // go/keep-sorted start numeric=yes
                 kTfLiteFloat16,
                 kTfLiteFloat32,
-                kTfLiteInt2,
+                // go/keep-sorted end
+                // clang-format on
+            })),
+    [](const TestParamInfo<SupportedDtypeTest::ParamType>& info) {
+      return absl::StrCat(
+          ::tflite::EnumNamesBuiltinOperator()[std::get<0>(info.param)], "_",
+          TfLiteTypeGetName(std::get<1>(info.param)), "_",
+          TfLiteTypeGetName(std::get<2>(info.param)));
+    });
+
+using SupportedConstDtypeTest =
+    TestWithParam<std::tuple<TfLiteBuiltinOperator, /*input_dtype=*/TfLiteType,
+                             /*output_dtype=*/TfLiteType>>;
+
+TEST_P(SupportedConstDtypeTest, SupportsConstSupportedDtypes) {
+  const auto [op, idtype, odtype] = GetParam();
+  StubContextBuilder context_builder;
+  const int a =
+      (idtype == kTfLiteFloat16 || idtype == kTfLiteFloat32)
+          ? context_builder.AddTensor(idtype, kDefaultInputDims)
+          : context_builder.AddQuantizedTensor(idtype, kDefaultInputDims);
+  context_builder.SetConst(a);
+  const int b = context_builder.AddTensor(odtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    DequantizeOps, SupportedConstDtypeTest,
+    Combine(ValuesIn<TfLiteBuiltinOperator>({
+                // clang-format off
+                // go/keep-sorted start
+                kTfLiteBuiltinDequantize,
+                // go/keep-sorted end
+                // clang-format on
+            }),
+            // input_dtype
+            ValuesIn<TfLiteType>({
+                // clang-format off
+                // go/keep-sorted start numeric=yes
+                kTfLiteFloat16,
+                kTfLiteFloat32,
                 kTfLiteInt4,
                 kTfLiteInt8,
                 kTfLiteInt32,
@@ -191,11 +263,12 @@ INSTANTIATE_TEST_SUITE_P(
             ValuesIn<TfLiteType>({
                 // clang-format off
                 // go/keep-sorted start numeric=yes
+                kTfLiteFloat16,
                 kTfLiteFloat32,
                 // go/keep-sorted end
                 // clang-format on
             })),
-    [](const TestParamInfo<SupportedDtypeTest::ParamType>& info) {
+    [](const TestParamInfo<SupportedConstDtypeTest::ParamType>& info) {
       return absl::StrCat(
           ::tflite::EnumNamesBuiltinOperator()[std::get<0>(info.param)], "_",
           TfLiteTypeGetName(std::get<1>(info.param)), "_",
@@ -311,6 +384,233 @@ TEST_P(QuantizationParamsTest, RejectsInputWithUnsupportedScaleSize) {
   TfLiteContext* context = context_builder.Build();
   ASSERT_TRUE(context != nullptr);
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(QuantizationParamsTest, RejectsNonAffineRuntimeInput) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  TfLiteBlockwiseQuantizationV2 blockwise_params = {};
+  context->tensors[a].quantization.type = kTfLiteBlockwiseQuantizationV2;
+  context->tensors[a].quantization.params = &blockwise_params;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  context->tensors[a].quantization.params = nullptr;
+}
+
+TEST_P(QuantizationParamsTest, RejectsRuntimeInputWithoutQuantizationParams) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(QuantizationParamsTest, RejectsRuntimeInputWithEmptyScaleOrZeroPoint) {
+  const TfLiteBuiltinOperator op = GetParam();
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/0);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+  {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    auto* q = static_cast<TfLiteAffineQuantization*>(
+        context->tensors[a].quantization.params);
+    TfLiteIntArray* saved_zp = q->zero_point;
+    q->zero_point = nullptr;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+    q->zero_point = saved_zp;
+  }
+}
+
+TEST_P(QuantizationParamsTest, RejectsUnsupportedRuntimeDtypes) {
+  const TfLiteBuiltinOperator op = GetParam();
+  // Unsupported runtime input dtype (FLOAT16).
+  {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteFloat16, kDefaultInputDims);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+  // Unsupported runtime output dtype (INT8).
+  {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+    const int b = context_builder.AddTensor(kTfLiteInt8, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+}
+
+TEST_P(QuantizationParamsTest, RejectsNonAffineAndInt2ConstInputs) {
+  const TfLiteBuiltinOperator op = GetParam();
+  // Constant INT8 with blockwise v2 quantization.
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddTensor(kTfLiteInt8, kDefaultInputDims);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    TfLiteBlockwiseQuantizationV2 bw = {};
+    context->tensors[a].quantization = {kTfLiteBlockwiseQuantizationV2, &bw};
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+    context->tensors[a].quantization.params = nullptr;
+  }
+  // Constant INT2 is unsupported by CopyFloat32Data.
+  {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt2, kDefaultInputDims);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+}
+
+TEST_P(QuantizationParamsTest, RejectsConstInputWithUnsupportedOutputDtype) {
+  const TfLiteBuiltinOperator op = GetParam();
+  for (const TfLiteType bad_output_dtype : {kTfLiteInt8, kTfLiteBool}) {
+    StubContextBuilder context_builder;
+    const int a =
+        context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+    context_builder.SetConst(a);
+    const int b =
+        context_builder.AddTensor(bad_output_dtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+}
+
+TEST_P(QuantizationParamsTest, ValidatesPerChannelConstQuantizationParams) {
+  const TfLiteBuiltinOperator op = GetParam();
+  // Valid per-channel constant input (`dims = {2, 3, 4}`, `quant_dim = 0`,
+  // `scale->size == 2`, `zero_point->size == 2`).
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/2);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+  }
+  // Valid per-channel constant input with single broadcast zero_point.
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/2);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    auto* q = static_cast<TfLiteAffineQuantization*>(
+        context->tensors[a].quantization.params);
+    TfLiteIntArray* saved_zp = q->zero_point;
+    TfLiteIntArray* single_zp = TfLiteIntArrayCreate(1);
+    single_zp->data[0] = 0;
+    q->zero_point = single_zp;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+    q->zero_point = saved_zp;
+    TfLiteIntArrayFree(single_zp);
+  }
+  // Out-of-range `quantized_dimension` (-1 and dims->size).
+  for (const int bad_dim : {-1, static_cast<int>(kDefaultInputDims.size())}) {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/2);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    auto* q = static_cast<TfLiteAffineQuantization*>(
+        context->tensors[a].quantization.params);
+    q->quantized_dimension = bad_dim;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+  // Mismatched `scale->size` (5 != dims[0] == 2).
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/5);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  }
+  // Mismatched `zero_point->size` (2 != 1 and 2 != scale->size == 4).
+  {
+    StubContextBuilder context_builder;
+    const int a = context_builder.AddQuantizedTensor(
+        kTfLiteInt8, kDefaultInputDims, /*scale_size=*/4);
+    context_builder.SetConst(a);
+    const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+    context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                          /*inputs=*/{a}, /*outputs=*/{b});
+    TfLiteContext* context = context_builder.Build();
+    ASSERT_TRUE(context != nullptr);
+    auto* q = static_cast<TfLiteAffineQuantization*>(
+        context->tensors[a].quantization.params);
+    q->quantized_dimension = 2;
+    TfLiteIntArray* saved_zp = q->zero_point;
+    TfLiteIntArray* bad_zp = TfLiteIntArrayCreate(2);
+    bad_zp->data[0] = 0;
+    bad_zp->data[1] = 0;
+    q->zero_point = bad_zp;
+    EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+    q->zero_point = saved_zp;
+    TfLiteIntArrayFree(bad_zp);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

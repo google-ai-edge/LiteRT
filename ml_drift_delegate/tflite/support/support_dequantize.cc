@@ -33,7 +33,10 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
                            const TfLiteNode* absl_nonnull node,
                            const TfLiteRegistration* absl_nonnull registration,
                            std::string* absl_nonnull error) {
-  if (registration->version > 3) {
+  // Versions 4 to 6 add per-channel int8 and int4 inputs. Runtime inputs are
+  // emulated with QuantizeAndDequantize on their float version, which needs
+  // per-tensor affine quantization (checked below).
+  if (registration->version > 6) {
     *error = absl::StrCat("Unsupported version: ", registration->version);
     return false;
   }
@@ -53,6 +56,12 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
   }
 
   const TfLiteTensor* input = context->tensors + input_id;
+  const TfLiteTensor* output = context->tensors + output_id;
+
+  if (!CheckTensorDtype(*output, {kTfLiteFloat32, kTfLiteFloat16}, "output",
+                        *error)) {
+    return false;
+  }
 
   if (::tflite::IsConstantTensor(input)) {
     if (!CheckTensorDims(*input, /*min_dims=*/2, /*max_dims=*/4, "input",
@@ -60,7 +69,7 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
       return false;
     }
     const absl::flat_hash_set<TfLiteType> supported_input_dtypes = {
-        kTfLiteFloat32, kTfLiteFloat16, kTfLiteInt4, kTfLiteInt2,
+        kTfLiteFloat32, kTfLiteFloat16, kTfLiteInt4,
         kTfLiteInt8,    kTfLiteUInt8,   kTfLiteInt32};
     if (!CheckTensorDtype(*input, supported_input_dtypes, "input", *error)) {
       return false;
@@ -68,6 +77,36 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
     if (input->sparsity) {
       *error = "ML Drift doesn't support sparsity.";
       return false;
+    }
+    if (input->type != kTfLiteFloat32 && input->type != kTfLiteFloat16) {
+      if (input->quantization.type != kTfLiteAffineQuantization ||
+          input->quantization.params == nullptr) {
+        *error = "Constant Dequantize needs an input with affine quantization.";
+        return false;
+      }
+      const TfLiteAffineQuantization* quantization_data =
+          reinterpret_cast<const TfLiteAffineQuantization*>(
+              input->quantization.params);
+      if (quantization_data->scale == nullptr ||
+          quantization_data->scale->size < 1 ||
+          quantization_data->zero_point == nullptr ||
+          quantization_data->zero_point->size < 1) {
+        *error = "Constant Dequantize input has invalid quantization params.";
+        return false;
+      }
+      if (quantization_data->scale->size > 1) {
+        const int quant_dim = quantization_data->quantized_dimension;
+        if (quant_dim < 0 || quant_dim >= input->dims->size ||
+            quantization_data->scale->size != input->dims->data[quant_dim] ||
+            (quantization_data->zero_point->size != 1 &&
+             quantization_data->zero_point->size !=
+                 quantization_data->scale->size)) {
+          *error =
+              "Constant Dequantize input has invalid per-channel quantization "
+              "params.";
+          return false;
+        }
+      }
     }
     if (input->dims->size == 2) {
       const absl::Status status =
@@ -97,19 +136,29 @@ bool IsDequantizeSupported(const TfLiteContext* absl_nonnull context,
     return true;
   }
 
+  if (!CheckTensorDtype(
+          *input,
+          {kTfLiteInt8, kTfLiteUInt8, kTfLiteInt4, kTfLiteUInt4, kTfLiteInt2},
+          "input", *error)) {
+    return false;
+  }
+  if (input->quantization.params == nullptr) {
+    *error = "Encountered Dequantize input with no quant params";
+    return false;
+  }
+  if (input->quantization.type != kTfLiteAffineQuantization) {
+    *error = "Dequantize needs an input with affine quantization.";
+    return false;
+  }
   const TfLiteAffineQuantization* quantization_data =
       reinterpret_cast<const TfLiteAffineQuantization*>(
           input->quantization.params);
-  if (quantization_data) {
-    if (quantization_data->scale->size > 1) {
-      *error = "Unsupported quantization scale size";
-      return false;
-    }
-  } else {
-    if (::tflite::IsConstantTensor(input)) {
-      *error = "Encountered Dequantize input with no quant params";
-      return false;
-    }
+  if (quantization_data->scale == nullptr ||
+      quantization_data->scale->size != 1 ||
+      quantization_data->zero_point == nullptr ||
+      quantization_data->zero_point->size < 1) {
+    *error = "Unsupported quantization scale size";
+    return false;
   }
 
   return true;
