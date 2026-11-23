@@ -3367,6 +3367,12 @@ class DecodeSlotGroup {
   }
 
   ~DecodeSlotGroup() {
+    if (waits_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch slots profile: %llu batches waited %.3f ms "
+                 "on average from the first step's arrival to the launch",
+                 static_cast<unsigned long long>(waits_), wait_ms_ / waits_);
+    }
     for (auto& [slots, engine] : engines_) {
       if (engine) {
         LITERT_LOG(LITERT_INFO,
@@ -3395,6 +3401,12 @@ class DecodeSlotGroup {
     }
     if (arrival.outcome != 0) return arrival.outcome == 1;
     // This step runs the batch of the steps that arrived.
+    if (SlotEngine::Profiled()) {
+      wait_ms_ += std::chrono::duration<double, std::milli>(Clock::now() -
+                                                            first_arrival_)
+                      .count();
+      ++waits_;
+    }
     std::vector<Arrival*> batch;
     batch.swap(pending_);
     std::sort(batch.begin(), batch.end(), [](Arrival* a, Arrival* b) {
@@ -3470,6 +3482,8 @@ class DecodeSlotGroup {
   Clock::time_point first_arrival_;
   std::map<int, std::unique_ptr<SlotEngine>> engines_;
   std::map<int, bool> failed_;
+  double wait_ms_ = 0.0;
+  uint64_t waits_ = 0;
 };
 
 class LiteRtDispatchInvocationContextT {
