@@ -7662,8 +7662,11 @@ class TensorRtGraphBuilder {
             use.user_arg_ind == 4))) {
         continue;
       }
+      // The value of the attention composites (Qwen 4's sparse attention
+      // reads a value cache held as rows the same way: its in-place rule).
       if (user.Code() == kLiteRtOpCodeShloComposite &&
-          CompositeOpName(user) == "odml.sdpa_transposed" &&
+          (CompositeOpName(user) == "odml.sdpa_transposed" ||
+           CompositeOpName(user) == "odml.sparse_sdpa_transposed") &&
           use.user_arg_ind == 2) {
         continue;
       }
