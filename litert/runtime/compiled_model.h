@@ -479,8 +479,7 @@ class LiteRtCompiledModelT {
   litert::Expected<void> MarkSignatureAllocationUpToDate(
       const tflite::SignatureRunner* runner);
 
-  // Returns true if the given signature needs tensor allocation, including
-  // when it has never been allocated.
+  // Returns true if the given signature needs tensor allocation.
   litert::Expected<bool> SignatureNeedsAllocation(
       const tflite::SignatureRunner* runner) const;
 
@@ -603,8 +602,7 @@ class LiteRtCompiledModelT {
   absl::flat_hash_map<absl::string_view, tflite::SignatureRunner*>
       signature_runners_;
 
-  // Map to track which signature needs allocation. A signature without an
-  // entry has never been allocated and is treated as needing allocation.
+  // Map to track which signature needs allocation.
   absl::flat_hash_map<const tflite::SignatureRunner*, bool>
       signature_needs_allocation_;
 
