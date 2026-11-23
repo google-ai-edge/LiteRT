@@ -289,3 +289,29 @@ cc_binary(
         "@flatbuffers",
     ],
 )
+
+# The same at the real model's widths, for timing (QWEN4_ARTIFACT_WIDE).
+cc_binary(
+    name = "qwen4_artifact_wide",
+    srcs = ["qwen4_artifact.cc"],
+    copts = ["-DQWEN4_ARTIFACT_WIDE"],
+    deps = [
+        ":tflite_builder",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_litert_custom_op",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+    ],
+)

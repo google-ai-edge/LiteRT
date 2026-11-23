@@ -114,28 +114,44 @@ using litert::Error;
 using litert::Expected;
 using namespace litert::nvidia::artifact;  // NOLINT: shapes and builders
 
-// The reduced Qwen 4: hidden kHidden (256, from qsa_decompositions.h), hc 4
-// streams, low rank 32; Gated DeltaNet with 2 key heads and 4 value heads of
-// 128 (the fused layer's head size); PLE of 16 heads of 16 values; the QSA
+#ifndef QWEN4_ARTIFACT_WIDE
+// The reduced Qwen 4: hidden kWidth (256, kHidden of qsa_decompositions.h),
+// hc 4 streams, low rank 32; Gated DeltaNet with 2 key heads and 4 value heads
+// of 128 (the fused layer's head size); PLE of 16 heads of 16 values; the QSA
 // layer of qsa_decompositions.h; SwiGLU of 512.
-constexpr int kVocab = 512;
-constexpr int kHc = 4;
-constexpr int kStreams = kHc * kHidden;
+constexpr int kWidth = kHidden;
 constexpr int kLowRank = 32;
 constexpr int kNumLayers = 4;
 constexpr bool kIsGdn[kNumLayers] = {true, true, true, false};
 constexpr bool kHasPle[kNumLayers] = {true, false, false, true};
 constexpr int kGdnKeyHeads = 2;
 constexpr int kGdnValueHeads = 4;
+constexpr int kInter = 512;
+#else
+// qwen4_artifact_wide, for timing: the real model's widths (hidden 2560, hc 4,
+// low rank 320, Gated DeltaNet 16 key and 32 value heads of 128, PLE 16 heads
+// of 160), a SwiGLU of 5120 (about the bytes of the experts a token reads,
+// 10 of 512 plus the shared one), two Gated DeltaNet layers, PLE on the first.
+constexpr int kWidth = 2560;
+constexpr int kLowRank = 320;
+constexpr int kNumLayers = 2;
+constexpr bool kIsGdn[kNumLayers] = {true, true};
+constexpr bool kHasPle[kNumLayers] = {true, false};
+constexpr int kGdnKeyHeads = 16;
+constexpr int kGdnValueHeads = 32;
+constexpr int kInter = 5120;
+#endif
+constexpr int kVocab = 512;
+constexpr int kHc = 4;
+constexpr int kStreams = kHc * kWidth;
 constexpr int kGdnDim = 128;
 constexpr int kKeyDim = kGdnKeyHeads * kGdnDim;
 constexpr int kValueDim = kGdnValueHeads * kGdnDim;
 constexpr int kConvDim = 2 * kKeyDim + kValueDim;
 constexpr int kConvTaps = 4;
-constexpr int kInter = 512;
 constexpr int kNgram = 3;
 constexpr int kPleHeads = 16;  // (kNgram - 1) * 8
-constexpr int kPleDim = kHidden / kPleHeads;
+constexpr int kPleDim = kWidth / kPleHeads;
 constexpr int kPleTaps = (kConvTaps - 1) * kNgram + 1;  // 10, dilation 3
 constexpr int kEos = 1;
 constexpr int kRows = 16;  // prefill chunk
@@ -195,8 +211,8 @@ bool IsPrime(int n) {
 
 PleWeights MakePle(Random& random, int index) {
   PleWeights w;
-  w.key = Matrix(random, kStreams, kHidden);
-  w.value = Matrix(random, kHidden, kHidden);
+  w.key = Matrix(random, kStreams, kWidth);
+  w.value = Matrix(random, kWidth, kWidth);
   w.norm_key = Ones(kStreams, 0.2f, random);
   w.norm_query = Ones(kStreams, 0.2f, random);
   w.norm_conv = Ones(kStreams, 0.2f, random);
@@ -250,8 +266,8 @@ struct Weights {
 Weights MakeWeights() {
   Weights w;
   Random random(4242);
-  w.embedding = random.Values(static_cast<size_t>(kVocab) * kHidden, 1.0f);
-  w.head = Matrix(random, kVocab, kHidden);
+  w.embedding = random.Values(static_cast<size_t>(kVocab) * kWidth, 1.0f);
+  w.head = Matrix(random, kVocab, kWidth);
   int ple_index = 0;
   for (int l = 0; l < kNumLayers; ++l) {
     LayerWeights lw;
@@ -260,10 +276,10 @@ Weights MakeWeights() {
     lw.ple = kHasPle[l];
     if (lw.ple) lw.ple_weights = MakePle(random, ple_index++);
     if (kIsGdn[l]) {
-      lw.qkv = Matrix(random, kConvDim, kHidden);
-      lw.z = Matrix(random, kValueDim, kHidden);
-      lw.b = Matrix(random, kGdnValueHeads, kHidden);
-      lw.a = Matrix(random, kGdnValueHeads, kHidden);
+      lw.qkv = Matrix(random, kConvDim, kWidth);
+      lw.z = Matrix(random, kValueDim, kWidth);
+      lw.b = Matrix(random, kGdnValueHeads, kWidth);
+      lw.a = Matrix(random, kGdnValueHeads, kWidth);
       lw.a_bias = random.Values(kGdnValueHeads, 0.5f);
       lw.decay.resize(kGdnValueHeads);
       for (auto& d : lw.decay) d = -std::exp(0.5f * random.Next());
@@ -273,10 +289,10 @@ Weights MakeWeights() {
       lw.q_norm.assign(kGdnDim, 1.0f / kGdnDim);
       lw.k_norm.assign(kGdnDim, 1.0f / std::sqrt(static_cast<float>(kGdnDim)));
       lw.out_norm = Ones(kGdnDim, 0.2f, random);
-      lw.out = Matrix(random, kHidden, kValueDim, 0.5f);
+      lw.out = Matrix(random, kWidth, kValueDim, 0.5f);
     } else {
-      lw.projection = Matrix(random, kAttnProjection, kHidden);
-      lw.o = Matrix(random, kHidden, kQueryHeads * kDepth, 0.5f);
+      lw.projection = Matrix(random, kAttnProjection, kWidth);
+      lw.o = Matrix(random, kWidth, kQueryHeads * kDepth, 0.5f);
       lw.k_norm_idx = Ones(kIndexDim, 0.2f, random);
       lw.cos.resize(kBlocks * kRotary);
       lw.sin.resize(kBlocks * kRotary);
@@ -289,8 +305,8 @@ Weights MakeWeights() {
         }
       }
     }
-    lw.gate_up = Matrix(random, 2 * kInter, kHidden);
-    lw.down = Matrix(random, kHidden, kInter, 0.5f);
+    lw.gate_up = Matrix(random, 2 * kInter, kWidth);
+    lw.down = Matrix(random, kWidth, kInter, 0.5f);
     w.layers.push_back(std::move(lw));
   }
   w.final_mixer = MakeHc(random);
@@ -457,10 +473,10 @@ class Model {
   // The grouped Gemma RMS norm of the hc streams [1, n, hc*H] with per-stream
   // weights: odml.rms_norm per stream (unit weight), times (1 + w) [hc, H].
   int32_t GroupedNorm(int32_t x, const std::vector<float>& weight) {
-    const Shape s4 = {1, n_, kHc, kHidden};
+    const Shape s4 = {1, n_, kHc, kWidth};
     const int32_t normed =
-        RmsNorm(b_.Reshape(x, s4), s4, std::vector<float>(kHidden, 1.0f));
-    return b_.MulF(normed, Const("hc_norm", {kHc, kHidden}, weight), s4);
+        RmsNorm(b_.Reshape(x, s4), s4, std::vector<float>(kWidth, 1.0f));
+    return b_.MulF(normed, Const("hc_norm", {kHc, kWidth}, weight), s4);
   }
 
   // The hyper-connection mix: the layer input [1, n, H] and the normed
@@ -473,10 +489,10 @@ class Model {
         Scale(Fc(normed, w.down, kLowRank, kStreams), 1.0f / kHc, low), low);
     const int32_t u =
         Sigmoid(Fc(t, w.up, kStreams, kLowRank), {1, n_, kStreams});
-    const int32_t gated = b_.Reshape(b_.MulF(u, normed, {1, n_, kStreams}),
-                                     {1, n_, kHc, kHidden});
+    const int32_t gated =
+        b_.Reshape(b_.MulF(u, normed, {1, n_, kStreams}), {1, n_, kHc, kWidth});
     const int32_t mixed = b_.Reduce(tflite::BuiltinOperator_MEAN, gated, {2},
-                                    false, {1, n_, kHidden});
+                                    false, {1, n_, kWidth});
     return {mixed, normed};
   }
 
@@ -488,8 +504,8 @@ class Model {
         Sigmoid(Scale(Fc(normed, w.inject, kHc, kStreams), 1.0f / kHc, s), s),
         2.0f, s);
     const int32_t product =
-        b_.MulF(b_.Reshape(o, {1, n_, 1, kHidden}),
-                b_.Reshape(inject, {1, n_, kHc, 1}), {1, n_, kHc, kHidden});
+        b_.MulF(b_.Reshape(o, {1, n_, 1, kWidth}),
+                b_.Reshape(inject, {1, n_, kHc, 1}), {1, n_, kHc, kWidth});
     return b_.AddF(streams, b_.Reshape(product, {1, n_, kStreams}),
                    {1, n_, kStreams});
   }
@@ -552,20 +568,20 @@ class Model {
               int32_t conv_state, int32_t* conv_state_out, int layer,
               int32_t row_mask, int32_t valid) {
     const int32_t e =
-        Scale(b_.Reshape(looked, {1, n_, kHidden}), p.scale, {1, n_, kHidden});
-    const Shape s4 = {1, n_, kHc, kHidden};
+        Scale(b_.Reshape(looked, {1, n_, kWidth}), p.scale, {1, n_, kWidth});
+    const Shape s4 = {1, n_, kHc, kWidth};
     const auto group_norm = [&](int32_t x, const std::vector<float>& w) {
-      return b_.MulF(RmsNorm(x, s4, std::vector<float>(kHidden, 1.0f)),
-                     Const("ple_norm", {kHc, kHidden}, w), s4);
+      return b_.MulF(RmsNorm(x, s4, std::vector<float>(kWidth, 1.0f)),
+                     Const("ple_norm", {kHc, kWidth}, w), s4);
     };
     const int32_t key =
-        group_norm(b_.Reshape(Fc(e, p.key, kStreams, kHidden), s4), p.norm_key);
+        group_norm(b_.Reshape(Fc(e, p.key, kStreams, kWidth), s4), p.norm_key);
     const int32_t query = group_norm(b_.Reshape(streams, s4), p.norm_query);
     const Shape g3 = {1, n_, kHc};
     const int32_t dot =
         Scale(b_.Reduce(tflite::BuiltinOperator_SUM, b_.MulF(key, query, s4),
                         {3}, false, g3),
-              1.0f / std::sqrt(static_cast<float>(kHidden)), g3);
+              1.0f / std::sqrt(static_cast<float>(kWidth)), g3);
     const int32_t sign =
         b_.Unary(tflite::BuiltinOperator_SIGN, dot, TensorType_FLOAT32, g3);
     const int32_t magnitude = b_.Binary(
@@ -578,9 +594,9 @@ class Model {
                                  TensorType_FLOAT32, g3),
                         g3),
                 g3);
-    const int32_t value = Fc(e, p.value, kHidden, kHidden);
+    const int32_t value = Fc(e, p.value, kWidth, kWidth);
     const int32_t gv = b_.MulF(b_.Reshape(gate, {1, n_, kHc, 1}),
-                               b_.Reshape(value, {1, n_, 1, kHidden}), s4);
+                               b_.Reshape(value, {1, n_, 1, kWidth}), s4);
     int32_t conv_in =
         b_.Reshape(group_norm(gv, p.norm_conv), {1, n_, kStreams});
     if (row_mask >= 0) {
@@ -614,8 +630,8 @@ class Model {
                         int layer, int32_t row_mask, int32_t valid,
                         int32_t valid_scalar) {
     const int n = n_;
-    int32_t qkv = Fc(x, w.qkv, kConvDim, kHidden);
-    const int32_t b_proj = Fc(x, w.b, kGdnValueHeads, kHidden);
+    int32_t qkv = Fc(x, w.qkv, kConvDim, kWidth);
+    const int32_t b_proj = Fc(x, w.b, kGdnValueHeads, kWidth);
     int32_t mask3 = -1, mask4 = -1;
     if (prefill_) {
       // The layer's own casts of the row mask, as Qwen 3.8's export has them
@@ -648,7 +664,7 @@ class Model {
                    {1, n, kGdnValueHeads, kGdnDim});
     const Shape hv = {1, n, kGdnValueHeads};
     int32_t beta = Sigmoid(b_proj, hv);
-    const int32_t a = Fc(x, w.a, kGdnValueHeads, kHidden, &w.a_bias);
+    const int32_t a = Fc(x, w.a, kGdnValueHeads, kWidth, &w.a_bias);
     int32_t g = b_.MulF(
         b_.Unary(tflite::BuiltinOperator_LOG,
                  b_.AddF(b_.Unary(tflite::BuiltinOperator_EXP,
@@ -695,13 +711,13 @@ class Model {
     if (prefill_) gdn_inputs.push_back(valid_scalar);
     b_.Custom("gated_delta_update", gdn_inputs, {o, *state_out});
     o = prefill_ ? b_.Transpose(o, {0, 2, 1, 3}, vs) : b_.Reshape(o, vs);
-    const int32_t z = b_.Reshape(Fc(x, w.z, kValueDim, kHidden), vs);
+    const int32_t z = b_.Reshape(Fc(x, w.z, kValueDim, kWidth), vs);
     const int32_t normed = RmsNorm(o, vs, w.out_norm);
     const int32_t zs = Sigmoid(z, vs);
     const int32_t gated = sigmoid_gate_
                               ? b_.MulF(normed, zs, vs)
                               : b_.MulF(normed, b_.MulF(z, zs, vs), vs);
-    return Fc(b_.Reshape(gated, {1, n, kValueDim}), w.out, kHidden, kValueDim);
+    return Fc(b_.Reshape(gated, {1, n, kValueDim}), w.out, kWidth, kValueDim);
   }
 
   // The QSA attention layer with its output gate.
@@ -712,7 +728,7 @@ class Model {
                     int layer, int32_t indexer, int32_t cache_update,
                     int32_t sparse) {
     const int n = n_;
-    const int32_t projected = Fc(x, w.projection, kAttnProjection, kHidden);
+    const int32_t projected = Fc(x, w.projection, kAttnProjection, kWidth);
     int offset = 0;
     const auto part = [&](int width) {
       const int32_t slice = b_.Slice(projected, {0, 0, offset}, {1, n, width});
@@ -778,17 +794,17 @@ class Model {
     const Shape s = {1, n, kQueryHeads * kDepth};
     const int32_t gated =
         b_.MulF(b_.Reshape(attention, s), Sigmoid(gate, s), s);
-    return Fc(gated, w.o, kHidden, kQueryHeads * kDepth);
+    return Fc(gated, w.o, kWidth, kQueryHeads * kDepth);
   }
 
   int32_t FeedForward(int32_t x, const LayerWeights& w) {
-    const int32_t gate_up = Fc(x, w.gate_up, 2 * kInter, kHidden);
+    const int32_t gate_up = Fc(x, w.gate_up, 2 * kInter, kWidth);
     const int32_t act =
         b_.F32(absl::StrCat("swiglu_", counter_++), {1, n_, kInter});
     b_.Composite("odml.swiglu", d_.Swiglu(n_, kInter),
                  [](flexbuffers::Builder* a) { a->Int("gate_size", kInter); },
                  {gate_up}, {act});
-    return Fc(act, w.down, kHidden, kInter);
+    return Fc(act, w.down, kWidth, kInter);
   }
 
   void SetRowMask(int32_t bools) { row_mask_bool_ = bools; }
@@ -836,8 +852,8 @@ void AddSignature(Builder& b, Decompositions& d, const std::string& key,
       input("kv_cache_ngram", b.I32("kv_cache_ngram", {1, kNgram - 1}));
   // The token embedding and the hc streams.
   const int32_t e =
-      b.Gather(b.ConstF32("embedding", {kVocab, kHidden}, weights.embedding),
-               tokens, 0, {1, n, kHidden});
+      b.Gather(b.ConstF32("embedding", {kVocab, kWidth}, weights.embedding),
+               tokens, 0, {1, n, kWidth});
   int32_t x = b.Concat({e, e, e, e}, 2, {1, n, kStreams});
   // The n-gram context: the context state, then the tokens.
   const int32_t ctx = b.Concat({ngram, tokens}, 1, {1, n + kNgram - 1});
@@ -924,7 +940,7 @@ void AddSignature(Builder& b, Decompositions& d, const std::string& key,
     x = m.Combine(x, normed2, m.FeedForward(f, lw), lw.mlp_hc);
   }
   auto [h, unused] = m.Mix(x, weights.final_mixer);
-  output("logits", m.Fc(h, weights.head, kVocab, kHidden));
+  output("logits", m.Fc(h, weights.head, kVocab, kWidth));
   // The n-gram context's next value, the last two real tokens (on the CPU,
   // after the engine).
   const int32_t last = prefill ? valid : b.OneI32("one_row", 1);
