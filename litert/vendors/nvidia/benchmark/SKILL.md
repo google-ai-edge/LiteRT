@@ -17,6 +17,7 @@ choose the flags of a workload, keep a run's files together and turn run directo
 | `ci.sh` | `ci.sh OUT_DIR`: 12B cold 128k, 12B hot 32k, 26B cold MTP 32k; builds once, validates and prints results |
 | `matrix.sh` | the data points of the record: `matrix.sh OUT_DIR [MODEL...]`, `BENCH_GROUPS="context mtp init verify"` selects the groups |
 | `report.py` | tables from run directories: `python3 report.py [--json] RUN_DIR...` |
+| `teacher_forced.sh` | the decode logits against LiteRT-LM's CPU, fed the same tokens, and their pass bar (`tools/teacher_forced.py gate`): `reference --model M --set DIR` once for a set of prompts, then `run --model M --set DIR --out DIR [--env NAME=VALUE]` per build or setting |
 | `prompts/` | the real prompts of the MTP measurements: about 1k, 8k, 16k, 30k and 128k tokens of documentation ending in a question |
 
 ## Setup
