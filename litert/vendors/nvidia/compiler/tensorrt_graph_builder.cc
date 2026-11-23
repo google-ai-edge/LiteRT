@@ -1827,6 +1827,41 @@ struct GeneralFusedSdpa {
   bool update_cache = true;
 };
 
+// A float cache of the fused composite (no NVIDIA path has one: the float
+// caches the other paths keep in place are FP16 storage of FP32 tensors): its
+// type, scale 1.
+std::optional<GeneralCacheType> ParseGeneralFloatCacheType(
+    const Tensor& tensor) {
+  if (tensor.QTypeId() != kLiteRtQuantizationNone) return std::nullopt;
+  switch (tensor.ElementType()) {
+    case litert::ElementType::Float32:
+      return GeneralCacheType{kLiteRtNvidiaGeneralFloat32, 1.0f};
+    case litert::ElementType::Float16:
+      return GeneralCacheType{kLiteRtNvidiaGeneralFloat16, 1.0f};
+    case litert::ElementType::BFloat16:
+      return GeneralCacheType{kLiteRtNvidiaGeneralBFloat16, 1.0f};
+    default:
+      return std::nullopt;
+  }
+}
+
+// The fused composite's caches: quantized (ParseGeneralCaches) or float, the
+// key cache [1, H, S, D] and the value cache [1, H, D, S] of one type.
+std::optional<GeneralCaches> ParseGeneralFusedCaches(const Tensor& k,
+                                                     const Tensor& v) {
+  if (const auto quantized = ParseGeneralCaches(k, v)) return quantized;
+  const auto kt = ParseGeneralFloatCacheType(k);
+  const auto vt = ParseGeneralFloatCacheType(v);
+  const auto kd = StaticRank4Dims(k);
+  const auto vd = StaticRank4Dims(v);
+  if (!kt || !vt || !kd || !vd || kt->type != vt->type || (*kd)[0] != 1 ||
+      (*vd)[0] != 1 || (*vd)[1] != (*kd)[1] || (*vd)[2] != (*kd)[3] ||
+      (*vd)[3] != (*kd)[2]) {
+    return std::nullopt;
+  }
+  return GeneralCaches{kt->type, 1.0f, 1.0f, (*kd)[1], (*kd)[2], (*kd)[3]};
+}
+
 std::optional<GeneralFusedSdpa> ParseGeneralFusedSdpa(const Op& op) {
   if (!GeneralAttentionEnabled() || op.Inputs().size() != 7 ||
       (op.Outputs().size() != 3 && op.Outputs().size() != 1) ||
@@ -1835,7 +1870,7 @@ std::optional<GeneralFusedSdpa> ParseGeneralFusedSdpa(const Op& op) {
     return std::nullopt;
   }
   const auto& in = op.Inputs();
-  const auto caches = ParseGeneralCaches(in[1], in[2]);
+  const auto caches = ParseGeneralFusedCaches(in[1], in[2]);
   const auto q_scale = GeneralFloatInput(in[0]);
   const auto qd = StaticRank4Dims(in[0]);
   const auto kd = StaticRank4Dims(in[3]);
@@ -1868,7 +1903,8 @@ std::optional<GeneralFusedSdpa> ParseGeneralFusedSdpa(const Op& op) {
   const bool update_cache = op.Outputs().size() == 3;
   if (update_cache) {
     for (int i = 0; i < 2; ++i) {
-      const auto out = ParseGeneralCacheType(op.Outputs()[1 + i]);
+      auto out = ParseGeneralCacheType(op.Outputs()[1 + i]);
+      if (!out) out = ParseGeneralFloatCacheType(op.Outputs()[1 + i]);
       if (!out || out->type != caches->type ||
           out->scale != (i == 0 ? caches->k_scale : caches->v_scale) ||
           StaticRank4Dims(op.Outputs()[1 + i]) != StaticRank4Dims(in[1 + i])) {

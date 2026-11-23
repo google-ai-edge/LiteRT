@@ -581,15 +581,17 @@ constexpr float kFusedVScale = 0.25f;
 constexpr float kFusedSoftcap = 8.0f;
 
 // Inputs: q, k cache, v cache, k, v, mask, params. Outputs: attention and,
-// with `update`, the caches.
-void BuildFusedBlock(Graph* graph, bool update) {
+// with `update`, the caches: INT4, or with `float_caches` FP32.
+void BuildFusedBlock(Graph* graph, bool update, bool float_caches = false) {
   const auto f32 = kLiteRtElementTypeFloat32;
-  const auto i4 = kLiteRtElementTypeInt4;
+  const auto i4 = float_caches ? f32 : kLiteRtElementTypeInt4;
+  const float k_scale = float_caches ? 0.0f : kFusedKScale;
+  const float v_scale = float_caches ? 0.0f : kFusedVScale;
   auto& q = graph->Input("q", f32, {1, kKvHeads, kFusedRows, kFusedDepth});
   auto& k_cache = graph->Input("kv_cache_k_0", i4,
-                               {1, kKvHeads, kRing, kFusedDepth}, kFusedKScale);
+                               {1, kKvHeads, kRing, kFusedDepth}, k_scale);
   auto& v_cache = graph->Input("kv_cache_v_0", i4,
-                               {1, kKvHeads, kFusedDepth, kRing}, kFusedVScale);
+                               {1, kKvHeads, kFusedDepth, kRing}, v_scale);
   auto& k = graph->Input("k", f32, {1, kKvHeads, kChunk, kFusedDepth});
   auto& v = graph->Input("v", f32, {1, kKvHeads, kFusedDepth, kChunk});
   auto& mask = graph->Input("mask", f32, {1, 1, kChunk, kRing + kChunk});
@@ -599,12 +601,10 @@ void BuildFusedBlock(Graph* graph, bool update) {
       graph->Tensor("attention", f32, {1, kKvHeads, kFusedRows, kFusedDepth});
   std::vector<LiteRtTensorT*> outputs = {&attention};
   if (update) {
-    outputs.push_back(&graph->Tensor("kv_cache_k_0_out", i4,
-                                     {1, kKvHeads, kRing, kFusedDepth},
-                                     kFusedKScale));
-    outputs.push_back(&graph->Tensor("kv_cache_v_0_out", i4,
-                                     {1, kKvHeads, kFusedDepth, kRing},
-                                     kFusedVScale));
+    outputs.push_back(&graph->Tensor(
+        "kv_cache_k_0_out", i4, {1, kKvHeads, kRing, kFusedDepth}, k_scale));
+    outputs.push_back(&graph->Tensor(
+        "kv_cache_v_0_out", i4, {1, kKvHeads, kFusedDepth, kRing}, v_scale));
   }
   graph->Composite(
       "odml.fused_sdpa_cache_update",
@@ -615,9 +615,9 @@ void BuildFusedBlock(Graph* graph, bool update) {
   for (auto* output : outputs) graph->Output(*output);
 }
 
-void RunFused(bool update) {
+void RunFused(bool update, bool float_caches = false) {
   Graph graph;
-  BuildFusedBlock(&graph, update);
+  BuildFusedBlock(&graph, update, float_caches);
   Session session;
   if (update) {
     ASSERT_NO_FATAL_FAILURE(session.Build(&graph, {{1, 1}, {2, 2}}));
@@ -631,8 +631,19 @@ void RunFused(bool update) {
   std::vector<int> k_cache(count), v_cache(count);
   for (auto& value : k_cache) value = random.Int(-8, 7);
   for (auto& value : v_cache) value = random.Int(-8, 7);
-  session.SetInput(1, PackCache(k_cache, 4, false));
-  session.SetInput(2, PackCache(v_cache, 4, false));
+  // Float caches hold the values of the INT4 ones, scaled.
+  std::vector<float> k_float(count), v_float(count);
+  for (size_t i = 0; i < count; ++i) {
+    k_float[i] = k_cache[i] * kFusedKScale;
+    v_float[i] = v_cache[i] * kFusedVScale;
+  }
+  if (float_caches) {
+    session.SetInput(1, Bytes(k_float));
+    session.SetInput(2, Bytes(v_float));
+  } else {
+    session.SetInput(1, PackCache(k_cache, 4, false));
+    session.SetInput(2, PackCache(v_cache, 4, false));
+  }
   // Two steps: the second chunk wraps around the ring's end.
   for (int p0 : {30, 32}) {
     SCOPED_TRACE(::testing::Message() << "p0 " << p0);
@@ -681,13 +692,38 @@ void RunFused(bool update) {
     c.mask_rows = kChunk;
     c.bool_mask = false;
     c.softcap = kFusedSoftcap;
-    const auto want =
-        ref::Attention(c,
-                       HostCaches(k_cache, v_cache, kRing, kFusedDepth, 4,
-                                  kFusedKScale, kFusedVScale),
-                       q, k, v_rows, mask);
+    ref::Caches host = HostCaches(k_cache, v_cache, kRing, kFusedDepth, 4,
+                                  kFusedKScale, kFusedVScale);
+    if (float_caches) {
+      host.bits = 0;
+      host.k_scale = 1.0f;
+      host.v_scale = 1.0f;
+      host.k = k_float;
+      host.v = v_float;
+    }
+    const auto want = ref::Attention(c, host, q, k, v_rows, mask);
     ExpectNear(session.FloatOutput(0), want, 3e-3);
     if (!update) continue;
+    if (float_caches) {
+      // The steps' keys and values as the plugin takes them (BF16), in the
+      // ring's slots.
+      for (int t = 0; t < kChunk; ++t) {
+        const int slot = (p0 + t) % kRing;
+        for (int h = 0; h < kKvHeads; ++h) {
+          for (int d = 0; d < kFusedDepth; ++d) {
+            const size_t i =
+                (static_cast<size_t>(h) * kChunk + t) * kFusedDepth + d;
+            k_float[(static_cast<size_t>(h) * kRing + slot) * kFusedDepth + d] =
+                k[i];
+            v_float[(static_cast<size_t>(h) * kFusedDepth + d) * kRing + slot] =
+                v_rows[i];
+          }
+        }
+      }
+      ASSERT_EQ(session.FloatOutput(1), k_float);
+      ASSERT_EQ(session.FloatOutput(2), v_float);
+      continue;
+    }
     for (int t = 0; t < kChunk; ++t) {
       const int slot = (p0 + t) % kRing;
       for (int h = 0; h < kKvHeads; ++h) {
@@ -712,6 +748,12 @@ TEST_F(GeneralAttentionGraphTest, FusedInt4FloatChunkAcrossTheRingsEnd) {
 
 TEST_F(GeneralAttentionGraphTest, FusedOneOutputLeavesTheCaches) {
   RunFused(/*update=*/false);
+}
+
+// ML Drift's float caches in odml.fused_sdpa_cache_update: FP32 ring caches,
+// attended and written as they are (the steps' keys and values at BF16).
+TEST_F(GeneralAttentionGraphTest, FusedFloatCachesAcrossTheRingsEnd) {
+  RunFused(/*update=*/true, /*float_caches=*/true);
 }
 
 TEST_F(GeneralAttentionGraphTest, NoneWithoutTheSwitch) {
