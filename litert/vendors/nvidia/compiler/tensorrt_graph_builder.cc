@@ -58,6 +58,7 @@
 #include "litert/vendors/nvidia/compiler/hyper_connection_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/ple_tail_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
@@ -79,6 +80,7 @@
 #include "litert/vendors/nvidia/trtllm/hyper_connection.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
+#include "litert/vendors/nvidia/trtllm/ple_tail.h"
 #include "litert/vendors/nvidia/trtllm/qkv_norm_rope.h"
 #include "litert/vendors/nvidia/trtllm/qsa_indexer.h"
 #include "litert/vendors/nvidia/trtllm/qsa_sparse_attention.h"
@@ -4443,6 +4445,7 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindMoeBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindGatedDeltaNetBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindHcMixBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindPleTailBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindQuantRegions(subgraph));
     if (megakernel_body_) {
       LITERT_RETURN_IF_ERROR(LowerMegakernel(subgraph));
@@ -13980,6 +13983,408 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(*block.output, out);
   }
 
+  // Qwen 4's per-layer embedding past its key and value projections
+  // (trtllm/ple_tail.h), matched around its short convolution
+  // (FindPleTailBlocks).
+  struct PleTailBlock {
+    LiteRtNvidiaPleTailParams params{};
+    std::optional<Tensor> key, value, x, state, state_out, output;
+    std::vector<float> constants;  // ple_tail.h's order
+  };
+
+  // The tensor that `tensor` is a RESHAPE of (through any number of them);
+  // the reshapes join `reshapes`. With `single_use`, only through reshapes
+  // whose result has one reader.
+  static Tensor PastReshapes(Tensor tensor, bool single_use,
+                             std::vector<LiteRtOp>& reshapes) {
+    while (true) {
+      const auto producer = tensor.GetDefiningOp();
+      if (!producer || producer->Code() != kLiteRtOpCodeTflReshape ||
+          producer->Inputs().empty() || producer->Outputs().size() != 1 ||
+          (single_use && tensor.Uses().size() != 1)) {
+        return tensor;
+      }
+      reshapes.push_back(producer->Get());
+      tensor = producer->Inputs()[0];
+    }
+  }
+
+  // A norm over each stream's channels with a weight per stream and channel:
+  // `normed` = rms_norm(source as [.., streams, hidden], w) [* weights], with
+  // reshapes of one reader in between. The source (before the reshapes that
+  // only the norm reads), the weights [streams * hidden] and the epsilon; the
+  // norm's ops join `members`.
+  struct GroupedNorm {
+    std::optional<Tensor> source;
+    std::vector<float> weight;
+    float eps = 0.0f;
+    int64_t streams = 0;
+    int64_t hidden = 0;
+  };
+
+  static std::optional<GroupedNorm> MatchGroupedNorm(
+      const Tensor& normed, std::vector<LiteRtOp>& members) {
+    std::vector<LiteRtOp> found;
+    Tensor value = PastReshapes(normed, /*single_use=*/true, found);
+    if (value.Uses().size() != 1) return std::nullopt;
+    auto norm = value.GetDefiningOp();
+    if (!norm) return std::nullopt;
+    std::optional<Tensor> weights;
+    if (norm->Code() == kLiteRtOpCodeTflMul) {
+      if (norm->Inputs().size() != 2 || !HasNoFusedActivation(*norm)) {
+        return std::nullopt;
+      }
+      const int constant = norm->Inputs()[1].HasWeights() ? 1 : 0;
+      weights = norm->Inputs()[constant];
+      if (!weights->HasWeights() || !IsUnquantizedFloat32(*weights)) {
+        return std::nullopt;
+      }
+      found.push_back(norm->Get());
+      value = PastReshapes(norm->Inputs()[1 - constant], /*single_use=*/true,
+                           found);
+      if (value.Uses().size() != 1) return std::nullopt;
+      norm = value.GetDefiningOp();
+      if (!norm) return std::nullopt;
+    }
+    if (norm->Inputs().size() != 2) return std::nullopt;
+    const auto input_type = norm->Inputs()[0].RankedTensorType();
+    if (!input_type || input_type->Layout().Rank() < 2) return std::nullopt;
+    const auto dims = input_type->Layout().Dimensions();
+    GroupedNorm result;
+    result.hidden = dims[dims.size() - 1];
+    result.streams = dims[dims.size() - 2];
+    if (result.hidden < 1 || result.streams < 1) return std::nullopt;
+    const auto norm_weights =
+        RmsNormWeights(*norm, static_cast<int>(result.hidden));
+    if (!norm_weights) return std::nullopt;
+    found.push_back(norm->Get());
+    const size_t width = static_cast<size_t>(result.streams * result.hidden);
+    result.weight.assign(width, 1.0f);
+    if (weights.has_value()) {
+      // [.., streams, hidden], [hidden] or a scalar.
+      const auto weights_type = weights->RankedTensorType();
+      if (!weights_type) return std::nullopt;
+      const auto shape = weights_type->Layout().Dimensions();
+      const auto bytes = weights->Weights().Bytes();
+      size_t count = 1;
+      for (const auto dim : shape) count *= static_cast<size_t>(dim);
+      if (bytes.size() != count * sizeof(float) ||
+          (count != width && count != static_cast<size_t>(result.hidden) &&
+           count != 1) ||
+          (count == width &&
+           (shape.size() < 2 || shape[shape.size() - 1] != result.hidden)) ||
+          (count == static_cast<size_t>(result.hidden) && count != 1 &&
+           shape.back() != result.hidden)) {
+        return std::nullopt;
+      }
+      for (size_t i = 0; i < width; ++i) {
+        std::memcpy(&result.weight[i],
+                    bytes.data() + (i % count) * sizeof(float), sizeof(float));
+      }
+    }
+    for (size_t i = 0; i < width; ++i) {
+      result.weight[i] *=
+          norm_weights->first[i % static_cast<size_t>(result.hidden)];
+    }
+    result.eps = norm_weights->second;
+    result.source = PastReshapes(norm->Inputs()[0], /*single_use=*/true, found);
+    members.insert(members.end(), found.begin(), found.end());
+    return result;
+  }
+
+  // The single reader of `tensor` when it is an op of `code` with one input
+  // (or two for a binary op) and no fused activation.
+  static std::optional<Op> SoleProducer(const Tensor& tensor, LiteRtOpCode code,
+                                        size_t inputs) {
+    const auto op = tensor.GetDefiningOp();
+    if (!op || tensor.Uses().size() != 1 || op->Code() != code ||
+        op->Inputs().size() != inputs || op->Outputs().size() != 1) {
+      return std::nullopt;
+    }
+    return *op;
+  }
+
+  // Matches a per-layer embedding's tail around its convolution, in decode
+  // (no row mask, no valid length), in the reference's ops:
+  //   g      = scale * sum over the channels of
+  //            (grouped_norm(key) * grouped_norm(x))        scale optional
+  //   gate   = logistic(sign(g) * sqrt(maximum(abs(g), floor)))
+  //   gv     = gate [.., streams, 1] * value [.., 1, hidden]
+  //   y      = short_conv_step(grouped_norm(gv) as [.., streams * hidden])
+  //   result = x + (gv + y)
+  // with reshapes between the shapes. Every intermediate result has its
+  // readers within the layer. Its ops join `members`; `anchor` is the last
+  // add.
+  std::optional<PleTailBlock> MatchPleTail(const Op& conv,
+                                           std::vector<LiteRtOp>& members,
+                                           LiteRtOp& anchor) {
+    const auto parsed = ParseShortConvStep(conv);
+    if (!parsed || parsed->has_valid_len) return std::nullopt;
+    PleTailBlock block;
+    members.push_back(conv.Get());
+    // y + gv, then + x.
+    const Tensor y = conv.Outputs()[0];
+    if (y.Uses().size() != 1) return std::nullopt;
+    const Op add_value = y.Uses()[0].user;
+    if (add_value.Code() != kLiteRtOpCodeTflAdd ||
+        add_value.Inputs().size() != 2 || !HasNoFusedActivation(add_value) ||
+        add_value.Outputs()[0].Uses().size() != 1) {
+      return std::nullopt;
+    }
+    const auto residual_use = add_value.Outputs()[0].Uses()[0];
+    const Op add_streams = residual_use.user;
+    if (add_streams.Code() != kLiteRtOpCodeTflAdd ||
+        add_streams.Inputs().size() != 2 ||
+        !HasNoFusedActivation(add_streams)) {
+      return std::nullopt;
+    }
+    members.push_back(add_value.Get());
+    members.push_back(add_streams.Get());
+    anchor = add_streams.Get();
+    block.x = add_streams.Inputs()[1 - residual_use.user_arg_ind];
+    block.output = add_streams.Outputs()[0];
+    // The convolution's input: the grouped norm of the gated value, which
+    // the first add reads too.
+    const auto conv_norm = MatchGroupedNorm(conv.Inputs()[0], members);
+    if (!conv_norm) return std::nullopt;
+    const Tensor gated = *conv_norm->source;
+    if (PastReshapes(add_value.Inputs()[1 - y.Uses()[0].user_arg_ind],
+                     /*single_use=*/true, members)
+                .Get() != gated.Get() ||
+        gated.Uses().size() != 2) {
+      return std::nullopt;
+    }
+    const int64_t streams = conv_norm->streams;
+    const int64_t hidden = conv_norm->hidden;
+    const auto product = gated.GetDefiningOp();
+    if (!product || product->Code() != kLiteRtOpCodeTflMul ||
+        product->Inputs().size() != 2 || !HasNoFusedActivation(*product)) {
+      return std::nullopt;
+    }
+    members.push_back(product->Get());
+    std::optional<Op> logistic;
+    for (int side = 0; side < 2 && !logistic; ++side) {
+      std::vector<LiteRtOp> reshapes;
+      const Tensor gate = PastReshapes(product->Inputs()[side],
+                                       /*single_use=*/true, reshapes);
+      logistic = SoleProducer(gate, kLiteRtOpCodeTflLogistic, 1);
+      if (!logistic) continue;
+      members.insert(members.end(), reshapes.begin(), reshapes.end());
+      block.value = PastReshapes(product->Inputs()[1 - side],
+                                 /*single_use=*/true, members);
+    }
+    if (!logistic) return std::nullopt;
+    members.push_back(logistic->Get());
+    // sign(g) * sqrt(maximum(abs(g), floor)).
+    const auto root_product =
+        SoleProducer(logistic->Inputs()[0], kLiteRtOpCodeTflMul, 2);
+    if (!root_product || !HasNoFusedActivation(*root_product)) {
+      return std::nullopt;
+    }
+    members.push_back(root_product->Get());
+    std::optional<Tensor> g;
+    for (int side = 0; side < 2 && !g; ++side) {
+      const auto sign =
+          SoleProducer(root_product->Inputs()[side], kLiteRtOpCodeTflSign, 1);
+      const auto root = SoleProducer(root_product->Inputs()[1 - side],
+                                     kLiteRtOpCodeTflSqrt, 1);
+      if (!sign || !root) continue;
+      const auto largest =
+          SoleProducer(root->Inputs()[0], kLiteRtOpCodeTflMaximum, 2);
+      if (!largest) continue;
+      for (int operand = 0; operand < 2 && !g; ++operand) {
+        const auto floor = ReadFloatScalar(largest->Inputs()[operand]);
+        const auto magnitude = SoleProducer(largest->Inputs()[1 - operand],
+                                            kLiteRtOpCodeTflAbs, 1);
+        if (!floor || !magnitude ||
+            magnitude->Inputs()[0].Get() != sign->Inputs()[0].Get() ||
+            sign->Inputs()[0].Uses().size() != 2) {
+          continue;
+        }
+        block.params.floor = *floor;
+        g = sign->Inputs()[0];
+        members.push_back(sign->Get());
+        members.push_back(root->Get());
+        members.push_back(largest->Get());
+        members.push_back(magnitude->Get());
+      }
+    }
+    if (!g) return std::nullopt;
+    // g = scale * sum(key_n * query_n) over the channels.
+    block.params.dot_scale = 1.0f;
+    auto sum = g->GetDefiningOp();
+    if (sum && sum->Code() != kLiteRtOpCodeTflSum) {
+      const auto scaled = ScalarProduct(*sum);
+      if (!scaled || scaled->second.Uses().size() != 1) return std::nullopt;
+      block.params.dot_scale = scaled->first;
+      members.push_back(sum->Get());
+      sum = scaled->second.GetDefiningOp();
+    }
+    if (!sum || sum->Code() != kLiteRtOpCodeTflSum ||
+        sum->Inputs().size() != 2) {
+      return std::nullopt;
+    }
+    const auto dot_type = sum->Inputs()[0].RankedTensorType();
+    const auto axes = ReadInt32Constant(sum->Inputs()[1]);
+    if (!dot_type || !axes || axes->size() != 1) return std::nullopt;
+    const int rank = static_cast<int>(dot_type->Layout().Rank());
+    if ((*axes)[0] != rank - 1 && (*axes)[0] != -1) return std::nullopt;
+    members.push_back(sum->Get());
+    const auto dot = SoleProducer(sum->Inputs()[0], kLiteRtOpCodeTflMul, 2);
+    if (!dot || !HasNoFusedActivation(*dot)) return std::nullopt;
+    members.push_back(dot->Get());
+    const auto first = MatchGroupedNorm(dot->Inputs()[0], members);
+    const auto second = MatchGroupedNorm(dot->Inputs()[1], members);
+    if (!first || !second) return std::nullopt;
+    // The query is the norm of the streams the layer's result adds to.
+    const bool first_is_query = first->source->Get() == block.x->Get();
+    if (!first_is_query && second->source->Get() != block.x->Get()) {
+      return std::nullopt;
+    }
+    const GroupedNorm& query = first_is_query ? *first : *second;
+    const GroupedNorm& key = first_is_query ? *second : *first;
+    block.key = *key.source;
+    if (key.streams != streams || key.hidden != hidden ||
+        query.streams != streams || query.hidden != hidden ||
+        streams * hidden != parsed->params.channels) {
+      return std::nullopt;
+    }
+    const int32_t width = static_cast<int32_t>(streams * hidden);
+    const int32_t rows = parsed->params.tokens;
+    if (!TensorHasShape(*block.x, {1, rows, width}) ||
+        !TensorHasShape(*block.key, {1, rows, width}) ||
+        !TensorHasShape(*block.value,
+                        {1, rows, static_cast<int32_t>(hidden)}) ||
+        block.key->HasWeights() || block.value->HasWeights() ||
+        block.x->HasWeights()) {
+      return std::nullopt;
+    }
+    block.params.rows = rows;
+    block.params.streams = static_cast<int32_t>(streams);
+    block.params.hidden = static_cast<int32_t>(hidden);
+    block.params.taps = parsed->params.taps;
+    block.params.eps_key = key.eps;
+    block.params.eps_query = query.eps;
+    block.params.eps_conv = conv_norm->eps;
+    block.params.silu = parsed->params.silu;
+    if (!LiteRtNvidiaPleTailSupports(&block.params)) return std::nullopt;
+    block.state = conv.Inputs()[1];
+    block.state_out = conv.Outputs()[1];
+    block.constants = key.weight;
+    block.constants.insert(block.constants.end(), query.weight.begin(),
+                           query.weight.end());
+    block.constants.insert(block.constants.end(), conv_norm->weight.begin(),
+                           conv_norm->weight.end());
+    const auto taps = conv.Inputs()[2].Weights().Bytes();
+    const size_t before = block.constants.size();
+    block.constants.resize(before + taps.size() / sizeof(float));
+    std::memcpy(block.constants.data() + before, taps.data(), taps.size());
+    if (block.constants.size() !=
+        LiteRtNvidiaPleTailConstantCount(&block.params)) {
+      return std::nullopt;
+    }
+    return block;
+  }
+
+  // Records every per-layer embedding tail matched by MatchPleTail: its ops
+  // are not lowered, and its last add emits the LiteRtNvidiaPleTail plugin
+  // (LowerPleTailBlock): one launch where the op-by-op lowering has three
+  // fused pointwise kernels and the convolution's two. With BF16
+  // activations. LITERT_NVIDIA_TENSORRT_FUSE_PLE=0 keeps the op-by-op
+  // lowering.
+  Expected<void> FindPleTailBlocks(const Subgraph& subgraph) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_PLE",
+                    /*default_value=*/true) ||
+        !Fp16ActivationsEnabled() ||
+        ModeFloatType() != nvinfer1::DataType::kBF16) {
+      return {};
+    }
+    size_t found = 0;
+    for (const auto& op : subgraph.Ops()) {
+      if (op.Code() != kLiteRtOpCodeShloComposite ||
+          CompositeOpName(op) != "odml.short_conv_step") {
+        continue;
+      }
+      std::vector<LiteRtOp> members;
+      LiteRtOp anchor = nullptr;
+      auto block = MatchPleTail(op, members, anchor);
+      if (!block.has_value()) continue;
+      bool ordered = op_order_.count(anchor) != 0;
+      for (LiteRtOp member : members) {
+        ordered = ordered && op_order_.count(member) != 0 &&
+                  unlowered_ops_.count(member) == 0 &&
+                  op_order_[member] <= op_order_[anchor];
+      }
+      if (!ordered) continue;
+      unlowered_ops_.insert(members.begin(), members.end());
+      ple_tail_anchor_ops_[anchor] = ple_tail_blocks_.size();
+      ple_tail_blocks_.push_back(std::move(*block));
+      ++found;
+    }
+    if (found != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX fused %zu per-layer embedding tails "
+                 "into the CUDA plugin",
+                 found);
+    }
+    return {};
+  }
+
+  // Emits one matched per-layer embedding tail at its last add.
+  Expected<void> LowerPleTailBlock(size_t index) {
+    PleTailBlock& block = ple_tail_blocks_[index];
+    std::vector<nvinfer1::ITensor*> inputs;
+    for (const Tensor* tensor : {&*block.key, &*block.value, &*block.x}) {
+      LITERT_ASSIGN_OR_RETURN(auto* input, GetTensor(*tensor));
+      LITERT_ASSIGN_OR_RETURN(input,
+                              AddCastTensor(input, nvinfer1::DataType::kBF16));
+      inputs.push_back(input);
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* state, GetFp32StateInput(*block.state));
+    inputs.push_back(state);
+    const std::string suffix = std::to_string(block.state->TensorIndex());
+    nvinfer1::Dims constant_dims{};
+    constant_dims.nbDims = 1;
+    constant_dims.d[0] = static_cast<int64_t>(block.constants.size());
+    LITERT_ASSIGN_OR_RETURN(
+        auto* constants, AddFloatConstant(block.constants, constant_dims,
+                                          "cuda_ple_tail_constants_" + suffix,
+                                          nvinfer1::DataType::kFLOAT));
+    inputs.push_back(constants);
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreatePleTailPlugin(block.params));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the per-layer embedding plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the per-layer embedding plugin layer");
+    }
+    const std::string name = "cuda_ple_tail_" + suffix;
+    layer->setName(KeepName(UniqueName(name)));
+    for (int o = 0; o < 2; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+    }
+    owned_plugins_.push_back(std::move(plugin));
+    raw_output_map_[block.state_out->Get()] = layer->getOutput(1);
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(*block.state_out, layer->getOutput(1)));
+    LITERT_ASSIGN_OR_RETURN(auto out_type, block.output->RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+    LITERT_ASSIGN_OR_RETURN(auto* out,
+                            ReshapeTensor(layer->getOutput(0), out_dims));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX fused CUDA per-layer embedding tail: "
+               "state=%s rows=%d streams=%d hidden=%d taps=%d",
+               suffix.c_str(), block.params.rows, block.params.streams,
+               block.params.hidden, block.params.taps);
+    return SetOutputTensor(*block.output, out);
+  }
+
   // Qwen 3.5's gated_delta_update as the LiteRtNvidiaGatedDeltaUpdate plugin
   // (trtllm/gated_delta.h): q, k, v, beta and g in FP32, the state read from
   // and written to the runtime's FP32 buffer.
@@ -16687,6 +17092,10 @@ class TensorRtGraphBuilder {
         mix != hc_mix_anchor_ops_.end()) {
       return LowerHcMixBlock(mix->second);
     }
+    if (auto ple = ple_tail_anchor_ops_.find(op.Get());
+        ple != ple_tail_anchor_ops_.end()) {
+      return LowerPleTailBlock(ple->second);
+    }
     if (auto region = quant_regions_.find(op.Get());
         region != quant_regions_.end()) {
       return LowerQuantRegion(region->second);
@@ -16891,6 +17300,10 @@ class TensorRtGraphBuilder {
   std::unordered_set<LiteRtOp> hc_mix_projections_;
   // The projections of the mix that MatchHcMix matched last.
   std::array<LiteRtOp, 2> hc_mix_candidate_projections_{};
+  // The per-layer embedding tails fused into one plugin each, by their last
+  // add (FindPleTailBlocks).
+  std::vector<PleTailBlock> ple_tail_blocks_;
+  std::unordered_map<LiteRtOp, size_t> ple_tail_anchor_ops_;
   // The statically quantized products (FindQuantRegions): the INT8 values
   // the quant layers produced, by model tensor; the regions, by the op that
   // emits them; the INT8 tensors the product regions will produce and read.
