@@ -33,17 +33,6 @@ _OpQuantConfig = qtyping.OpQuantizationConfig
 _RNG = np.random.default_rng(66)
 
 
-def _get_dummy_data(num_samples):
-  data = []
-  for _ in range(num_samples):
-    data.append({'inputs': _RNG.uniform(size=(1,)).astype(np.int32)})
-  return data
-
-
-# def _get_test_data(num_samples: int = 8):
-#   return _get_dummy_data(num_samples)
-
-
 class EmbeddingLookupTest(test_utils.BaseOpTestCase):
 
   def setUp(self):
