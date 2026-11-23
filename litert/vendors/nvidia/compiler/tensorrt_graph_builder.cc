@@ -61,6 +61,7 @@
 #include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
+#include "litert/vendors/nvidia/compiler/slot_network.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
@@ -4458,6 +4459,23 @@ class TensorRtGraphBuilder {
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
     LITERT_ASSIGN_OR_RETURN(result.step_feed, MatchStepFeed(subgraph));
+    // The batched decode engines of a decode step (one that feeds itself),
+    // built from its network while its constants are still alive.
+    if (const int32_t max_slots = DecodeSlotsRequested();
+        max_slots >= 2 && result.step_feed.has_value() &&
+        !result.trtllm_head.has_value() && !megakernel_body_) {
+      for (int32_t slots = 2; slots <= max_slots; ++slots) {
+        auto plan = BuildSlotPlan(slots);
+        if (!plan) {
+          LITERT_LOG(LITERT_WARNING,
+                     "NVIDIA TensorRT-RTX builds no batched decode engine of "
+                     "%d slots: %s",
+                     slots, plan.Error().Message().c_str());
+          break;
+        }
+        result.slot_plans.push_back(std::move(*plan));
+      }
+    }
     result.is_stripped_plan = strip_plan;
     result.weight_holders = std::move(weight_holders_);
     // TensorRT-RTX has consumed every network constant at this point. Destroy
@@ -4497,6 +4515,40 @@ class TensorRtGraphBuilder {
     return name == key || (name.size() > suffix.size() &&
                            name.compare(name.size() - suffix.size(),
                                         suffix.size(), suffix) == 0);
+  }
+
+  // The batched decode engine of `slots` slots built from the step's network
+  // (BuildSlotDecodeNetwork), with the step's builder configuration.
+  Expected<TensorRtSlotPlanBuildData> BuildSlotPlan(int32_t slots) {
+    int32_t merged = 0;
+    LITERT_ASSIGN_OR_RETURN(
+        nvinfer1::INetworkDefinition * network_ptr,
+        BuildSlotDecodeNetwork(*builder_, *network_, slots, &merged));
+    TrtPtr<nvinfer1::INetworkDefinition> network(network_ptr);
+    TrtPtr<nvinfer1::IHostMemory> serialized(
+        builder_->buildSerializedNetwork(*network, *config_));
+    if (!serialized) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to build the batched decode engine");
+    }
+    TensorRtSlotPlanBuildData plan;
+    plan.slots = slots;
+    for (int32_t s = 0; s < slots; ++s) {
+      for (const auto& name : input_names_) {
+        plan.input_names.push_back(SlotTensorName(name, s));
+      }
+      for (const auto& name : output_names_) {
+        plan.output_names.push_back(SlotTensorName(name, s));
+      }
+    }
+    plan.engine.assign(
+        static_cast<const uint8_t*>(serialized->data()),
+        static_cast<const uint8_t*>(serialized->data()) + serialized->size());
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX built a batched decode engine of %d slots: "
+               "%d projections read once for the slots, plan_bytes=%zu",
+               slots, merged, plan.engine.size());
+    return plan;
   }
 
   // A decode step that feeds itself (TensorRtStepFeed): one token's

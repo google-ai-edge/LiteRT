@@ -441,8 +441,14 @@ cc_test(
 
 cc_library(
     name = "tensorrt_graph_builder",
-    srcs = ["tensorrt_graph_builder.cc"],
-    hdrs = ["tensorrt_graph_builder.h"],
+    srcs = [
+        "slot_network.cc",
+        "tensorrt_graph_builder.cc",
+    ],
+    hdrs = [
+        "slot_network.h",
+        "tensorrt_graph_builder.h",
+    ],
     tags = ["manual"],
     deps = [
         ":cache_update_plugin",

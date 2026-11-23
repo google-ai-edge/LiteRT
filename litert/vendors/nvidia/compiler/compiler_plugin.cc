@@ -63,6 +63,7 @@
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/cuda_vmm.h"
+#include "litert/vendors/nvidia/decode_slots.h"
 #include "litert/vendors/nvidia/experimental/megakernel/megakernel_lowering.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
@@ -623,6 +624,8 @@ std::string BuildCompilerSdkVersion() {
   constexpr const char* kSwitchEnvironmentVariables[] = {
       "LITERT_NVIDIA_MEGAKERNEL",
       "LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION",
+      // The batched decode engines built beside each decode engine.
+      "LITERT_NVIDIA_DISPATCH_SLOTS",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
     if (const char* value = std::getenv(name); value != nullptr) {
@@ -970,6 +973,19 @@ Expected<litert::nvidia::TensorRtAotFileIdentity> PersistArtifactFile(
   return *identity;
 }
 
+// The AOT artifact's path for a bytecode, by its size and fingerprint.
+std::string AotArtifactPath(const std::string& canonical_dir,
+                            const std::vector<uint8_t>& bytecode) {
+  const auto fingerprint = litert::nvidia::FingerprintTensorRtAotArtifact(
+      bytecode.data(), bytecode.size());
+  const std::string filename =
+      "tensorrt_aot_v" +
+      std::to_string(litert::nvidia::kTensorRtAotLocatorVersion) + "_" +
+      std::to_string(bytecode.size()) + "_" + Hex64(fingerprint.low) +
+      Hex64(fingerprint.high) + ".bin";
+  return litert::internal::Join({canonical_dir, filename});
+}
+
 Expected<std::pair<size_t, size_t>> PersistAotArtifact(
     const std::string& canonical_dir, std::vector<uint8_t>& bytecode,
     size_t ordinal, size_t artifact_count) {
@@ -979,12 +995,7 @@ Expected<std::pair<size_t, size_t>> PersistAotArtifact(
   }
   const auto fingerprint = litert::nvidia::FingerprintTensorRtAotArtifact(
       bytecode.data(), bytecode.size());
-  const std::string filename =
-      "tensorrt_aot_v" +
-      std::to_string(litert::nvidia::kTensorRtAotLocatorVersion) + "_" +
-      std::to_string(bytecode.size()) + "_" + Hex64(fingerprint.low) +
-      Hex64(fingerprint.high) + ".bin";
-  const std::string path = litert::internal::Join({canonical_dir, filename});
+  const std::string path = AotArtifactPath(canonical_dir, bytecode);
   LITERT_ASSIGN_OR_RETURN(
       auto file_identity,
       PersistArtifactFile(path, bytecode.data(), bytecode.size()));
@@ -1929,6 +1940,58 @@ std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder> CreateWeightStore(
 // the plan was built with and where calibration found them. The description
 // borrows the private runs of `entry`.
 void DescribeWeightStore(
+    const litert::nvidia::TensorRtWeightStoreBuilder& store,
+    const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
+    litert::nvidia::TensorRtWeightHolderCalibration calibration,
+    PendingBundleEntry& entry);
+
+// Writes each batched decode engine of a decode partition (slot_network.h)
+// as a shard of its own at `<decode artifact>.slots<n>`, with the weight store
+// of its own plan: the dispatch maps the same segments as the decode
+// engine's.
+Expected<void> PersistSlotPlans(
+    const std::string& decode_artifact, const std::string& function_name,
+    const litert::nvidia::TensorRtBuildResult& engine,
+    const litert::nvidia::TensorRtWeightStoreBuilder& store,
+    const std::vector<litert::nvidia::TensorRtSharedWeight>& weights) {
+  if (engine.weight_holders.empty() || !engine.refit_weights.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "NVIDIA TensorRT-RTX keeps no batched decode engine of %s: "
+               "only a weight-store plan without refit weights is supported",
+               function_name.c_str());
+    return {};
+  }
+  for (const auto& plan : engine.slot_plans) {
+    PendingBundleEntry pending;
+    pending.function_name =
+        function_name + "_slots" + std::to_string(plan.slots);
+    pending.input_names = plan.input_names;
+    pending.output_names = plan.output_names;
+    pending.engine = plan.engine;
+    LITERT_ASSIGN_OR_RETURN(auto calibration,
+                            litert::nvidia::CalibrateTensorRtWeightHolders(
+                                pending.engine.data(), pending.engine.size(),
+                                engine.weight_holders, store.granule()));
+    DescribeWeightStore(store, engine.weight_holders, std::move(calibration),
+                        pending);
+    litert::nvidia::TensorRtLlmHead head;
+    litert::nvidia::TensorRtStepFeed feed;
+    LITERT_ASSIGN_OR_RETURN(auto shard,
+                            litert::nvidia::PackTensorRtSharedWeightShard(
+                                weights, pending.View(head, feed)));
+    const std::string path =
+        litert::nvidia::SlotArtifactPath(decode_artifact, plan.slots);
+    LITERT_RETURN_IF_ERROR(
+        PersistArtifactFile(path, shard.data(), shard.size()));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX persisted the batched decode engine of %d "
+               "slots: artifact_bytes=%zu path=%s",
+               plan.slots, shard.size(), path.c_str());
+  }
+  return {};
+}
+
+void DescribeWeightStore(
     const litert::nvidia::TensorRtWeightStoreBuilder& builder,
     const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
     litert::nvidia::TensorRtWeightHolderCalibration calibration,
@@ -2223,6 +2286,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             litert::nvidia::PackTensorRtSharedWeightShard(
                 weight_store.weights(), pending.View(head, feed)));
         memory_profiler.Log("aot_shard_pack_end", function_name.c_str());
+        // The batched decode engines go beside the decode engine's artifact,
+        // where the dispatch looks for them (`<artifact>.slots<n>`).
+        if (!engine.slot_plans.empty()) {
+          LITERT_RETURN_IF_ERROR(PersistSlotPlans(
+              AotArtifactPath(canonical_aot_cache_dir, packed_shard),
+              function_name, engine, *plugin_weight_store,
+              weight_store.weights()));
+        }
         LITERT_ASSIGN_OR_RETURN(
             auto persisted,
             PersistAotArtifact(canonical_aot_cache_dir, packed_shard, i,

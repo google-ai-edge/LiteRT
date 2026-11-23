@@ -84,8 +84,18 @@ struct TensorRtWeightHolderBuildData {
   uint64_t bytes = 0;
 };
 
+// A batched decode engine of `slots` sequence slots (slot_network.h), built
+// beside a decode step's engine when LITERT_NVIDIA_DISPATCH_SLOTS asks.
+struct TensorRtSlotPlanBuildData {
+  int32_t slots = 0;
+  std::vector<uint8_t> engine;
+  std::vector<std::string> input_names;
+  std::vector<std::string> output_names;
+};
+
 struct TensorRtBuildResult {
   std::vector<uint8_t> engine;
+  std::vector<TensorRtSlotPlanBuildData> slot_plans;
   std::vector<std::string> input_names;
   std::vector<std::string> output_names;
   std::optional<TensorRtLlmHeadBuildData> trtllm_head;

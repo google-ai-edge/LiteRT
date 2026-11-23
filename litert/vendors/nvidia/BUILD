@@ -33,7 +33,10 @@ cc_library(
 cc_library(
     name = "bytecode",
     srcs = ["bytecode.cc"],
-    hdrs = ["bytecode.h"],
+    hdrs = [
+        "bytecode.h",
+        "decode_slots.h",
+    ],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",

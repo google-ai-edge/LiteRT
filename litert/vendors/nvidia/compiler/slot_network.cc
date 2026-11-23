@@ -1,0 +1,499 @@
+// Copyright 2026 Google LLC.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/nvidia/compiler/slot_network.h"
+
+#include <cstdint>
+#include <cstdlib>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <utility>
+#include <vector>
+
+#include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
+#include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
+#include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
+#include "NvInfer.h"
+
+namespace litert::nvidia {
+namespace {
+
+Error Fail(const std::string& what) {
+  return Error(kLiteRtStatusErrorCompilation,
+               "Batched decode network: " + what);
+}
+
+struct PluginDeleter {
+  void operator()(nvinfer1::IPluginV3* plugin) const { delete plugin; }
+};
+
+class SlotNetworkBuilder {
+ public:
+  SlotNetworkBuilder(nvinfer1::INetworkDefinition& step,
+                     nvinfer1::INetworkDefinition& out, int32_t slots)
+      : step_(step), out_(out), slots_(slots) {}
+
+  Expected<int32_t> Build() {
+    for (int32_t i = 0; i < step_.getNbInputs(); ++i) {
+      nvinfer1::ITensor* input = step_.getInput(i);
+      for (int32_t s = 0; s < slots_; ++s) {
+        nvinfer1::ITensor* copy =
+            out_.addInput(SlotTensorName(input->getName(), s).c_str(),
+                          input->getType(), input->getDimensions());
+        if (copy == nullptr) return Fail("an input");
+        map_[Key(input, s)] = copy;
+      }
+    }
+    // In the order of their dependencies: a layer's input may have been
+    // rewired to a tensor of a layer added after it.
+    LITERT_ASSIGN_OR_RETURN(const std::vector<int32_t> order, LayerOrder());
+    for (int32_t l : order) {
+      LITERT_RETURN_IF_ERROR(CloneLayer(*step_.getLayer(l)));
+    }
+    for (int32_t i = 0; i < step_.getNbOutputs(); ++i) {
+      nvinfer1::ITensor* output = step_.getOutput(i);
+      for (int32_t s = 0; s < slots_; ++s) {
+        LITERT_ASSIGN_OR_RETURN(nvinfer1::ITensor * copy, Map(output, s));
+        if (shared_.count(copy) != 0) {
+          // A constant output (never in a decode step) would be one tensor
+          // for every slot.
+          return Fail("an output that is a constant");
+        }
+        copy->setName(SlotTensorName(output->getName(), s).c_str());
+        out_.markOutput(*copy);
+      }
+    }
+    return merged_;
+  }
+
+ private:
+  static uint64_t Key(const nvinfer1::ITensor* tensor, int32_t slot) {
+    return (reinterpret_cast<uint64_t>(tensor) << 4) |
+           static_cast<uint64_t>(slot);
+  }
+
+  Expected<nvinfer1::ITensor*> Map(const nvinfer1::ITensor* tensor,
+                                   int32_t slot) {
+    if (auto it = shared_tensor_.find(tensor); it != shared_tensor_.end()) {
+      return it->second;
+    }
+    auto it = map_.find(Key(tensor, slot));
+    if (it == map_.end()) {
+      return Fail(std::string("tensor ") + tensor->getName() +
+                  " is made by no layer before it is used");
+    }
+    return it->second;
+  }
+
+  // The step's layers, each after the layers that make its inputs.
+  Expected<std::vector<int32_t>> LayerOrder() {
+    const int32_t count = step_.getNbLayers();
+    std::unordered_map<const nvinfer1::ITensor*, int32_t> producer;
+    for (int32_t l = 0; l < count; ++l) {
+      nvinfer1::ILayer* layer = step_.getLayer(l);
+      for (int32_t o = 0; o < layer->getNbOutputs(); ++o) {
+        producer[layer->getOutput(o)] = l;
+      }
+    }
+    std::vector<int32_t> order;
+    order.reserve(count);
+    std::vector<uint8_t> state(count, 0);  // 1 visiting, 2 done
+    for (int32_t root = 0; root < count; ++root) {
+      if (state[root] != 0) continue;
+      // Iterative depth-first walk: (layer, next input to look at).
+      std::vector<std::pair<int32_t, int32_t>> stack{{root, 0}};
+      state[root] = 1;
+      while (!stack.empty()) {
+        auto& [l, next] = stack.back();
+        nvinfer1::ILayer* layer = step_.getLayer(l);
+        if (next < layer->getNbInputs()) {
+          nvinfer1::ITensor* input = layer->getInput(next++);
+          if (input == nullptr) continue;
+          auto it = producer.find(input);
+          if (it == producer.end()) continue;  // a network input
+          if (state[it->second] == 1) return Fail("a cycle of layers");
+          if (state[it->second] == 0) {
+            state[it->second] = 1;
+            stack.push_back({it->second, 0});
+          }
+          continue;
+        }
+        state[l] = 2;
+        order.push_back(l);
+        stack.pop_back();
+      }
+    }
+    return order;
+  }
+
+  // A layer's mapped inputs for one slot: all of them, nulls kept.
+  Expected<std::vector<nvinfer1::ITensor*>> Inputs(nvinfer1::ILayer& layer,
+                                                   int32_t slot) {
+    std::vector<nvinfer1::ITensor*> inputs(layer.getNbInputs(), nullptr);
+    for (int32_t i = 0; i < layer.getNbInputs(); ++i) {
+      if (layer.getInput(i) == nullptr) continue;
+      LITERT_ASSIGN_OR_RETURN(inputs[i], Map(layer.getInput(i), slot));
+    }
+    return inputs;
+  }
+
+  // The layer's optional inputs past `first` and its settings, onto `copy`.
+  void Finish(nvinfer1::ILayer& layer, nvinfer1::ILayer& copy,
+              const std::vector<nvinfer1::ITensor*>& inputs, int32_t first,
+              int32_t slot) {
+    for (int32_t i = first; i < static_cast<int32_t>(inputs.size()); ++i) {
+      if (inputs[i] != nullptr) copy.setInput(i, *inputs[i]);
+    }
+    copy.setName((std::string(layer.getName()) + "#slot" + std::to_string(slot))
+                     .c_str());
+  }
+
+  void Record(nvinfer1::ILayer& layer, nvinfer1::ILayer& copy, int32_t slot) {
+    for (int32_t o = 0; o < layer.getNbOutputs(); ++o) {
+      map_[Key(layer.getOutput(o), slot)] = copy.getOutput(o);
+    }
+  }
+
+  Expected<void> CloneLayer(nvinfer1::ILayer& layer) {
+    if (layer.getType() == nvinfer1::LayerType::kCONSTANT) {
+      // One constant for every slot, under its own name: a weight the plan
+      // leaves out (a holder of the weight store, a refittable weight) is
+      // found by that name.
+      auto& constant = static_cast<nvinfer1::IConstantLayer&>(layer);
+      nvinfer1::IConstantLayer* copy =
+          out_.addConstant(constant.getDimensions(), constant.getWeights());
+      if (copy == nullptr) return Fail("a constant");
+      copy->setName(layer.getName());
+      // The step names a constant's weights as its layer when it names them
+      // at all (the weight holders); the name outlives this network's build.
+      if (step_.areWeightsMarkedRefittable(layer.getName())) {
+        if (!out_.setWeightsName(copy->getWeights(), layer.getName()) ||
+            !out_.markWeightsRefittable(layer.getName())) {
+          return Fail(std::string("weights ") + layer.getName());
+        }
+      }
+      shared_tensor_[layer.getOutput(0)] = copy->getOutput(0);
+      shared_.insert({copy->getOutput(0), true});
+      return {};
+    }
+    if (layer.getType() == nvinfer1::LayerType::kPLUGIN_V3) {
+      LITERT_ASSIGN_OR_RETURN(bool merged, MergeProjection(layer));
+      if (merged) return {};
+    }
+    for (int32_t s = 0; s < slots_; ++s) {
+      LITERT_RETURN_IF_ERROR(CloneForSlot(layer, s));
+    }
+    return {};
+  }
+
+  // A blockwise INT4 GEMV whose weights every slot shares: one plugin over
+  // the slots' activation rows, concatenated on the rows axis.
+  Expected<bool> MergeProjection(nvinfer1::ILayer& layer) {
+    auto& plugin_layer = static_cast<nvinfer1::IPluginV3Layer&>(layer);
+    std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> twin(
+        SubbyteGemvSlotRowsPlugin(plugin_layer.getPlugin()));
+    if (twin == nullptr || layer.getNbOutputs() != 1 ||
+        layer.getNbInputs() < 2 || layer.getInput(0) == nullptr) {
+      return false;
+    }
+    for (int32_t i = 1; i < layer.getNbInputs(); ++i) {
+      if (layer.getInput(i) == nullptr ||
+          shared_tensor_.count(layer.getInput(i)) == 0) {
+        return false;  // a per-slot operand: not a shared projection
+      }
+    }
+    const nvinfer1::Dims dims = layer.getInput(0)->getDimensions();
+    int64_t rows = 1;
+    for (int32_t d = 0; d + 1 < dims.nbDims; ++d) rows *= dims.d[d];
+    if (dims.nbDims < 2 || rows != 1) return false;  // one row per slot
+    const int32_t axis = dims.nbDims - 2;
+    std::vector<nvinfer1::ITensor*> rows_of_slots(slots_);
+    for (int32_t s = 0; s < slots_; ++s) {
+      LITERT_ASSIGN_OR_RETURN(rows_of_slots[s], Map(layer.getInput(0), s));
+    }
+    nvinfer1::IConcatenationLayer* concat =
+        out_.addConcatenation(rows_of_slots.data(), slots_);
+    if (concat == nullptr) return Fail("the slots' projection rows");
+    concat->setAxis(axis);
+    concat->setName((std::string(layer.getName()) + "#rows").c_str());
+    std::vector<nvinfer1::ITensor*> inputs(layer.getNbInputs());
+    inputs[0] = concat->getOutput(0);
+    for (int32_t i = 1; i < layer.getNbInputs(); ++i) {
+      inputs[i] = shared_tensor_[layer.getInput(i)];
+    }
+    nvinfer1::IPluginV3Layer* merged = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        out_, inputs.data(), static_cast<int32_t>(inputs.size()), *twin);
+    if (merged == nullptr) return Fail("a slot-rows projection");
+    merged->setName((std::string(layer.getName()) + "#slots").c_str());
+    const nvinfer1::Dims out_dims = layer.getOutput(0)->getDimensions();
+    for (int32_t s = 0; s < slots_; ++s) {
+      nvinfer1::Dims start{};
+      start.nbDims = out_dims.nbDims;
+      nvinfer1::Dims size = out_dims;
+      nvinfer1::Dims stride{};
+      stride.nbDims = out_dims.nbDims;
+      for (int32_t d = 0; d < out_dims.nbDims; ++d) stride.d[d] = 1;
+      start.d[axis] = s;
+      nvinfer1::ISliceLayer* slice =
+          out_.addSlice(*merged->getOutput(0), start, size, stride);
+      if (slice == nullptr) return Fail("a slot's projection row");
+      slice->setName(
+          (std::string(layer.getName()) + "#slot" + std::to_string(s)).c_str());
+      map_[Key(layer.getOutput(0), s)] = slice->getOutput(0);
+    }
+    ++merged_;
+    return true;
+  }
+
+  Expected<void> CloneForSlot(nvinfer1::ILayer& layer, int32_t slot) {
+    LITERT_ASSIGN_OR_RETURN(auto in, Inputs(layer, slot));
+    const auto need = [&](int32_t i) -> Expected<nvinfer1::ITensor*> {
+      if (i >= static_cast<int32_t>(in.size()) || in[i] == nullptr) {
+        return Fail(std::string("a missing input of ") + layer.getName());
+      }
+      return in[i];
+    };
+    nvinfer1::ILayer* copy = nullptr;
+    int32_t first_optional = static_cast<int32_t>(in.size());
+    using LT = nvinfer1::LayerType;
+    switch (layer.getType()) {
+      case LT::kELEMENTWISE: {
+        auto& l = static_cast<nvinfer1::IElementWiseLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        copy = out_.addElementWise(*a, *b, l.getOperation());
+        break;
+      }
+      case LT::kSHUFFLE: {
+        auto& l = static_cast<nvinfer1::IShuffleLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        auto* c = out_.addShuffle(*a);
+        if (c != nullptr) {
+          c->setFirstTranspose(l.getFirstTranspose());
+          if (in.size() < 2 || in[1] == nullptr) {
+            c->setReshapeDimensions(l.getReshapeDimensions());
+          }
+          c->setSecondTranspose(l.getSecondTranspose());
+          c->setZeroIsPlaceholder(l.getZeroIsPlaceholder());
+        }
+        copy = c;
+        first_optional = 1;
+        break;
+      }
+      case LT::kACTIVATION: {
+        auto& l = static_cast<nvinfer1::IActivationLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        auto* c = out_.addActivation(*a, l.getActivationType());
+        if (c != nullptr) {
+          c->setAlpha(l.getAlpha());
+          c->setBeta(l.getBeta());
+        }
+        copy = c;
+        break;
+      }
+      case LT::kSLICE: {
+        auto& l = static_cast<nvinfer1::ISliceLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        auto* c = out_.addSlice(*a, l.getStart(), l.getSize(), l.getStride());
+        if (c != nullptr) {
+          c->setMode(l.getMode());
+          if (l.getAxes().nbDims > 0) c->setAxes(l.getAxes());
+        }
+        copy = c;
+        first_optional = 1;
+        break;
+      }
+      case LT::kCONCATENATION: {
+        auto& l = static_cast<nvinfer1::IConcatenationLayer&>(layer);
+        for (auto* t : in) {
+          if (t == nullptr) return Fail("a concatenation input");
+        }
+        auto* c =
+            out_.addConcatenation(in.data(), static_cast<int32_t>(in.size()));
+        if (c != nullptr) c->setAxis(l.getAxis());
+        copy = c;
+        break;
+      }
+      case LT::kUNARY: {
+        auto& l = static_cast<nvinfer1::IUnaryLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        copy = out_.addUnary(*a, l.getOperation());
+        break;
+      }
+      case LT::kREDUCE: {
+        auto& l = static_cast<nvinfer1::IReduceLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        copy = out_.addReduce(*a, l.getOperation(), l.getReduceAxes(),
+                              l.getKeepDimensions());
+        break;
+      }
+      case LT::kMATRIX_MULTIPLY: {
+        auto& l = static_cast<nvinfer1::IMatrixMultiplyLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        copy = out_.addMatrixMultiply(*a, l.getOperation(0), *b,
+                                      l.getOperation(1));
+        break;
+      }
+      case LT::kKVCACHE_UPDATE: {
+        auto& l = static_cast<nvinfer1::IKVCacheUpdateLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        LITERT_ASSIGN_OR_RETURN(auto* c, need(2));
+        copy = out_.addKVCacheUpdate(*a, *b, *c, l.getCacheMode());
+        break;
+      }
+      case LT::kGATHER: {
+        auto& l = static_cast<nvinfer1::IGatherLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        auto* c = out_.addGatherV2(*a, *b, l.getMode());
+        if (c != nullptr) {
+          c->setGatherAxis(l.getGatherAxis());
+          c->setNbElementWiseDims(l.getNbElementWiseDims());
+        }
+        copy = c;
+        break;
+      }
+      case LT::kSELECT: {
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        LITERT_ASSIGN_OR_RETURN(auto* c, need(2));
+        copy = out_.addSelect(*a, *b, *c);
+        break;
+      }
+      case LT::kSCATTER: {
+        auto& l = static_cast<nvinfer1::IScatterLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        LITERT_ASSIGN_OR_RETURN(auto* c, need(2));
+        auto* s = out_.addScatter(*a, *b, *c, l.getMode());
+        if (s != nullptr) s->setAxis(l.getAxis());
+        copy = s;
+        break;
+      }
+      case LT::kCAST: {
+        auto& l = static_cast<nvinfer1::ICastLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        copy = out_.addCast(*a, l.getToType());
+        break;
+      }
+      case LT::kSOFTMAX: {
+        auto& l = static_cast<nvinfer1::ISoftMaxLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        auto* c = out_.addSoftMax(*a);
+        if (c != nullptr) c->setAxes(l.getAxes());
+        copy = c;
+        break;
+      }
+      case LT::kIDENTITY: {
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        copy = out_.addIdentity(*a);
+        break;
+      }
+      case LT::kONE_HOT: {
+        auto& l = static_cast<nvinfer1::IOneHotLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        LITERT_ASSIGN_OR_RETURN(auto* c, need(2));
+        copy = out_.addOneHot(*a, *b, *c, l.getAxis());
+        break;
+      }
+      case LT::kTOPK: {
+        auto& l = static_cast<nvinfer1::ITopKLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        copy = out_.addTopK(*a, l.getOperation(), l.getK(), l.getReduceAxes(),
+                            l.getIndicesType());
+        first_optional = 1;
+        break;
+      }
+      case LT::kFILL: {
+        auto& l = static_cast<nvinfer1::IFillLayer&>(layer);
+        auto* c =
+            out_.addFill(l.getDimensions(), l.getOperation(), l.getToType());
+        if (c != nullptr) {
+          if (l.isAlphaBetaInt64()) {
+            c->setAlphaInt64(l.getAlphaInt64());
+            c->setBetaInt64(l.getBetaInt64());
+          } else {
+            c->setAlpha(l.getAlpha());
+            c->setBeta(l.getBeta());
+          }
+        }
+        copy = c;
+        first_optional = 0;
+        break;
+      }
+      case LT::kPLUGIN_V3: {
+        auto& l = static_cast<nvinfer1::IPluginV3Layer&>(layer);
+        std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> plugin(
+            l.getPlugin().clone());
+        if (plugin == nullptr) return Fail("a plugin clone");
+        for (auto* t : in) {
+          if (t == nullptr) return Fail("a plugin input");
+        }
+        copy = tensorrt_rtx_1_5_0_99::AddPluginV3(
+            out_, in.data(), static_cast<int32_t>(in.size()), *plugin);
+        break;
+      }
+      default:
+        return Fail(std::string("layer ") + layer.getName() + " of type " +
+                    std::to_string(static_cast<int>(layer.getType())));
+    }
+    if (copy == nullptr) {
+      return Fail(std::string("a copy of ") + layer.getName());
+    }
+    Finish(layer, *copy, in, first_optional, slot);
+    Record(layer, *copy, slot);
+    return {};
+  }
+
+  nvinfer1::INetworkDefinition& step_;
+  nvinfer1::INetworkDefinition& out_;
+  const int32_t slots_;
+  int32_t merged_ = 0;
+  std::unordered_map<uint64_t, nvinfer1::ITensor*> map_;
+  std::unordered_map<const nvinfer1::ITensor*, nvinfer1::ITensor*>
+      shared_tensor_;
+  std::unordered_map<const nvinfer1::ITensor*, bool> shared_;
+};
+
+}  // namespace
+
+int32_t DecodeSlotsRequested() {
+  const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
+  if (value == nullptr || value[0] == '\0') return 0;
+  char* end = nullptr;
+  const long parsed = std::strtol(value, &end, 10);
+  if (end == value || *end != '\0' || parsed < 2) return 0;
+  return parsed > 4 ? 4 : static_cast<int32_t>(parsed);
+}
+
+Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(
+    nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& step,
+    int32_t slots, int32_t* merged) {
+  if (slots < 2) return Fail("fewer than two slots");
+  std::unique_ptr<nvinfer1::INetworkDefinition> out(
+      builder.createNetworkV2(step.getFlags()));
+  if (out == nullptr) return Fail("a network");
+  SlotNetworkBuilder slot_builder(step, *out, slots);
+  LITERT_ASSIGN_OR_RETURN(const int32_t count, slot_builder.Build());
+  if (merged != nullptr) *merged = count;
+  return out.release();
+}
+
+}  // namespace litert::nvidia
