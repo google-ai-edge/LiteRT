@@ -14,7 +14,11 @@
 #   per problem. LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package (litert_lm,
 #   its library built from the LITERT_LM_DIR checkout the CLI comes from). EVAL_ENGINES=N (with
 #   it) decodes N problems side by side, an engine each, the weights held once: faster where one
-#   engine leaves the GPU idle (Gemma 4 E2B, E4B), each response the same.
+#   engine leaves the GPU idle (Gemma 4 E2B, E4B), each response the same. A model with in-place
+#   recurrent state (Qwen 3.8's gated DeltaNet) is answer for answer the same in one process only
+#   with EVAL_ENV adding LITERT_NVIDIA_DISPATCH_STEP_FEED=0 LITERT_NVIDIA_DISPATCH_CUDA_GRAPH=0:
+#   with either on, a CUDA graph capture or a step ahead updates that state twice, and an answer
+#   depends on what ran before it (the CLI's on its own capture step).
 # Output: $EVAL_RUNS/LABEL/<question_id>.{out,log,json} (LABEL defaults to MODEL_MODE); .out is
 # the model's response (the CLI's stdout), .log the CLI's log with the BenchmarkInfo block (the
 # prompt is real text and stop tokens end the turn: --benchmark with both token counts 0),
