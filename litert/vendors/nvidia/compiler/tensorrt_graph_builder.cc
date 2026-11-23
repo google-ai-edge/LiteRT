@@ -4559,10 +4559,12 @@ class TensorRtGraphBuilder {
     result.output_names = output_names_;
     result.trtllm_head = std::move(trtllm_head);
     LITERT_ASSIGN_OR_RETURN(result.step_feed, MatchStepFeed(subgraph));
-    // The batched decode engines of a decode step (one that feeds itself),
-    // built from its network while its constants are still alive.
+    // The batched engines of a decode step (one that feeds itself) or of an
+    // MTP verify step, built from its network while its constants are still
+    // alive.
     if (const int32_t max_slots = DecodeSlotsRequested();
-        max_slots >= 2 && result.step_feed.has_value() &&
+        max_slots >= 2 &&
+        (result.step_feed.has_value() || IsVerifyStep(subgraph)) &&
         !result.trtllm_head.has_value() && !megakernel_body_) {
       for (int32_t slots = 2; slots <= max_slots; ++slots) {
         auto plan = BuildSlotPlan(slots);
@@ -4615,6 +4617,17 @@ class TensorRtGraphBuilder {
     return name == key || (name.size() > suffix.size() &&
                            name.compare(name.size() - suffix.size(),
                                         suffix.size(), suffix) == 0);
+  }
+
+  // Whether the network is the verify signature's step (speculative
+  // decoding's): its tensors carry the signature's name in front
+  // (verify_embeddings, verify_input_pos).
+  static bool IsVerifyStep(const Subgraph& subgraph) {
+    for (const auto& input : subgraph.Inputs()) {
+      const std::string name(input.Name());
+      if (name.rfind("verify_", 0) == 0) return true;
+    }
+    return false;
   }
 
   // The batched decode engine of `slots` slots built from the step's network
