@@ -16,6 +16,10 @@
 
 #include <jni.h>
 
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
@@ -26,6 +30,61 @@ namespace {
 using ::litert::TensorBuffer;
 using ::litert::TensorBufferScopedLock;
 using ::litert::jni::ThrowLiteRtException;
+
+jlong CopyDirectBuffer(JNIEnv* env, jlong handle, jobject buffer,
+                       TensorBuffer::LockMode mode) {
+  if (handle == 0 || buffer == nullptr) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorInvalidArgument,
+                         "A tensor handle and direct ByteBuffer are required.");
+    return 0;
+  }
+  const jlong capacity = env->GetDirectBufferCapacity(buffer);
+  void* address = env->GetDirectBufferAddress(buffer);
+  if (capacity < 0 || address == nullptr) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorInvalidArgument,
+                         "The buffer must be a direct ByteBuffer.");
+    return 0;
+  }
+  if (mode == TensorBuffer::LockMode::kRead) {
+    jclass buffer_class = env->GetObjectClass(buffer);
+    if (buffer_class == nullptr) return 0;
+    jmethodID is_read_only =
+        env->GetMethodID(buffer_class, "isReadOnly", "()Z");
+    if (is_read_only == nullptr) return 0;
+    const jboolean read_only = env->CallBooleanMethod(buffer, is_read_only);
+    if (env->ExceptionCheck()) return 0;
+    if (read_only) {
+      ThrowLiteRtException(env, kLiteRtStatusErrorInvalidArgument,
+                           "The destination must be writable.");
+      return 0;
+    }
+  }
+  auto* tensor_buffer = reinterpret_cast<TensorBuffer*>(handle);
+  auto packed_size = tensor_buffer->PackedSize();
+  if (!packed_size) {
+    ThrowLiteRtException(env, packed_size.Error().Status(),
+                         packed_size.Error().Message());
+    return 0;
+  }
+  if (*packed_size > static_cast<size_t>(capacity)) {
+    ThrowLiteRtException(env, kLiteRtStatusErrorInvalidArgument,
+                         "The buffer has insufficient remaining bytes.");
+    return 0;
+  }
+  auto lock_and_addr =
+      TensorBufferScopedLock::Create<uint8_t>(*tensor_buffer, mode);
+  if (!lock_and_addr) {
+    ThrowLiteRtException(env, lock_and_addr.Error().Status(),
+                         lock_and_addr.Error().Message());
+    return 0;
+  }
+  if (mode == TensorBuffer::LockMode::kWrite) {
+    std::memmove(lock_and_addr->second, address, *packed_size);
+  } else {
+    std::memmove(address, lock_and_addr->second, *packed_size);
+  }
+  return static_cast<jlong>(*packed_size);
+}
 
 template <typename T>
 void WriteImp(JNIEnv* env, jlong handle, absl::Span<const T> input_span) {
@@ -70,6 +129,7 @@ JArray ReadImp(JNIEnv* env, jlong handle, JArray (JNIEnv::*new_array)(jsize),
   }
 
   JArray result = (env->*new_array)(*num_elements);
+  if (result == nullptr) return nullptr;
   // Copy the data from the locked tensor buffer to the JVM array.
   (env->*set_array_region)(result, 0, *num_elements, lock_and_addr->second);
   return result;
@@ -82,6 +142,21 @@ extern "C" {
 #endif  // __cplusplus
 
 // TensorBuffer
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFrom(JNIEnv* env,
+                                                            jclass clazz,
+                                                            jlong handle,
+                                                            jobject source) {
+  return CopyDirectBuffer(env, handle, source, TensorBuffer::LockMode::kWrite);
+}
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInto(
+    JNIEnv* env, jclass clazz, jlong handle, jobject destination) {
+  return CopyDirectBuffer(env, handle, destination,
+                          TensorBuffer::LockMode::kRead);
+}
+
 JNIEXPORT void JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteInt(JNIEnv* env,
                                                            jclass clazz,
