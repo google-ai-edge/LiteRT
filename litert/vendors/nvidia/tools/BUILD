@@ -263,3 +263,29 @@ cc_binary(
         "@flatbuffers",
     ],
 )
+
+# A whole Qwen 4 (qwen4_exp) text model at reduced sizes, its runs on LiteRT's
+# CPU and through the NVIDIA plugin, and their comparison (qwen4_artifact.cc).
+cc_binary(
+    name = "qwen4_artifact",
+    srcs = ["qwen4_artifact.cc"],
+    deps = [
+        ":tflite_builder",
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/experimental/custom_ops/gated_delta_net:gated_delta_update_litert_custom_op",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+    ],
+)
