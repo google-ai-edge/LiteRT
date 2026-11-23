@@ -218,6 +218,60 @@ TEST_F(ConvertGatedDeltaUpdateTest, BlockCompositeConversion) {
   EXPECT_EQ(attr->block->head_k_dim, D_k);
   EXPECT_EQ(attr->block->head_v_dim, D_v);
   EXPECT_FLOAT_EQ(attr->block->norm_eps, 1e-5f);
+  EXPECT_EQ(attr->block->output_gate_type, "silu");
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, BlockCompositeSigmoidGateConversion) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.gated_delta_block");
+
+  int T = 4, H_k = 4, H_v = 12, D_k = 128, D_v = 128;
+  AddBlockTensors(builder, T, 2 * H_k * D_k + H_v * D_v, H_v, D_k, D_v,
+                  /*has_valid_mask=*/true);
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("mode", 0);
+    fbb.String("output_gate_type", "sigmoid");
+  });
+  fbb.Finish();
+  SetCustomOptions(builder, fbb);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::GatedDeltaUpdateAttributes>(
+          &ir_model->ops()[0]->attr);
+  ASSERT_NE(attr, nullptr);
+  ASSERT_TRUE(attr->block.has_value());
+  EXPECT_EQ(attr->block->output_gate_type, "sigmoid");
+}
+
+TEST_F(ConvertGatedDeltaUpdateTest, RejectBlockWithUnsupportedOutputGateType) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.gated_delta_block");
+
+  int T = 1, H_k = 4, H_v = 8, D_k = 128, D_v = 128;
+  AddBlockTensors(builder, T, 2 * H_k * D_k + H_v * D_v, H_v, D_k, D_v,
+                  /*has_valid_mask=*/false);
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("mode", 0);
+    fbb.String("output_gate_type", "relu");
+  });
+  fbb.Finish();
+  SetCustomOptions(builder, fbb);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  EXPECT_EQ(GetIrModel(delegate_), nullptr);
 }
 
 TEST_F(ConvertGatedDeltaUpdateTest, RejectInvalidBlockDimensions) {

@@ -70,5 +70,11 @@ Expected<std::vector<char>> CreateModel(
     AiLiteCoreManager::Ptr ai_lite_core,
     const LiteRtCompilerContext* compiler_context,
     const litert::compiler::Subgraph& partition);
+
+// Builds the OpWrapper for `op`. Returns an error if the Samsung backend has
+// no builder for the op or its options cannot be parsed.
+Expected<OpWrapper> CreateOp(const LiteRtCompilerContext* compiler_context,
+                             const litert::compiler::Op& op);
+
 }  // namespace litert::samsung
 #endif  // ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_CREATE_MODEL_H_

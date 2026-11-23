@@ -34,10 +34,13 @@ cc_library(
         "//tensor/runners/common_nnpack:runner",
         "//tensor/utils:macros",
         "@XNNPACK",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",
         "@pthreadpool",
     ],
@@ -55,6 +58,24 @@ cc_test(
         "//tensor/runners/common_nnpack:runner_test_suite",
         "@XNNPACK",
         "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_test(
+    name = "runner_profiling_test",
+    srcs = ["runner_profiling_test.cc"],
+    env = {"LRT_XNN_PROFILE": "1"},
+    deps = [
+        ":runner",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/base:log_severity",
+        "@com_google_absl//absl/log:scoped_mock_log",
         "@com_google_googletest//:gtest_main",
     ],
 )

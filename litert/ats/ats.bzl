@@ -17,16 +17,17 @@ Macros to define pre-configured ATS test suites and run through the litert_devic
 """
 
 load("//litert/integration_test:litert_device.bzl", "hidden_test_tags", "litert_device_exec")
-load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation", "dispatch_device_rlocation", "get_mh_device", "host_rlocation", "is_gpu_backend", "is_npu_backend", "plugin_device_rlocation", "version_target_suffix")
 load(
     "//litert/integration_test:litert_device_script.bzl",
     "litert_aot_compile",
     "litert_device_script",
-    # copybara:uncomment_begin(google-only)
-    # "make_cns_pull_model_provider",
-    # copybara:uncomment_end
     "make_download_model_provider",
 )
+
+# copybara:uncomment_begin(google-only)
+# load("//litert/integration_test/google:cns_models.bzl", "make_cns_pull_model_provider")
+# copybara:uncomment_end
 
 def _make_ats_args(init = [], **kwargs):
     def _fmt_re(re):
@@ -67,7 +68,35 @@ def _make_ats_args(init = [], **kwargs):
         )
     return exec_args
 
-def _resolve_extra_models(name, extra_models):
+# copybara:uncomment_begin(google-only)
+# def _make_cns_provider(name, cns_models, tags = []):
+#     make_cns_pull_model_provider(name = name, cns_paths = cns_models, tags = tags)
+#     return ":" + name
+#
+# copybara:uncomment_end
+
+# copybara:comment_begin(oss-only)
+def _make_cns_provider(*_args, **_kwargs):
+    return None
+
+# copybara:comment_end
+
+def _filter_cns_models(cns_models, dont_register):
+    """Conservatively pre-filters exact-basename excluded .tflite models from a CNS list.
+
+    This avoids staging or pushing models known to be excluded; `--dont_register`
+    remains the runtime regex source of truth for pattern-based exclusions.
+    """
+    if not cns_models or not dont_register:
+        return cns_models
+    excluded_files = {pattern + ".tflite": True for pattern in dont_register}
+    return [
+        m
+        for m in cns_models
+        if not (m.endswith(".tflite") and m.rsplit("/", 1)[-1] in excluded_files)
+    ]
+
+def _resolve_extra_models(name, extra_models, create_cns_provider = True):
     """Resolves `extra_models` into data deps, model providers, and runtime paths."""
     model_providers = []
     data = []
@@ -111,10 +140,13 @@ def _resolve_extra_models(name, extra_models):
             model_providers.append(":" + url_provider_name)
 
         if cns_models:
-            cns_provider_name = name + "_cns_models_provider"
-
-            # copybara:uncomment make_cns_pull_model_provider(name = cns_provider_name, cns_paths = cns_models)
-            model_providers.append(":" + cns_provider_name)
+            if create_cns_provider:
+                cns_provider = _make_cns_provider(
+                    name = name + "_cns_models_provider",
+                    cns_models = cns_models,
+                )
+                if cns_provider:
+                    model_providers.append(cns_provider)
             for m in cns_models:
                 if not m.endswith(".tflite"):
                     cns_dir_name = m.rstrip("/").rsplit("/", 1)[-1]
@@ -122,7 +154,7 @@ def _resolve_extra_models(name, extra_models):
                     if dev_dir not in device_paths:
                         device_paths.append(dev_dir)
 
-    if model_providers:
+    if model_providers or cns_models:
         device_paths.append("/data/local/tmp/runfiles/user/tmp/litert_extras")
 
     return struct(
@@ -189,7 +221,11 @@ def litert_define_ats(
             mode_tail = suffix
             break
 
-    resolved_models = _resolve_extra_models(name, extra_models)
+    resolved_models = _resolve_extra_models(
+        name,
+        extra_models,
+        create_cns_provider = (mode == "jit"),
+    )
 
     for b in backend:
         # TODO: Unify local workdir paths for scripting.
@@ -246,8 +282,19 @@ def litert_define_ats(
                     model_providers = resolved_models.model_providers,
                     extra_models = resolved_models.cns_models,
                     data = resolved_models.data,
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
             elif mode == "compile_only":
+                compile_model_providers = list(resolved_models.model_providers)
+                filtered_cns_models = _filter_cns_models(resolved_models.cns_models, effective_dont_register)
+                if filtered_cns_models:
+                    cns_provider = _make_cns_provider(
+                        name = target_name + "_cns_models_provider",
+                        cns_models = filtered_cns_models,
+                        tags = compile_only_tags,
+                    )
+                    if cns_provider:
+                        compile_model_providers.append(cns_provider)
                 compile_args = _make_ats_args(
                     init = init_compile_args,
                     backend = b,
@@ -264,7 +311,7 @@ def litert_define_ats(
                     exec_args = compile_args,
                     build_for_host = True,
                     build_for_device = False,
-                    model_providers = resolved_models.model_providers,
+                    model_providers = compile_model_providers,
                     data = resolved_models.data,
                     is_test = True,
                     shard_count = aot_shard_count,
@@ -274,30 +321,42 @@ def litert_define_ats(
             elif mode == "aot":
                 if not is_npu_backend(b):
                     fail("mode = 'aot' is only supported for NPU backends.")
-                if resolved_models.cns_models or resolved_models.model_providers:
-                    fail("mode = 'aot' only supports Bazel label targets in extra_models.")
-                compile_args = _make_ats_args(
-                    init = init_compile_args,
-                    backend = b,
-                    dont_register = effective_dont_register,
-                    do_register = do_register,
-                    param_seeds = param_seeds,
-                    extra_flags = soc_extra_flags,
-                )
-                aot_models_target = target_name + "_models"
-                litert_aot_compile(
-                    name = aot_models_target,
-                    bin = "//litert/ats:ats",
-                    backend_id = b,
-                    exec_args = compile_args,
-                    data = resolved_models.data,
-                    shard_count = aot_shard_count if aot_shard_count != None else 1,
-                    tags = hidden_test_tags() + compile_only_tags,
-                )
+                if resolved_models.model_providers:
+                    fail("mode = 'aot' does not support URL model providers in extra_models.")
+                if resolved_models.cns_models:
+                    aot_models_dir = "/data/local/tmp/runfiles/user/tmp/litert_aot_models"
+                    aot_extra_models = _filter_cns_models(resolved_models.cns_models, effective_dont_register)
+                    aot_data = resolved_models.data
+                    aot_local_suffix = None
+                    runtime_aot_models = True
+                else:
+                    compile_args = _make_ats_args(
+                        init = init_compile_args,
+                        backend = b,
+                        dont_register = effective_dont_register,
+                        do_register = do_register,
+                        param_seeds = param_seeds,
+                        extra_flags = soc_extra_flags,
+                    )
+                    aot_models_target = target_name + "_models"
+                    litert_aot_compile(
+                        name = aot_models_target,
+                        bin = "//litert/ats:ats",
+                        backend_id = b,
+                        exec_args = compile_args,
+                        data = resolved_models.data,
+                        shard_count = aot_shard_count if aot_shard_count != None else 1,
+                        tags = hidden_test_tags() + compile_only_tags,
+                    )
+                    aot_models_dir = device_rlocation(":" + aot_models_target)
+                    aot_extra_models = []
+                    aot_data = resolved_models.data + [":" + aot_models_target]
+                    aot_local_suffix = ""
+                    runtime_aot_models = False
 
                 init_aot_run_args = [
                     "--dispatch_dir=\"{}\"".format(dispatch_device_rlocation(b)),
-                    "--aot_models_dir=\"{}\"".format(device_rlocation(":" + aot_models_target)),
+                    "--aot_models_dir=\"{}\"".format(aot_models_dir),
                 ]
                 if platform not in ("macos", "windows") and resolved_models.device_paths:
                     init_aot_run_args.append("--extra_models={}".format(",".join(resolved_models.device_paths)))
@@ -315,14 +374,16 @@ def litert_define_ats(
                     name = target_name,
                     target = "//litert/ats:ats",
                     remote_suffix = "_remote",
-                    local_suffix = "",
+                    local_suffix = aot_local_suffix,
                     exec_args = aot_run_args,
                     backend_id = b,
                     platform = platform,
                     enable_ynnpack = "--enable_ynnpack=true" in extra_flags,
                     model_providers = resolved_models.model_providers,
-                    extra_models = resolved_models.cns_models,
-                    data = resolved_models.data + [":" + aot_models_target],
+                    extra_models = aot_extra_models,
+                    runtime_aot_models = runtime_aot_models,
+                    data = aot_data,
+                    dimensions = get_mh_device(b, soc_key, platform = platform),
                 )
 
         if mode == "compile_only" and soc_models:

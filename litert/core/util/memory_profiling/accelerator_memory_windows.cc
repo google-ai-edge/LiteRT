@@ -73,7 +73,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/accelerator_memory_windows.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 namespace {
 
@@ -335,15 +335,21 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromAdapters(
   return usage;
 }
 
+}  // namespace litert::profiling::internal
+
+namespace litert::profiling {
+
 std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
-  std::vector<AdapterVideoMemory> adapters;
-  for (const DxgiAdapter& dxgi_adapter : GetDxgiAdapters()) {
-    const std::optional<uint64_t> local = QueryVideoMemoryUsage(
+  std::vector<internal::AdapterVideoMemory> adapters;
+  for (const internal::DxgiAdapter& dxgi_adapter :
+       internal::GetDxgiAdapters()) {
+    const std::optional<uint64_t> local = internal::QueryVideoMemoryUsage(
         dxgi_adapter.adapter.Get(), DXGI_MEMORY_SEGMENT_GROUP_LOCAL);
-    const std::optional<uint64_t> non_local = QueryVideoMemoryUsage(
+    const std::optional<uint64_t> non_local = internal::QueryVideoMemoryUsage(
         dxgi_adapter.adapter.Get(), DXGI_MEMORY_SEGMENT_GROUP_NON_LOCAL);
     if (!local.has_value() && !non_local.has_value()) continue;
-    const CommittedBytes committed = QueryCommittedBytes(dxgi_adapter);
+    const internal::CommittedBytes committed =
+        internal::QueryCommittedBytes(dxgi_adapter);
     adapters.push_back({
         .description = dxgi_adapter.description,
         .local_bytes = local.value_or(0),
@@ -353,7 +359,7 @@ std::optional<AcceleratorMemoryUsage> GetProcessAcceleratorMemoryUsage() {
     });
   }
   if (adapters.empty()) return std::nullopt;
-  return AcceleratorMemoryUsageFromAdapters(adapters);
+  return internal::AcceleratorMemoryUsageFromAdapters(adapters);
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

@@ -195,6 +195,37 @@ class DynamicHistogramTensorTest(parameterized.TestCase):
     self.assertEqual(hist1.lower_bound, 0.0)
     np.testing.assert_array_equal(hist1.counts, [3, 1])
 
+  def test_merge_splits_source_bin_across_target_bins(self):
+    hist1 = histogram_utils.DynamicHistogram(
+        max_tensor_bins=10, initial_bin_width=2.0
+    )
+    hist1.add(np.array([0.0, 5.9]))
+    np.testing.assert_array_equal(hist1.counts, [1, 0, 1])
+
+    # A single source bin [1.5, 2.5) straddles the target boundary at 2.0, so
+    # its 4 counts are split evenly between target bins [0, 2) and [2, 4).
+    hist2 = histogram_utils.DynamicHistogram(
+        max_tensor_bins=10, initial_bin_width=1.0
+    )
+    hist2.add(np.array([1.5, 1.6, 1.7, 1.8]))
+    np.testing.assert_array_equal(hist2.counts, [4])
+
+    hist1.merge(hist2)
+    self.assertEqual(hist1.lower_bound, 0.0)
+    np.testing.assert_array_equal(hist1.counts, [3, 2, 1])
+
+  def test_merge_conserves_total_count(self):
+    rng = np.random.default_rng(0)
+    hist1 = histogram_utils.DynamicHistogram(max_tensor_bins=2048)
+    hist1.add(rng.normal(0.0, 1.0, size=10_000))
+    hist2 = histogram_utils.DynamicHistogram(max_tensor_bins=2048)
+    hist2.add(rng.normal(1.0, 3.0, size=10_000))
+
+    hist1.merge(hist2)
+    # Rounding fractional splits may lose or gain at most a few counts.
+    self.assertAlmostEqual(int(hist1.counts.sum()), 20_000, delta=20)
+    self.assertLessEqual(len(hist1.counts), 2048)
+
   def test_nan_inf_filtering(self):
     hist = histogram_utils.DynamicHistogram(
         max_tensor_bins=10, initial_bin_width=1.0
@@ -204,6 +235,37 @@ class DynamicHistogramTensorTest(parameterized.TestCase):
     np.testing.assert_array_equal(hist.counts, [1, 2])
     self.assertEqual(hist.global_min, 0.5)
     self.assertEqual(hist.global_max, 2.5)
+
+  def test_from_bins_matches_added_data(self):
+    expected = histogram_utils.DynamicHistogram(
+        max_tensor_bins=10, initial_bin_width=1.0
+    )
+    expected.add(np.array([0.5, 1.5, 1.7, 2.5]))
+    np.testing.assert_array_equal(expected.counts, [1, 3])
+
+    hist = histogram_utils.DynamicHistogram.from_bins(
+        counts=[1, 3],
+        lower_bound=0.5,
+        bin_width=1.0,
+        global_min=0.5,
+        global_max=2.5,
+        max_tensor_bins=10,
+    )
+
+    self.assertTrue(hist.initialized)
+    self.assertIsNone(hist.axis)
+    np.testing.assert_array_equal(hist.counts, expected.counts)
+    self.assertEqual(hist.lower_bound, expected.lower_bound)
+    self.assertEqual(hist.bin_width, expected.bin_width)
+    np.testing.assert_array_equal(hist.global_min, expected.global_min)
+    np.testing.assert_array_equal(hist.global_max, expected.global_max)
+    d = hist.to_dict()
+    expected_d = expected.to_dict()
+    self.assertEqual(d.keys(), expected_d.keys())
+    self.assertEqual(d['channels'][0].keys(), expected_d['channels'][0].keys())
+    np.testing.assert_array_equal(
+        d['channels'][0]['bin_edges'], expected_d['channels'][0]['bin_edges']
+    )
 
 
 class DynamicHistogramChannelTest(parameterized.TestCase):

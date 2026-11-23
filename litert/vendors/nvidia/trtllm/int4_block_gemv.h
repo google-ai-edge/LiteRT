@@ -30,7 +30,12 @@
 //
 // `rows` activation rows, 1 for decode and up to
 // kLiteRtNvidiaInt4BlockGemvMaxRows for a verify step, share every weight
-// read. input_size must be a multiple of 32.
+// read. input_size must be a multiple of 32. Two or more rows (a verify step)
+// multiply on the tensor cores (BF16 MMA, FP32 accumulation): a nibble is an
+// exact BF16 value, a block's sum takes its scale after the block, and FP32
+// activations (a fused norm's scaled ones) enter as a BF16 high and low part.
+// Only the order of the FP32 sums and those activations' last bits differ
+// from one row's arithmetic, which a row alone keeps bit for bit.
 //
 // `gate` selects a gated feed-forward: the weights and scales then hold
 // 2 * output_size rows, the gate projection followed by the up projection,
@@ -55,17 +60,29 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRowsNormed(
     void* output, int rows, int input_size, int output_size, int gate,
     cudaStream_t stream);
 
+// The same product for rows that are separate sequences (a batched decode
+// step: one row per sequence slot): every row's sums are the ones the row
+// gets alone (rows 1), bit for bit, on the CUDA cores, while the weights are
+// still read once for all the rows. Rows 1 to
+// kLiteRtNvidiaInt4BlockGemvMaxRows.
+extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+    const void* activation, const uint8_t* packed_weights, const void* scales,
+    const float* norm_scale, float norm_eps, float norm_multiplier,
+    void* output, int rows, int input_size, int output_size, int gate,
+    cudaStream_t stream);
+
 // Mixture-of-experts feed-forward over blockwise INT4 experts (the "moe"
 // custom op of Gemma 4 26B-A4B): for every activation row r and each of its
 // top_k routed experts e = top_indices[r][j],
 //   hidden = gelu(x_r . gate_e) * (x_r . up_e)          [hidden_dim]
 //   out_r += top_weights[r][j] * per_expert_scale[e] * (hidden . down_e)
-// The expert weights keep the model's layout, which interleaves the experts
-// within the output dimension: row o of expert e of the gate and up
-// projections is row o * experts + e of a [hidden_dim * experts,
-// model_dim] INT4 matrix, and of the down projection row o * experts + e of
-// [model_dim * experts, hidden_dim]; the scales are FP16 per block of 32
-// input dims in the same row order. Activations and outputs are BF16.
+// The model's layout interleaves the experts within the output dimension:
+// row o of expert e of the gate and up projections is row o * experts + e of
+// a [hidden_dim * experts, model_dim] INT4 matrix, and of the down projection
+// row o * experts + e of [model_dim * experts, hidden_dim]; the scales are
+// FP16 per block of 32 input dims in the same row order. An arena holds the
+// rows in that order or expert by expert (`expert_major`). Activations and
+// outputs are BF16.
 struct LiteRtNvidiaMoeArena {
   const uint8_t* gate;
   const uint8_t* up;
@@ -93,7 +110,34 @@ struct LiteRtNvidiaMoeArena {
   const void* up_scale_max;
   const void* down_scale_max;
   int32_t compact_scales;
+  // The experts' rows (weights, scales and maxima) expert by expert
+  // (expert_major != 0): row o of expert e is row e * hidden_dim + o of the
+  // gate and up projections and row e * model_dim + o of the down
+  // projection, so that what a routed expert reads is contiguous. In the
+  // model's order an expert's rows lie `experts` rows apart, each among the
+  // rows of the experts not routed to.
+  int32_t expert_major;
+  // A verify step's rows (2 to kLiteRtNvidiaInt4BlockGemvMaxRows) grouped by
+  // expert (group_rows != 0, compact scales only): an expert's weights are
+  // read once for the rows routed to it instead of once per row, the rows
+  // multiplied on the tensor cores (the rounding of the dense GEMV's rows).
+  int32_t group_rows;
+  // The pieces are in mapped host memory (host_memory != 0: a layer that did
+  // not fit the device), which the prefill's grouped GEMM reads in whole
+  // tiles (LiteRtNvidiaGroupedGemmWeights::host_memory).
+  int32_t host_memory;
 };
+
+// A loader's step from the model's order to an expert-major arena: copies
+// the rows of the output channels [first_channel, first_channel + channels)
+// of a projection, `model_rows` in the model's order (row (c - first_channel)
+// * experts + e), to their places in the expert-major projection
+// `expert_rows` (row e * expert_channels + c). A row is row_bytes long, a
+// multiple of 16; both are device memory aligned to 16 bytes.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeExpertRows(
+    const void* model_rows, void* expert_rows, int32_t first_channel,
+    int32_t channels, int32_t experts, int32_t expert_channels,
+    int32_t row_bytes, cudaStream_t stream);
 
 // A row of block scales into the compact format: the row's maximum as FP16
 // bits, then each block's scale as round(255 * scale / maximum) (scales are
@@ -108,7 +152,7 @@ struct LiteRtNvidiaMoeShape {
   int32_t experts;
   int32_t model_dim;   // a multiple of 32
   int32_t hidden_dim;  // a multiple of 32
-  int32_t gate;        // 1: tanh GELU, 2: erf GELU
+  int32_t gate;        // 1: tanh GELU, 2: erf GELU, 3: SiLU
 };
 
 // Whether the launch takes the shape: rows >= 1, top_k in [1, 32], experts
@@ -168,6 +212,24 @@ extern "C" size_t LiteRtNvidiaMoeBlockWorkspaceBytes(
 // feed-forward runs on block->side_stream, forked from `stream` through
 // block->fork and joined back through block->join before the epilogue.
 extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    const LiteRtNvidiaMoeBlockParams* block, void* workspace, void* output,
+    cudaStream_t stream);
+
+// LiteRtNvidiaLaunchMoeLayerBlock for rows that are separate sequences (the
+// slots of a batched decode step, 1 to kLiteRtNvidiaInt4BlockGemvMaxRows):
+// every row gets the bits that launch gives it alone. The router and the
+// dense feed-forward read their weights once for all the rows, on the FP32
+// kernels (LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed) where a verify
+// step's rows take the tensor cores, and each row's experts run as the row's
+// own (arena->group_rows is not followed: its grouped kernels round as the
+// tensor cores do). So a launch reads the router and the dense pieces once
+// and top_k experts per row, where a launch per row reads all of them per
+// row. The arguments and the workspace are that launch's.
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlockSlotRows(
     const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
     const void* activation, const float* per_expert_scale,
     const float* router_norm_scale, float router_multiplier,

@@ -272,6 +272,46 @@ std::vector<double> Reference(const Case& test_case, const Tensors& tensors,
   return out;
 }
 
+// Compares the rows of `out_bits` with the reference: every row of the first
+// and last row groups of the first and last heads, the rows that see no key
+// when `blind_rows` asks for them, and a sample of the others.
+void ExpectMatchesReference(const Case& test_case, const Tensors& tensors,
+                            const std::vector<uint16_t>& out_bits,
+                            bool blind_rows = false) {
+  const auto& shape = test_case.shape;
+  const double tolerance = test_case.bf16 ? 1.0e-2 : 1.5e-3;
+  for (int head = 0; head < shape.heads; ++head) {
+    for (int row = 0; row < shape.rows; ++row) {
+      const bool edge = (head == 0 || head == shape.heads - 1) &&
+                        (row < 16 || row >= shape.rows - 16);
+      const int mask_row = row % shape.mask_rows;
+      const bool blind =
+          blind_rows &&
+          (mask_row == test_case.hidden_mask_row ||
+           (test_case.first_padded_mask_row >= 0 &&
+            mask_row >= test_case.first_padded_mask_row && row % 5 == 0));
+      if (!edge && !blind && (head * shape.rows + row) % 61 != 0) continue;
+      const std::vector<double> expected =
+          Reference(test_case, tensors, head, row);
+      double worst = 0.0;
+      double scale = 1.0;
+      for (int d = 0; d < shape.depth; ++d) {
+        const uint16_t bits =
+            out_bits[(static_cast<size_t>(head) * shape.rows + row) *
+                         shape.depth +
+                     d];
+        const double value =
+            test_case.bf16 ? Bf16BitsToFloat(bits) : HalfBitsToFloat(bits);
+        ASSERT_TRUE(std::isfinite(value))
+            << "head=" << head << " row=" << row << " dim=" << d;
+        worst = std::max(worst, std::fabs(value - expected[d]));
+        scale = std::max(scale, std::fabs(expected[d]));
+      }
+      EXPECT_LE(worst, tolerance * scale) << "head=" << head << " row=" << row;
+    }
+  }
+}
+
 void RunCase(const Case& test_case) {
   const auto& shape = test_case.shape;
   SCOPED_TRACE(::testing::Message()
@@ -313,34 +353,98 @@ void RunCase(const Case& test_case) {
       cudaMemcpy(out_bits.data(), out_device.get(),
                  out_bits.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
       cudaSuccess);
+  ExpectMatchesReference(test_case, tensors, out_bits);
+}
 
-  const double tolerance = test_case.bf16 ? 1.0e-2 : 1.5e-3;
+// The same attention over INT8 caches as the model stores them: the keys
+// quantized as rows, the values as columns [heads, depth, cache_len]. The
+// reference reads the values the kernel stages, dequantized and rounded to
+// FP16.
+void RunInt8Case(const Case& test_case,
+                 const LiteRtNvidiaInt8CacheParams& params) {
+  const auto& shape = test_case.shape;
+  SCOPED_TRACE(::testing::Message()
+               << "int8 heads=" << shape.heads << " rows=" << shape.rows
+               << " mask_rows=" << shape.mask_rows << " cache_len="
+               << shape.cache_len << " position=" << test_case.position
+               << " hole=" << test_case.hole << " bf16=" << test_case.bf16
+               << " hidden=" << test_case.hidden_mask_row
+               << " padded=" << test_case.first_padded_mask_row);
+  ASSERT_TRUE(LiteRtNvidiaTiledAttentionInt8Supports(&shape));
+  Tensors tensors = MakeTensors(test_case);
+  const size_t cache_elements =
+      static_cast<size_t>(shape.heads) * shape.cache_len * shape.depth;
+  std::vector<int8_t> k_bytes(cache_elements), v_bytes(cache_elements);
+  uint32_t state = 88172645u + shape.rows + shape.cache_len;
+  const auto next_byte = [&]() -> int8_t {
+    state ^= state << 13;
+    state ^= state >> 17;
+    state ^= state << 5;
+    return static_cast<int8_t>(state >> 11);
+  };
+  const auto staged = [](int8_t value, float scale, int32_t zero_point) {
+    return HalfBitsToFloat(
+        FloatToHalfBits(std::fma(static_cast<float>(value), scale,
+                                 -static_cast<float>(zero_point) * scale)));
+  };
   for (int head = 0; head < shape.heads; ++head) {
-    for (int row = 0; row < shape.rows; ++row) {
-      // Every row of the first and last row groups of the first and last
-      // heads, and a sample of the others.
-      const bool edge = (head == 0 || head == shape.heads - 1) &&
-                        (row < 16 || row >= shape.rows - 16);
-      if (!edge && (head * shape.rows + row) % 61 != 0) continue;
-      const std::vector<double> expected =
-          Reference(test_case, tensors, head, row);
-      double worst = 0.0;
-      double scale = 1.0;
+    for (int key = 0; key < shape.cache_len; ++key) {
       for (int d = 0; d < shape.depth; ++d) {
-        const uint16_t bits =
-            out_bits[(static_cast<size_t>(head) * shape.rows + row) *
-                         shape.depth +
-                     d];
-        const double value =
-            test_case.bf16 ? Bf16BitsToFloat(bits) : HalfBitsToFloat(bits);
-        ASSERT_TRUE(std::isfinite(value))
-            << "head=" << head << " row=" << row << " dim=" << d;
-        worst = std::max(worst, std::fabs(value - expected[d]));
-        scale = std::max(scale, std::fabs(expected[d]));
+        const size_t row_index =
+            (static_cast<size_t>(head) * shape.cache_len + key) * shape.depth +
+            d;
+        const size_t column_index =
+            (static_cast<size_t>(head) * shape.depth + d) * shape.cache_len +
+            key;
+        k_bytes[row_index] = next_byte();
+        v_bytes[column_index] = next_byte();
+        tensors.k[row_index] =
+            staged(k_bytes[row_index], params.k_scale, params.k_zero_point);
+        tensors.v[row_index] =
+            staged(v_bytes[column_index], params.v_scale, params.v_zero_point);
       }
-      EXPECT_LE(worst, tolerance * scale) << "head=" << head << " row=" << row;
     }
   }
+  const size_t workspace_bytes =
+      LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(&shape);
+  ASSERT_GT(workspace_bytes, 0u);
+  // A guard behind the workspace: the kernels must stay inside what the shape
+  // asks for.
+  constexpr size_t kGuardBytes = 4096;
+  auto q_device = Upload(tensors.q_bits);
+  auto k_device = Upload(k_bytes);
+  auto v_device = Upload(v_bytes);
+  auto mask_device = Upload(tensors.mask);
+  auto out_device = AllocateCuda(tensors.q_bits.size() * sizeof(uint16_t));
+  auto workspace = AllocateCuda(workspace_bytes + kGuardBytes);
+  ASSERT_NE(out_device, nullptr);
+  ASSERT_NE(workspace, nullptr);
+  ASSERT_EQ(cudaMemset(out_device.get(), 0xff,
+                       tensors.q_bits.size() * sizeof(uint16_t)),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemset(workspace.get(), 0xa5, workspace_bytes + kGuardBytes),
+            cudaSuccess);
+  ASSERT_EQ(LiteRtNvidiaLaunchTiledAttentionInt8(
+                &shape, q_device.get(), test_case.bf16, k_device.get(),
+                v_device.get(), &params,
+                static_cast<const bool*>(mask_device.get()), test_case.fill,
+                out_device.get(), workspace.get(), /*stream=*/nullptr),
+            cudaSuccess);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<uint16_t> out_bits(tensors.q_bits.size());
+  ASSERT_EQ(
+      cudaMemcpy(out_bits.data(), out_device.get(),
+                 out_bits.size() * sizeof(uint16_t), cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  std::vector<uint8_t> guard(kGuardBytes);
+  ASSERT_EQ(
+      cudaMemcpy(guard.data(),
+                 static_cast<const char*>(workspace.get()) + workspace_bytes,
+                 kGuardBytes, cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  EXPECT_EQ(std::count(guard.begin(), guard.end(), 0xa5),
+            static_cast<ptrdiff_t>(kGuardBytes));
+  ExpectMatchesReference(test_case, tensors, out_bits, /*blind_rows=*/true);
 }
 
 TEST(TiledAttentionTest, SupportsBlocksOf32768QueryElements) {
@@ -535,6 +639,210 @@ TEST(TiledAttentionTest, RowsWithoutVisibleKeysAverageAllKeys) {
            -1,
            -1.0e4f,
            false});
+}
+
+TEST(TiledAttentionTest, Int8SupportsDepth512CachesInWholeTiles) {
+  const auto supports = [](LiteRtNvidiaAttentionShape shape) {
+    return LiteRtNvidiaTiledAttentionInt8Supports(&shape);
+  };
+  // Gemma 4 E2B and E4B prefill chunks of 1,024 and 128 tokens.
+  EXPECT_TRUE(supports({1, 8192, 1024, 512, 31744, 0}));
+  EXPECT_TRUE(supports({2, 4096, 1024, 512, 2048, 0}));
+  EXPECT_TRUE(supports({1, 1024, 128, 512, 2048, 0}));
+  // No new keys, depth 512 only, 16-byte loads of the value columns.
+  EXPECT_FALSE(supports({1, 8192, 1024, 512, 2048, 1024}));
+  EXPECT_FALSE(supports({1, 2048, 1024, 256, 2048, 0}));
+  EXPECT_FALSE(supports({1, 8192, 1024, 512, 32003, 0}));
+  EXPECT_FALSE(supports({1, 32, 4, 512, 2048, 0}));
+  EXPECT_FALSE(LiteRtNvidiaTiledAttentionInt8Supports(nullptr));
+  LiteRtNvidiaAttentionShape unsupported = {1, 8192, 1024, 512, 32003, 0};
+  EXPECT_EQ(LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(&unsupported), 0u);
+  // A whole chunk runs in one split and needs no partial sums; its workspace
+  // does not grow with the rows the way the FP16 one does.
+  LiteRtNvidiaAttentionShape chunk = {1, 8192, 1024, 512, 31744, 0};
+  EXPECT_LT(LiteRtNvidiaTiledAttentionInt8WorkspaceBytes(&chunk),
+            size_t{1} << 20);
+}
+
+TEST(TiledAttentionTest, Int8RejectsInvalidArguments) {
+  uint16_t sentinel = 0;
+  bool mask = true;
+  LiteRtNvidiaInt8CacheParams params = {0.01f, 0, 0.02f, 0,
+                                        /*value_columns=*/true};
+  LiteRtNvidiaAttentionShape shape = {1, 64, 64, 512, 256, 0};
+  const auto launch = [&](const void* q, const void* k, const void* v,
+                          const LiteRtNvidiaInt8CacheParams* int8,
+                          const bool* mask_pointer, void* workspace) {
+    return LiteRtNvidiaLaunchTiledAttentionInt8(&shape, q, false, k, v, int8,
+                                                mask_pointer, -1.0e4f,
+                                                &sentinel, workspace, nullptr);
+  };
+  EXPECT_NE(launch(nullptr, &sentinel, &sentinel, &params, &mask, &sentinel),
+            cudaSuccess);
+  EXPECT_NE(launch(&sentinel, &sentinel, &sentinel, nullptr, &mask, &sentinel),
+            cudaSuccess);
+  // The mask is required, as is a workspace.
+  EXPECT_NE(
+      launch(&sentinel, &sentinel, &sentinel, &params, nullptr, &sentinel),
+      cudaSuccess);
+  EXPECT_NE(launch(&sentinel, &sentinel, &sentinel, &params, &mask, nullptr),
+            cudaSuccess);
+  // Value rows are not read.
+  params.value_columns = false;
+  EXPECT_NE(launch(&sentinel, &sentinel, &sentinel, &params, &mask, &sentinel),
+            cudaSuccess);
+  params.value_columns = true;
+  shape.cache_len = 250;
+  EXPECT_NE(launch(&sentinel, &sentinel, &sentinel, &params, &mask, &sentinel),
+            cudaSuccess);
+}
+
+TEST(TiledAttentionTest, Int8CachesMatchReference) {
+  if (!LiteRtNvidiaTiledAttentionAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 100 KB of "
+                    "shared memory per block.";
+  }
+  const LiteRtNvidiaInt8CacheParams symmetric = {0.002f, 0, 0.03f, 0,
+                                                 /*value_columns=*/true};
+  const LiteRtNvidiaInt8CacheParams offset = {0.002f, -9, 0.03f, 17,
+                                              /*value_columns=*/true};
+  // One block that splits over the tiles; several blocks at the start, the
+  // middle and the end of a cache; holes in the mask; zero points.
+  RunInt8Case({{1, 64, 64, 512, 112, 0},
+               MaskKind::kCausal,
+               30,
+               0,
+               0,
+               -1,
+               -1,
+               -1.0e4f,
+               false},
+              symmetric);
+  RunInt8Case({{1, 256, 64, 512, 2096, 0},
+               MaskKind::kCausal,
+               0,
+               0,
+               0,
+               -1,
+               -1,
+               -1.0e30f,
+               false},
+              offset);
+  RunInt8Case({{1, 2048, 128, 512, 4992, 0},
+               MaskKind::kCausal,
+               3333,
+               0,
+               0,
+               -1,
+               -1,
+               -1.0e30f,
+               true},
+              symmetric);
+  RunInt8Case({{1, 2048, 128, 512, 4992, 0},
+               MaskKind::kCausal,
+               4864,
+               0,
+               7,
+               -1,
+               -1,
+               -INFINITY,
+               false},
+              offset);
+  // The chunks of Gemma 4 E2B (one KV head, eight query heads) and E4B (two
+  // KV heads, four query heads each): one split, no partial sums.
+  RunInt8Case({{1, 8192, 1024, 512, 4096, 0},
+               MaskKind::kCausal,
+               2048,
+               0,
+               0,
+               -1,
+               -1,
+               -1.0e30f,
+               true},
+              symmetric);
+  RunInt8Case({{2, 4096, 1024, 512, 2048, 0},
+               MaskKind::kCausal,
+               1024,
+               0,
+               0,
+               -1,
+               -1,
+               -1.0e30f,
+               true},
+              symmetric);
+}
+
+TEST(TiledAttentionTest, Int8RowsWithoutVisibleKeysAverageAllValues) {
+  if (!LiteRtNvidiaTiledAttentionAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 100 KB of "
+                    "shared memory per block.";
+  }
+  const LiteRtNvidiaInt8CacheParams params = {0.002f, 3, 0.03f, -5,
+                                              /*value_columns=*/true};
+  // A row that sees nothing among rows that do, with partial sums and
+  // without; a padded chunk, whose last blocks see nothing at all; and the
+  // same with a fill of -inf, which leaves such rows zero.
+  RunInt8Case({{1, 128, 64, 512, 912, 0},
+               MaskKind::kCausal,
+               300,
+               0,
+               0,
+               5,
+               -1,
+               -1.0e4f,
+               false},
+              params);
+  RunInt8Case({{1, 8192, 1024, 512, 4096, 0},
+               MaskKind::kCausal,
+               1000,
+               0,
+               0,
+               77,
+               -1,
+               -1.0e30f,
+               true},
+              params);
+  RunInt8Case({{2, 4096, 1024, 512, 2048, 0},
+               MaskKind::kCausal,
+               600,
+               0,
+               0,
+               -1,
+               901,
+               -1.0e30f,
+               true},
+              params);
+  RunInt8Case({{1, 1024, 128, 512, 2048, 0},
+               MaskKind::kCausal,
+               1500,
+               0,
+               0,
+               -1,
+               100,
+               -1.0e30f,
+               false},
+              params);
+  RunInt8Case({{1, 1024, 128, 512, 2048, 0},
+               MaskKind::kCausal,
+               1500,
+               0,
+               0,
+               3,
+               100,
+               -INFINITY,
+               false},
+              params);
+  // Every row padded.
+  RunInt8Case({{1, 128, 64, 512, 512, 0},
+               MaskKind::kCausal,
+               100,
+               0,
+               0,
+               -1,
+               0,
+               -1.0e30f,
+               false},
+              params);
 }
 
 }  // namespace

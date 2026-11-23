@@ -21,6 +21,8 @@
 
 #include "NvInferRuntime.h"
 
+struct LiteRtNvidiaMoeArena;  // trtllm/int4_block_gemv.h
+
 namespace litert::nvidia {
 
 // The mixture-of-experts feed-forward of Gemma 4 26B-A4B (the "moe" custom
@@ -34,10 +36,12 @@ namespace litert::nvidia {
 // records where their weights and scales are in the model file, and loads
 // them into an arena, device memory while a reserve stays free and pinned
 // host memory the kernels read over PCIe otherwise, the first time an
-// execution context attaches it. Arenas are shared by every engine and
-// context of the process that names the same pieces (the prefill and decode
-// engines of a model), and loaded only once MoeArenaLoadingEnabled() is set,
-// which the dispatch library does: an engine build never loads them.
+// execution context attaches it. The arenas of all the layers of a
+// deserialized engine load together then, a few threads' worth at a time.
+// Arenas are shared by every engine and context of the process that names
+// the same pieces (the prefill and decode engines of a model), and loaded
+// only once MoeArenaLoadingEnabled() is set, which the dispatch library
+// does: an engine build never loads them.
 struct MoeExpertSource {
   std::string model_path;
   uint64_t model_size = 0;
@@ -70,11 +74,22 @@ struct MoeExpertSource {
 // residual_multiplier. Four more FP32 [model_dim] inputs follow: the dense
 // input norm's scale, the dense output norm's, the experts' output norm's
 // and the sum's norm's. The output is the next residual stream.
+// `slot_rows` (a layer block only): the rows of x are separate sequences, the
+// slots of a batched decode step (at most kLiteRtNvidiaInt4BlockGemvMaxRows):
+// each row gets the bits it gets alone
+// (LiteRtNvidiaLaunchMoeLayerBlockSlotRows), the router and the dense
+// feed-forward read once for all of them. The field is serialized only when
+// set.
 nvinfer1::IPluginV3* CreateMoePlugin(
     int32_t experts, int32_t top_k, int32_t model_dim, int32_t hidden_dim,
     int32_t gate, const MoeExpertSource& source, bool routed = false,
     float norm_eps = -1.0f, float router_multiplier = 1.0f, bool block = false,
-    int32_t dense_gate = 0, float residual_multiplier = 1.0f) noexcept;
+    int32_t dense_gate = 0, float residual_multiplier = 1.0f,
+    bool slot_rows = false) noexcept;
+
+// The slot-rows form of `plugin`, a layer block of this file, sharing its
+// expert arena; null for any other plugin.
+nvinfer1::IPluginV3* MoeSlotRowsPlugin(nvinfer1::IPluginV3& plugin) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.
@@ -88,6 +103,13 @@ bool MoeArenaLoadingEnabled() noexcept;
 // Bytes of expert arenas currently loaded, on the device and in pinned host
 // memory, for memory reports.
 void MoeArenaBytes(size_t* device_bytes, size_t* host_bytes) noexcept;
+
+// Loads the arena of `source` as an attached plugin does, unless it is
+// loaded already, and tells where the kernels find its pieces and whether
+// they are in device memory. False if it cannot be loaded. For tests.
+bool LoadMoeArena(const MoeExpertSource& source, int32_t experts,
+                  int32_t model_dim, int32_t hidden_dim,
+                  LiteRtNvidiaMoeArena* pieces, bool* on_device) noexcept;
 
 }  // namespace litert::nvidia
 

@@ -479,13 +479,19 @@ TfLiteDelegatePtr CreateMlDriftOpenGlDelegate(MlDriftDelegateOptionsPtr options,
         ::ml_drift::CalculationsPrecision::kF32F16;
   }
 
+  const bool hint_fully_delegated_to_single_delegate =
+      delegate_data->options->hint_fully_delegated_to_single_delegate;
+
   // Initialize the ml_drift gl delegate.
   TfLiteDelegatePtr delegate(new TfLiteDelegate(TfLiteDelegateCreate()),
                              LiteRtDeleteMlDriftOpenGlDelegate);
   delegate->data_ = delegate_data.release();
   delegate->Prepare = DelegatePrepare;
   if (enable_op_profiling) {
-    delegate->flags = kTfLiteDelegateFlagsPerOperatorProfiling;
+    delegate->flags |= kTfLiteDelegateFlagsPerOperatorProfiling;
+  }
+  if (hint_fully_delegated_to_single_delegate) {
+    delegate->flags |= kTfLiteDelegateFlagsHintFullyDelegatedToSingleDelegate;
   }
   return delegate;
 }

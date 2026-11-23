@@ -41,14 +41,24 @@ namespace litert::nvidia {
 // mask_rows in multiples of 32768 / D, S a multiple of 16).
 // With `int8_cache`, the key and value caches are per-tensor quantized INT8
 // (Gemma 4 E4B) and the plugin dequantizes them; `new_keys` is then
-// unsupported.
+// unsupported. INT8 caches of depth 512 whose value cache is stored
+// [1, H, D, S] also take many rows (prefill): rows and mask_rows in multiples
+// of 64 with S a multiple of 16 run on the tiled tensor-core kernel, which
+// reads the quantized caches and only the keys some row can see
+// (trtllm/tiled_attention.h).
 // With `window` != 0 (INT8 caches only, a multiple of 16) the plugin takes
 // a fifth input, the window's start (int32 [1], a multiple of 16), and
 // attends over `window` keys of the full caches and mask from there.
+// With `row_tokens` != 0 (FP16 caches of depth 512) the rows are row_tokens
+// tokens of rows / row_tokens query heads per KV head (row = head *
+// row_tokens + token) and the mask has row_tokens rows or 1: the 16-row
+// launches of the tensor-core kernel a few tokens of several heads take,
+// with their results, at one read of the caches per two of them
+// (LiteRtNvidiaLaunchGlobalAttentionTokens in trtllm/global_attention.h).
 nvinfer1::IPluginV3* CreateDecodeAttentionPlugin(
     float fill, bool new_keys = false,
-    const LiteRtNvidiaInt8CacheParams* int8_cache = nullptr,
-    int32_t window = 0) noexcept;
+    const LiteRtNvidiaInt8CacheParams* int8_cache = nullptr, int32_t window = 0,
+    int32_t row_tokens = 0) noexcept;
 
 // Referenced by the dispatch library so the creator's registration object is
 // retained when linking the shared library used for engine deserialization.

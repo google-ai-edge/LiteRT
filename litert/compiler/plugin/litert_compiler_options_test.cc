@@ -116,6 +116,90 @@ TEST(LiteRtCompilerOptionsTest, ParseMultiSignatureInputShapes) {
             (std::vector<int32_t>{1, 1}));
 }
 
+TEST(LiteRtCompilerOptionsTest, ParseShapeSpecializations) {
+  auto toml_string = R"(
+    shape_specializations = ["prefill@prefill_128@tokens@1:128", "prefill@prefill_128@func@0/arg0@1:128", "@main_1@step@"]
+  )";
+
+  LiteRtCompilerOptionsT options;
+  ASSERT_EQ(ParseLiteRtCompilerOptions(
+                toml_string, std::string(toml_string).size(), &options),
+            kLiteRtStatusOk);
+
+  EXPECT_FALSE(options.HasInputShapes());
+  EXPECT_TRUE(options.HasShapeSpecializations());
+  ASSERT_EQ(options.shape_specializations.size(), 3);
+
+  EXPECT_EQ(options.shape_specializations[0].source_signature_key, "prefill");
+  EXPECT_EQ(options.shape_specializations[0].new_signature_key, "prefill_128");
+  EXPECT_EQ(options.shape_specializations[0].input_name, "tokens");
+  EXPECT_EQ(options.shape_specializations[0].dims,
+            (std::vector<int32_t>{1, 128}));
+
+  // '@' inside the input name is preserved.
+  EXPECT_EQ(options.shape_specializations[1].input_name, "func@0/arg0");
+  EXPECT_EQ(options.shape_specializations[1].dims,
+            (std::vector<int32_t>{1, 128}));
+
+  // Default source signature and 0-D scalar.
+  EXPECT_EQ(options.shape_specializations[2].source_signature_key, "");
+  EXPECT_EQ(options.shape_specializations[2].new_signature_key, "main_1");
+  EXPECT_EQ(options.shape_specializations[2].input_name, "step");
+  EXPECT_TRUE(options.shape_specializations[2].dims.empty());
+}
+
+TEST(LiteRtCompilerOptionsTest, ParseRejectsMalformedShapeSpecializations) {
+  for (const char* toml : {
+           R"(shape_specializations = [""])",
+           R"(shape_specializations = ["prefill@tokens@1:128"])",
+           R"(shape_specializations = ["prefill@@tokens@1:128"])",
+           R"(shape_specializations = ["prefill@p128@@1:128"])",
+           R"(shape_specializations = ["prefill@p128@tokens@1:-1"])",
+           R"(shape_specializations = ["prefill@p128@tokens@0:128"])",
+           R"(shape_specializations = ["prefill@p128@tokens@1:x"])",
+       }) {
+    LiteRtCompilerOptionsT options;
+    EXPECT_NE(
+        ParseLiteRtCompilerOptions(toml, std::string(toml).size(), &options),
+        kLiteRtStatusOk)
+        << "toml: " << toml;
+  }
+}
+
+TEST(LiteRtCompilerOptionsTest, ShapeSpecializationRoundTripsThroughCApi) {
+  LrtCompilerOptions* c_options = nullptr;
+  ASSERT_EQ(LrtCreateCompilerOptions(&c_options), kLiteRtStatusOk);
+  const int32_t dims[] = {1, 512};
+  ASSERT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                c_options, "prefill", "prefill_512", "tokens", dims, 2),
+            kLiteRtStatusOk);
+  ASSERT_EQ(LrtAddCompilerOptionsShapeSpecializationInputShape(
+                c_options, "prefill", "prefill_512", "step", nullptr, 0),
+            kLiteRtStatusOk);
+
+  const char* identifier = nullptr;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueCompilerOptionsData(c_options, &identifier, &payload,
+                                            &payload_deleter),
+            kLiteRtStatusOk);
+  const std::string toml = static_cast<const char*>(payload);
+  payload_deleter(payload);
+  LrtDestroyCompilerOptions(c_options);
+
+  LiteRtCompilerOptionsT options;
+  ASSERT_EQ(ParseLiteRtCompilerOptions(toml.data(), toml.size(), &options),
+            kLiteRtStatusOk);
+  ASSERT_EQ(options.shape_specializations.size(), 2);
+  EXPECT_EQ(options.shape_specializations[0].source_signature_key, "prefill");
+  EXPECT_EQ(options.shape_specializations[0].new_signature_key, "prefill_512");
+  EXPECT_EQ(options.shape_specializations[0].input_name, "tokens");
+  EXPECT_EQ(options.shape_specializations[0].dims,
+            (std::vector<int32_t>{1, 512}));
+  EXPECT_EQ(options.shape_specializations[1].input_name, "step");
+  EXPECT_TRUE(options.shape_specializations[1].dims.empty());
+}
+
 TEST(LiteRtCompilerOptionsTest, ParseRejectsMalformedInputShapeEntries) {
   for (const char* toml : {
            R"(positional_input_shapes = [""])",
@@ -210,8 +294,8 @@ TEST(LiteRtCompilerOptionsTest, PreservesAtSignInTensorName) {
   LrtCompilerOptions* c_options = nullptr;
   ASSERT_EQ(LrtCreateCompilerOptions(&c_options), kLiteRtStatusOk);
   const int32_t dims[] = {1, 16};
-  ASSERT_EQ(LrtAddCompilerOptionsTensorInputShape(
-                c_options, "serving_default", "func@call/arg0:0", dims, 2),
+  ASSERT_EQ(LrtAddCompilerOptionsTensorInputShape(c_options, "serving_default",
+                                                  "func@call/arg0:0", dims, 2),
             kLiteRtStatusOk);
   // Quotes in signature/tensor names are rejected to preserve TOML framing.
   EXPECT_EQ(LrtAddCompilerOptionsTensorInputShape(c_options, "serving_default",
@@ -234,8 +318,7 @@ TEST(LiteRtCompilerOptionsTest, PreservesAtSignInTensorName) {
   ASSERT_EQ(options.tensor_input_shapes.size(), 1);
   EXPECT_EQ(options.tensor_input_shapes[0].signature_key, "serving_default");
   EXPECT_EQ(options.tensor_input_shapes[0].name, "func@call/arg0:0");
-  EXPECT_EQ(options.tensor_input_shapes[0].dims,
-            (std::vector<int32_t>{1, 16}));
+  EXPECT_EQ(options.tensor_input_shapes[0].dims, (std::vector<int32_t>{1, 16}));
 }
 
 }  // namespace

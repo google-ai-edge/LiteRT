@@ -15,13 +15,13 @@
 """Converts and quantizes a Depth Anything V2 Small model to TFLite.
 
 This script uses litert-torch to convert a Hugging Face Depth Anything V2 Small
-model to a float TFLite model, and then uses ai-edge-quantizer to quantize
+model to a float TFLite model, and then uses litert-quantizer to quantize
 the float model to a weight-only quantized TFLite model.
 """
 
 from pathlib import Path
-from ai_edge_quantizer import quantizer
-from ai_edge_quantizer import recipe
+from litert_quantizer import quantizer
+from litert_quantizer import recipe
 import litert_torch
 import PIL
 import requests
@@ -65,7 +65,7 @@ float_model_path = str(script_dir / "static" / "depth_anything_v2_small.tflite")
 model_litert.export(float_model_path)
 print(f"Float model saved to {float_model_path}")
 
-# Quantize the model using ai-edge-quantizer
+# Quantize the model using litert-quantizer
 print("Quantizing model...")
 qt = quantizer.Quantizer(float_model_path)
 qt.load_quantization_recipe(recipe.dynamic_wi8_afp32())

@@ -22,7 +22,7 @@
 #include <gtest/gtest.h>
 #include "litert/core/util/memory_profiling/fake_proc_self.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 namespace {
 
 using ::testing::ElementsAre;
@@ -142,4 +142,4 @@ TEST(ProcMappingsLiveTest, Linux_OwnProcessIsReadable) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

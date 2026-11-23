@@ -62,7 +62,8 @@ absl::Status GemmaEmbeddingTable::Lookup(absl::Span<const int32_t> token_ids,
 
   for (size_t i = 0; i < token_ids.size(); ++i) {
     const int32_t token_id = ClampTokenId(token_ids[i]);
-    DecodeRow(token_id, 0, emb_dim_, output.data() + i * emb_dim_);
+    LRT_TENSOR_RETURN_IF_ERROR(
+        DecodeRow(token_id, 0, emb_dim_, output.data() + i * emb_dim_));
   }
   return absl::OkStatus();
 }
@@ -91,7 +92,8 @@ absl::Status GemmaEmbeddingTable::LookupPerLayer(
     for (int l = 0; l < num_layers; ++l) {
       const int col_start = l * per_layer_dim;
       float* dst = output_per_layer[l].data() + s * per_layer_dim;
-      DecodeRow(token_id, col_start, per_layer_dim, dst);
+      LRT_TENSOR_RETURN_IF_ERROR(
+          DecodeRow(token_id, col_start, per_layer_dim, dst));
     }
   }
   return absl::OkStatus();
@@ -153,11 +155,12 @@ class Fp32GemmaEmbeddingTable : public GemmaEmbeddingTable {
   }
 
  protected:
-  void DecodeRow(int32_t row, int col_start, int num_cols,
-                 float* dst) const override {
+  absl::Status DecodeRow(int32_t row, int col_start, int num_cols,
+                         float* dst) const override {
     std::copy_n(
         locked_span_.data() + static_cast<size_t>(row) * emb_dim_ + col_start,
         num_cols, dst);
+    return absl::OkStatus();
   }
 
  private:
@@ -180,18 +183,19 @@ class Float16GemmaEmbeddingTable : public GemmaEmbeddingTable {
       int32_t token_id) const override {
     token_id = ClampTokenId(token_id);
     auto row = std::make_unique<float[]>(emb_dim_);
-    DecodeRow(token_id, 0, emb_dim_, row.get());
+    LRT_TENSOR_RETURN_IF_ERROR(DecodeRow(token_id, 0, emb_dim_, row.get()));
     return LockedBufferSpan<const float>(std::move(row), emb_dim_);
   }
 
  protected:
-  void DecodeRow(int32_t row, int col_start, int num_cols,
-                 float* dst) const override {
+  absl::Status DecodeRow(int32_t row, int col_start, int num_cols,
+                         float* dst) const override {
     const Element* source =
         locked_span_.data() + static_cast<size_t>(row) * emb_dim_ + col_start;
     for (int col = 0; col < num_cols; ++col) {
       dst[col] = ConvertTo<Type::kFP32>(source[col]);
     }
+    return absl::OkStatus();
   }
 
  private:
@@ -204,119 +208,104 @@ class QuantizedGemmaEmbeddingTable : public GemmaEmbeddingTable {
   QuantizedGemmaEmbeddingTable(
       TensorHandle tensor, int vocab_size, int emb_dim, Type type,
       LockedBufferSpan<const uint8_t> locked_span,
-      std::shared_ptr<PerChannelAffineQuantization> per_channel_quant,
-      std::shared_ptr<BlockwiseQuantization> blockwise_quant)
+      std::shared_ptr<const PerChannelAffineQuantization> per_channel_quant,
+      std::shared_ptr<const BlockwiseQuantization> blockwise_quant,
+      size_t expected_zp_count)
       : GemmaEmbeddingTable(std::move(tensor), vocab_size, emb_dim, type),
         locked_span_(std::move(locked_span)),
         per_channel_quant_(std::move(per_channel_quant)),
-        blockwise_quant_(std::move(blockwise_quant)) {}
+        blockwise_quant_(std::move(blockwise_quant)),
+        expected_zp_count_(expected_zp_count) {}
 
   absl::StatusOr<LockedBufferSpan<const float>> Lookup(
       int32_t token_id) const override {
     token_id = ClampTokenId(token_id);
     auto buffer = std::make_unique<float[]>(emb_dim_);
-    DecodeRow(token_id, 0, emb_dim_, buffer.get());
+    LRT_TENSOR_RETURN_IF_ERROR(DecodeRow(token_id, 0, emb_dim_, buffer.get()));
     return LockedBufferSpan<const float>(std::move(buffer), emb_dim_);
   }
 
  protected:
-  void DecodeRow(int32_t row, int col_start, int num_cols,
-                 float* dst) const override {
+  absl::Status DecodeRow(int32_t row, int col_start, int num_cols,
+                         float* dst) const override {
     const uint8_t* raw_bytes = locked_span_.data();
+    const ZeroPoints& zps = per_channel_quant_ != nullptr
+                                ? per_channel_quant_->zero_points
+                                : blockwise_quant_->zero_points;
+    return zps.Visit(expected_zp_count_, [&](auto zp_view) {
+      if (type_ == Type::kI2 || type_ == Type::kI4) {
+        const int bits = BitSize(type_);
+        const int fields_per_byte = NumElements(type_);
+        const size_t row_byte_offset =
+            static_cast<size_t>(row) * (emb_dim_ / fields_per_byte);
 
-    if (type_ == Type::kI2 || type_ == Type::kI4) {
-      const int bits = BitSize(type_);
-      const int fields_per_byte = NumElements(type_);
-      const size_t row_byte_offset =
-          static_cast<size_t>(row) * (emb_dim_ / fields_per_byte);
+        if (blockwise_quant_ != nullptr) {
+          const int block_size = blockwise_quant_->block_size;
+          const int num_blocks_per_row = emb_dim_ / block_size;
+          const size_t row_block_offset =
+              static_cast<size_t>(row) * num_blocks_per_row;
+          const float* row_scales =
+              blockwise_quant_->scales.data() + row_block_offset;
 
-      if (blockwise_quant_ != nullptr) {
-        const int block_size = blockwise_quant_->block_size;
-        const int num_blocks_per_row = emb_dim_ / block_size;
-        const size_t row_block_offset =
-            static_cast<size_t>(row) * num_blocks_per_row;
-        const float* row_scales =
-            blockwise_quant_->scales.data() + row_block_offset;
-        const size_t num_zp = blockwise_quant_->zero_points.size();
-        const int64_t* zp_data = blockwise_quant_->zero_points.data();
-
-        for (int c = 0; c < num_cols; ++c) {
-          const int col = col_start + c;
-          const int8_t val = ExtractPackedField(raw_bytes + row_byte_offset,
-                                                col, bits, fields_per_byte);
-          const size_t block_in_row = col / block_size;
-          const size_t block_idx = row_block_offset + block_in_row;
-          int64_t zp = 0;
-          if (num_zp == 1) {
-            zp = zp_data[0];
-          } else if (block_idx < num_zp) {
-            zp = zp_data[block_idx];
+          for (int c = 0; c < num_cols; ++c) {
+            const int col = col_start + c;
+            const int8_t val = ExtractPackedField(raw_bytes + row_byte_offset,
+                                                  col, bits, fields_per_byte);
+            const size_t block_in_row = col / block_size;
+            const size_t block_idx = row_block_offset + block_in_row;
+            const float zp = static_cast<float>(zp_view[block_idx]);
+            const float scale = row_scales[block_in_row];
+            dst[c] = (static_cast<float>(val) - zp) * scale;
           }
-          const float scale = row_scales[block_in_row];
-          dst[c] = static_cast<float>(val - zp) * scale;
+        } else if (per_channel_quant_ != nullptr) {
+          const float scale = per_channel_quant_->scales[row];
+          const float zp = static_cast<float>(zp_view[row]);
+          for (int c = 0; c < num_cols; ++c) {
+            const int8_t val =
+                ExtractPackedField(raw_bytes + row_byte_offset, col_start + c,
+                                   bits, fields_per_byte);
+            dst[c] = (static_cast<float>(val) - zp) * scale;
+          }
         }
-      } else if (per_channel_quant_ != nullptr) {
-        const float scale = per_channel_quant_->scales[row];
-        const size_t num_zp = per_channel_quant_->zero_points.size();
-        int64_t zp = 0;
-        if (num_zp == 1) {
-          zp = per_channel_quant_->zero_points[0];
-        } else if (static_cast<size_t>(row) < num_zp) {
-          zp = per_channel_quant_->zero_points[row];
-        }
-        for (int c = 0; c < num_cols; ++c) {
-          const int8_t val =
-              ExtractPackedField(raw_bytes + row_byte_offset, col_start + c,
-                                 bits, fields_per_byte);
-          dst[c] = static_cast<float>(val - zp) * scale;
+      } else if (type_ == Type::kI8) {
+        const int8_t* int8_bytes = reinterpret_cast<const int8_t*>(raw_bytes);
+        const size_t row_offset =
+            static_cast<size_t>(row) * emb_dim_ + col_start;
+
+        if (per_channel_quant_ != nullptr) {
+          const float scale = per_channel_quant_->scales[row];
+          const float zp = static_cast<float>(zp_view[row]);
+          for (int c = 0; c < num_cols; ++c) {
+            dst[c] =
+                (static_cast<float>(int8_bytes[row_offset + c]) - zp) * scale;
+          }
+        } else if (blockwise_quant_ != nullptr) {
+          const int block_size = blockwise_quant_->block_size;
+          const int num_blocks_per_row = emb_dim_ / block_size;
+          const float* row_scales =
+              blockwise_quant_->scales.data() +
+              static_cast<size_t>(row) * num_blocks_per_row;
+          const size_t row_block_offset =
+              static_cast<size_t>(row) * num_blocks_per_row;
+
+          for (int c = 0; c < num_cols; ++c) {
+            const int col = col_start + c;
+            const size_t block_in_row = col / block_size;
+            const size_t block_idx = row_block_offset + block_in_row;
+            const float zp = static_cast<float>(zp_view[block_idx]);
+            const float scale = row_scales[block_in_row];
+            dst[c] =
+                (static_cast<float>(int8_bytes[row_offset + c]) - zp) * scale;
+          }
         }
       }
-    } else if (type_ == Type::kI8) {
-      const int8_t* int8_bytes = reinterpret_cast<const int8_t*>(raw_bytes);
-      const size_t row_offset = static_cast<size_t>(row) * emb_dim_ + col_start;
-
-      if (per_channel_quant_ != nullptr) {
-        const float scale = per_channel_quant_->scales[row];
-        const size_t num_zp = per_channel_quant_->zero_points.size();
-        int64_t zp = 0;
-        if (num_zp == 1) {
-          zp = per_channel_quant_->zero_points[0];
-        } else if (static_cast<size_t>(row) < num_zp) {
-          zp = per_channel_quant_->zero_points[row];
-        }
-        for (int c = 0; c < num_cols; ++c) {
-          dst[c] = static_cast<float>(int8_bytes[row_offset + c] - zp) * scale;
-        }
-      } else if (blockwise_quant_ != nullptr) {
-        const int block_size = blockwise_quant_->block_size;
-        const int num_blocks_per_row = emb_dim_ / block_size;
-        const float* row_scales = blockwise_quant_->scales.data() +
-                                  static_cast<size_t>(row) * num_blocks_per_row;
-        const size_t num_zp = blockwise_quant_->zero_points.size();
-        const int64_t* zp_data = blockwise_quant_->zero_points.data();
-        const size_t row_block_offset =
-            static_cast<size_t>(row) * num_blocks_per_row;
-
-        for (int c = 0; c < num_cols; ++c) {
-          const int col = col_start + c;
-          const size_t block_in_row = col / block_size;
-          const size_t block_idx = row_block_offset + block_in_row;
-          int64_t zp = 0;
-          if (num_zp == 1) {
-            zp = zp_data[0];
-          } else if (block_idx < num_zp) {
-            zp = zp_data[block_idx];
-          }
-          const float scale = row_scales[block_in_row];
-          dst[c] = static_cast<float>(int8_bytes[row_offset + c] - zp) * scale;
-        }
-      }
-    }
+    });
   }
 
   LockedBufferSpan<const uint8_t> locked_span_;
-  std::shared_ptr<PerChannelAffineQuantization> per_channel_quant_;
-  std::shared_ptr<BlockwiseQuantization> blockwise_quant_;
+  std::shared_ptr<const PerChannelAffineQuantization> per_channel_quant_;
+  std::shared_ptr<const BlockwiseQuantization> blockwise_quant_;
+  size_t expected_zp_count_ = 0;
 };
 
 }  // namespace
@@ -339,8 +328,9 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
   // Tensor shapes count logical elements, including for packed INT4. Legacy
   // byte widths require an explicit expected dimension or blockwise metadata.
   int logical_dim = expected_emb_dim > 0 ? expected_emb_dim : stored_dim;
-  std::shared_ptr<PerChannelAffineQuantization> per_channel_quant;
-  std::shared_ptr<BlockwiseQuantization> blockwise_quant;
+  std::shared_ptr<const PerChannelAffineQuantization> per_channel_quant;
+  std::shared_ptr<const BlockwiseQuantization> blockwise_quant;
+  size_t expected_zp_count = 0;
 
   if (quant != nullptr) {
     if (type != Type::kI2 && type != Type::kI4 && type != Type::kI8) {
@@ -392,8 +382,9 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
         static_cast<size_t>(vocab_size) *
         (blockwise_quant != nullptr ? logical_dim / blockwise_quant->block_size
                                     : 1);
-    if (axis != 0 || scales.size() != expected_scales ||
-        (zero_points.size() != 1 && zero_points.size() != expected_scales)) {
+    expected_zp_count = expected_scales;
+    LRT_TENSOR_RETURN_IF_ERROR(zero_points.Validate<float>(expected_zp_count));
+    if (axis != 0 || scales.size() != expected_scales) {
       return absl::InvalidArgumentError(
           "Embedding quantization requires axis 0, one scale per row or block, "
           "and one zero point or a matching zero-point count");
@@ -404,14 +395,19 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
             "Embedding quantization scales must be finite and positive");
       }
     }
-    const int64_t min_zero = type == Type::kI4 ? -8 : -128;
-    const int64_t max_zero = type == Type::kI4 ? 7 : 127;
-    for (int64_t zero : zero_points) {
-      if (zero < min_zero || zero > max_zero) {
-        return absl::InvalidArgumentError(
-            "Embedding zero point is outside the storage type's range");
-      }
-    }
+    const double min_zero = type == Type::kI4 ? -8 : -128;
+    const double max_zero = -min_zero - 1;
+    LRT_TENSOR_RETURN_IF_ERROR(zero_points.Visit(
+        [&](const auto& values) -> absl::Status {
+          for (const auto value : values) {
+            const double zero = static_cast<double>(value);
+            if (!std::isfinite(zero) || zero < min_zero || zero > max_zero) {
+              return absl::InvalidArgumentError(
+                  "Embedding zero point is outside the storage type's range");
+            }
+          }
+          return absl::OkStatus();
+        }));
   } else if (type != Type::kFP32 && type != Type::kFP16 &&
              type != Type::kBF16) {
     return absl::InvalidArgumentError(
@@ -463,7 +459,7 @@ GemmaEmbeddingTable::Create(TensorHandle tensor, int expected_emb_dim) {
     return std::make_unique<QuantizedGemmaEmbeddingTable>(
         std::move(tensor), vocab_size, logical_dim, type,
         locked.As<const uint8_t>(), std::move(per_channel_quant),
-        std::move(blockwise_quant));
+        std::move(blockwise_quant), expected_zp_count);
   }
   if (type == Type::kBF16) {
     return std::make_unique<Float16GemmaEmbeddingTable<Type::kBF16>>(

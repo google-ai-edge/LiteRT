@@ -17,6 +17,7 @@
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -974,6 +975,936 @@ cudaError_t LaunchInt8(const T* q, const int8_t* k, const int8_t* v,
                          stream);
 }
 
+// Quantized queries over quantized caches (LiteRtNvidiaQuantAttentionParams):
+// the kernels below compute the decomposition of odml.sdpa_transposed with
+// the CPU backend's operations; the caches are read as stored, INT8 or INT4
+// two per byte, in chunks of kQuantChunk keys.
+constexpr int kQuantDepth = 256;
+constexpr int kQuantChunk = 64;
+constexpr int kQuantThreads = 256;
+
+// QUANTIZE of a FLOAT16 tensor to INT8 as XNNPACK converts it
+// (xnn_f16_qs8_vcvt, quant_cache.cu has the account): x times the reciprocal
+// of the scale rounded to FLOAT16, rounded half to even, saturated.
+__device__ __forceinline__ float QuantizeQuery(float x, float scale) {
+  const float reciprocal = __half2float(__float2half(1.0f / scale));
+  return fminf(fmaxf(rintf(x * reciprocal), -128.0f), 127.0f);
+}
+
+// A float through FP16, where the decomposition holds a tensor in FP16.
+__device__ __forceinline__ float ThroughHalf(float x) {
+  return __half2float(__float2half(x));
+}
+
+// Value `index` of words of kBits-bit signed values, the first in the low
+// bits of the first word.
+template <int kBits>
+__device__ __forceinline__ int PackedValue(const uint32_t* words, int index) {
+  return static_cast<int>(words[index * kBits / 32]
+                          << (32 - kBits - (index * kBits) % 32)) >>
+         (32 - kBits);
+}
+
+// One token's key and value rows [heads, depth] that a launch writes into
+// the caches before it attends (LiteRtNvidiaQuantCacheToken); no token when
+// k is null.
+template <typename T>
+struct QuantToken {
+  const T* k = nullptr;
+  const T* v = nullptr;
+  const int32_t* k_position = nullptr;
+  const int32_t* v_position = nullptr;
+};
+
+// QUANTIZE to a cache value, as QuantCacheWriteKernel (quant_cache.cu)
+// rounds it: XNNPACK's conversion to INT8, TFLite's division to INT4.
+template <int kBits>
+__device__ __forceinline__ int QuantizeCacheValue(float x, float scale) {
+  if constexpr (kBits == 8) {
+    return static_cast<int>(QuantizeQuery(x, scale));
+  } else {
+    return static_cast<int>(fminf(fmaxf(roundf(x / scale), -8.0f), 7.0f));
+  }
+}
+
+// The token's key row and value column of `head` into the caches: thread
+// `tid` writes its byte of the key row and its depth element's value. Every
+// block that reads the head's caches writes them first, the same bytes, so
+// what a block reads after its own barrier is the token whatever the other
+// blocks have done. An INT4 value shares its byte with a neighbour of its
+// own row (cache_len is even), which no block changes.
+template <typename T, int kBits>
+__device__ __forceinline__ void WriteQuantToken(
+    const QuantToken<T>& token, const LiteRtNvidiaQuantAttentionParams& params,
+    int8_t* k, int8_t* v, int head, int cache_len, int tid) {
+  constexpr int kKeyBytes = kQuantDepth * kBits / 8;
+  const int k_pos = min(max(token.k_position[0], 0), cache_len - 1);
+  const int v_pos = min(max(token.v_position[0], 0), cache_len - 1);
+  const size_t row = static_cast<size_t>(head) * kQuantDepth;
+  if (tid < kKeyBytes) {
+    int8_t* to =
+        k + (static_cast<size_t>(head) * cache_len + k_pos) * kKeyBytes + tid;
+    if constexpr (kBits == 8) {
+      *to = static_cast<int8_t>(
+          QuantizeCacheValue<8>(ToFloat(token.k[row + tid]), params.k_scale));
+    } else {
+      const int lo = QuantizeCacheValue<4>(ToFloat(token.k[row + 2 * tid]),
+                                           params.k_scale);
+      const int hi = QuantizeCacheValue<4>(ToFloat(token.k[row + 2 * tid + 1]),
+                                           params.k_scale);
+      *to = static_cast<int8_t>((lo & 0xf) | ((hi & 0xf) << 4));
+    }
+  }
+  const int value =
+      QuantizeCacheValue<kBits>(ToFloat(token.v[row + tid]), params.v_scale);
+  const size_t at = (row + tid) * cache_len + v_pos;
+  if constexpr (kBits == 8) {
+    v[at] = static_cast<int8_t>(value);
+  } else {
+    const int old = v[at >> 1];
+    v[at >> 1] = static_cast<int8_t>((at & 1) != 0
+                                         ? (old & 0x0f) | ((value & 0xf) << 4)
+                                         : (old & 0xf0) | (value & 0xf));
+  }
+}
+
+// The query in the FLOAT16 tensor of the decomposition: its QUANTIZE, then its
+// DEQUANTIZE with the scale rounded to FLOAT16 (xnn_qs8_f16_vcvt).
+__device__ __forceinline__ float DequantizedQuery(float x, float scale) {
+  return ThroughHalf(QuantizeQuery(x, scale) *
+                     __half2float(__float2half(scale)));
+}
+
+// As with DecodeAttentionPartial, Clang may retain loops despite these
+// kernels' best-effort unroll hints.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+// The fast kernels: an online softmax in fp32 over chunks of the keys. They
+// take the decomposition's operands (the query as the CPU quantizes and
+// dequantizes it, the caches as stored) and cast the scores to FLOAT16 as it
+// does, but weigh the keys with exp() in fp32 where the graph's SOFTMAX is
+// XNNPACK's on a FLOAT16 tensor: every weight is a little different, the
+// keys that softmax drops (9.7 below the largest score) keep theirs, and the
+// sums are added in another order. The result differs from the CPU's by a
+// unit of FLOAT16 in many values.
+//
+// One block per (split, head); a thread owns one depth element of the
+// values. Partial results go to the workspace as DecodeAttentionPartial
+// writes them.
+template <typename T, int kRowsCap, int kBits>
+__global__ void __launch_bounds__(kQuantThreads)
+    QuantDecodeAttentionPartial(const T* __restrict__ q, int8_t* k, int8_t* v,
+                                LiteRtNvidiaQuantAttentionParams params,
+                                const bool* __restrict__ mask, int mask_rows,
+                                int rows, int cache_len, float fill,
+                                int splits, QuantToken<T> token,
+                                float* __restrict__ ws_acc,
+                                float* __restrict__ ws_m,
+                                float* __restrict__ ws_l) {
+  // The dequantized query, [rows][depth / 4][4]: the four threads of a key
+  // read dims e, e + 64, e + 128 and e + 192 of a row from one word of every
+  // bank. Then the chunk's scores and probabilities, key-major, the running
+  // row maximum and sum with the chunk's rescale, and the chunk's mask.
+  __shared__ float q_s[kRowsCap * kQuantDepth];
+  __shared__ __align__(16) float p_s[kQuantChunk * kRowsCap];
+  __shared__ float m_s[kRowsCap];
+  __shared__ float l_s[kRowsCap];
+  __shared__ float scale_s[kRowsCap];
+  __shared__ bool vis_s[kRowsCap * kQuantChunk];
+  constexpr int kWarps = kQuantThreads / 32;
+  constexpr int kKeyBytes = kQuantDepth * kBits / 8;
+  constexpr int kPartDims = kQuantDepth / 4;
+  constexpr int kVectorValues = 128 / kBits;  // values of a 16-byte vector
+
+  const int split = blockIdx.x;
+  const int head = blockIdx.y;
+  const int tid = threadIdx.x;
+  const int warp = tid / 32;
+  const int lane = tid % 32;
+  const int num_chunks = (cache_len + kQuantChunk - 1) / kQuantChunk;
+  const int8_t* k_head = k + static_cast<size_t>(head) * cache_len * kKeyBytes;
+  // The thread's value row starts at this value of the cache; its values of
+  // a chunk are whole 16-byte vectors when every row of the cache is.
+  const size_t v_first =
+      (static_cast<size_t>(head) * kQuantDepth + tid) * cache_len;
+  const bool value_vectors = cache_len % kVectorValues == 0;
+
+  if (token.k != nullptr) {
+    // Visible to the block's reads after the barrier below.
+    WriteQuantToken<T, kBits>(token, params, k, v, head, cache_len, tid);
+  }
+  const T* q_head = q + static_cast<size_t>(head) * rows * kQuantDepth;
+  for (int i = tid; i < rows * kQuantDepth; i += kQuantThreads) {
+    const int d = i % kQuantDepth;
+    q_s[(i - d) + (d % kPartDims) * 4 + d / kPartDims] = DequantizedQuery(ToFloat(q_head[i]), params.q_scale);
+  }
+  float acc[kRowsCap];
+#pragma unroll
+  for (int r = 0; r < kRowsCap; ++r) {
+    acc[r] = 0.0f;
+  }
+  if (tid < rows) {
+    m_s[tid] = -INFINITY;
+    l_s[tid] = 0.0f;
+  }
+  __syncthreads();
+  for (int c = split; c < num_chunks; c += gridDim.x) {
+    const int j0 = c * kQuantChunk;
+    const int chunk = min(kQuantChunk, cache_len - j0);
+    // A chunk no row sees is skipped before any key or value is read.
+    bool visible = false;
+    if (tid < kQuantChunk) {
+#pragma unroll
+      for (int r = 0; r < kRowsCap; ++r) {
+        if (r < rows) {
+          const bool keep =
+              tid < chunk &&
+              (mask == nullptr ||
+               mask[static_cast<size_t>(r % mask_rows) * cache_len + j0 +
+                    tid]);
+          vis_s[r * kQuantChunk + tid] = keep;
+          visible |= keep;
+        }
+      }
+    }
+    if (!__syncthreads_or(visible ? 1 : 0)) {
+      continue;
+    }
+
+    // Scores: four threads share a key, a quarter of its dims each, and add
+    // their sums up in a fixed order.
+    {
+      const int key = tid >> 2;
+      const int part = tid & 3;
+      const int4* k_part = reinterpret_cast<const int4*>(
+          k_head + static_cast<size_t>(j0 + min(key, chunk - 1)) * kKeyBytes +
+          part * (kKeyBytes / 4));
+      int4 loaded[kPartDims / kVectorValues];
+#pragma unroll
+      for (int i = 0; i < kPartDims / kVectorValues; ++i) {
+        loaded[i] = k_part[i];
+      }
+      float dot[kRowsCap];
+#pragma unroll
+      for (int r = 0; r < kRowsCap; ++r) {
+        dot[r] = 0.0f;
+      }
+#pragma unroll
+      for (int e = 0; e < kPartDims; ++e) {
+        const float k_f = static_cast<float>(PackedValue<kBits>(
+            reinterpret_cast<const uint32_t*>(loaded), e));
+#pragma unroll
+        for (int r = 0; r < kRowsCap; ++r) {
+          if (r < rows) {
+            dot[r] = fmaf(q_s[r * kQuantDepth + e * 4 + part], k_f, dot[r]);
+          }
+        }
+      }
+#pragma unroll
+      for (int r = 0; r < kRowsCap; ++r) {
+        if (r < rows) {
+          float score = dot[r];
+          score += __shfl_xor_sync(0xffffffffu, score, 1);
+          score += __shfl_xor_sync(0xffffffffu, score, 2);
+          if (part == 0 && key < chunk) {
+            // The decomposition casts its scores to FP16 before the mask.
+            p_s[key * kRowsCap + r] = vis_s[r * kQuantChunk + key]
+                                          ? ThroughHalf(score * params.k_scale)
+                                          : fill;
+          }
+        }
+      }
+    }
+    __syncthreads();
+
+    // Online softmax, as DecodeAttentionPartial folds a chunk in.
+    for (int r = warp; r < rows; r += kWarps) {
+      float m = -INFINITY;
+      for (int jj = lane; jj < chunk; jj += 32) {
+        m = fmaxf(m, p_s[jj * kRowsCap + r]);
+      }
+      m = WarpMax(m);
+      const float m_old = m_s[r];
+      const float m_new = fmaxf(m_old, m);
+      float l = 0.0f;
+      for (int jj = lane; jj < chunk; jj += 32) {
+        const float p =
+            m_new == -INFINITY ? 0.0f : __expf(p_s[jj * kRowsCap + r] - m_new);
+        p_s[jj * kRowsCap + r] = p;
+        l += p;
+      }
+      l = WarpSum(l);
+      if (lane == 0) {
+        const float scale = m_old == -INFINITY ? 0.0f : __expf(m_old - m_new);
+        m_s[r] = m_new;
+        l_s[r] = l_s[r] * scale + l;
+        scale_s[r] = scale;
+      }
+    }
+    __syncthreads();
+#pragma unroll
+    for (int r = 0; r < kRowsCap; ++r) {
+      if (r < rows) {
+        acc[r] *= scale_s[r];
+      }
+    }
+
+    // Weighted values: the thread's depth element of every key of the chunk,
+    // loaded as stored (16 INT8 or 32 INT4 values per vector), or value by
+    // value when the rows of the cache are not whole vectors.
+    int4 values[kQuantChunk / kVectorValues];
+    if (value_vectors) {
+      const int4* v_row = reinterpret_cast<const int4*>(
+          v + (v_first + j0) / (8 / kBits));
+#pragma unroll
+      for (int i = 0; i < kQuantChunk / kVectorValues; ++i) {
+        if (i * kVectorValues < chunk) {
+          values[i] = v_row[i];
+        }
+      }
+    }
+#pragma unroll
+    for (int jj = 0; jj < kQuantChunk; ++jj) {
+      if (jj >= chunk) {
+        break;
+      }
+      int value;
+      if (value_vectors) {
+        value = PackedValue<kBits>(reinterpret_cast<const uint32_t*>(values),
+                                   jj);
+      } else {
+        const size_t at = v_first + j0 + jj;
+        if constexpr (kBits == 8) {
+          value = v[at];
+        } else {
+          const uint32_t packed = static_cast<uint8_t>(v[at >> 1]);
+          value = static_cast<int>(packed << ((at & 1) != 0 ? 24 : 28)) >> 28;
+        }
+      }
+      const float v_f = static_cast<float>(value);
+#pragma unroll
+      for (int r4 = 0; r4 < kRowsCap / 4; ++r4) {
+        const float4 p =
+            reinterpret_cast<const float4*>(p_s + jj * kRowsCap)[r4];
+        acc[r4 * 4] = fmaf(p.x, v_f, acc[r4 * 4]);
+        acc[r4 * 4 + 1] = fmaf(p.y, v_f, acc[r4 * 4 + 1]);
+        acc[r4 * 4 + 2] = fmaf(p.z, v_f, acc[r4 * 4 + 2]);
+        acc[r4 * 4 + 3] = fmaf(p.w, v_f, acc[r4 * 4 + 3]);
+      }
+    }
+    __syncthreads();  // p_s and vis_s are rewritten by the next chunk
+  }
+  const size_t part = (static_cast<size_t>(head) * splits + split) * rows;
+#pragma unroll
+  for (int r = 0; r < kRowsCap; ++r) {
+    if (r < rows) {
+      ws_acc[(part + r) * kQuantDepth + tid] = acc[r] * params.v_scale;
+    }
+  }
+  if (tid < rows) {
+    ws_m[part + tid] = m_s[tid];
+    ws_l[part + tid] = l_s[tid];
+  }
+}
+
+// The partials and their combine in one launch: a block owns one chunk of
+// the keys for one query row of a head, a quarter of the work a block of
+// QuantDecodeAttentionPartial does one thread after the other, and the block
+// that finishes last of a row's chunks combines them (the others count
+// themselves done in `blocks_done`, one counter per row, which the last block
+// leaves zero). The arithmetic is that of QuantDecodeAttentionPartial with a
+// chunk per split followed by DecodeAttentionCombine, operation for
+// operation, and the partials are in the workspace as that kernel writes
+// them. On the RTX 5080 the 64 blocks of a decode step over a ring of 512
+// keys take 5.8 us against 8.2 us for the two launches; once the blocks
+// outnumber the multiprocessors they wait for one another and the two
+// launches are faster (2,048 keys: 10 to 12 us against 8.4 us).
+template <typename T, int kBits>
+__global__ void __launch_bounds__(kQuantThreads)
+    QuantDecodeAttentionChunks(const T* __restrict__ q, int8_t* k, int8_t* v,
+                               LiteRtNvidiaQuantAttentionParams params,
+                               const bool* __restrict__ mask, int mask_rows,
+                               int rows, int cache_len, float fill,
+                               QuantToken<T> token, float* ws_acc,
+                               float* ws_m, float* ws_l,
+                               unsigned int* blocks_done,
+                               T* __restrict__ out) {
+  // The dequantized query, laid out as QuantDecodeAttentionPartial reads it;
+  // the chunk's scores, then its probabilities; its maximum and sum.
+  __shared__ float q_s[kQuantDepth];
+  __shared__ float p_s[kQuantChunk];
+  __shared__ float m_s;
+  __shared__ float l_s;
+  __shared__ bool last_s;
+  constexpr int kKeyBytes = kQuantDepth * kBits / 8;
+  constexpr int kPartDims = kQuantDepth / 4;
+  constexpr int kVectorValues = 128 / kBits;  // values of a 16-byte vector
+
+  const int splits = gridDim.x;
+  const int c = blockIdx.x;
+  const int r = blockIdx.y % rows;
+  const int head = blockIdx.y / rows;
+  const int tid = threadIdx.x;
+  const int j0 = c * kQuantChunk;
+  const int chunk = min(kQuantChunk, cache_len - j0);
+  if (token.k != nullptr) {
+    // Visible to the block's reads after the barrier below.
+    WriteQuantToken<T, kBits>(token, params, k, v, head, cache_len, tid);
+  }
+  q_s[(tid % kPartDims) * 4 + tid / kPartDims] = DequantizedQuery(
+      ToFloat(q[(static_cast<size_t>(head) * rows + r) * kQuantDepth + tid]),
+      params.q_scale);
+  if (tid == 0) {
+    m_s = -INFINITY;
+    l_s = 0.0f;
+  }
+  const bool* mask_row =
+      mask == nullptr
+          ? nullptr
+          : mask + static_cast<size_t>(r % mask_rows) * cache_len + j0;
+  // A chunk the row sees no key of is not read: its partial is empty.
+  const bool sees = tid < chunk && (mask_row == nullptr || mask_row[tid]);
+  float acc = 0.0f;
+  if (__syncthreads_or(sees ? 1 : 0)) {
+    // Scores: four threads share a key, a quarter of its dims each, and add
+    // their sums up in a fixed order.
+    {
+      const int key = tid >> 2;
+      const int part = tid & 3;
+      const int4* k_part = reinterpret_cast<const int4*>(
+          k +
+          (static_cast<size_t>(head) * cache_len + j0 + min(key, chunk - 1)) *
+              kKeyBytes +
+          part * (kKeyBytes / 4));
+      int4 loaded[kPartDims / kVectorValues];
+#pragma unroll
+      for (int i = 0; i < kPartDims / kVectorValues; ++i) {
+        loaded[i] = k_part[i];
+      }
+      float score = 0.0f;
+#pragma unroll
+      for (int e = 0; e < kPartDims; ++e) {
+        const float k_f = static_cast<float>(PackedValue<kBits>(
+            reinterpret_cast<const uint32_t*>(loaded), e));
+        score = fmaf(q_s[e * 4 + part], k_f, score);
+      }
+      score += __shfl_xor_sync(0xffffffffu, score, 1);
+      score += __shfl_xor_sync(0xffffffffu, score, 2);
+      if (part == 0 && key < chunk) {
+        // The decomposition casts its scores to FP16 before the mask.
+        p_s[key] = mask_row == nullptr || mask_row[key]
+                       ? ThroughHalf(score * params.k_scale)
+                       : fill;
+      }
+    }
+    __syncthreads();
+
+    // The chunk's softmax over its own maximum, by the first warp.
+    if (tid < 32) {
+      float m = -INFINITY;
+      for (int jj = tid; jj < chunk; jj += 32) {
+        m = fmaxf(m, p_s[jj]);
+      }
+      m = WarpMax(m);
+      float l = 0.0f;
+      for (int jj = tid; jj < chunk; jj += 32) {
+        const float p = m == -INFINITY ? 0.0f : __expf(p_s[jj] - m);
+        p_s[jj] = p;
+        l += p;
+      }
+      l = WarpSum(l);
+      if (tid == 0) {
+        m_s = m;
+        l_s = l;
+      }
+    }
+    __syncthreads();
+
+    // Weighted values: the thread's depth element of every key of the chunk,
+    // loaded as stored, or value by value when the rows of the cache are not
+    // whole vectors.
+    const size_t v_first =
+        (static_cast<size_t>(head) * kQuantDepth + tid) * cache_len + j0;
+    const bool value_vectors = cache_len % kVectorValues == 0;
+    int4 values[kQuantChunk / kVectorValues];
+    if (value_vectors) {
+      const int4* v_row =
+          reinterpret_cast<const int4*>(v + v_first / (8 / kBits));
+#pragma unroll
+      for (int i = 0; i < kQuantChunk / kVectorValues; ++i) {
+        if (i * kVectorValues < chunk) {
+          values[i] = v_row[i];
+        }
+      }
+    }
+#pragma unroll
+    for (int jj = 0; jj < kQuantChunk; ++jj) {
+      if (jj >= chunk) {
+        break;
+      }
+      int value;
+      if (value_vectors) {
+        value = PackedValue<kBits>(reinterpret_cast<const uint32_t*>(values),
+                                   jj);
+      } else {
+        const size_t at = v_first + jj;
+        if constexpr (kBits == 8) {
+          value = v[at];
+        } else {
+          const uint32_t packed = static_cast<uint8_t>(v[at >> 1]);
+          value = static_cast<int>(packed << ((at & 1) != 0 ? 24 : 28)) >> 28;
+        }
+      }
+      acc = fmaf(p_s[jj], static_cast<float>(value), acc);
+    }
+  }
+  const size_t row_parts = static_cast<size_t>(head) * splits * rows + r;
+  const size_t part = row_parts + static_cast<size_t>(c) * rows;
+  ws_acc[part * kQuantDepth + tid] = acc * params.v_scale;
+  if (tid == 0) {
+    ws_m[part] = m_s;
+    ws_l[part] = l_s;
+  }
+  // Every thread's part of the partial is in memory before the block counts
+  // itself done, so the row's last block reads whole partials.
+  __threadfence();
+  __syncthreads();
+  if (tid == 0) {
+    last_s = atomicAdd(blocks_done + blockIdx.y, 1u) + 1 == gridDim.x;
+  }
+  __syncthreads();
+  if (!last_s) {
+    return;
+  }
+  if (tid == 0) {
+    blocks_done[blockIdx.y] = 0;
+  }
+  // The combine, as DecodeAttentionCombine's eight warps fold the splits:
+  // warp w the splits w, w + 8, ..., then the warps' sums in their order.
+  constexpr int kFolds = kCombineThreads / 32;
+  float m_row = -INFINITY;
+  for (int split = 0; split < splits; ++split) {
+    m_row = fmaxf(m_row, ws_m[row_parts + static_cast<size_t>(split) * rows]);
+  }
+  float l_fold[kFolds];
+  float acc_fold[kFolds];
+#pragma unroll
+  for (int w = 0; w < kFolds; ++w) {
+    l_fold[w] = 0.0f;
+    acc_fold[w] = 0.0f;
+  }
+  for (int first = 0; first < splits; first += kFolds) {
+#pragma unroll
+    for (int w = 0; w < kFolds; ++w) {
+      if (first + w < splits) {
+        const size_t at = row_parts + static_cast<size_t>(first + w) * rows;
+        const float m = ws_m[at];
+        const float weight = m == -INFINITY ? 0.0f : __expf(m - m_row);
+        l_fold[w] = fmaf(weight, ws_l[at], l_fold[w]);
+        acc_fold[w] = fmaf(weight, ws_acc[at * kQuantDepth + tid], acc_fold[w]);
+      }
+    }
+  }
+  float l_row = 0.0f;
+  float total = 0.0f;
+#pragma unroll
+  for (int w = 0; w < kFolds; ++w) {
+    l_row += l_fold[w];
+    total += acc_fold[w];
+  }
+  const float inv = l_row > 0.0f ? 1.0f / l_row : 0.0f;
+  FromFloat(total * inv,
+            out + (static_cast<size_t>(head) * rows + r) * kQuantDepth + tid);
+}
+#pragma clang diagnostic pop
+
+// Whether QuantDecodeAttentionChunks runs these blocks: a chunk per split,
+// and a multiprocessor of the current device for every block.
+bool QuantChunkBlocksFit(int cache_len, int splits, int heads, int rows) {
+  int device = 0;
+  int multiprocessors = 0;
+  return (cache_len + kQuantChunk - 1) / kQuantChunk == splits &&
+         cudaGetDevice(&device) == cudaSuccess &&
+         cudaDeviceGetAttribute(&multiprocessors,
+                                cudaDevAttrMultiProcessorCount,
+                                device) == cudaSuccess &&
+         static_cast<int64_t>(splits) * heads * rows <= multiprocessors;
+}
+
+// odml.sdpa_transposed over quantized tensors, tensor by tensor as LiteRT's
+// CPU backend computes its decomposition (XNNPACK on x86 with AVX2, FMA3 and
+// F16C, the kernels LiteRT-LM's CPU backend runs on the hosts measured; a
+// machine with other vector extensions picks other softmax kernels and has
+// other bits itself):
+//   [1]  DEQUANTIZE the INT8 query to FLOAT16 (xnn_qs8_f16_vcvt): q times
+//        the scale rounded to FLOAT16, rounded to FLOAT16.
+//   [2]  DEQUANTIZE the keys to fp32: k times the scale.
+//   [4]  BATCH_MATMUL (xnn_f32_gemm, fma3): one fused multiply-add per depth
+//        element, in order, from zero.
+//   [5]  CAST the scores to FLOAT16.
+//   [10] SELECT_V2: `fill` where the mask is false.
+//   [11] SOFTMAX on FLOAT16 (xnn_f16_raddstoreexpminusmax_ukernel__avx2_rr1_p2
+//        and xnn_f16_vmulc): exp(x - max) in fp32 by a second-degree
+//        polynomial, zero below -9.703125 (where the FLOAT16 result would be
+//        denormal: such a key has no weight at all), each rounded to FLOAT16;
+//        the fp32 sum of the unrounded values in the kernel's eight lanes;
+//        the reciprocal of the sum rounded to FLOAT16; the products rounded
+//        to FLOAT16.
+//   [12] DEQUANTIZE the values to fp32.
+//   [14] BATCH_MATMUL: one fused multiply-add per key, in the cache's order.
+//   [15] CAST the result to FLOAT16.
+// Two launches. QuantScoresKernel: a block per chunk of keys and head, a
+// thread per key and row, [1] to [5] into the workspace. Then
+// QuantSoftmaxValuesKernel: a block per row and head, a thread per depth
+// element, [10] to [15]; it walks only the keys whose weight is not zero.
+
+template <typename T, int kBits>
+__global__ void __launch_bounds__(kQuantThreads)
+    QuantScoresKernel(const T* __restrict__ q, int8_t* k, int8_t* v,
+                      LiteRtNvidiaQuantAttentionParams params,
+                      const bool* __restrict__ mask, int mask_rows, int rows,
+                      int cache_len, QuantToken<T> token,
+                      float* __restrict__ scores) {
+  __shared__ float q_s[kMaxRows * kQuantDepth];
+  constexpr int kKeyBytes = kQuantDepth * kBits / 8;
+  constexpr int kWordValues = 32 / kBits;
+  const int head = blockIdx.y;
+  const int tid = threadIdx.x;
+  const int j0 = blockIdx.x * kQuantChunk;
+  const int chunk = min(kQuantChunk, cache_len - j0);
+  if (token.k != nullptr) {
+    // Visible to every read after the barrier below, and to the next launch.
+    WriteQuantToken<T, kBits>(token, params, k, v, head, cache_len, tid);
+  }
+  const T* q_head = q + static_cast<size_t>(head) * rows * kQuantDepth;
+  for (int i = tid; i < rows * kQuantDepth; i += kQuantThreads) {
+    q_s[i] = DequantizedQuery(ToFloat(q_head[i]), params.q_scale);
+  }
+  // A chunk no row sees is left alone: the next launch reads the mask.
+  bool visible = mask == nullptr;
+  if (mask != nullptr) {
+    for (int i = tid; i < mask_rows * chunk; i += kQuantThreads) {
+      visible |=
+          mask[static_cast<size_t>(i / chunk) * cache_len + j0 + i % chunk];
+    }
+  }
+  if (!__syncthreads_or(visible ? 1 : 0)) {
+    return;
+  }
+  const int8_t* k_head = k + static_cast<size_t>(head) * cache_len * kKeyBytes;
+  for (int pair = tid; pair < chunk * rows; pair += kQuantThreads) {
+    const int key = pair / rows;
+    const int r = pair % rows;
+    const uint32_t* words = reinterpret_cast<const uint32_t*>(
+        k_head + static_cast<size_t>(j0 + key) * kKeyBytes);
+    const float* q_row = q_s + r * kQuantDepth;
+    float score = 0.0f;
+    for (int w = 0; w < kQuantDepth / kWordValues; ++w) {
+      const uint32_t word = words[w];
+#pragma unroll
+      for (int i = 0; i < kWordValues; ++i) {
+        const int value =
+            static_cast<int>(word << (32 - kBits - i * kBits)) >> (32 - kBits);
+        score = fmaf(q_row[w * kWordValues + i],
+                     __fmul_rn(static_cast<float>(value), params.k_scale),
+                     score);
+      }
+    }
+    scores[(static_cast<size_t>(head) * rows + r) * cache_len + j0 + key] =
+        ThroughHalf(score);
+  }
+}
+
+// exp(x) of x <= 0 as xnn_f16_raddstoreexpminusmax_ukernel__avx2_rr1_p2
+// computes it in fp32, operation for operation.
+__device__ __forceinline__ float XnnHalfExpMinus(float x) {
+  const float magic_bias = 0x1.8000FEp23f;
+  float n = fmaf(x, 0x1.715476p0f, magic_bias);
+  const float s = __uint_as_float(__float_as_uint(n) << 23);
+  n = __fsub_rn(n, magic_bias);
+  float t = fmaf(n, -0x1.62E43p-1f, x);
+  const float p = fmaf(0x1.FF3A32p-2f, t, 0x1.039E10p+0f);
+  t = __fmul_rn(t, s);
+  const float f = fmaf(t, p, s);
+  return x < -0x1.368000p+3f ? 0.0f : f;
+}
+
+template <typename T, int kBits>
+__global__ void __launch_bounds__(kQuantThreads)
+    QuantSoftmaxValuesKernel(const int8_t* __restrict__ v,
+                             LiteRtNvidiaQuantAttentionParams params,
+                             const bool* __restrict__ mask, int mask_rows,
+                             int rows, int cache_len, float fill,
+                             float* __restrict__ scores,
+                             float* __restrict__ weights,
+                             int32_t* __restrict__ keys, T* __restrict__ out) {
+  constexpr int kWarps = kQuantThreads / 32;
+  __shared__ float max_s[kWarps];
+  __shared__ int count_s[kQuantThreads];
+  __shared__ float lane_s[8];
+  __shared__ int total_s;
+  __shared__ float scale_s;
+  const int r = blockIdx.x;
+  const int head = blockIdx.y;
+  const int tid = threadIdx.x;
+  const size_t row = (static_cast<size_t>(head) * rows + r) * cache_len;
+  float* s_row = scores + row;
+  float* w_row = weights + row;
+  int32_t* k_row = keys + row;
+  const bool* mask_row =
+      mask == nullptr
+          ? nullptr
+          : mask + static_cast<size_t>(r % mask_rows) * cache_len;
+  // The thread's keys are a run of the cache, so that the threads' runs one
+  // after the other are the cache's order.
+  const int run = (cache_len + kQuantThreads - 1) / kQuantThreads;
+  const int first = min(tid * run, cache_len);
+  const int last = min(first + run, cache_len);
+
+  // [10] and the row's maximum.
+  float m = -INFINITY;
+  for (int j = first; j < last; ++j) {
+    const float score = mask_row == nullptr || mask_row[j] ? s_row[j] : fill;
+    s_row[j] = score;
+    m = fmaxf(m, score);
+  }
+  m = WarpMax(m);
+  if (tid % 32 == 0) {
+    max_s[tid / 32] = m;
+  }
+  __syncthreads();
+  m = max_s[0];
+#pragma unroll
+  for (int w = 1; w < kWarps; ++w) {
+    m = fmaxf(m, max_s[w]);
+  }
+  if (m == -INFINITY) {
+    // The row sees no key and the fill is -inf (the plugin's): the graphs
+    // replace such a row or never read it, and it gets zero. With the
+    // decomposition's finite fill the row is spread evenly over the whole
+    // cache, as on the CPU.
+    FromFloat(0.0f, out + (static_cast<size_t>(head) * rows + r) *
+                              kQuantDepth + tid);
+    return;
+  }
+
+  // [11]: exp(x - max), not yet rounded, and the keys that keep a weight, in
+  // the cache's order.
+  int count = 0;
+  for (int j = first; j < last; ++j) {
+    const float f = XnnHalfExpMinus(__fsub_rn(s_row[j], m));
+    s_row[j] = f;
+    count += f != 0.0f ? 1 : 0;
+  }
+  count_s[tid] = count;
+  __syncthreads();
+  int at = 0;
+  for (int t = 0; t < tid; ++t) {
+    at += count_s[t];
+  }
+  if (tid == kQuantThreads - 1) {
+    total_s = at + count;
+  }
+  for (int j = first; j < last; ++j) {
+    const float f = s_row[j];
+    if (f != 0.0f) {
+      k_row[at] = j;
+      w_row[at] = f;
+      ++at;
+    }
+  }
+  __syncthreads();
+  const int total = total_s;
+  // The kernel's sum: lane j % 8 adds its values in order over the whole
+  // vectors of eight, the lanes pair up (0 with 4, ...), the last keys of a
+  // length that is no multiple of eight join the pairs, then (0 + 2) +
+  // (1 + 3).
+  const int whole = cache_len & ~7;
+  if (tid < 8) {
+    float lane = 0.0f;
+    for (int i = 0; i < total; ++i) {
+      const int j = k_row[i];
+      if (j < whole && (j & 7) == tid) {
+        lane = __fadd_rn(lane, w_row[i]);
+      }
+    }
+    lane_s[tid] = lane;
+  }
+  __syncthreads();
+  if (tid == 0) {
+    float pair[4];
+#pragma unroll
+    for (int i = 0; i < 4; ++i) {
+      pair[i] = __fadd_rn(lane_s[i], lane_s[i + 4]);
+    }
+    float tail[8] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+    for (int i = total - 1; i >= 0 && k_row[i] >= whole; --i) {
+      tail[k_row[i] - whole] = w_row[i];
+    }
+    const int rest = cache_len - whole;
+    int next = 0;
+    if ((rest & 4) != 0) {
+#pragma unroll
+      for (int i = 0; i < 4; ++i) {
+        pair[i] = __fadd_rn(pair[i], tail[i]);
+      }
+      next = 4;
+    }
+    if ((rest & 2) != 0) {
+      pair[0] = __fadd_rn(pair[0], tail[next]);
+      pair[1] = __fadd_rn(pair[1], tail[next + 1]);
+      next += 2;
+    }
+    if ((rest & 1) != 0) {
+      pair[0] = __fadd_rn(pair[0], tail[next]);
+    }
+    const float sum = __fadd_rn(__fadd_rn(pair[0], pair[2]),
+                                __fadd_rn(pair[1], pair[3]));
+    scale_s = ThroughHalf(1.0f / sum);
+  }
+  __syncthreads();
+  const float scale = scale_s;
+  for (int i = tid; i < total; i += kQuantThreads) {
+    w_row[i] = ThroughHalf(__fmul_rn(ThroughHalf(w_row[i]), scale));
+  }
+  __syncthreads();
+
+  // [12], [14] and [15] for the thread's depth element.
+  const size_t v_first =
+      (static_cast<size_t>(head) * kQuantDepth + tid) * cache_len;
+  float acc = 0.0f;
+  for (int i = 0; i < total; ++i) {
+    const size_t value_at = v_first + k_row[i];
+    int value;
+    if constexpr (kBits == 8) {
+      value = v[value_at];
+    } else {
+      const uint32_t packed = static_cast<uint8_t>(v[value_at >> 1]);
+      value =
+          static_cast<int>(packed << ((value_at & 1) != 0 ? 24 : 28)) >> 28;
+    }
+    acc = fmaf(w_row[i], __fmul_rn(static_cast<float>(value), params.v_scale),
+               acc);
+  }
+  FromFloat(acc, out + (static_cast<size_t>(head) * rows + r) * kQuantDepth +
+                     tid);
+}
+
+// Which kernels LaunchQuantRows takes: -1 asks the environment.
+std::atomic<int> quant_attention_exact{-1};
+
+bool QuantAttentionExact() {
+  const int forced = quant_attention_exact.load(std::memory_order_relaxed);
+  if (forced >= 0) {
+    return forced != 0;
+  }
+  static const bool from_environment = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_QUANT_ATTENTION_EXACT");
+    return value != nullptr && value[0] != '\0' && value[0] != '0';
+  }();
+  return from_environment;
+}
+
+// The workspace of the two launches: the scores, the weights and their keys,
+// each [heads][rows][cache_len].
+size_t QuantWorkspaceBytes(int heads, int rows, int cache_len) {
+  return static_cast<size_t>(heads) * rows * cache_len *
+         (2 * sizeof(float) + sizeof(int32_t));
+}
+
+template <typename T, int kRowsCap, int kBits>
+cudaError_t LaunchQuantRows(const T* q, int8_t* k, int8_t* v,
+                            const LiteRtNvidiaQuantAttentionParams& params,
+                            const bool* mask, int mask_rows, int heads,
+                            int rows, int cache_len, float fill,
+                            const QuantToken<T>& token, T* out,
+                            void* workspace, unsigned int* blocks_done,
+                            cudaStream_t stream) {
+  if (!QuantAttentionExact()) {
+    const int splits = SplitCount(cache_len, kQuantChunk);
+    float* ws_acc = static_cast<float*>(workspace);
+    float* ws_m =
+        ws_acc + static_cast<size_t>(heads) * splits * rows * kQuantDepth;
+    float* ws_l = ws_m + static_cast<size_t>(heads) * splits * rows;
+    if (blocks_done != nullptr &&
+        QuantChunkBlocksFit(cache_len, splits, heads, rows)) {
+      QuantDecodeAttentionChunks<T, kBits>
+          <<<dim3(splits, heads * rows), kQuantThreads, 0, stream>>>(
+              q, k, v, params, mask, mask_rows, rows, cache_len, fill, token,
+              ws_acc, ws_m, ws_l, blocks_done, out);
+      return cudaGetLastError();
+    }
+    QuantDecodeAttentionPartial<T, kRowsCap, kBits>
+        <<<dim3(splits, heads), kQuantThreads, 0, stream>>>(
+            q, k, v, params, mask, mask_rows, rows, cache_len, fill, splits,
+            token, ws_acc, ws_m, ws_l);
+    const cudaError_t partial_status = cudaGetLastError();
+    if (partial_status != cudaSuccess) {
+      return partial_status;
+    }
+    DecodeAttentionCombine<T, kQuantDepth>
+        <<<dim3(rows, heads), kCombineThreads, 0, stream>>>(
+            ws_acc, ws_m, ws_l, rows, splits, out);
+    return cudaGetLastError();
+  }
+  // The decomposition's own arithmetic: two launches whatever the cache.
+  const size_t entries = static_cast<size_t>(heads) * rows * cache_len;
+  float* scores = static_cast<float*>(workspace);
+  float* weights = scores + entries;
+  int32_t* keys = reinterpret_cast<int32_t*>(weights + entries);
+  const int chunks = (cache_len + kQuantChunk - 1) / kQuantChunk;
+  QuantScoresKernel<T, kBits>
+      <<<dim3(chunks, heads), kQuantThreads, 0, stream>>>(
+          q, k, v, params, mask, mask_rows, rows, cache_len, token, scores);
+  const cudaError_t status = cudaGetLastError();
+  if (status != cudaSuccess) {
+    return status;
+  }
+  QuantSoftmaxValuesKernel<T, kBits>
+      <<<dim3(rows, heads), kQuantThreads, 0, stream>>>(
+          v, params, mask, mask_rows, rows, cache_len, fill, scores, weights,
+          keys, out);
+  return cudaGetLastError();
+}
+
+template <typename T>
+cudaError_t LaunchQuant(const void* q, void* k, void* v,
+                        const LiteRtNvidiaQuantCacheToken* token,
+                        const LiteRtNvidiaQuantAttentionParams& params,
+                        const bool* mask, int mask_rows, int heads, int rows,
+                        int cache_len, float fill, void* out, void* workspace,
+                        void* state, cudaStream_t stream) {
+  unsigned int* blocks_done = static_cast<unsigned int*>(state);
+  QuantToken<T> rows_written;
+  if (token != nullptr) {
+    rows_written = {static_cast<const T*>(token->k),
+                    static_cast<const T*>(token->v), token->k_position,
+                    token->v_position};
+  }
+  const T* q_rows = static_cast<const T*>(q);
+  int8_t* k_cache = static_cast<int8_t*>(k);
+  int8_t* v_cache = static_cast<int8_t*>(v);
+  T* out_rows = static_cast<T*>(out);
+  if (params.cache_bits == 8) {
+    return rows <= 4 ? LaunchQuantRows<T, 4, 8>(
+                           q_rows, k_cache, v_cache, params, mask, mask_rows,
+                           heads, rows, cache_len, fill, rows_written,
+                           out_rows, workspace, blocks_done, stream)
+                     : LaunchQuantRows<T, kMaxRows, 8>(
+                           q_rows, k_cache, v_cache, params, mask, mask_rows,
+                           heads, rows, cache_len, fill, rows_written,
+                           out_rows, workspace, blocks_done, stream);
+  }
+  return rows <= 4 ? LaunchQuantRows<T, 4, 4>(
+                         q_rows, k_cache, v_cache, params, mask, mask_rows,
+                         heads, rows, cache_len, fill, rows_written, out_rows,
+                         workspace, blocks_done, stream)
+                   : LaunchQuantRows<T, kMaxRows, 4>(
+                         q_rows, k_cache, v_cache, params, mask, mask_rows,
+                         heads, rows, cache_len, fill, rows_written, out_rows,
+                         workspace, blocks_done, stream);
+}
+
 }  // namespace
 
 extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
@@ -982,7 +1913,11 @@ extern "C" size_t LiteRtNvidiaDecodeAttentionWorkspaceBytes(int32_t heads,
                                                             int32_t depth) {
   const size_t parts =
       static_cast<size_t>(heads) * MaxSplitCount(seq) * rows;
-  return parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
+  const size_t bytes = parts * (static_cast<size_t>(depth) + 2) * sizeof(float);
+  // The quantized attention keeps a score, a weight and a key index per key
+  // of every row.
+  const size_t quant_bytes = QuantWorkspaceBytes(heads, rows, seq);
+  return bytes > quant_bytes ? bytes : quant_bytes;
 }
 
 extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttention(
@@ -1053,4 +1988,76 @@ extern "C" cudaError_t LiteRtNvidiaLaunchDecodeAttentionInt8Window(
                     static_cast<const int8_t*>(v), *params, mask, mask_rows,
                     heads, rows, window, cache_len, window_start, depth, fill,
                     static_cast<__half*>(out), workspace, stream);
+}
+
+extern "C" void LiteRtNvidiaSetQuantAttentionExact(int32_t exact) {
+  quant_attention_exact.store(exact, std::memory_order_relaxed);
+}
+
+extern "C" bool LiteRtNvidiaQuantDecodeAttentionSupports(int32_t rows,
+                                                         int32_t depth,
+                                                         int32_t cache_bits) {
+  return rows >= 1 && rows <= kMaxRows && depth == kQuantDepth &&
+         (cache_bits == 8 || cache_bits == 4);
+}
+
+extern "C" bool LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+    int32_t rows, int32_t depth, int32_t cache_bits, int32_t cache_len) {
+  return LiteRtNvidiaQuantDecodeAttentionSupports(rows, depth, cache_bits) &&
+         cache_len >= 1 && (cache_bits == 8 || cache_len % 2 == 0);
+}
+
+extern "C" size_t LiteRtNvidiaQuantDecodeAttentionStateBytes(int32_t heads,
+                                                             int32_t rows) {
+  return heads <= 0 || rows <= 0
+             ? 0
+             : static_cast<size_t>(heads) * rows * sizeof(unsigned int);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+    const void* q, bool q_bf16, void* k, void* v,
+    const LiteRtNvidiaQuantCacheToken* token,
+    const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t depth, float fill, void* out, void* workspace, void* state,
+    cudaStream_t stream) {
+  if (q == nullptr || k == nullptr || v == nullptr || params == nullptr ||
+      out == nullptr || workspace == nullptr || heads <= 0 || cache_len <= 0 ||
+      !LiteRtNvidiaQuantDecodeAttentionSupports(rows, depth,
+                                                params->cache_bits) ||
+      mask_rows <= 0 || rows % mask_rows != 0 ||
+      !(params->q_scale > 0.0f) || !std::isfinite(params->q_scale) ||
+      !std::isfinite(params->k_scale) || !std::isfinite(params->v_scale)) {
+    return cudaErrorInvalidValue;
+  }
+  if (token != nullptr &&
+      (token->k == nullptr || token->v == nullptr ||
+       token->k_position == nullptr || token->v_position == nullptr ||
+       !(params->k_scale > 0.0f) || !(params->v_scale > 0.0f) ||
+       !LiteRtNvidiaQuantDecodeAttentionUpdateSupports(
+           rows, depth, params->cache_bits, cache_len))) {
+    return cudaErrorInvalidValue;
+  }
+  if (q_bf16) {
+    return LaunchQuant<__nv_bfloat16>(q, k, v, token, *params, mask, mask_rows,
+                                      heads, rows, cache_len, fill, out,
+                                      workspace, state, stream);
+  }
+  return LaunchQuant<__half>(q, k, v, token, *params, mask, mask_rows, heads,
+                             rows, cache_len, fill, out, workspace, state,
+                             stream);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchQuantDecodeAttention(
+    const void* q, bool q_bf16, const void* k, const void* v,
+    const LiteRtNvidiaQuantAttentionParams* params, const bool* mask,
+    int32_t mask_rows, int32_t heads, int32_t rows, int32_t cache_len,
+    int32_t depth, float fill, void* out, void* workspace,
+    cudaStream_t stream) {
+  // Without a token the launches write nothing to the caches; without a
+  // state a second launch combines.
+  return LiteRtNvidiaLaunchQuantDecodeAttentionUpdate(
+      q, q_bf16, const_cast<void*>(k), const_cast<void*>(v), /*token=*/nullptr,
+      params, mask, mask_rows, heads, rows, cache_len, depth, fill, out,
+      workspace, /*state=*/nullptr, stream);
 }

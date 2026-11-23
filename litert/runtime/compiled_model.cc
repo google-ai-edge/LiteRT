@@ -39,6 +39,10 @@
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
+#if !defined(LITERT_DISABLE_CPU)
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#endif  // !defined(LITERT_DISABLE_CPU)
 #include "litert/c/options/litert_cpu_options.h"
 #include "tflite/c/c_api.h"
 #include "tflite/mutable_op_resolver.h"
@@ -120,6 +124,7 @@
 #endif  // !defined(LITERT_DISABLE_EXTERNAL_WEIGHTS)
 #include "tflite/converter/allocation.h"
 #include "tflite/builtin_ops.h"
+#include "tflite/core/api/op_resolver.h"
 #include "tflite/core/api/profiler.h"
 #include "tflite/core/interpreter_builder.h"
 #include "tflite/interpreter.h"
@@ -128,6 +133,7 @@
 #include "tflite/kernels/register.h"
 #include "tflite/kernels/register_ref.h"
 #endif  // LITERT_NO_BUILTIN_OPS
+#include "tflite/schema/schema_generated.h"
 
 #if defined(LITERT_NO_BUILTIN_OPS)
 #include "litert/runtime/stub_op_resolver.h"
@@ -225,6 +231,121 @@ TfLiteRegistration sStubRegistration = {
     .prepare = StubOpPrepare,
     .invoke = StubOpEval,
 };
+
+#if !defined(LITERT_DISABLE_CPU)
+class CApiForwardingOpResolver : public tflite::OpResolver {
+ public:
+  CApiForwardingOpResolver(
+      const LiteRtOptionsT::OpResolverCallbacks& callbacks,
+      std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations)
+      : callbacks_(callbacks), owned_registrations_(owned_registrations) {}
+
+  const TfLiteRegistration* FindOp(tflite::BuiltinOperator op,
+                                   int version) const override {
+    if (callbacks_.find_builtin_op == nullptr) {
+      return nullptr;
+    }
+    const auto key = std::make_pair(static_cast<int>(op), version);
+    {
+      absl::MutexLock lock(mutex_);
+      if (auto it = builtin_cache_.find(key); it != builtin_cache_.end()) {
+        return it->second;
+      }
+    }
+    const TfLiteOperator* op_ext = callbacks_.find_builtin_op(
+        callbacks_.user_data, static_cast<int>(op), version);
+    if (op_ext == nullptr) {
+      return nullptr;
+    }
+    absl::MutexLock lock(mutex_);
+    auto [it, inserted] = builtin_cache_.try_emplace(key, nullptr);
+    if (!inserted) {
+      return it->second;
+    }
+    auto new_reg = std::make_unique<TfLiteRegistration>();
+    new_reg->builtin_code = static_cast<int32_t>(op);
+    new_reg->custom_name = nullptr;
+    new_reg->version = version;
+    new_reg->registration_external = const_cast<TfLiteOperator*>(op_ext);
+    it->second = new_reg.get();
+    owned_registrations_.push_back(std::move(new_reg));
+    return it->second;
+  }
+
+  const TfLiteRegistration* FindOp(const char* op, int version) const override {
+    if (op == nullptr || callbacks_.find_custom_op == nullptr) {
+      return nullptr;
+    }
+    const auto key = std::make_pair(std::string(op), version);
+    {
+      absl::MutexLock lock(mutex_);
+      if (auto it = custom_cache_.find(key); it != custom_cache_.end()) {
+        return it->second;
+      }
+    }
+    const TfLiteOperator* op_ext =
+        callbacks_.find_custom_op(callbacks_.user_data, op, version);
+    if (op_ext == nullptr) {
+      return nullptr;
+    }
+    absl::MutexLock lock(mutex_);
+    auto [it, inserted] = custom_cache_.try_emplace(key, nullptr);
+    if (!inserted) {
+      return it->second;
+    }
+    auto new_reg = std::make_unique<TfLiteRegistration>();
+    new_reg->builtin_code = tflite::BuiltinOperator_CUSTOM;
+    new_reg->custom_name = TfLiteOperatorGetCustomName(op_ext);
+    new_reg->version = version;
+    new_reg->registration_external = const_cast<TfLiteOperator*>(op_ext);
+    it->second = new_reg.get();
+    owned_registrations_.push_back(std::move(new_reg));
+    return it->second;
+  }
+
+ private:
+  LiteRtOptionsT::OpResolverCallbacks callbacks_;
+  mutable absl::Mutex mutex_;
+  std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations_
+      ABSL_GUARDED_BY(mutex_);
+  mutable absl::flat_hash_map<std::pair<int, int>, const TfLiteRegistration*>
+      builtin_cache_ ABSL_GUARDED_BY(mutex_);
+  mutable absl::flat_hash_map<std::pair<std::string, int>,
+                              const TfLiteRegistration*>
+      custom_cache_ ABSL_GUARDED_BY(mutex_);
+};
+
+class CApiOpResolver : public tflite::MutableOpResolver {
+ public:
+  CApiOpResolver(
+      const LiteRtOptionsT::OpResolverCallbacks& callbacks,
+      std::vector<std::unique_ptr<TfLiteRegistration>>& owned_registrations)
+      : c_api_forwarder_(callbacks, owned_registrations) {
+    ChainOpResolver(&c_api_forwarder_);
+    may_directly_contain_user_defined_ops_ = true;
+  }
+
+ private:
+  CApiForwardingOpResolver c_api_forwarder_;
+};
+#endif  // !defined(LITERT_DISABLE_CPU)
+
+// Creates an op resolver forwarding lookups to C API callbacks. Omitted in
+// minimal CPU builds (`LITERT_DISABLE_CPU`), which are always statically linked
+// and pass an in-process `tflite::MutableOpResolver` directly.
+Expected<std::unique_ptr<tflite::MutableOpResolver>> CreateCApiOpResolver(
+    [[maybe_unused]] const LiteRtOptionsT::OpResolverCallbacks& callbacks,
+    [[maybe_unused]] std::vector<std::unique_ptr<TfLiteRegistration>>&
+        owned_registrations) {
+#if !defined(LITERT_DISABLE_CPU)
+  return std::unique_ptr<tflite::MutableOpResolver>(
+      std::make_unique<CApiOpResolver>(callbacks, owned_registrations));
+#else
+  return Unexpected(
+      kLiteRtStatusErrorUnsupported,
+      "Op resolver callbacks are not supported in minimal CPU builds.");
+#endif  // !defined(LITERT_DISABLE_CPU)
+}
 
 #if !defined(LITERT_DISABLE_NPU)
 LiteRtLogSeverity GetLogSeverityForJitCompilationFailure(
@@ -503,7 +624,8 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
 
   const bool has_user_op_resolver =
       jit_compilation_options &&
-      jit_compilation_options->op_resolver != nullptr;
+      (jit_compilation_options->op_resolver != nullptr ||
+       jit_compilation_options->op_resolver_callbacks.has_value());
   std::unique_ptr<tflite::MutableOpResolver> resolver_storage;
   tflite::MutableOpResolver* resolver = nullptr;
   if (has_user_op_resolver) {
@@ -515,8 +637,15 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
                         "kernels.");
     }
 #endif  // LITERT_NO_BUILTIN_OPS
-    resolver_storage = std::make_unique<tflite::MutableOpResolver>(
-        *jit_compilation_options->op_resolver);
+    if (jit_compilation_options->op_resolver_callbacks.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(
+          resolver_storage,
+          CreateCApiOpResolver(*jit_compilation_options->op_resolver_callbacks,
+                               owned_tflite_registrations_));
+    } else {
+      resolver_storage = std::make_unique<tflite::MutableOpResolver>(
+          *jit_compilation_options->op_resolver);
+    }
     resolver = resolver_storage.get();
   } else {
 #ifdef LITERT_NO_BUILTIN_OPS
@@ -743,7 +872,9 @@ Expected<void> LiteRtCompiledModelT::InitializeRuntime(
         LrtGetRuntimeContext(), fb_model_->GetModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
         static_cast<const weight_loader::WeightInMemoryMap*>(
-            jit_compilation_options->weight_in_memory_map));
+            jit_compilation_options->weight_in_memory_map),
+        std::static_pointer_cast<weight_loader::WebWeightUploader>(
+            jit_compilation_options->web_weight_uploader));
     weight_loader_ = weight_loader_owned_.get();
   } else {
     weight_loader_ = jit_compilation_options->weight_loader;
@@ -853,7 +984,9 @@ Expected<void> LiteRtCompiledModelT::ResolveExternalWeightsForCompilation(
         LrtGetRuntimeContext(), tfl_wrapper.PackedModel(), model_directory_,
         std::move(jit_compilation_options->scoped_weight_source),
         static_cast<const weight_loader::WeightInMemoryMap*>(
-            jit_compilation_options->weight_in_memory_map));
+            jit_compilation_options->weight_in_memory_map),
+        std::static_pointer_cast<weight_loader::WebWeightUploader>(
+            jit_compilation_options->web_weight_uploader));
     weight_loader_ = weight_loader_owned_.get();
   }
   weight_loader::WeightAccessRequest request;
@@ -1093,9 +1226,12 @@ Expected<void> LiteRtCompiledModelT::InitializeModel(
     LiteRtOptions options, LiteRtEnvironmentT& env) {
   LITERT_PERFETTO_TRACE_EVENT("CompiledModel Graph Loading");
   // Windows charges a copy-on-write view of the model file in full; the model
-  // is written to only through MakeModelBufferWritable. Only a model for NPU
-  // has its view made read-only, because that costs initialization time.
-  if (hw_accelerators & kLiteRtHwAcceleratorNpu) {
+  // is written to only through MakeModelBufferWritable. A model for NPU or GPU
+  // has its view made read-only: their weights are copied out (to the NPU or
+  // the GPU), so the view would otherwise hold a commit charge as large as the
+  // inline weights for nothing. A CPU-only model keeps the copy-on-write view,
+  // because making it read-only costs initialization time.
+  if (hw_accelerators & (kLiteRtHwAcceleratorNpu | kLiteRtHwAcceleratorGpu)) {
     litert::internal::KeepModelBufferReadOnlyUntilWritten(
         litert::internal::GetTflFlatbuffer(model).Buf().Data());
   }
@@ -2404,45 +2540,61 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
   }
 
-  bool buffer_requires_cpu_sync = false;
-  bool registered_in_buffer_context = false;
+  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
+                          GetTensorIdentifier(*interp_, tensor));
 
-  Expected<LiteRtTensorBufferRequirementsConst> requirements =
-      buffer_context_->GetBufferRequirements(tensor);
-  if (requirements) {
-    const auto& supported_types = (*requirements)->SupportedBufferTypes();
-
-    for (auto& type : supported_types) {
-      if (type == buffer->buffer_type()) {
-        // Register tensor buffer if it can be used by the backend.
-        buffer->Duplicate();
-        LiteRtTensorBufferPtr duplicated_buffer(buffer);
-        if (auto status = buffer_context_->RegisterTensorBuffer(
-                tensor, std::move(duplicated_buffer));
-            status != kLiteRtStatusOk) {
-          return Unexpected(kLiteRtStatusErrorRuntimeFailure,
-                            "Failed to register tensor buffer");
-        }
-        registered_in_buffer_context = true;
-        LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                                GetTensorIdentifier(*interp_, tensor));
-        user_registered_buffers_.insert(tensor_id);
-
-        // A host buffer shared with CPU nodes needs a CPU allocation even
-        // when it is also registered with an accelerator backend.
-        if (buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory &&
-            cpu_tensors_.contains(tensor_id)) {
-          break;
-        }
-
-        // Mark the tensor as non-CPU to avoid TFLite from allocating it.
-        tensor->allocation_type = kTfLiteNonCpu;
-        tensor->data.data = nullptr;
-        return {};
+  auto can_register_with_backend =
+      [&](LiteRtTensorBufferRequirementsConst reqs) -> Expected<bool> {
+    if (!absl::c_linear_search(reqs->SupportedBufferTypes(),
+                               buffer->buffer_type())) {
+      return false;
+    }
+    if (buffer->buffer_type() != kLiteRtTensorBufferTypeHostMemory) {
+      return true;
+    }
+    // A host buffer shared with CPU nodes needs a CPU allocation and must
+    // not be registered into the backend buffer context.
+    if (cpu_tensors_.contains(tensor_id)) {
+      return false;
+    }
+    if (reqs->BufferSize() > 0 && buffer->buffer_size() < reqs->BufferSize()) {
+      return false;
+    }
+    if (reqs->Alignment() > 0) {
+      LITERT_ASSIGN_OR_RETURN(void* host_mem_addr, buffer->GetHostBuffer());
+      if (reinterpret_cast<uintptr_t>(host_mem_addr) % reqs->Alignment() != 0) {
+        return false;
       }
     }
-    // Unmatched host buffers and CPU-shared host buffers both need a CPU
-    // allocation, including buffers registered with the backend above.
+    return true;
+  };
+
+  bool buffer_requires_cpu_sync = false;
+  if (Expected<LiteRtTensorBufferRequirementsConst> requirements =
+          buffer_context_->GetBufferRequirements(tensor);
+      requirements) {
+    LITERT_ASSIGN_OR_RETURN(const bool can_register,
+                            can_register_with_backend(*requirements));
+    if (can_register) {
+      // Register tensor buffer if it can be used by the backend.
+      buffer->Duplicate();
+      LiteRtTensorBufferPtr duplicated_buffer(buffer);
+      if (auto status = buffer_context_->RegisterTensorBuffer(
+              tensor, std::move(duplicated_buffer));
+          status != kLiteRtStatusOk) {
+        return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                          "Failed to register tensor buffer");
+      }
+      user_registered_buffers_.insert(tensor_id);
+
+      // Mark the tensor as non-CPU to avoid TFLite from allocating it.
+      tensor->allocation_type = kTfLiteNonCpu;
+      tensor->data.data = nullptr;
+      return {};
+    }
+    // Unmatched host buffers (e.g. unaligned/undersized) and CPU-shared host
+    // buffers both need a CPU allocation and must unregister any stale backend
+    // registration.
     // TODO: b/452064364 - refactor register buffer logic.
     buffer_requires_cpu_sync =
         buffer->buffer_type() == kLiteRtTensorBufferTypeHostMemory;
@@ -2453,15 +2605,10 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
   }
 
   if (buffer_requires_cpu_sync) {
-    // A host buffer shared with CPU nodes is registered with the backend above
-    // and still needs CPU sync, so only unregister a stale buffer that was
-    // registered by an earlier RegisterBuffer() call for this tensor.
-    if (!registered_in_buffer_context) {
-      LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                              GetTensorIdentifier(*interp_, tensor));
-      if (user_registered_buffers_.erase(tensor_id) > 0) {
-        buffer_context_->UnregisterTensorBuffer(tensor);
-      }
+    // Unregister a stale buffer that was registered by an earlier
+    // RegisterBuffer() call before falling back to CPU allocation.
+    if (user_registered_buffers_.erase(tensor_id) > 0) {
+      buffer_context_->UnregisterTensorBuffer(tensor);
     }
     // When backend requires CPU buffer.
     bool buffer_is_cpu_compatible =
@@ -2596,8 +2743,6 @@ Expected<void> LiteRtCompiledModelT::RegisterBuffer(
     }
   }
 
-  LITERT_ASSIGN_OR_RETURN(const auto tensor_id,
-                          GetTensorIdentifier(*interp_, tensor));
   if (cpu_tensors_.find(tensor_id) != cpu_tensors_.end()) {
     void* host_mem_addr = nullptr;
     if (auto it = locked_buffers.find(buffer); it != locked_buffers.end()) {
@@ -3438,12 +3583,7 @@ Expected<bool> LiteRtCompiledModelT::SignatureNeedsAllocation(
     const tflite::SignatureRunner* runner) const {
   auto iter = signature_needs_allocation_.find(runner);
   if (iter == signature_needs_allocation_.end()) {
-    // No record means the signature has never been allocated. Until
-    // AllocateTensors() runs, output tensors still carry the shapes serialized
-    // in the model, which can differ from the runtime shapes (e.g. outputs
-    // declared as rank 0 whose shape is set by an op's Prepare()). Report that
-    // allocation is needed so the first shape query returns runtime shapes.
-    return true;
+    return false;
   }
   return iter->second;
 }

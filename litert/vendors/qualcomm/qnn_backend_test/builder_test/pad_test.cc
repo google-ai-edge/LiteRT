@@ -203,14 +203,13 @@ TEST(PadOpBuilderTest, QuantizedPadV2ReadsPadConstTensorDataType) {
                                                  13);
 }
 
-TEST(PadOpBuilderTest, QuantizedPadUsesDefaultZeroPointConstValue) {
+TEST(PadOpBuilderTest, QuantizedPadWithNoConstTensorOmitsPadConstantValue) {
   ::qnn::TensorPool tensor_pool;
   auto ops = BuildQuantizedPadDefaultOp(tensor_pool);
 
   ASSERT_EQ(ops.size(), 1);
   const auto pad_constant_value = GetPadConstantValue(ops.front());
-  ASSERT_TRUE(pad_constant_value.has_value());
-  EXPECT_EQ(*pad_constant_value, 10);
+  EXPECT_FALSE(pad_constant_value.has_value());
 }
 
 TEST(PadOpBuilderTest, QuantizedPadV2RejectsMismatchedPadConstTensorType) {

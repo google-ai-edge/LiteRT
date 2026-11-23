@@ -1025,4 +1025,193 @@
 
   XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
 }
+
+- (void)testDestroyMetalMemoryReleasesBufferWithoutOuterAutoreleasePool {
+  if (!_device) return;
+
+  // Verify that Create/Lock/Unlock/Destroy drain any internal autoreleased
+  // references to the underlying MTLBuffer before returning, so C++ callers
+  // without an outer @autoreleasepool do not retain destroyed GPU buffers.
+  __weak id<MTLBuffer> weakBuffer = nil;
+  @autoreleasepool {
+    LiteRtRankedTensorType tensorType;
+    tensorType.element_type = kLiteRtElementTypeFloat32;
+    tensorType.layout.rank = 1;
+    tensorType.layout.dimensions[0] = 1024;
+    tensorType.layout.has_strides = false;
+
+    const size_t bytes = 1024 * sizeof(float);
+    HwMemoryInfoPtr memoryInfo = nullptr;
+    LiteRtStatus status =
+        LiteRtCreateMetalMemory((__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+                                kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+    XCTAssertEqual(status, kLiteRtStatusOk);
+    XCTAssertTrue(memoryInfo != nullptr);
+
+    @autoreleasepool {
+      weakBuffer = (__bridge id<MTLBuffer>)memoryInfo->raw_handle;
+      XCTAssertNotNil(weakBuffer);
+    }
+
+    void* hostMemory = nullptr;
+    XCTAssertEqual(LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory),
+                   kLiteRtStatusOk);
+    XCTAssertTrue(hostMemory != nullptr);
+    XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+    XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+    // Must be deallocated BEFORE the outer @autoreleasepool drains.
+    XCTAssertNil(weakBuffer);
+  }
+}
+
+- (void)testImportMetalMemoryRetainsAndReleasesWithoutOuterAutoreleasePool {
+  if (!_device) return;
+
+  // Shared MTLBuffer import: verify the imported buffer stays alive after
+  // LiteRtImportMetalMemory returns and the caller drops its strong reference,
+  // and is released immediately on LiteRtDestroyMetalMemory without an outer
+  // @autoreleasepool draining.
+  {
+    __weak id<MTLBuffer> weakBuffer = nil;
+    @autoreleasepool {
+      LiteRtRankedTensorType tensorType;
+      tensorType.element_type = kLiteRtElementTypeFloat32;
+      tensorType.layout.rank = 1;
+      tensorType.layout.dimensions[0] = 1024;
+      tensorType.layout.has_strides = false;
+
+      const size_t bytes = 1024 * sizeof(float);
+      id<MTLBuffer> buffer = [_device newBufferWithLength:bytes
+                                                  options:MTLResourceStorageModeShared];
+      weakBuffer = buffer;
+      @autoreleasepool {
+        XCTAssertNotNil(weakBuffer);
+      }
+
+      HwMemoryInfoPtr memoryInfo = nullptr;
+      LiteRtStatus status = LiteRtImportMetalMemory(
+          (__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+          kLiteRtTensorBufferTypeMetalBuffer, (__bridge void*)buffer, bytes, bytes, &memoryInfo);
+      XCTAssertEqual(status, kLiteRtStatusOk);
+      XCTAssertTrue(memoryInfo != nullptr);
+
+      // Drop caller's strong reference; memoryInfo must still keep the buffer alive.
+      buffer = nil;
+      @autoreleasepool {
+        XCTAssertNotNil(weakBuffer);
+      }
+
+      XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+      // Must be deallocated BEFORE the outer @autoreleasepool drains.
+      XCTAssertNil(weakBuffer);
+    }
+  }
+
+  // Shared MTLTexture import: verify the imported texture stays alive after
+  // LiteRtImportMetalMemory returns and the caller drops its strong reference,
+  // and is released immediately on LiteRtDestroyMetalMemory without an outer
+  // @autoreleasepool draining.
+  {
+    __weak id<MTLTexture> weakTexture = nil;
+    @autoreleasepool {
+      LiteRtRankedTensorType tensorType;
+      tensorType.element_type = kLiteRtElementTypeFloat32;
+      tensorType.layout.rank = 4;
+      tensorType.layout.dimensions[0] = 1;
+      tensorType.layout.dimensions[1] = 4;
+      tensorType.layout.dimensions[2] = 4;
+      tensorType.layout.dimensions[3] = 4;
+      tensorType.layout.has_strides = false;
+
+      const size_t bytes = 4 * 4 * 4 * sizeof(float);
+      MTLTextureDescriptor* desc = [[MTLTextureDescriptor alloc] init];
+      desc.textureType = MTLTextureType2D;
+      desc.pixelFormat = MTLPixelFormatRGBA32Float;
+      desc.width = 4;
+      desc.height = 4;
+      desc.usage = MTLTextureUsageShaderRead | MTLTextureUsageShaderWrite;
+      desc.storageMode = MTLStorageModeShared;
+
+      id<MTLTexture> texture = [_device newTextureWithDescriptor:desc];
+      weakTexture = texture;
+      @autoreleasepool {
+        XCTAssertNotNil(weakTexture);
+      }
+
+      HwMemoryInfoPtr memoryInfo = nullptr;
+      LiteRtStatus status = LiteRtImportMetalMemory(
+          (__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+          kLiteRtTensorBufferTypeMetalTexture, (__bridge void*)texture, bytes, bytes, &memoryInfo);
+      XCTAssertEqual(status, kLiteRtStatusOk);
+      XCTAssertTrue(memoryInfo != nullptr);
+
+      // Drop caller's strong reference; memoryInfo must still keep the texture alive.
+      texture = nil;
+      @autoreleasepool {
+        XCTAssertNotNil(weakTexture);
+      }
+
+      XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+      // Must be deallocated BEFORE the outer @autoreleasepool drains.
+      XCTAssertNil(weakTexture);
+    }
+  }
+}
+
+- (void)testRepeatedCreateLockUnlockDestroyReleasesBuffersWithoutOuterAutoreleasePool {
+  if (!_device) return;
+
+  // Verify that repeated Create/Lock/Unlock/Destroy cycles release each
+  // MTLBuffer immediately on Destroy rather than accumulating in the thread's
+  // root autorelease pool.
+  @autoreleasepool {
+    LiteRtRankedTensorType tensorType;
+    tensorType.element_type = kLiteRtElementTypeFloat32;
+    tensorType.layout.rank = 1;
+    tensorType.layout.dimensions[0] = 1024;
+    tensorType.layout.has_strides = false;
+    const size_t bytes = 1024 * sizeof(float);
+
+    for (int i = 0; i < 5; ++i) {
+      __weak id<MTLBuffer> weakBuffer = nil;
+      HwMemoryInfoPtr memoryInfo = nullptr;
+      LiteRtStatus status = LiteRtCreateMetalMemory(
+          (__bridge void*)_device, (__bridge void*)_commandQueue, &tensorType,
+          kLiteRtTensorBufferTypeMetalBuffer, bytes, bytes, &memoryInfo);
+      XCTAssertEqual(status, kLiteRtStatusOk);
+      XCTAssertTrue(memoryInfo != nullptr);
+
+      @autoreleasepool {
+        weakBuffer = (__bridge id<MTLBuffer>)memoryInfo->raw_handle;
+        XCTAssertNotNil(weakBuffer);
+      }
+
+      void* hostMemory = nullptr;
+      XCTAssertEqual(
+          LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeWrite, &hostMemory),
+          kLiteRtStatusOk);
+      XCTAssertTrue(hostMemory != nullptr);
+      static_cast<float*>(hostMemory)[0] = static_cast<float>(i);
+      XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+      hostMemory = nullptr;
+      XCTAssertEqual(
+          LiteRtLockMetalMemory(memoryInfo, kLiteRtTensorBufferLockModeRead, &hostMemory),
+          kLiteRtStatusOk);
+      XCTAssertTrue(hostMemory != nullptr);
+      XCTAssertEqual(static_cast<const float*>(hostMemory)[0], static_cast<float>(i));
+      XCTAssertEqual(LiteRtUnlockMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+      XCTAssertEqual(LiteRtDestroyMetalMemory(memoryInfo), kLiteRtStatusOk);
+
+      // Must be deallocated immediately on each iteration BEFORE the outer
+      // @autoreleasepool drains.
+      XCTAssertNil(weakBuffer);
+    }
+  }
+}
 @end

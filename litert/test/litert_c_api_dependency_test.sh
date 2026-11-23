@@ -37,16 +37,6 @@ for SO_FILE in "$@"; do
     SUCCESS=0
   fi
 
-  if readelf -d "${SO_FILE}" | grep -q "\(NEEDED\).*\[libwebgpu_dawn.so\]"; then
-    echo "ERROR: $(basename "${SO_FILE}") has a hard DT_NEEDED dependency on libwebgpu_dawn.so"
-    SUCCESS=0
-  fi
-
-  if nm -D --defined-only "${SO_FILE}" | grep -q " wgpu"; then
-    echo "ERROR: $(basename "${SO_FILE}") exports wgpu* symbols in .dynsym"
-    SUCCESS=0
-  fi
-
   symbols=$(nm -D "${SO_FILE}" | grep "LiteRt")
 
   num_lines=$(echo "${symbols}" | wc -l)

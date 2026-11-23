@@ -78,8 +78,6 @@ cc_test(
         "//tensor/examples/utils:safetensor_test_util",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/container:flat_hash_map",
-        "@com_google_absl//absl/status",
-        "@com_google_absl//absl/status:statusor",
         "@com_google_googletest//:gtest_main",
     ],
 )

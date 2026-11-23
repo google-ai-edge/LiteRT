@@ -97,8 +97,9 @@ nb_build_id() {
 }
 
 # nb_runtime_env POOL MODEL: exports the TensorRT-RTX environment of one model cache pool
-# (AOT artifacts, runtime caches and the CUDA JIT cache under POOL). The settings are the
-# same for every Gemma 4 model; the compiler and dispatch choose the rest by model.
+# (AOT artifacts, runtime caches and the CUDA JIT cache under POOL): its paths alone. The
+# compiler's and dispatch's defaults are the settings of every model, and they choose the rest
+# by model.
 nb_runtime_env() {
   local pool=$1 model=$2 variable
   for variable in ${!LITERT_NVIDIA_@}; do unset "$variable"; done
@@ -113,17 +114,9 @@ nb_runtime_env() {
   else
     export LD_LIBRARY_PATH=$NB_RUNTIME_LIBS:$NB_LM/prebuilt/linux_x86_64:$NB_SDK/lib:$NB_CUDA/lib64:/usr/lib/wsl/lib
   fi
-  export LITERT_NVIDIA_TENSORRT_PARTITION_POLICY=gemma4
-  export LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS=bf16
-  export LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS=cuda_gemv
-  export LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS=1
-  export LITERT_NVIDIA_TENSORRT_WEIGHT_STORE=1
-  export LITERT_NVIDIA_TENSORRT_JIT_HANDLE=0
   export LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH=$model
   export LITERT_NVIDIA_TENSORRT_AOT_CACHE_DIR=$pool/aot
   export LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR=$pool/runtime
-  export LITERT_NVIDIA_DISPATCH_SHARED_WEIGHT_SEGMENTS=1
-  export LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES=0
   export CUDA_CACHE_DISABLE=0 CUDA_CACHE_PATH=$pool/compiler/cuda
   export CUDA_HOME=$NB_CUDA TENSORRT_RTX_ROOT=$NB_SDK
 }

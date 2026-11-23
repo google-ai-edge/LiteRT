@@ -48,6 +48,20 @@ constexpr size_t kSharedBytes = 2 * kActivationBytes + 2 * kWeightBytes +
 constexpr int kWarpRowGroups = 4;  // of 16 rows
 constexpr int kWarpColGroups = 4;  // of 8 weight rows
 
+// The grouped GEMM's block: four warps and kGroupedRows activation rows,
+// half a tile; two blocks share a multiprocessor. Its packed weight rows are
+// padded so that the eight a warp reads at once fall in distinct banks.
+constexpr int kGroupedThreads = 128;
+constexpr int kGroupedRows = kLiteRtNvidiaGroupedGemmBlockRows;
+constexpr int kStages = 3;
+constexpr int kPackedRowBytes = kChunk / 2 + 16;
+constexpr size_t kGroupedActivationBytes =
+    static_cast<size_t>(kGroupedRows) * kRowBytes;
+constexpr size_t kGroupedPackedBytes =
+    static_cast<size_t>(kBlockCols) * kPackedRowBytes;
+constexpr size_t kGroupedSharedBytes =
+    kStages * (kGroupedActivationBytes + kGroupedPackedBytes);
+
 // m16n8k16 accumulating in fp16: twice the throughput of fp32 accumulation.
 __device__ __forceinline__ void Mma(uint32_t& d0, uint32_t& d1, uint32_t a0,
                                     uint32_t a1, uint32_t a2, uint32_t a3,
@@ -83,12 +97,29 @@ __device__ __forceinline__ void CopyAsync16(void* shared_pointer,
                : "memory");
 }
 
+// The same, and the global memory's 128-byte block around the source comes
+// into the L2 cache: the next chunks of a weight row then read from there.
+__device__ __forceinline__ void CopyAsync16Ahead(void* shared_pointer,
+                                                 const void* global_pointer) {
+  const uint32_t address =
+      static_cast<uint32_t>(__cvta_generic_to_shared(shared_pointer));
+  asm volatile("cp.async.cg.shared.global.L2::128B [%0], [%1], 16;\n"
+               :
+               : "r"(address), "l"(global_pointer)
+               : "memory");
+}
+
 __device__ __forceinline__ void CommitAsync() {
   asm volatile("cp.async.commit_group;\n" ::: "memory");
 }
 
 __device__ __forceinline__ void WaitAsync() {
   asm volatile("cp.async.wait_group 0;\n" ::: "memory");
+}
+
+// Waits for all but the most recent group of copies.
+__device__ __forceinline__ void WaitAsyncButOne() {
+  asm volatile("cp.async.wait_group 1;\n" ::: "memory");
 }
 
 __device__ __forceinline__ float2 UnpackHalves(uint32_t word) {
@@ -223,10 +254,16 @@ struct WeightAddressing {
   uint64_t max_channel_stride;
   uint64_t max_expert_stride;
   int32_t compact_scales;
+  const int32_t* row_source;
 };
 
-// grid (rows / kBlockRows, column tiles): the blocks that read the same
-// weights are adjacent, so the weights come from memory once. A block
+// The dense GEMM. Its grid is (rows / kBlockRows, column tiles): the blocks
+// that read the same weights are adjacent, so the weights come from memory
+// once, and its activations (a prefill chunk's 1,024 rows) stay in the L2
+// cache. kGrouped: the grouped GEMM whose weights are in host memory; its
+// grid is (column tiles, rows / kBlockRows), the blocks of a row tile
+// adjacent as in the grouped kernel, and a block multiplies a whole tile of
+// the expert addressing.tile_experts names. A block
 // multiplies kBlockRows activation rows by the kBlockCols weight rows of its
 // column tile: the channels [n0, n0 + kBlockCols), or with a gate the
 // channels [n0, n0 + kBlockCols / 2) of the gate projection followed by the
@@ -243,7 +280,7 @@ struct WeightAddressing {
 // kBlockwise: `scales` are FP16 per block of 32 input dims ([channels,
 // input_size / 32]) and multiply the weights as they are converted; otherwise
 // they are BF16 per channel and multiply the sums.
-template <bool kBlockwise>
+template <bool kBlockwise, bool kGrouped>
 __global__ void __launch_bounds__(kThreads, 1)
     Int4GemmKernel(const __half* __restrict__ activation,
                    const WeightAddressing addressing,
@@ -261,9 +298,9 @@ __global__ void __launch_bounds__(kThreads, 1)
   const int lane = tid & 31;
   const int g = lane >> 2;
   const int t = lane & 3;
-  const int m0 = blockIdx.x * kBlockRows;
+  const int m0 = (kGrouped ? blockIdx.y : blockIdx.x) * kBlockRows;
   const int block_channels = gate != 0 ? kBlockCols / 2 : kBlockCols;
-  const int n0 = blockIdx.y * block_channels;
+  const int n0 = (kGrouped ? blockIdx.x : blockIdx.y) * block_channels;
   const int chunks = input_size / kChunk;
 
   // table[byte] = the two INT4 values of the byte as FP16.
@@ -286,9 +323,7 @@ __global__ void __launch_bounds__(kThreads, 1)
       activation + static_cast<size_t>(m0) * input_size + tid * 8;
   const int w_row = tid / 2;
   const int w_channel = min(n0 + w_row % block_channels, output_size - 1);
-  const int expert = addressing.tile_experts == nullptr
-                         ? 0
-                         : addressing.tile_experts[blockIdx.x];
+  const int expert = kGrouped ? addressing.tile_experts[blockIdx.y] : 0;
   if (expert < 0) return;  // an unused tile of a grouped GEMM
   const bool up_half = w_row / block_channels != 0;
   const uint8_t* weight_row =
@@ -599,6 +634,361 @@ __global__ void __launch_bounds__(kThreads, 1)
   }
 }
 
+// The grouped GEMM over weights in device memory (in host memory: the
+// dense GEMM's kernel). Its grid is (column tiles, rows / kGroupedRows): the
+// blocks of a row tile are adjacent, so its activations come from memory
+// once. Its padded rows (Gemma 4 26B-A4B's experts: about 18,000 rows,
+// 100 MB, for a 1,024-token chunk) would otherwise come from memory once per
+// column tile, while the weights of a tile's expert are read by that tile's
+// blocks either way. A block multiplies kGroupedRows activation rows, half a
+// tile of the pre-pass's layout, by the kBlockCols weight rows of its column
+// tile (as the dense GEMM's block does). Warp w owns the 32 weight rows from
+// 32 w and every row of the block: four row groups times four column groups
+// per k-slice, with each product's operands and order as in the dense GEMM.
+// A block whose first row is no gathered row holds none of the expert's rows
+// (they come first in its tiles): it returns, which leaves those output rows
+// as they are.
+//
+// Two blocks share a multiprocessor, so the warps of one multiply while
+// those of the other wait at their chunk's barrier. A block walks the input
+// dims in chunks through kStages buffers: while it multiplies chunk c, the
+// activations and packed weights of chunk c + 2 are copied into shared
+// memory. A warp converts the packed weights of its own weight rows into the
+// products' operands in registers. With about 64 rows per expert a launch
+// reads the weights of every expert once, 32 bytes of each of a block's
+// weight rows per chunk: the copies bring their 128-byte blocks into the L2
+// cache, so that the next three chunks of a row do not each cost an access
+// to memory.
+template <bool kBlockwise>
+__global__ void __launch_bounds__(kGroupedThreads, 2)
+    Int4GroupedGemmKernel(const __half* __restrict__ activation,
+                   const WeightAddressing addressing,
+                   const float* __restrict__ row_scale, int input_size,
+                   int output_size, int gate,
+                   __nv_bfloat16* __restrict__ output) {
+  extern __shared__ __align__(16) unsigned char smem[];
+  unsigned char* activation_s = smem;
+  unsigned char* packed_s = smem + kStages * kGroupedActivationBytes;
+
+  const int tid = threadIdx.x;
+  const int warp = tid >> 5;
+  const int lane = tid & 31;
+  const int g = lane >> 2;
+  const int t = lane & 3;
+  const int m0 = blockIdx.y * kGroupedRows;
+  const int tile = m0 / kBlockRows;
+  const int block_channels = gate != 0 ? kBlockCols / 2 : kBlockCols;
+  const int n0 = blockIdx.x * block_channels;
+  const int chunks = input_size / kChunk;
+  const int expert = addressing.tile_experts[tile];
+  if (expert < 0) return;  // an unused tile
+  if (addressing.row_source != nullptr && addressing.row_source[m0] < 0) {
+    return;  // none of the expert's rows
+  }
+
+  // Weight row r of the block: channel n0 + r % block_channels of the gate
+  // (or only) projection for r < block_channels, of the up projection
+  // otherwise. Channels past the last one read the last one; their products
+  // are not stored.
+  auto channel_of = [&](int r) {
+    return min(n0 + r % block_channels, output_size - 1);
+  };
+  auto up_half = [&](int r) { return r / block_channels != 0; };
+
+  // Thread tid copies 16-byte vectors tid + 128 j of the block's activations
+  // of a chunk (rows tid / 8 + 16 j) and the 32 bytes of weight row tid.
+  const __half* activation_rows =
+      activation + static_cast<size_t>(tile) * kBlockRows * input_size +
+      (m0 % kBlockRows) * kChunk + tid * 8;
+  unsigned char* activation_thread =
+      activation_s + (tid / 8) * kRowBytes + (tid % 8) * 16;
+  const uint8_t* weight_row =
+      (up_half(tid) ? addressing.up : addressing.gate) +
+      expert * addressing.expert_stride +
+      static_cast<uint64_t>(channel_of(tid)) * addressing.channel_stride;
+  unsigned char* packed_thread = packed_s + tid * kPackedRowBytes;
+  auto copy_chunk = [&](int chunk, int stage) {
+#pragma unroll
+    for (int j = 0; j < kGroupedRows * kChunk / 8 / kGroupedThreads; ++j) {
+      CopyAsync16(activation_thread + stage * kGroupedActivationBytes +
+                      j * (kGroupedThreads / 8) * kRowBytes,
+                  activation_rows +
+                      static_cast<size_t>(chunk) * kBlockRows * kChunk +
+                      j * kGroupedThreads * 8);
+    }
+    const uint8_t* source = weight_row + static_cast<size_t>(chunk) * (kChunk / 2);
+    CopyAsync16Ahead(packed_thread + stage * kGroupedPackedBytes, source);
+    CopyAsync16Ahead(packed_thread + stage * kGroupedPackedBytes + 16,
+                     source + 16);
+  };
+
+  // The lane's weight rows are 32 warp + 8 cg + g. A "B" operand of
+  // m16n8k16 holds, for weight row g of an 8-row group, the dims {2t, 2t + 1}
+  // and {2t + 8, 2t + 9} of the k-slice: bytes t and t + 4 of the slice's 8
+  // packed bytes. Their scales: the 32-dim blocks 2 c and 2 c + 1 of chunk c.
+  const unsigned char* packed_lane = packed_s + (warp * 32 + g) * kPackedRowBytes;
+  const void* scale_rows[kWarpColGroups];
+  float row_max[kWarpColGroups];
+#pragma unroll
+  for (int cg = 0; cg < kWarpColGroups; ++cg) {
+    const int r = warp * 32 + cg * 8 + g;
+    const uint64_t offset =
+        expert * addressing.expert_scale_stride +
+        static_cast<uint64_t>(channel_of(r)) * addressing.scale_channel_stride;
+    const void* base = up_half(r) ? addressing.up_scales : addressing.gate_scales;
+    scale_rows[cg] = addressing.compact_scales != 0
+                         ? static_cast<const void*>(static_cast<const uint8_t*>(base) + offset)
+                         : static_cast<const void*>(static_cast<const __half*>(base) + offset);
+    row_max[cg] = 0.0f;
+    if constexpr (kBlockwise) {
+      if (addressing.compact_scales != 0) {
+        const __half* maxima = static_cast<const __half*>(
+            up_half(r) ? addressing.up_scale_max : addressing.gate_scale_max);
+        row_max[cg] =
+            __half2float(maxima[expert * addressing.max_expert_stride +
+                                static_cast<uint64_t>(channel_of(r)) *
+                                    addressing.max_channel_stride]) *
+            (1.0f / 255.0f);
+      }
+    }
+  }
+  // The scale of a block as its stored bits, read a chunk ahead.
+  auto scale_bits = [&](int cg, int block) -> uint32_t {
+    if constexpr (kBlockwise) {
+      if (addressing.compact_scales != 0) {
+        return static_cast<const uint8_t*>(scale_rows[cg])[block];
+      }
+      return __half_as_ushort(static_cast<const __half*>(scale_rows[cg])[block]);
+    } else {
+      return 0;
+    }
+  };
+  auto scale_of = [&](int cg, uint32_t bits) -> __half2 {
+    if constexpr (kBlockwise) {
+      if (addressing.compact_scales != 0) {
+        return __half2half2(
+            __float2half_rn(row_max[cg] * static_cast<float>(bits)));
+      }
+      return __half2half2(__ushort_as_half(static_cast<unsigned short>(bits)));
+    } else {
+      return __half2half2(__float2half(1.0f));
+    }
+  };
+  // Byte t of a word: its two INT4 values as FP16 (1024 + (n ^ 8) is exact in
+  // FP16, and so is subtracting 1032), times the block's scale.
+  const uint32_t byte_selector = 0x4440u | static_cast<uint32_t>(t);
+  const __half2 bias = __halves2half2(__ushort_as_half(0x6408), __ushort_as_half(0x6408));
+  auto convert = [&](uint32_t word, __half2 scale) -> uint32_t {
+    const uint32_t spread = __byte_perm(word, 0u, byte_selector) * 0x1001u;
+    uint32_t bits;
+    asm("lop3.b32 %0, %1, %2, %3, 0x6a;\n"  // (a & b) ^ c
+        : "=r"(bits)
+        : "r"(spread), "r"(0x000f000fu), "r"(0x64086408u));
+    __half2 value = __hsub2(*reinterpret_cast<const __half2*>(&bits), bias);
+    if constexpr (kBlockwise) {
+      value = __hmul2(value, scale);
+    }
+    return *reinterpret_cast<const uint32_t*>(&value);
+  };
+
+  float acc[kWarpRowGroups][kWarpColGroups][4];
+  uint32_t sums[kWarpRowGroups][kWarpColGroups][2];
+#pragma unroll
+  for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+    for (int cg = 0; cg < kWarpColGroups; ++cg) {
+      acc[rg][cg][0] = acc[rg][cg][1] = acc[rg][cg][2] = acc[rg][cg][3] = 0.0f;
+      sums[rg][cg][0] = sums[rg][cg][1] = 0;
+    }
+  }
+
+  // Per-lane "A" addresses: a 16x16 operand is {rows 0-7, rows 8-15} x
+  // {dims 0-7, dims 8-15}.
+  const unsigned char* activation_lane =
+      activation_s + ((lane & 7) + ((lane >> 3) & 1) * 8) * kRowBytes +
+      (lane >> 4) * 16;
+  struct Operands {
+    uint32_t a[kWarpRowGroups][4];
+    uint32_t b[kWarpColGroups][2];
+  };
+  __half2 scales[kWarpColGroups][2];
+  auto load_operands = [&](int stage, int slice, Operands& operands) {
+    const unsigned char* a_slice =
+        activation_lane + stage * kGroupedActivationBytes + slice * 32;
+#pragma unroll
+    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+      LoadMatrixX4(operands.a[rg][0], operands.a[rg][1], operands.a[rg][2],
+                   operands.a[rg][3], a_slice + rg * 16 * kRowBytes);
+    }
+    const unsigned char* b_slice =
+        packed_lane + stage * kGroupedPackedBytes + slice * 8;
+#pragma unroll
+    for (int cg = 0; cg < kWarpColGroups; ++cg) {
+      const uint2 words = *reinterpret_cast<const uint2*>(
+          b_slice + cg * 8 * kPackedRowBytes);
+      operands.b[cg][0] = convert(words.x, scales[cg][slice / 2]);
+      operands.b[cg][1] = convert(words.y, scales[cg][slice / 2]);
+    }
+  };
+
+  // Chunks 0 and 1 in flight; the scales of chunk 0 now, of chunk 1 a chunk
+  // ahead.
+  copy_chunk(0, 0);
+  CommitAsync();
+  if (chunks > 1) {
+    copy_chunk(1, 1);
+  }
+  CommitAsync();
+  uint32_t next_bits[kWarpColGroups][2];
+#pragma unroll
+  for (int cg = 0; cg < kWarpColGroups; ++cg) {
+    scales[cg][0] = scale_of(cg, scale_bits(cg, 0));
+    scales[cg][1] = scale_of(cg, scale_bits(cg, 1));
+    const int next = min(1, chunks - 1);
+    next_bits[cg][0] = scale_bits(cg, 2 * next);
+    next_bits[cg][1] = scale_bits(cg, 2 * next + 1);
+  }
+  WaitAsyncButOne();
+  __syncthreads();
+
+  int stage = 0;
+  for (int chunk = 0; chunk < chunks; ++chunk) {
+    // Chunk + 2 goes where chunk - 1 was, which every warp has finished
+    // reading (the barrier at the end of chunk - 1).
+    if (chunk + 2 < chunks) {
+      copy_chunk(chunk + 2, stage == 0 ? 2 : stage - 1);
+    }
+    CommitAsync();
+    Operands operands;
+    load_operands(stage, 0, operands);
+#pragma unroll
+    for (int slice = 0; slice < kSlices; ++slice) {
+      Operands next;
+      if (slice + 1 < kSlices) {
+        load_operands(stage, slice + 1, next);
+      }
+#pragma unroll
+      for (int cg = 0; cg < kWarpColGroups; ++cg) {
+#pragma unroll
+        for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+          Mma(sums[rg][cg][0], sums[rg][cg][1], operands.a[rg][0],
+              operands.a[rg][1], operands.a[rg][2], operands.a[rg][3],
+              operands.b[cg][0], operands.b[cg][1]);
+        }
+      }
+      if (slice + 1 < kSlices) {
+        operands = next;
+      }
+    }
+    // The fp16 sums cover two chunks: 128 products.
+    if ((chunk & 1) != 0 || chunk + 1 == chunks) {
+#pragma unroll
+      for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+        for (int cg = 0; cg < kWarpColGroups; ++cg) {
+          const float2 lo = UnpackHalves(sums[rg][cg][0]);
+          const float2 hi = UnpackHalves(sums[rg][cg][1]);
+          acc[rg][cg][0] += lo.x;
+          acc[rg][cg][1] += lo.y;
+          acc[rg][cg][2] += hi.x;
+          acc[rg][cg][3] += hi.y;
+          sums[rg][cg][0] = sums[rg][cg][1] = 0;
+        }
+      }
+    }
+#pragma unroll
+    for (int cg = 0; cg < kWarpColGroups; ++cg) {
+      scales[cg][0] = scale_of(cg, next_bits[cg][0]);
+      scales[cg][1] = scale_of(cg, next_bits[cg][1]);
+      const int next = min(chunk + 2, chunks - 1);
+      next_bits[cg][0] = scale_bits(cg, 2 * next);
+      next_bits[cg][1] = scale_bits(cg, 2 * next + 1);
+    }
+    WaitAsyncButOne();
+    __syncthreads();
+    stage = stage == kStages - 1 ? 0 : stage + 1;
+  }
+  WaitAsync();
+
+  // acc[rg][cg][{0, 1}] are row 16 rg + g, weight rows 8 cg + 2t + {0, 1} of
+  // the warp's tile; acc[rg][cg][{2, 3}] row 16 rg + g + 8. With a gate, the
+  // warps w and w + 2 hold the gate and the up projection of the same
+  // channels: the gate goes through shared memory.
+  const int warp_col = warp * 32;
+  float* gate_s = reinterpret_cast<float*>(smem);
+  if (gate != 0 && warp_col < block_channels) {
+#pragma unroll
+    for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+#pragma unroll
+      for (int cg = 0; cg < kWarpColGroups; ++cg) {
+        float* lo = gate_s + (rg * 16 + g) * block_channels + warp_col +
+                    cg * 8 + 2 * t;
+        *reinterpret_cast<float2*>(lo) =
+            make_float2(acc[rg][cg][0], acc[rg][cg][1]);
+        *reinterpret_cast<float2*>(lo + 8 * block_channels) =
+            make_float2(acc[rg][cg][2], acc[rg][cg][3]);
+      }
+    }
+  }
+  if (gate != 0) {
+    __syncthreads();
+    if (warp_col < block_channels) {
+      return;
+    }
+  }
+#pragma unroll
+  for (int rg = 0; rg < kWarpRowGroups; ++rg) {
+    const int row = rg * 16 + g;
+    const float unscale_lo = 1.0f / row_scale[m0 + row];
+    const float unscale_hi = 1.0f / row_scale[m0 + row + 8];
+    __nv_bfloat16* out_lo =
+        output + static_cast<size_t>(m0 + row) * output_size;
+    __nv_bfloat16* out_hi = out_lo + static_cast<size_t>(8) * output_size;
+#pragma unroll
+    for (int cg = 0; cg < kWarpColGroups; ++cg) {
+      const int column = (gate != 0 ? warp_col - block_channels : warp_col) +
+                         cg * 8 + 2 * t;
+      const int n = n0 + column;
+      if (n >= output_size) continue;
+      float2 lo = make_float2(acc[rg][cg][0], acc[rg][cg][1]);
+      float2 hi = make_float2(acc[rg][cg][2], acc[rg][cg][3]);
+      float2 scale = make_float2(1.0f, 1.0f);
+      float2 gate_scale = make_float2(1.0f, 1.0f);
+      if constexpr (!kBlockwise) {
+        // Per-channel scales: channel n of the (up) projection, consecutive.
+        const auto* up_or_plain = static_cast<const __nv_bfloat16*>(
+            gate != 0 ? addressing.up_scales : addressing.gate_scales);
+        scale = __bfloat1622float2(
+            *reinterpret_cast<const __nv_bfloat162*>(up_or_plain + n));
+        if (gate != 0) {
+          gate_scale = __bfloat1622float2(
+              *reinterpret_cast<const __nv_bfloat162*>(
+                  static_cast<const __nv_bfloat16*>(addressing.gate_scales) +
+                  n));
+        }
+      }
+      lo.x *= scale.x * unscale_lo;
+      lo.y *= scale.y * unscale_lo;
+      hi.x *= scale.x * unscale_hi;
+      hi.y *= scale.y * unscale_hi;
+      if (gate != 0) {
+        const float2 gate_lo = *reinterpret_cast<const float2*>(
+            gate_s + row * block_channels + column);
+        const float2 gate_hi = *reinterpret_cast<const float2*>(
+            gate_s + (row + 8) * block_channels + column);
+        lo.x *= Gelu(gate_lo.x * gate_scale.x * unscale_lo, gate);
+        lo.y *= Gelu(gate_lo.y * gate_scale.y * unscale_lo, gate);
+        hi.x *= Gelu(gate_hi.x * gate_scale.x * unscale_hi, gate);
+        hi.y *= Gelu(gate_hi.y * gate_scale.y * unscale_hi, gate);
+      }
+      *reinterpret_cast<__nv_bfloat162*>(out_lo + n) =
+          __floats2bfloat162_rn(lo.x, lo.y);
+      *reinterpret_cast<__nv_bfloat162*>(out_hi + n) =
+          __floats2bfloat162_rn(hi.x, hi.y);
+    }
+  }
+}
+
 size_t ScaleBytes(int rows) {
   return (static_cast<size_t>(rows) * sizeof(float) + 255) / 256 * 256;
 }
@@ -699,7 +1089,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
   static bool attribute_set[2] = {false, false};
   if (!attribute_set[blockwise]) {
     const cudaError_t status = cudaFuncSetAttribute(
-        blockwise ? Int4GemmKernel<true> : Int4GemmKernel<false>,
+        blockwise ? Int4GemmKernel<true, false> : Int4GemmKernel<false, false>,
         cudaFuncAttributeMaxDynamicSharedMemorySize,
         static_cast<int>(kSharedBytes));
     if (status != cudaSuccess) return status;
@@ -731,11 +1121,11 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GemmNormed(
       nullptr};
   const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
   if (blockwise) {
-    Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
+    Int4GemmKernel<true, false><<<grid, kThreads, kSharedBytes, stream>>>(
         scaled, addressing, row_scale, shape->input_size, shape->output_size,
         shape->gate, static_cast<__nv_bfloat16*>(output));
   } else {
-    Int4GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
+    Int4GemmKernel<false, false><<<grid, kThreads, kSharedBytes, stream>>>(
         scaled, addressing, row_scale, shape->input_size, shape->output_size,
         shape->gate, static_cast<__nv_bfloat16*>(output));
   }
@@ -779,15 +1169,6 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
     return cudaErrorInvalidValue;
   }
   const bool blockwise = shape->scale_block == 32;
-  static bool attribute_set[2] = {false, false};
-  if (!attribute_set[blockwise]) {
-    const cudaError_t status = cudaFuncSetAttribute(
-        blockwise ? Int4GemmKernel<true> : Int4GemmKernel<false>,
-        cudaFuncAttributeMaxDynamicSharedMemorySize,
-        static_cast<int>(kSharedBytes));
-    if (status != cudaSuccess) return status;
-    attribute_set[blockwise] = true;
-  }
   const WeightAddressing addressing = {
       weights->gate,           weights->up,
       weights->gate_scales,    weights->up_scales,
@@ -795,18 +1176,47 @@ extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4GroupedGemm(
       weights->expert_stride,  weights->expert_scale_stride,
       weights->tile_experts,   weights->gate_scale_max,
       weights->up_scale_max,   weights->max_channel_stride,
-      weights->max_expert_stride, weights->compact_scales};
-  const dim3 grid(shape->rows / kBlockRows, ColumnTiles(*shape));
+      weights->max_expert_stride, weights->compact_scales,
+      weights->row_source};
+  if (weights->host_memory != 0) {
+    // Whole tiles through the dense GEMM's kernel: the same products in the
+    // same order, so the rows of the expert are bit-identical.
+    static bool attribute_set[2] = {false, false};
+    if (!attribute_set[blockwise]) {
+      const cudaError_t status = cudaFuncSetAttribute(
+          blockwise ? Int4GemmKernel<true, true> : Int4GemmKernel<false, true>,
+          cudaFuncAttributeMaxDynamicSharedMemorySize,
+          static_cast<int>(kSharedBytes));
+      if (status != cudaSuccess) return status;
+      attribute_set[blockwise] = true;
+    }
+    const dim3 tiles(ColumnTiles(*shape), shape->rows / kBlockRows);
+    if (blockwise) {
+      Int4GemmKernel<true, true><<<tiles, kThreads, kSharedBytes, stream>>>(
+          static_cast<const __half*>(scaled), addressing, row_scale,
+          shape->input_size, shape->output_size, shape->gate,
+          static_cast<__nv_bfloat16*>(output));
+    } else {
+      Int4GemmKernel<false, true><<<tiles, kThreads, kSharedBytes, stream>>>(
+          static_cast<const __half*>(scaled), addressing, row_scale,
+          shape->input_size, shape->output_size, shape->gate,
+          static_cast<__nv_bfloat16*>(output));
+    }
+    return cudaGetLastError();
+  }
+  const dim3 grid(ColumnTiles(*shape), shape->rows / kGroupedRows);
   if (blockwise) {
-    Int4GemmKernel<true><<<grid, kThreads, kSharedBytes, stream>>>(
-        static_cast<const __half*>(scaled), addressing, row_scale,
-        shape->input_size, shape->output_size, shape->gate,
-        static_cast<__nv_bfloat16*>(output));
+    Int4GroupedGemmKernel<true>
+        <<<grid, kGroupedThreads, kGroupedSharedBytes, stream>>>(
+            static_cast<const __half*>(scaled), addressing, row_scale,
+            shape->input_size, shape->output_size, shape->gate,
+            static_cast<__nv_bfloat16*>(output));
   } else {
-    Int4GemmKernel<false><<<grid, kThreads, kSharedBytes, stream>>>(
-        static_cast<const __half*>(scaled), addressing, row_scale,
-        shape->input_size, shape->output_size, shape->gate,
-        static_cast<__nv_bfloat16*>(output));
+    Int4GroupedGemmKernel<false>
+        <<<grid, kGroupedThreads, kGroupedSharedBytes, stream>>>(
+            static_cast<const __half*>(scaled), addressing, row_scale,
+            shape->input_size, shape->output_size, shape->gate,
+            static_cast<__nv_bfloat16*>(output));
   }
   return cudaGetLastError();
 }

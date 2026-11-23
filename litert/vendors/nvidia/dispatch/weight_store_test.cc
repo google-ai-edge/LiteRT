@@ -20,6 +20,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdlib>
@@ -315,6 +316,57 @@ TEST_F(EngineWeightMemoryTest, RejectsStoresThatDoNotAddUp) {
   auto memory = EngineWeightMemory::Create(Store(), stream_);
   ASSERT_TRUE(memory.HasValue()) << memory.Error().Message();
   EXPECT_EQ((*memory)->shared_segment_bytes(), 0);
+}
+
+// Host memory that is not page-locked, copied to the device in stretches: one
+// of more than two upload chunks, and short ones after it.
+TEST_F(EngineWeightMemoryTest, CopiesPageableHostMemoryToTheDevice) {
+  const uint64_t long_bytes = (70 << 20) + 12345;
+  const uint64_t short_bytes = 4099;
+  const uint64_t total = long_bytes + 2 * short_bytes;
+  void* device = nullptr;
+  ASSERT_EQ(cudaMalloc(&device, total), cudaSuccess);
+  auto* const target = static_cast<uint8_t*>(device);
+  // The stretches land where they are sent, not in the order of the source.
+  const std::vector<HostToDeviceCopy> copies = {
+      {file_.data() + 4096, long_bytes, target + short_bytes},
+      {file_.data() + (75 << 20), short_bytes, target},
+      {file_.data(), short_bytes, target + short_bytes + long_bytes}};
+  auto copied = CopyToDevice(copies, stream_);
+  ASSERT_TRUE(copied.HasValue()) << copied.Error().Message();
+  std::vector<uint8_t> read(total);
+  ASSERT_EQ(cudaMemcpy(read.data(), device, total, cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (const HostToDeviceCopy& copy : copies) {
+    const auto* const source = static_cast<const uint8_t*>(copy.source);
+    const size_t at = static_cast<uint8_t*>(copy.target) - target;
+    EXPECT_TRUE(std::equal(source, source + copy.size, read.begin() + at));
+  }
+  EXPECT_EQ(cudaFree(device), cudaSuccess);
+}
+
+// A copy that is cancelled before it starts sends nothing and says so by
+// returning: the device memory is as it was.
+TEST_F(EngineWeightMemoryTest, ACancelledCopyLeavesTheRestOut) {
+  const uint64_t bytes = 40 << 20;
+  void* device = nullptr;
+  ASSERT_EQ(cudaMalloc(&device, bytes), cudaSuccess);
+  ASSERT_EQ(cudaMemset(device, 0x5a, bytes), cudaSuccess);
+  std::atomic<bool> cancel{true};
+  auto copied = CopyToDevice({{file_.data(), bytes, device}}, stream_, &cancel);
+  ASSERT_TRUE(copied.HasValue()) << copied.Error().Message();
+  std::vector<uint8_t> read(bytes);
+  ASSERT_EQ(cudaMemcpy(read.data(), device, bytes, cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_EQ(read, std::vector<uint8_t>(bytes, 0x5a));
+  // The same copy, not cancelled, is made.
+  cancel = false;
+  copied = CopyToDevice({{file_.data(), bytes, device}}, stream_, &cancel);
+  ASSERT_TRUE(copied.HasValue()) << copied.Error().Message();
+  ASSERT_EQ(cudaMemcpy(read.data(), device, bytes, cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  EXPECT_TRUE(std::equal(read.begin(), read.end(), file_.begin()));
+  EXPECT_EQ(cudaFree(device), cudaSuccess);
 }
 
 // Packs signed INT4 values two per byte, low nibble first (TFLite layout).

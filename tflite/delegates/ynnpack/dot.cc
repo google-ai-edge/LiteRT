@@ -424,6 +424,11 @@ TfLiteStatus DefineMatMul(TfLiteContext* context, ynn_subgraph_t subgraph,
       *output_id = dot_output_id;
     }
   } else {
+    if (*output_id == YNN_INVALID_VALUE_ID) {
+      TF_LITE_ENSURE_YNN_STATUS(
+          ynn_define_tensor(subgraph, GetYnnType(output_tensor.type), 0,
+                            nullptr, nullptr, 0, output_id));
+    }
     TF_LITE_ENSURE_YNN_STATUS(
         ynn_define_dot(subgraph, /*num_k_dims=*/1, current_a_id, current_b_id,
                        broadcasted_bias_id, output_id, 0));
@@ -481,7 +486,6 @@ TfLiteStatus IsBatchMatMulSupported(const TfLiteRegistration* registration,
   if (input_a.type == kTfLiteInt8) {
     TF_LITE_ENSURE(context, input_b.type == kTfLiteInt8 ||
                                 input_b.type == kTfLiteInt4 ||
-                                input_b.type == kTfLiteUInt4 ||
                                 input_b.type == kTfLiteInt2);
     TF_LITE_ENSURE(context,
                    output.type == kTfLiteInt8 || output.type == kTfLiteInt32);
@@ -489,7 +493,6 @@ TfLiteStatus IsBatchMatMulSupported(const TfLiteRegistration* registration,
     if (!is_float_type(input_b.type)) {
       TF_LITE_ENSURE(context, input_b.type == kTfLiteInt8 ||
                                   input_b.type == kTfLiteInt4 ||
-                                  input_b.type == kTfLiteUInt4 ||
                                   input_b.type == kTfLiteInt2);
       if (!is_runtime_bmm) {
         const auto* params =
@@ -506,7 +509,7 @@ TfLiteStatus IsBatchMatMulSupported(const TfLiteRegistration* registration,
     return kTfLiteError;
   }
 
-  if (input_b.type == kTfLiteInt4 || input_b.type == kTfLiteUInt4) {
+  if (input_b.type == kTfLiteInt4) {
     TF_LITE_ENSURE(context, input_b.dims->size >= 2);
     TF_LITE_ENSURE_EQ(context, input_b.dims->data[input_b.dims->size - 1] % 2,
                       0);
@@ -609,7 +612,6 @@ TfLiteStatus IsFullyConnectedSupported(
   if (input.type == kTfLiteInt8) {
     TF_LITE_ENSURE(context, weights.type == kTfLiteInt8 ||
                                 weights.type == kTfLiteInt4 ||
-                                weights.type == kTfLiteUInt4 ||
                                 weights.type == kTfLiteInt2);
     TF_LITE_ENSURE_EQ(context, output.type, kTfLiteInt8);
     if (has_bias) {
@@ -620,7 +622,6 @@ TfLiteStatus IsFullyConnectedSupported(
     TF_LITE_ENSURE(context, is_float_type(weights.type) ||
                                 weights.type == kTfLiteInt8 ||
                                 weights.type == kTfLiteInt4 ||
-                                weights.type == kTfLiteUInt4 ||
                                 weights.type == kTfLiteInt2);
     TF_LITE_ENSURE(context, is_float_type(output.type));
     if (has_bias) {
@@ -631,7 +632,7 @@ TfLiteStatus IsFullyConnectedSupported(
     return kTfLiteError;
   }
 
-  if (weights.type == kTfLiteInt4 || weights.type == kTfLiteUInt4) {
+  if (weights.type == kTfLiteInt4) {
     TF_LITE_ENSURE_EQ(context, weights.dims->size, 2);
     TF_LITE_ENSURE_EQ(context, weights.dims->data[0] % 2, 0);
     TF_LITE_ENSURE_EQ(context, weights.dims->data[1] % 2, 0);

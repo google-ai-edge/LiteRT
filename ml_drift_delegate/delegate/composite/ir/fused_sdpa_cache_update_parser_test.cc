@@ -18,6 +18,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <utility>
@@ -25,8 +26,11 @@
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
+#include "absl/status/status.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
 #include "ml_drift_delegate/tflite/convert/stub_delegate.h"
@@ -167,6 +171,354 @@ TEST_F(ConvertFusedSdpaCacheUpdateTest, RejectsNonMultipleOf4CacheSize) {
   ASSERT_NE(interpreter, nullptr);
   ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
   EXPECT_EQ(GetIrModel(delegate_), nullptr);
+}
+
+void SetQuantizationScale(TfLiteTensor* tensor, float scale) {
+  ASSERT_EQ(tensor->quantization.type, kTfLiteAffineQuantization);
+  auto* quantization =
+      static_cast<TfLiteAffineQuantization*>(tensor->quantization.params);
+  ASSERT_EQ(quantization->scale->size, 1);
+  quantization->scale->data[0] = scale;
+}
+
+void SetQuantizationZeroPoint(TfLiteTensor* tensor, int32_t zero_point) {
+  ASSERT_EQ(tensor->quantization.type, kTfLiteAffineQuantization);
+  auto* quantization =
+      static_cast<TfLiteAffineQuantization*>(tensor->quantization.params);
+  ASSERT_EQ(quantization->zero_point->size, 1);
+  quantization->zero_point->data[0] = zero_point;
+  tensor->params.zero_point = zero_point;
+}
+
+TEST_F(ConvertFusedSdpaCacheUpdateTest, SlidingWindowInt8CacheWithFloatSlices) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  const int Hkv = 2, G = 4, T = 128, W = 512, D = 256;
+  builder.AddInput(kTfLiteFloat32, {1, Hkv, G * T, D});  // query
+  builder.AddInput(kTfLiteInt8, {1, Hkv, W, D});         // key_cache
+  builder.AddInput(kTfLiteInt8, {1, Hkv, D, W});         // value_cache
+  builder.AddInput(kTfLiteFloat32, {1, Hkv, T, D});      // key_new
+  builder.AddInput(kTfLiteFloat32, {1, Hkv, D, T});      // value_new
+  builder.AddInput(kTfLiteBool, {1, 1, T, W + T});       // mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});          // param
+  builder.AddOutput(kTfLiteFloat32, {1, Hkv, G * T, D});
+  builder.AddOutput(kTfLiteInt8, {1, Hkv, W, D});
+  builder.AddOutput(kTfLiteInt8, {1, Hkv, D, W});
+  builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(1), 0.03893793f));
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(2), 0.06902508f));
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(8), 0.03893793f));
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(9), 0.06902508f));
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_EQ(ir_model->tensor(op->inputs[1])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(ir_model->tensor(op->inputs[2])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(ir_model->tensor(op->outputs[1])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(ir_model->tensor(op->outputs[2])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::FusedSdpaCacheUpdateAttributes>(
+          &op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_cache_dtype, ::ml_drift::DataType::kInt8);
+  ASSERT_TRUE(attr->scale_k.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_k, 0.03893793f);
+  ASSERT_TRUE(attr->scale_v.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_v, 0.06902508f);
+}
+
+TEST_F(ConvertFusedSdpaCacheUpdateTest,
+       Int8QueryAndInt8SlicesWithPackedInt4KvCache) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  const int Hkv = 2, G = 2, T = 4, W = 16, D = 16;
+  builder.AddInput(kTfLiteInt8, {1, Hkv, G * T, D});  // query
+  builder.AddInput(kTfLiteInt4, {1, Hkv, W, D});      // key_cache
+  builder.AddInput(kTfLiteInt4, {1, Hkv, D, W});      // value_cache
+  builder.AddInput(kTfLiteInt8, {1, Hkv, T, D});      // key_new
+  builder.AddInput(kTfLiteInt8, {1, Hkv, D, T});      // value_new
+  builder.AddInput(kTfLiteBool, {1, 1, T, W + T});    // mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param
+  builder.AddOutput(kTfLiteFloat32, {1, Hkv, G * T, D});
+  builder.AddOutput(kTfLiteInt4, {1, Hkv, W, D});
+  builder.AddOutput(kTfLiteInt4, {1, Hkv, D, W});
+  builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(0), 0.015625f));
+  ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(interpreter->tensor(1), 0.25f));
+  ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(interpreter->tensor(2), 0.5f));
+  ASSERT_NO_FATAL_FAILURE(
+      SetQuantizationScale(interpreter->tensor(3), 0.0625f));
+  ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(interpreter->tensor(4), 0.125f));
+  ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(interpreter->tensor(8), 0.25f));
+  ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(interpreter->tensor(9), 0.5f));
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_EQ(ir_model->tensor(op->inputs[0])->desc.GetDataType(),
+            ::ml_drift::DataType::kInt8);
+  EXPECT_EQ(ir_model->tensor(op->inputs[3])->desc.GetDataType(),
+            ::ml_drift::DataType::kInt8);
+  EXPECT_EQ(ir_model->tensor(op->inputs[4])->desc.GetDataType(),
+            ::ml_drift::DataType::kInt8);
+  EXPECT_EQ(ir_model->tensor(op->inputs[1])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, Hkv, W, D / 2));
+  EXPECT_EQ(ir_model->tensor(op->inputs[2])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, Hkv, D / 2, W));
+  EXPECT_EQ(ir_model->tensor(op->outputs[1])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, Hkv, W, D / 2));
+  EXPECT_EQ(ir_model->tensor(op->outputs[2])->desc.GetBHWCShape(),
+            ::ml_drift::BHWC(1, Hkv, D / 2, W));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::FusedSdpaCacheUpdateAttributes>(
+          &op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_cache_dtype, ::ml_drift::DataType::kInt4);
+  ASSERT_TRUE(attr->scale_q.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_q, 0.015625f);
+  ASSERT_TRUE(attr->scale_key_new.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_key_new, 0.0625f);
+  ASSERT_TRUE(attr->scale_value_new.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_value_new, 0.125f);
+}
+
+TEST_F(ConvertFusedSdpaCacheUpdateTest, RejectsInvalidQuantizedConfigurations) {
+  // INT4 requires head_dim divisible by 8 (D = 12 fails).
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 12});
+    builder.AddInput(kTfLiteInt4, {1, 2, 16, 12});
+    builder.AddInput(kTfLiteInt4, {1, 2, 12, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 12});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 12, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 12});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+    EXPECT_EQ(GetIrModel(delegate_), nullptr);
+  }
+  // Non-zero zero_point on query is rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteInt8, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationZeroPoint(interpreter->tensor(0), 3));
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // Mismatched K and V cache types (INT8 vs FLOAT32) are rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // Float KV caches paired with INT8 key_new/value_new slices are rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // Mismatched output cache scale vs input cache scale is rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddOutput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddOutput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationScale(interpreter->tensor(1), 0.125f));
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationScale(interpreter->tensor(2), 0.125f));
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationScale(interpreter->tensor(8), 0.25f));
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationScale(interpreter->tensor(9), 0.125f));
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+  // Non-zero zero_point on key_new/value_new slices is rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_NO_FATAL_FAILURE(
+        SetQuantizationZeroPoint(interpreter->tensor(3), 5));
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // INT4 key_new/value_new slices are rejected for INT4 and INT8 KV caches.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    for (int idx : {1, 2, 3, 4}) {
+      ASSERT_NO_FATAL_FAILURE(
+          SetQuantizationScale(interpreter->tensor(idx), 0.25f));
+    }
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // A non-finite scale on an INT8 query is rejected.
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteInt8, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteFloat32, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    ASSERT_NO_FATAL_FAILURE(SetQuantizationScale(
+        interpreter->tensor(0), std::numeric_limits<float>::quiet_NaN()));
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt8, {1, 2, 16, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 4, 16});
+    builder.AddInput(kTfLiteInt4, {1, 2, 16, 4});
+    builder.AddInput(kTfLiteBool, {1, 1, 4, 20});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 4, 16});
+    builder.SetParameters(CreateFusedSdpaCacheUpdateParams());
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    for (int idx : {1, 2, 3, 4}) {
+      ASSERT_NO_FATAL_FAILURE(
+          SetQuantizationScale(interpreter->tensor(idx), 0.25f));
+    }
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetFusedSdpaCacheUpdateParser();
+    EXPECT_EQ(parser
+                  .is_supported(interpreter->primary_subgraph().context(),
+                                &pair->first, &pair->second)
+                  .code(),
+              absl::StatusCode::kUnimplemented);
+  }
 }
 
 }  // namespace

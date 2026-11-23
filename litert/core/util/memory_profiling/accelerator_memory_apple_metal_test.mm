@@ -57,7 +57,7 @@
 #include "absl/strings/str_format.h"  // from @com_google_absl
 #include "litert/core/util/memory_profiling/host_memory.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 namespace {
 
 constexpr uint64_t kMb = 1024 * 1024;
@@ -565,4 +565,4 @@ TEST_F(AppleMetalMemoryTest, ReadOnlyPrivateMappedWeightsWrappedWithoutCopy) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling

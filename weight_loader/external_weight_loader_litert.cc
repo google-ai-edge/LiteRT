@@ -840,11 +840,17 @@ class LiteRtWeightLoader : public WeightLoader {
       LiteRtRuntimeContext* runtime_context, const tflite::Model* model,
       std::optional<std::string> model_directory,
       std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-      const WeightInMemoryMap* weight_in_memory_map = nullptr)
+      const WeightInMemoryMap* weight_in_memory_map = nullptr,
+      std::shared_ptr<WebWeightUploader> web_weight_uploader = nullptr)
       : runtime_context_(runtime_context),
         model_directory_(std::move(model_directory)),
         scoped_weight_source_(std::move(scoped_weight_source)),
         weight_in_memory_map_(weight_in_memory_map) {
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+    web_weight_uploader_ = std::move(web_weight_uploader);
+#else
+    (void)web_weight_uploader;
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
     ParseFlatBuffer(*model, infos_, entries_, canonical_external_buffer_ids_,
                     group_paths_);
     if (scoped_weight_source_) {
@@ -1063,12 +1069,17 @@ class LiteRtWeightLoader : public WeightLoader {
     if (requests.empty()) {
       return {};
     }
-    if (g_web_weight_upload_callback == nullptr) {
+    absl::Status s;
+    if (web_weight_uploader_ != nullptr) {
+      s = web_weight_uploader_->Upload(queue, requests);
+    } else if (g_web_weight_upload_callback != nullptr) {
+      s = g_web_weight_upload_callback(queue, requests);
+    } else {
       return litert::Unexpected(
           kLiteRtStatusErrorFailedPrecondition,
-          "Web weight upload callback is not registered.");
+          "No web weight uploader is set for the model, and no web weight "
+          "upload callback is registered.");
     }
-    absl::Status s = g_web_weight_upload_callback(queue, requests);
     if (!s.ok()) {
       return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                                 std::string(s.message()));
@@ -1192,6 +1203,10 @@ class LiteRtWeightLoader : public WeightLoader {
 #endif
   absl::flat_hash_map<uint32_t, litert::ScopedWeightSection> group_sections_;
   const WeightInMemoryMap* weight_in_memory_map_;  // Client provided, not owned
+#if defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
+  // Client provided. Null to use g_web_weight_upload_callback.
+  std::shared_ptr<WebWeightUploader> web_weight_uploader_;
+#endif  // defined(__EMSCRIPTEN__) && LITERT_HAS_WEBGPU_SUPPORT
 
   mutable std::vector<WeightInfo> weight_info_cache_;
 };
@@ -1208,10 +1223,12 @@ std::unique_ptr<WeightLoader> CreateLiteRtWeightLoader(
     LiteRtRuntimeContext* runtime_context, const tflite::Model* flatbuffer,
     std::optional<std::string> model_directory,
     std::unique_ptr<litert::ScopedWeightSource> scoped_weight_source,
-    const WeightInMemoryMap* weight_in_memory_map) {
+    const WeightInMemoryMap* weight_in_memory_map,
+    std::shared_ptr<WebWeightUploader> web_weight_uploader) {
   return std::make_unique<LiteRtWeightLoader>(
       runtime_context, flatbuffer, std::move(model_directory),
-      std::move(scoped_weight_source), std::move(weight_in_memory_map));
+      std::move(scoped_weight_source), weight_in_memory_map,
+      std::move(web_weight_uploader));
 }
 
 }  // namespace weight_loader

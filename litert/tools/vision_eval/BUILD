@@ -24,7 +24,7 @@ load("@rules_python//python:py_test.bzl", "py_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
 )
 
 proto_library(

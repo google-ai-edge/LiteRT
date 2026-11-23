@@ -229,7 +229,7 @@ TEST(FloatActivationFullyConnectedValidationTest, RejectsInvalidQuantization) {
         quantization->quantized_dimension = 1;
         break;
       case 2:
-        quantization->zero_points[0] = 1;
+        quantization->zero_points = ZeroPoints::Int({1});
         break;
       case 3:
         quantization->scales[0] = 0.0f;

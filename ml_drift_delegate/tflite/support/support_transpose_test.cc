@@ -133,6 +133,62 @@ TEST_F(TransposeOpTest, RejectsInt64) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
 }
 
+TEST_F(TransposeOpTest, RejectsUnsupportedOutputDtype) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kTfLiteFloat32, {1, 2, 3, 4});
+  const int perm = context_builder.AddConstTensor(kTfLiteInt32, {4});
+  const int out = context_builder.AddTensor(kTfLiteInt64, {1, 4, 2, 3});
+  context_builder.SetOp(kTfLiteBuiltinTranspose, 1, nullptr, {input, perm},
+                        {out});
+
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(TransposeOpTest, SupportsPerTensorQuantizedInt4) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, {1, 2, 3, 4}, /*scale_size=*/1);
+  const int perm = context_builder.AddConstTensor(kTfLiteInt32, {4});
+  const int out = context_builder.AddQuantizedTensor(kTfLiteInt4, {1, 4, 2, 3},
+                                                     /*scale_size=*/1);
+  context_builder.SetOp(kTfLiteBuiltinTranspose, 1, nullptr, {input, perm},
+                        {out});
+
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_F(TransposeOpTest, RejectsUnquantizedInt4) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddTensor(kTfLiteInt4, {1, 2, 3, 4});
+  const int perm = context_builder.AddConstTensor(kTfLiteInt32, {4});
+  const int out = context_builder.AddTensor(kTfLiteInt4, {1, 4, 2, 3});
+  context_builder.SetOp(kTfLiteBuiltinTranspose, 1, nullptr, {input, perm},
+                        {out});
+
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_F(TransposeOpTest, RejectsPerChannelQuantizedInt4) {
+  StubContextBuilder context_builder;
+  const int input = context_builder.AddQuantizedTensor(
+      kTfLiteInt4, {1, 2, 3, 4}, /*scale_size=*/2);
+  const int perm = context_builder.AddConstTensor(kTfLiteInt32, {4});
+  const int out = context_builder.AddQuantizedTensor(kTfLiteInt4, {1, 4, 2, 3},
+                                                     /*scale_size=*/2);
+  context_builder.SetOp(kTfLiteBuiltinTranspose, 1, nullptr, {input, perm},
+                        {out});
+
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_THAT(context, NotNull());
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 class TransposeOpDataTypeTest : public testing::TestWithParam<TfLiteType> {};
 
 TEST_P(TransposeOpDataTypeTest, SupportsValidTranspose) {

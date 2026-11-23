@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
 #include <memory>
 #include <utility>
@@ -24,15 +25,17 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
-#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "tensor/arithmetic.h"
 #include "tensor/backends/testing/numerical_test_bridge.h"
 #include "tensor/backends/testing/numerical_test_suite.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
-#include "tensor/backends/xnnpack/conversion.h"
+#include "tensor/buffer.h"
+#include "tensor/datatypes.h"
 #include "tensor/runners/xnnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+#include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
 namespace {
@@ -98,31 +101,129 @@ class XnnpackTestBackendBridge : public TestBackendBridge {
 
 struct XnnpackTraits {
   using Tag = XnnpackMixinTag;
-  // TODO(b/574438217): Enable these tests once the XNNPACK backend is fixed.
-  static constexpr absl::string_view kDisabledTests[] = {
-      // Blocks of 16 fail when the runtime is created.
-      "FullyConnectedQuantizedWeightsOp",
-      // Fully connected ops reject per-tensor int8 weights.
-      "FullyConnectedPerTensorAndAsymmetricOp",
-      // Batch matmuls reject int4 right-hand sides.
-      "BatchMatMulQuantizedRhsOp",
-      // Transposes reject int4 and blockwise values.
-      "TransposedQuantizedWeightsIntoBatchMatMulOp",
-      // Transposes reject int4 values, and asymmetric int4 weights fail to
-      // dequantize.
-      "TransposedQuantizedWeightsIntoAddOp",
-      // Dequantizing int4 values aborts in an XNNPACK assertion.
-      "QuantizedWeightsSharedByDotAndAddOp",
-      // Per-channel zero points of tensors that aren't constants are
-      // dequantized as if they were constants, which fails.
-      "DequantizePerChannelOp",
-  };
   static std::unique_ptr<TestBackendBridge> CreateBridge() {
     return std::make_unique<XnnpackTestBackendBridge>();
   }
 };
 
 INSTANTIATE_TYPED_TEST_SUITE_P(Xnnpack, NumericalTestSuite, XnnpackTraits);
+
+// Runs `FullyConnected` on XNNPACK with `[4, 32]` weights holding `levels`
+// quantized with `scales` and `zero_points`, and compares it against a float
+// reference. Runs a `BatchMatMul` with `adj_y` instead if `batch_matmul`.
+template <Type kWeightType>
+void ExpectQuantizedFullyConnectedMatchesReference(
+    const int8_t (&levels)[4], const std::vector<float>& scales,
+    ZeroPoints zero_points, bool batch_matmul = false) {
+  using XnnTensor = Tensor<XnnpackMixinTag>;
+  constexpr int kBatch = 2;
+  constexpr int kInCols = 32;
+  constexpr int kOutCols = 4;
+
+  // Input activation with range [-127, 128] (span 255) and integer values, so
+  // qdint8 dynamic quantization has unit scale (255 / 255 = 1) and zero
+  // rounding error.
+  std::vector<float> x_vals(kBatch * kInCols);
+  for (int b = 0; b < kBatch; ++b) {
+    for (int i = 0; i < kInCols; ++i) {
+      constexpr float kInputs[4] = {-127.0f, -32.0f, 32.0f, 128.0f};
+      x_vals[b * kInCols + i] = kInputs[(b + i) % 4];
+    }
+  }
+
+  std::vector<int8_t> q_vals(kOutCols * kInCols);
+  for (int o = 0; o < kOutCols; ++o) {
+    for (int i = 0; i < kInCols; ++i) {
+      q_vals[o * kInCols + i] = levels[(o + i) % 4];
+    }
+  }
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const float zero_point,
+                                  zero_points.Scalar<float>());
+  auto w_buf = OwningCpuBuffer::Copy<kWeightType>(q_vals);
+
+  XnnTensor x(
+      TensorInit{.name = "x", .type = Type::kFP32, .shape = {kBatch, kInCols}});
+  XnnTensor w(
+      TensorInit{.name = "w",
+                 .type = kWeightType,
+                 .shape = {kOutCols, kInCols},
+                 .buffer = w_buf,
+                 .quantization = std::make_shared<PerChannelAffineQuantization>(
+                     scales, std::move(zero_points),
+                     /*quantized_dimension=*/0)});
+  XnnTensor y = batch_matmul
+                    ? BatchMatMul(x, w, /*adj_x=*/false, /*adj_y=*/true)
+                    : FullyConnected(x, w);
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(XnnpackRunner runner,
+                                  XnnpackRunner::Create({y}));
+  ASSERT_TRUE(runner.SetInput(x, x_vals).ok());
+  ASSERT_TRUE(runner.Run().ok());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LockedBufferSpan<const float> actual,
+                                  runner.ReadOutputAs<float>(y));
+
+  for (int b = 0; b < kBatch; ++b) {
+    for (int o = 0; o < kOutCols; ++o) {
+      const float scale = scales.size() == 1 ? scales[0] : scales[o];
+      float expected = 0.0f;
+      for (int i = 0; i < kInCols; ++i) {
+        const float w_deq =
+            (static_cast<float>(q_vals[o * kInCols + i]) - zero_point) * scale;
+        expected += x_vals[b * kInCols + i] * w_deq;
+      }
+      EXPECT_NEAR(actual.data()[b * kOutCols + o], expected, 5e-2f)
+          << "batch=" << b << " out=" << o;
+    }
+  }
+}
+
+TEST(XnnpackCenteredInt2Test, FullyConnectedWithFloatZeroPoint) {
+  // Signed 2-bit values in {-2, -1, 0, +1}; with zero_point = -0.5f,
+  // dequantized weight is (q + 0.5f) * scale in {-1.5, -0.5, +0.5, +1.5} * s.
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
+      {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
+      /*zero_points=*/ZeroPoints::Float({-0.5f}));
+}
+
+TEST(XnnpackCenteredInt2Test, FullyConnectedWithSingleScale) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
+      {-2, -1, 0, 1}, /*scales=*/{0.25f},
+      /*zero_points=*/ZeroPoints::Float({-0.5f}));
+}
+
+TEST(XnnpackInt2Test, FullyConnectedWithSingleScaleAndNoZeroPoint) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
+      {-2, -1, 0, 1}, /*scales=*/{0.25f}, /*zero_points=*/{});
+}
+
+TEST(XnnpackInt4Test, FullyConnectedWithSingleScale) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
+      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{});
+}
+
+// The right-hand side is dequantized to floats, so the batch matmul isn't
+// lowered to a fully connected op.
+TEST(XnnpackInt8Test, BatchMatMulWithFloatZeroPoint) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI8>(
+      {-8, -1, 0, 7}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
+      /*zero_points=*/ZeroPoints::Float({-0.5f}), /*batch_matmul=*/true);
+}
+
+// XNNPACK's batch matmul doesn't take int2 right-hand sides, but its fully
+// connected operator does, with their zero points.
+TEST(XnnpackInt2Test, BatchMatMulWithZeroPoint) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
+      {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
+      /*zero_points=*/ZeroPoints::Int({-1}), /*batch_matmul=*/true);
+}
+
+// Int4 values with a single scale are channelwise quantized, which XNNPACK's
+// batch matmul doesn't take but its fully connected operator does.
+TEST(XnnpackInt4Test, BatchMatMulWithSingleScale) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
+      {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{},
+      /*batch_matmul=*/true);
+}
 
 }  // namespace
 }  // namespace litert::tensor

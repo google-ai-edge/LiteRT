@@ -61,6 +61,140 @@ TEST(LiteRtBuilderTest, EraseOpNullBuilderReturnsError) {
             kLiteRtStatusErrorInvalidArgument);
 }
 
+TEST(LiteRtBuilderTest, SetOpInputIsStagedUntilApplyChanges) {
+  LiteRtSubgraphT subgraph;
+  auto& old_tensor = subgraph.EmplaceTensor();
+  auto& other_tensor = subgraph.EmplaceTensor();
+  auto& output_tensor = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  litert::internal::AttachInput(&old_tensor, op);
+  litert::internal::AttachInput(&other_tensor, op);
+  litert::internal::AttachOutput(&output_tensor, op);
+
+  LiteRtBuilderT builder;
+  LiteRtTensorT& new_tensor = builder.BuildTensor(old_tensor);
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &new_tensor));
+
+  EXPECT_THAT(op.Inputs(), ElementsAre(&old_tensor, &other_tensor));
+  EXPECT_EQ(old_tensor.NumUses(), 1);
+  EXPECT_EQ(new_tensor.NumUses(), 0);
+
+  builder.ApplyChanges(&subgraph);
+
+  EXPECT_THAT(op.Inputs(), ElementsAre(&new_tensor, &other_tensor));
+  ASSERT_EQ(new_tensor.NumUses(), 1);
+  auto [user, arg_ind] = new_tensor.GetUse(0);
+  EXPECT_EQ(user, &op);
+  EXPECT_EQ(arg_ind, 0);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputDiscardedWithoutApplyChanges) {
+  LiteRtSubgraphT subgraph;
+  auto& old_tensor = subgraph.EmplaceTensor();
+  auto& output_tensor = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflRelu);
+  litert::internal::AttachInput(&old_tensor, op);
+  litert::internal::AttachOutput(&output_tensor, op);
+
+  {
+    LiteRtBuilderT builder;
+    LiteRtTensorT& new_tensor = builder.BuildTensor(old_tensor);
+    LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &new_tensor));
+  }
+
+  EXPECT_THAT(op.Inputs(), ElementsAre(&old_tensor));
+  EXPECT_EQ(old_tensor.NumUses(), 1);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputLastUpdateWins) {
+  LiteRtSubgraphT subgraph;
+  auto& old_tensor = subgraph.EmplaceTensor();
+  auto& output_tensor = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflRelu);
+  litert::internal::AttachInput(&old_tensor, op);
+  litert::internal::AttachOutput(&output_tensor, op);
+
+  LiteRtBuilderT builder;
+  LiteRtTensorT& first = builder.BuildTensor(old_tensor);
+  LiteRtTensorT& second = builder.BuildTensor(old_tensor);
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &first));
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &second));
+  builder.ApplyChanges(&subgraph);
+
+  EXPECT_THAT(op.Inputs(), ElementsAre(&second));
+  EXPECT_EQ(first.NumUses(), 0);
+  EXPECT_EQ(second.NumUses(), 1);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputHandlesNullOldTensor) {
+  LiteRtSubgraphT subgraph;
+  auto& output_tensor = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflRelu);
+  litert::internal::AttachOutput(&output_tensor, op);
+  op.Inputs().push_back(nullptr);
+
+  LiteRtBuilderT builder;
+  LiteRtTensorT& new_tensor = builder.BuildTensor(output_tensor);
+  LITERT_ASSERT_OK(LiteRtBuilderSetOpInput(&builder, &op, 0, &new_tensor));
+  builder.ApplyChanges(&subgraph);
+
+  EXPECT_THAT(op.Inputs(), ElementsAre(&new_tensor));
+  ASSERT_EQ(new_tensor.NumUses(), 1);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputNullArgumentsReturnError) {
+  LiteRtBuilderT builder;
+  LiteRtOpT op;
+  LiteRtTensorT tensor;
+  EXPECT_EQ(LiteRtBuilderSetOpInput(nullptr, &op, 0, &tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, nullptr, 0, &tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, &op, 0, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(LiteRtBuilderTest, SetOpInputOutOfRangeIndexReturnsError) {
+  LiteRtBuilderT builder;
+  LiteRtOpT op;
+  LiteRtTensorT input_tensor;
+  LiteRtTensorT new_tensor;
+  op.Inputs().push_back(&input_tensor);
+  EXPECT_EQ(LiteRtBuilderSetOpInput(&builder, &op, 1, &new_tensor),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_THAT(op.Inputs(), ElementsAre(&input_tensor));
+  EXPECT_EQ(new_tensor.NumUses(), 0);
+}
+
+TEST(LiteRtBuilderTest, IsSubgraphOutput) {
+  LiteRtSubgraphT subgraph;
+  auto& out = subgraph.EmplaceTensor();
+  auto& other = subgraph.EmplaceTensor();
+  subgraph.Outputs().push_back(&out);
+  LiteRtBuilderT builder;
+  bool is_output = false;
+
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, &out, &is_output),
+            kLiteRtStatusErrorNotFound);
+
+  builder.SetTargetSubgraph(&subgraph);
+  LITERT_ASSERT_OK(LiteRtBuilderIsSubgraphOutput(&builder, &out, &is_output));
+  EXPECT_TRUE(is_output);
+  LITERT_ASSERT_OK(LiteRtBuilderIsSubgraphOutput(&builder, &other, &is_output));
+  EXPECT_FALSE(is_output);
+
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(nullptr, &out, &is_output),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, nullptr, &is_output),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtBuilderIsSubgraphOutput(&builder, &out, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(LiteRtBuilderTest, CanBuildUnrankedTensor) {
   LiteRtBuilderT builder;
   LiteRtTensor tensor;

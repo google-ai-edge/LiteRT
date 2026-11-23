@@ -426,5 +426,14 @@ TEST(ByteSizeTest, AnEmptyBufferReportsZero) {
   EXPECT_THAT(buffer.ByteSize(), IsOkAndHolds(size_t{0}));
 }
 
+TEST(ByteSizeTest, AllocateShapeExceedingInt32MaxDoesNotOverflow) {
+  // 65536 * 32768 = 2,147,483,648 elements (> INT32_MAX = 2,147,483,647),
+  // packed at 2 bits/element = 512 MiB.
+  const std::shared_ptr<OwningCpuBuffer> buffer =
+      OwningCpuBuffer::Allocate<Type::kI2>({65536, 32768});
+  ASSERT_THAT(buffer, NotNull());
+  EXPECT_THAT(buffer->ByteSize(), IsOkAndHolds(size_t{512} * 1024 * 1024));
+}
+
 }  // namespace
 }  // namespace litert::tensor

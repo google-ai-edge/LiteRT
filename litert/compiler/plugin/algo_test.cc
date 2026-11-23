@@ -19,6 +19,7 @@
 #include <utility>
 #include <vector>
 
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
@@ -664,6 +665,21 @@ TEST(TestCompositeInlining, RemapsSignatureOutputAliases) {
   EXPECT_EQ(*named_output, graph.Outputs().front());
   EXPECT_EQ(original->GetInputTensor(0), input);
   EXPECT_EQ(alias.GetInputTensor(0), input);
+}
+
+TEST(TestCompositeInlining, FailsIfDestinationOpIsNotInModel) {
+  LiteRtModelT model;
+  model.EmplaceSubgraph();
+  auto& decomp_subgraph = model.EmplaceSubgraph();
+
+  LiteRtModelT other_model;
+  auto& orphan_op = other_model.EmplaceSubgraph().EmplaceOp();
+
+  auto result = InlineSubgraph(model, orphan_op, &decomp_subgraph);
+  ASSERT_FALSE(result.HasValue());
+  EXPECT_THAT(
+      result.Error().Message(),
+      ::testing::HasSubstr("Failed to find the subgraph containing the op"));
 }
 
 TEST(TestCompositeInlining, inlineSimpleComposite) {

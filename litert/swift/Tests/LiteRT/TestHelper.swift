@@ -12,9 +12,21 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import CLiteRT
 import Foundation
 import XCTest
 @testable import LiteRT
+
+/// Returns the string value of the option `tag` that `environment` was created with, if any.
+func stringOption(_ tag: LiteRtEnvOptionTag, of environment: Environment) throws -> String? {
+  var options: LiteRtEnvironmentOptions?
+  try checkStatus(LiteRtGetEnvironmentOptions(environment.cEnvironment, &options))
+  var value = LiteRtAny()
+  guard LiteRtGetEnvironmentOptionsValue(options, tag, &value) == kLiteRtStatusOk else {
+    return nil
+  }
+  return String(cString: value.str_value)
+}
 
 func createTestEnvironment(options: [Environment.Option] = []) throws -> Environment {
   var resolvedOptions = options

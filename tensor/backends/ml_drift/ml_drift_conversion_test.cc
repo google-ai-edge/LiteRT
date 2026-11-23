@@ -854,7 +854,7 @@ TEST_F(MlDriftConversionTest, DequantizeOp) {
   TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
   auto quant_params = std::make_shared<PerChannelAffineQuantization>();
   quant_params->scales = {0.25f};
-  quant_params->zero_points = {0};
+  quant_params->zero_points = ZeroPoints::Int({0});
   quant_input.SetQuantization(quant_params);
   TensorMLD output = Dequantize(quant_input);
   auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
@@ -1670,6 +1670,19 @@ TEST_F(MlDriftConversionTest, MaximumOp) {
               })));
 }
 
+// ML Drift has no float zero point support outside the FullyConnected
+// weights, so it rejects them instead of silently dropping them.
+TEST_F(MlDriftConversionTest, DequantizeRejectsFloatZeroPoints) {
+  TensorMLD quant_input({.type = Type::kI8, .shape = {1, 2, 2, 1}});
+  auto quant_params = std::make_shared<PerChannelAffineQuantization>();
+  quant_params->scales = {0.25f};
+  quant_params->zero_points = ZeroPoints::Float({-0.5f});
+  quant_input.SetQuantization(quant_params);
+  TensorMLD output = Dequantize(quant_input);
+  EXPECT_EQ(AppendGpuModelBuilder(context_, {output}).status().code(),
+            absl::StatusCode::kUnimplemented);
+}
+
 TEST_F(MlDriftConversionTest, EmbeddingLookupOp) {
   TensorMLD ids({.type = Type::kI32, .shape = {1, 4}});
   TensorMLD weights({.type = Type::kFP32, .shape = {8, 4}});
@@ -1960,7 +1973,7 @@ TEST_F(MlDriftConversionTest, DequantizeSymmetricPerChannelOpSkipsZeroPoints) {
        .shape = {2, 3},
        .quantization = std::make_shared<PerChannelAffineQuantization>(
            /*scales=*/std::vector<float>{0.1f, 0.3f},
-           /*zero_points=*/std::vector<int64_t>{0, 0},
+           /*zero_points=*/ZeroPoints::Int({0, 0}),
            /*quantized_dimension=*/0)});
   TensorMLD output = Dequantize(input);
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto tensor_to_handle_map,

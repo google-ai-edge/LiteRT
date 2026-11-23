@@ -66,21 +66,24 @@ if ($Mode -notin @('wheel', 'prebuilts')) {
 }
 
 # Prebuilt binaries: Bazel target -> file name in the archive.
-$PrebuiltTargets = if ($TargetArch -eq 'arm64') { [ordered]@{
+$PrebuiltTargets = [ordered]@{
   '//litert/c:litert_runtime_c_api_dll' = 'libLiteRt.dll'
   '//litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_dll' = 'libLiteRtWebGpuAccelerator.dll'
-  '//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm' = 'LiteRtCompilerPlugin_Qualcomm.dll'
-  '//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm' = 'LiteRtDispatch_Qualcomm.dll'
   '//litert/tools:benchmark_model' = 'benchmark_model.exe'
   '//litert/tools:run_model' = 'run_model.exe'
   '//litert/tools:gpu_numerics_check' = 'gpu_numerics_check.exe'
   '//litert/tools:npu_numerics_check' = 'npu_numerics_check.exe'
   '//litert/tools:apply_plugin_main' = 'apply_plugin_main.exe'
   '//litert/tools:analyze_model_main' = 'analyze_model_main.exe'
-} } else { [ordered]@{
-  '//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin_IntelOpenvino' = 'LiteRtCompilerPlugin_IntelOpenvino.dll'
-  '//litert/vendors/intel_openvino/dispatch:LiteRtDispatch_IntelOpenvino' = 'LiteRtDispatch_IntelOpenvino.dll'
-} }
+}
+if ($TargetArch -eq 'arm64') {
+  $PrebuiltTargets['//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm'] = 'LiteRtCompilerPlugin_Qualcomm.dll'
+  $PrebuiltTargets['//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm'] = 'LiteRtDispatch_Qualcomm.dll'
+}
+else {
+  $PrebuiltTargets['//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin_IntelOpenvino'] = 'LiteRtCompilerPlugin_IntelOpenvino.dll'
+  $PrebuiltTargets['//litert/vendors/intel_openvino/dispatch:LiteRtDispatch_IntelOpenvino'] = 'LiteRtDispatch_IntelOpenvino.dll'
+}
 $PrebuiltsPlatform = "windows_$TargetArch"
 [string[]]$BuildTargets = if ($Mode -eq 'prebuilts') { @($PrebuiltTargets.Keys) } else { @('//ci/tools/python/wheel:litert_wheel') }
 

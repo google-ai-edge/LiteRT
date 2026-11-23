@@ -15,9 +15,12 @@ limitations under the License.
 
 #include "tensor/runners/ml_drift/compiled_ml_drift_model_runner.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -33,6 +36,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/compile.h"
+#include "tensor/internal/graph.h"
 #include "tensor/runners/ml_drift/ml_drift_cl_model_runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -165,6 +169,62 @@ TEST(CompiledMlDriftModelRunnerTest, ConstantInt8FullyConnectedWeights) {
         expected[b * kOut + o] +=
             input[b * kIn + i] *
             (static_cast<float>(qweights[o * kIn + i]) * scales[o]);
+      }
+    }
+  }
+  EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(1e-4f), expected));
+}
+
+TEST(CompiledMlDriftModelRunnerTest,
+     ConstantInt8FullyConnectedWeightsWithFloatZeroPoints) {
+  constexpr int kBatch = 2;
+  constexpr int kIn = 8;
+  constexpr int kOut = 6;
+  std::vector<int8_t> qweights(kOut * kIn);
+  for (int i = 0; i < qweights.size(); ++i) {
+    qweights[i] = static_cast<int8_t>((i % 11) - 5);
+  }
+  std::vector<float> scales(kOut);
+  std::vector<float> zero_points(kOut);
+  for (int o = 0; o < kOut; ++o) {
+    scales[o] = 0.05f * static_cast<float>(o + 1);
+    zero_points[o] = static_cast<float>((o % 3) - 1) + 0.5f;
+  }
+  std::vector<float> input(kBatch * kIn);
+  for (int i = 0; i < input.size(); ++i) {
+    input[i] = 0.1f * static_cast<float>((i % 7) - 3);
+  }
+  auto quantization = std::make_shared<PerChannelAffineQuantization>(
+      scales, ZeroPoints::Float(zero_points), /*quantized_dimension=*/0);
+
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, kBatch, kIn}});
+  TensorMLD w({.name = "w",
+               .type = Type::kI8,
+               .shape = {kOut, kIn},
+               .buffer = qweights,
+               .quantization = quantization});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+
+  Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, kBatch, kIn},
+                 .buffer = input});
+  ASSERT_THAT(runner.SetInput("x", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("y"));
+
+  std::vector<float> expected(kBatch * kOut, 0.0f);
+  for (int b = 0; b < kBatch; ++b) {
+    for (int o = 0; o < kOut; ++o) {
+      for (int i = 0; i < kIn; ++i) {
+        expected[b * kOut + o] +=
+            input[b * kIn + i] *
+            ((static_cast<float>(qweights[o * kIn + i]) - zero_points[o]) *
+             scales[o]);
       }
     }
   }
@@ -308,6 +368,168 @@ TEST(CompiledMlDriftModelRunnerTest,
     }
   }
   EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(1e-4f), expected));
+}
+
+// INT4 weights tied between an EmbeddingLookup and a later FullyConnected
+// (e.g. an LM head) get the FullyConnected's `sum_i` when 8-bit convolutions
+// are allowed.
+TEST(CompiledMlDriftModelRunnerTest,
+     TiedInt4EmbeddingAndFullyConnectedWeightsGetSumI) {
+  constexpr int kTokens = 2;
+  constexpr int kVocab = 8;
+  constexpr int kDim = 32;
+  std::shared_ptr<OwningCpuBuffer> w_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(kVocab * kDim);
+  int4_t* packed = w_buf->Span<int4_t>().data();
+  std::vector<int> unpacked(kVocab * kDim);
+  for (int idx = 0; idx < (kVocab * kDim) / 2; ++idx) {
+    const int v0 = (idx % 11) - 5;
+    const int v1 = ((idx * 3 + 2) % 11) - 5;
+    packed[idx].a = v0;
+    packed[idx].b = v1;
+    unpacked[2 * idx + 0] = v0;
+    unpacked[2 * idx + 1] = v1;
+  }
+  std::vector<float> scales(kVocab);
+  for (int v = 0; v < kVocab; ++v) {
+    scales[v] = 0.01f * static_cast<float>(v + 1);
+  }
+  const std::vector<int32_t> ids = {1, 6};
+
+  MlDriftClBackend::Environment shared_env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&shared_env), IsOk());
+  Runner::SharedWeightsCache shared_weights;
+
+  TensorMLD ids_in({.name = "ids", .type = Type::kI32, .shape = {1, kTokens}});
+  TensorMLD w({.name = "tied",
+               .type = Type::kI4,
+               .shape = {kVocab, kDim},
+               .buffer = w_buf,
+               .quantization = std::make_shared<PerChannelAffineQuantization>(
+                   scales, std::vector<int64_t>(kVocab, 0),
+                   /*quantized_dimension=*/0)});
+  TensorMLD logits = FullyConnected(EmbeddingLookup(ids_in, w), w);
+  logits.SetName("logits");
+
+  Runner runner({ids_in}, {logits}, ml_drift::CalculationsPrecision::kF32,
+                &shared_env, &shared_weights, /*allow_8bit_convs=*/true);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  EXPECT_TRUE(shared_weights.descriptors.contains("tied.sum_i"));
+
+  TensorMLD fed({.name = "ids",
+                 .type = Type::kI32,
+                 .shape = {1, kTokens},
+                 .buffer = ids});
+  ASSERT_THAT(runner.SetInput("ids", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("logits"));
+
+  std::vector<float> expected(kTokens * kVocab, 0.0f);
+  for (int t = 0; t < kTokens; ++t) {
+    for (int v = 0; v < kVocab; ++v) {
+      for (int d = 0; d < kDim; ++d) {
+        const float embedding =
+            static_cast<float>(unpacked[ids[t] * kDim + d]) * scales[ids[t]];
+        expected[t * kVocab + v] +=
+            embedding * static_cast<float>(unpacked[v * kDim + d]) * scales[v];
+      }
+    }
+  }
+  EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(1e-4f), expected));
+}
+
+// Runs a long prefill (128 tokens) of per-channel INT4 weights with non-zero
+// integer (or, with `float_zero_points`, float) zero points and 8-bit
+// convolutions allowed: where ML Drift supports INT8 convolutions, this runs on
+// dynamically INT8-quantized activations with `sum_i` and additive zero points
+// (elsewhere the regular INT4 kernel).
+void TestLongPrefillInt4WeightsWithZeroPoints(bool float_zero_points) {
+  constexpr int kTokens = 128;
+  constexpr int kIn = 64;
+  constexpr int kOut = 12;
+  std::shared_ptr<OwningCpuBuffer> w_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(kOut * kIn);
+  int4_t* packed = w_buf->Span<int4_t>().data();
+  std::vector<int> unpacked(kOut * kIn);
+  for (int idx = 0; idx < (kOut * kIn) / 2; ++idx) {
+    const int v0 = (idx * 7 + 1) % 16 - 8;
+    const int v1 = (idx * 3 + 5) % 16 - 8;
+    packed[idx].a = v0;
+    packed[idx].b = v1;
+    unpacked[2 * idx + 0] = v0;
+    unpacked[2 * idx + 1] = v1;
+  }
+  std::vector<float> scales(kOut);
+  std::vector<float> zero_points(kOut);
+  for (int o = 0; o < kOut; ++o) {
+    scales[o] = 0.02f * static_cast<float>(o + 1);
+    zero_points[o] =
+        static_cast<float>(o % 5 - 2) + (float_zero_points ? 0.5f : 0.0f);
+  }
+  ZeroPoints quantization_zero_points;
+  if (float_zero_points) {
+    quantization_zero_points = ZeroPoints::Float(zero_points);
+  } else {
+    quantization_zero_points =
+        std::vector<int64_t>(zero_points.begin(), zero_points.end());
+  }
+  std::vector<float> input(kTokens * kIn);
+  for (int k = 0; k < input.size(); ++k) {
+    input[k] = 0.05f * static_cast<float>((k * 13) % 41 - 20);
+  }
+
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, kTokens, kIn}});
+  TensorMLD w({.name = "w_i4_zp",
+               .type = Type::kI4,
+               .shape = {kOut, kIn},
+               .buffer = w_buf,
+               .quantization = std::make_shared<PerChannelAffineQuantization>(
+                   scales, std::move(quantization_zero_points),
+                   /*quantized_dimension=*/0)});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+
+  Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32,
+                /*shared_env=*/nullptr, /*shared_weights=*/nullptr,
+                /*allow_8bit_convs=*/true);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, kTokens, kIn},
+                 .buffer = input});
+  ASSERT_THAT(runner.SetInput("x", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("y"));
+
+  std::vector<float> expected(kTokens * kOut, 0.0f);
+  float max_abs = 0.0f;
+  for (int t = 0; t < kTokens; ++t) {
+    for (int o = 0; o < kOut; ++o) {
+      float sum = 0.0f;
+      for (int i = 0; i < kIn; ++i) {
+        sum += input[t * kIn + i] *
+               ((static_cast<float>(unpacked[o * kIn + i]) - zero_points[o]) *
+                scales[o]);
+      }
+      expected[t * kOut + o] = sum;
+      max_abs = std::max(max_abs, std::abs(sum));
+    }
+  }
+  // INT8 activations round each input to 1/127 of its row's range.
+  EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(0.02f * max_abs),
+                                         expected));
+}
+
+TEST(CompiledMlDriftModelRunnerTest,
+     LongPrefillInt4WeightsWithZeroPointsAndInt8Activations) {
+  TestLongPrefillInt4WeightsWithZeroPoints(/*float_zero_points=*/false);
+}
+
+TEST(CompiledMlDriftModelRunnerTest,
+     LongPrefillInt4WeightsWithFloatZeroPointsAndInt8Activations) {
+  TestLongPrefillInt4WeightsWithZeroPoints(/*float_zero_points=*/true);
 }
 
 TEST(CompiledMlDriftModelRunnerTest,
@@ -467,6 +689,58 @@ TEST(CompiledMlDriftModelRunnerTest,
   ASSERT_THAT(decode_runner.BuildModel(), IsOk());
   EXPECT_EQ(shared_weights.cache_misses, 2u);
   EXPECT_EQ(shared_weights.cache_hits, 2u);
+}
+
+// Regression test for large vocabulary / projection matrices (such as
+// Qwen3.5-27B's [248320, 5120] lm_head, 1.27B elements = 5.08B INT4 bits):
+// `elements_count * SizeInBitsOf(desc.type)` exceeds INT32_MAX (and UINT32_MAX
+// for 1B+ elements) and must use 64-bit `size_t` arithmetic.
+TEST(CompiledMlDriftModelRunnerTest,
+     LargeConstantInt4FullyConnectedBitCountExceedingInt32Max) {
+  constexpr int kOut = 16777216;
+  constexpr int kIn = 32;  // 536,870,912 elements -> 2,147,483,648 bits.
+  const size_t num_elements = static_cast<size_t>(kOut) * kIn;
+  std::shared_ptr<OwningCpuBuffer> w_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(num_elements);
+  // Set row 0 to +1 across all 32 inputs and row `kOut - 1` to -2 across all
+  // 32 inputs; leave the interior rows at 0.
+  int4_t* packed = w_buf->Span<int4_t>().data();
+  for (int j = 0; j < kIn / 2; ++j) {
+    packed[j].a = 1;
+    packed[j].b = 1;
+    const size_t last_row_offset =
+        static_cast<size_t>(kOut - 1) * (kIn / 2) + j;
+    packed[last_row_offset].a = -2;
+    packed[last_row_offset].b = -2;
+  }
+  std::vector<float> scales(kOut, 0.5f);
+  std::vector<float> input(kIn, 1.0f);
+
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, 1, kIn}});
+  TensorMLD w({.name = "large_lm_head.weight",
+               .type = Type::kI4,
+               .shape = {kOut, kIn},
+               .buffer = w_buf,
+               .quantization = std::make_shared<PerChannelAffineQuantization>(
+                   scales, std::vector<int64_t>(kOut, 0),
+                   /*quantized_dimension=*/0)});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+
+  Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, 1, kIn},
+                 .buffer = input});
+  ASSERT_THAT(runner.SetInput("x", fed), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> actual,
+                                  runner.GetFloatOutput("y"));
+  ASSERT_EQ(actual.size(), static_cast<size_t>(kOut));
+  EXPECT_NEAR(actual[0], 16.0f, 1e-3f);
+  EXPECT_NEAR(actual[kOut / 2], 0.0f, 1e-3f);
+  EXPECT_NEAR(actual[kOut - 1], -32.0f, 1e-3f);
 }
 
 }  // namespace

@@ -63,6 +63,8 @@
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/cuda_vmm.h"
+#include "litert/vendors/nvidia/decode_slots.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_lowering.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
@@ -85,9 +87,10 @@ using litert::Expected;
 
 constexpr char kPluginManufacturer[] = "NVIDIA";
 constexpr char kPluginSocModel[] = "tensorrt-rtx";
-constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 18;
+constexpr uint32_t kNvidiaCompilerCacheSchemaVersion = 30;
 
 enum class PartitionPolicy {
+  kDefault,
   kSafe,
   kGemma4,
   kQwen35,
@@ -189,6 +192,8 @@ struct PendingBundleEntry {
       feed.multiplier = step_feed->multiplier;
       feed.row_scales = step_feed->row_scales.data();
       feed.row_scales_size = step_feed->row_scales.size();
+      feed.table_bits = step_feed->table_bits;
+      feed.table_zero_point = step_feed->table_zero_point;
       feed_ptr = &feed;
     }
     if (trtllm_head.has_value()) {
@@ -265,12 +270,20 @@ bool LogUnsupportedOps() {
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
 }
 
+// The ops a partition may take (LITERT_NVIDIA_TENSORRT_PARTITION_POLICY). By
+// default the ops of the transformer exports the plugin is validated on
+// (IsValidatedLlmTensorRtOp); "safe" keeps a few elementwise ops in at most 8
+// islands, for a graph none of those exports resembles, and "gemma4" and
+// "qwen3_5" name the lists the default merges. An unknown value is "safe".
 PartitionPolicy GetPartitionPolicy() {
   const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_PARTITION_POLICY");
   if (value == nullptr || value[0] == '\0') {
-    return PartitionPolicy::kSafe;
+    return PartitionPolicy::kDefault;
   }
   const std::string policy(value);
+  if (policy == "safe") {
+    return PartitionPolicy::kSafe;
+  }
   if (policy == "all") {
     return PartitionPolicy::kAll;
   }
@@ -288,6 +301,8 @@ PartitionPolicy GetPartitionPolicy() {
 
 const char* PartitionPolicyName(PartitionPolicy policy) {
   switch (policy) {
+    case PartitionPolicy::kDefault:
+      return "default";
     case PartitionPolicy::kAll:
       return "all";
     case PartitionPolicy::kCompute:
@@ -358,11 +373,16 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
     case kLiteRtOpCodeTflGreaterEqual:
     case kLiteRtOpCodeTflLess:
     case kLiteRtOpCodeTflLogicalAnd:
+    // The SiLU between the stages of a factorized MLP (LOGISTIC, MUL).
+    case kLiteRtOpCodeTflLogistic:
     case kLiteRtOpCodeTflMaximum:
     case kLiteRtOpCodeTflMean:
     case kLiteRtOpCodeTflMinimum:
     case kLiteRtOpCodeTflMul:
     case kLiteRtOpCodeTflNotEqual:
+    // Only as the selector of a table lookup (the Gemma 4 vision export's
+    // position embeddings); other one-hots are not supported.
+    case kLiteRtOpCodeTflOneHot:
     case kLiteRtOpCodeTflPack:
     case kLiteRtOpCodeTflQuantize:
     case kLiteRtOpCodeTflReduceMax:
@@ -385,17 +405,93 @@ bool IsValidatedGemma4TensorRtOp(const litert::compiler::Op& op) {
   }
 }
 
-// Qwen 3.5's hybrid stack in whole-signature islands, as for Gemma 4: its
-// attention layers use the same composites, and its Gated DeltaNet layers
-// add the gated_delta_update custom op, the short convolution composite and
-// the elementwise ops of their gates and decays.
-bool IsValidatedQwen35TensorRtOp(const litert::compiler::Op& op) {
+// The single user of `tensor`, if it has one of code `code`.
+std::optional<litert::compiler::Op> OnlyUser(
+    const litert::compiler::Tensor& tensor, LiteRtOpCode code) {
+  const auto uses = tensor.Uses();
+  if (uses.size() != 1 || uses[0].user.Code() != code) return std::nullopt;
+  return uses[0].user;
+}
+
+// The producer of `tensor`, if of code `code`.
+std::optional<litert::compiler::Op> ProducerOf(
+    const litert::compiler::Tensor& tensor, LiteRtOpCode code) {
+  if (tensor.IsSubgraphInput() || tensor.HasWeights()) return std::nullopt;
+  const auto op = tensor.GetDefiningOp();
+  if (!op || op->Code() != code) return std::nullopt;
+  return *op;
+}
+
+// Whether `mul` is the product sign(g) * sqrt(max(abs(g), c)) of Qwen 4's PLE
+// gate (sigmoid of it): SIGN and ABS of one tensor, MAXIMUM with a constant,
+// SQRT, MUL.
+bool IsSignedRootProduct(const litert::compiler::Op& mul) {
+  if (mul.Code() != kLiteRtOpCodeTflMul || mul.Inputs().size() != 2) {
+    return false;
+  }
+  for (int i = 0; i < 2; ++i) {
+    const auto sign = ProducerOf(mul.Inputs()[i], kLiteRtOpCodeTflSign);
+    const auto root = ProducerOf(mul.Inputs()[1 - i], kLiteRtOpCodeTflSqrt);
+    if (!sign || !root) continue;
+    const auto floor = ProducerOf(root->Inputs()[0], kLiteRtOpCodeTflMaximum);
+    if (!floor || floor->Inputs().size() != 2) continue;
+    for (int j = 0; j < 2; ++j) {
+      const auto abs = ProducerOf(floor->Inputs()[j], kLiteRtOpCodeTflAbs);
+      if (abs && floor->Inputs()[1 - j].HasWeights() &&
+          abs->Inputs()[0].Get() == sign->Inputs()[0].Get()) {
+        return true;
+      }
+    }
+  }
+  return false;
+}
+
+// SIGN, ABS and SQRT are taken only as parts of that product: the Gemma 4
+// vision encoders' SIGN ops keep their place.
+bool IsSignedRootOp(const litert::compiler::Op& op) {
+  const auto result = [](const litert::compiler::Op& o) {
+    return o.Outputs()[0];
+  };
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflSign: {
+      const auto mul = OnlyUser(result(op), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    case kLiteRtOpCodeTflSqrt: {
+      const auto mul = OnlyUser(result(op), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    case kLiteRtOpCodeTflAbs: {
+      const auto floor = OnlyUser(result(op), kLiteRtOpCodeTflMaximum);
+      if (!floor) return false;
+      const auto root = OnlyUser(result(*floor), kLiteRtOpCodeTflSqrt);
+      if (!root) return false;
+      const auto mul = OnlyUser(result(*root), kLiteRtOpCodeTflMul);
+      return mul && IsSignedRootProduct(*mul);
+    }
+    default:
+      return false;
+  }
+}
+
+// Gemma 4's stack and Qwen 3.5's hybrid stack in whole-signature islands:
+// Qwen's attention layers use Gemma's composites, and its Gated DeltaNet
+// layers add the gated_delta_update custom op, the short convolution composite
+// and the elementwise ops of their gates and decays. No Gemma 4 export has
+// those elementwise ops outside the decompositions of the composites the
+// plugin lowers (odml.cache_update's GREATER), so its islands stay the same.
+// Qwen 4 adds the SIGN, ABS and SQRT of its PLE gate, there only.
+bool IsValidatedLlmTensorRtOp(const litert::compiler::Op& op) {
   switch (op.Code()) {
     case kLiteRtOpCodeTflExp:
     case kLiteRtOpCodeTflGreater:
     case kLiteRtOpCodeTflLog:
     case kLiteRtOpCodeTflLogistic:
       return true;
+    case kLiteRtOpCodeTflSign:
+    case kLiteRtOpCodeTflAbs:
+    case kLiteRtOpCodeTflSqrt:
+      return IsSignedRootOp(op);
     default:
       return IsValidatedGemma4TensorRtOp(op);
   }
@@ -461,6 +557,20 @@ bool EnvEnableOpListIsSet() {
   return value != nullptr && value[0] != '\0';
 }
 
+// The ops of Qwen 4's PLE n-gram hash the default policy otherwise leaves on
+// the CPU: in a subgraph with a BITWISE_XOR only (the Gemma 4 vision encoders
+// hold LOGICAL_OR and GATHER ops that keep their place).
+bool IsHashOp(const litert::compiler::Op& op) {
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflBitwiseXor:
+    case kLiteRtOpCodeTflLogicalOr:
+    case kLiteRtOpCodeTflGather:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool IsPolicyAllowedOp(const litert::compiler::Op& op, PartitionPolicy policy) {
   if (EnvEnableOpListIsSet()) {
     return EnvOpListContains("LITERT_NVIDIA_TENSORRT_ENABLE_OPS", op);
@@ -472,8 +582,9 @@ bool IsPolicyAllowedOp(const litert::compiler::Op& op, PartitionPolicy policy) {
       return IsComputeHeavyOp(op);
     case PartitionPolicy::kGemma4:
       return IsValidatedGemma4TensorRtOp(op);
+    case PartitionPolicy::kDefault:
     case PartitionPolicy::kQwen35:
-      return IsValidatedQwen35TensorRtOp(op);
+      return IsValidatedLlmTensorRtOp(op);
     case PartitionPolicy::kSafe:
       return IsSafeGemma4Op(op);
   }
@@ -557,6 +668,7 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_FUSE_GATED_DELTA_NET",
       "LITERT_NVIDIA_TENSORRT_FUSE_NORM_GEMV",
       "LITERT_NVIDIA_TENSORRT_FUSE_SWIGLU",
+      "LITERT_NVIDIA_TENSORRT_GLOBAL_ATTENTION_PLUGIN",
       "LITERT_NVIDIA_TENSORRT_INT8_BLOCKWISE_GEMM",
       "LITERT_NVIDIA_TENSORRT_JIT_HANDLE",
       "LITERT_NVIDIA_TENSORRT_MAX_FC_WEIGHT_BYTES",
@@ -594,6 +706,31 @@ std::string BuildCompilerSdkVersion() {
     const char* value = std::getenv(name);
     configuration += value == nullptr ? "<unset>" : value;
     configuration += '\n';
+  }
+  // Switches of behaviour that is off by default: in the key only when set,
+  // so that the engines built without them keep their keys.
+  constexpr const char* kSwitchEnvironmentVariables[] = {
+      "LITERT_NVIDIA_MEGAKERNEL",
+      "LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION",
+      // The batched decode engines built beside each decode engine.
+      "LITERT_NVIDIA_DISPATCH_SLOTS",
+      // Qwen 4's n-gram hash and lookups in the engine.
+      "LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
+      // =0: Qwen 4's hyper-connection mixes op by op (no existing model has
+      // one, so the default changes no engine of theirs).
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION",
+      // =0: Qwen 4's per-layer embedding past its projections op by op.
+      "LITERT_NVIDIA_TENSORRT_FUSE_PLE",
+      // =0: the combine's injection projection as a GEMV of its own.
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION_COMBINE",
+  };
+  for (const char* name : kSwitchEnvironmentVariables) {
+    if (const char* value = std::getenv(name); value != nullptr) {
+      configuration += name;
+      configuration += '=';
+      configuration += value;
+      configuration += '\n';
+    }
   }
 
   int device = -1;
@@ -933,6 +1070,19 @@ Expected<litert::nvidia::TensorRtAotFileIdentity> PersistArtifactFile(
   return *identity;
 }
 
+// The AOT artifact's path for a bytecode, by its size and fingerprint.
+std::string AotArtifactPath(const std::string& canonical_dir,
+                            const std::vector<uint8_t>& bytecode) {
+  const auto fingerprint = litert::nvidia::FingerprintTensorRtAotArtifact(
+      bytecode.data(), bytecode.size());
+  const std::string filename =
+      "tensorrt_aot_v" +
+      std::to_string(litert::nvidia::kTensorRtAotLocatorVersion) + "_" +
+      std::to_string(bytecode.size()) + "_" + Hex64(fingerprint.low) +
+      Hex64(fingerprint.high) + ".bin";
+  return litert::internal::Join({canonical_dir, filename});
+}
+
 Expected<std::pair<size_t, size_t>> PersistAotArtifact(
     const std::string& canonical_dir, std::vector<uint8_t>& bytecode,
     size_t ordinal, size_t artifact_count) {
@@ -942,12 +1092,7 @@ Expected<std::pair<size_t, size_t>> PersistAotArtifact(
   }
   const auto fingerprint = litert::nvidia::FingerprintTensorRtAotArtifact(
       bytecode.data(), bytecode.size());
-  const std::string filename =
-      "tensorrt_aot_v" +
-      std::to_string(litert::nvidia::kTensorRtAotLocatorVersion) + "_" +
-      std::to_string(bytecode.size()) + "_" + Hex64(fingerprint.low) +
-      Hex64(fingerprint.high) + ".bin";
-  const std::string path = litert::internal::Join({canonical_dir, filename});
+  const std::string path = AotArtifactPath(canonical_dir, bytecode);
   LITERT_ASSIGN_OR_RETURN(
       auto file_identity,
       PersistArtifactFile(path, bytecode.data(), bytecode.size()));
@@ -1406,8 +1551,9 @@ bool ContainsReductionOp(const LiteRtCompilerContext* ctx,
   return false;
 }
 
-// Whether the island writes a KV cache: an odml.cache_update composite or a
-// dynamic update slice. Such an island is kept however small: on the CPU it
+// Whether the island writes a KV cache: an odml.cache_update or
+// odml.fused_sdpa_cache_update composite or a dynamic update slice. Such an
+// island is kept however small: on the CPU it
 // would rewrite a whole cache that the engines keep on the device (Gemma 4
 // 26B's prefill ends with the last layer's cache update, which the unlowered
 // rope composite before it cuts off from the rest of the graph).
@@ -1421,7 +1567,9 @@ bool ContainsCacheUpdate(const LiteRtCompilerContext* ctx,
     const char* name = nullptr;
     if (op.Code() == kLiteRtOpCodeShloComposite &&
         LiteRtGetSHLOCompositeOpName(raw_op, &name) == kLiteRtStatusOk &&
-        name != nullptr && std::strcmp(name, "odml.cache_update") == 0) {
+        name != nullptr &&
+        (std::strcmp(name, "odml.cache_update") == 0 ||
+         std::strcmp(name, "odml.fused_sdpa_cache_update") == 0)) {
       return true;
     }
   }
@@ -1524,6 +1672,73 @@ std::vector<LiteRtOpWithPartitionIndex> FilterSmallPartitions(
              capped_ops, MinPartitionOps(policy),
              MinPartitionOutputBytes(policy), max_partitions);
   return filtered;
+}
+
+// Qwen 4's PLE n-gram hash (BITWISE_XOR of token products, FLOOR_MOD by the
+// table sizes, offsets, and the table GATHERs) runs on LiteRT's CPU, or with
+// LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH in the engine (IsHashOp) but for
+// the lookups of tables too large for it (IsGatherSupported). The integer ops
+// feeding a lookup on the CPU would put GPU
+// islands between CPU ops and split the layers around every PLE layer into
+// engines of their own (GPU -> CPU -> GPU): an integer op all of whose
+// results go only to ops on the CPU stays on the CPU, repeated up the chain.
+// Only in subgraphs with a BITWISE_XOR (no other model has one).
+std::vector<LiteRtOpWithPartitionIndex> KeepIntegerChainsOnCpu(
+    const litert::compiler::Subgraph& graph,
+    const std::vector<LiteRtOpWithPartitionIndex>& candidate_ops) {
+  const auto ops = graph.Ops();
+  const bool has_hash = std::any_of(ops.begin(), ops.end(), [](const auto& op) {
+    return op.Code() == kLiteRtOpCodeTflBitwiseXor;
+  });
+  if (!has_hash) return candidate_ops;
+  std::unordered_set<LiteRtOp> selected;
+  for (const auto& op : candidate_ops) selected.insert(op.first);
+  const auto integer = [](const litert::compiler::Tensor& tensor) {
+    switch (tensor.ElementType()) {
+      case litert::ElementType::Int32:
+      case litert::ElementType::Int64:
+      case litert::ElementType::Bool:
+        return true;
+      default:
+        return false;
+    }
+  };
+  size_t moved = 0;
+  for (bool changed = true; changed;) {
+    changed = false;
+    for (auto it = ops.rbegin(); it != ops.rend(); ++it) {
+      const auto& op = *it;
+      if (selected.find(op.Get()) == selected.end()) continue;
+      bool cpu_only = !op.Outputs().empty();
+      for (const auto& output : op.Outputs()) {
+        if (!integer(output)) {
+          cpu_only = false;
+          break;
+        }
+        const auto uses = output.Uses();
+        if (uses.empty()) cpu_only = false;
+        for (const auto& use : uses) {
+          if (selected.find(use.user.Get()) != selected.end()) cpu_only = false;
+        }
+        if (!cpu_only) break;
+      }
+      if (cpu_only) {
+        selected.erase(op.Get());
+        ++moved;
+        changed = true;
+      }
+    }
+  }
+  if (moved == 0) return candidate_ops;
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX n-gram hash: %zu integer ops stay on the "
+             "CPU with it",
+             moved);
+  std::vector<LiteRtOpWithPartitionIndex> kept;
+  for (const auto& op : candidate_ops) {
+    if (selected.find(op.first) != selected.end()) kept.push_back(op);
+  }
+  return kept;
 }
 
 }  // namespace
@@ -1753,6 +1968,22 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                num_graph_ops, min_subgraph_ops, max_subgraph_ops);
     return kLiteRtStatusOk;
   }
+  // Experimental, only with LITERT_NVIDIA_MEGAKERNEL set: the decode
+  // signature of a Gemma 4 mixture-of-experts export whole, as one partition
+  // that compiles to one megakernel program (experimental/megakernel).
+  if (litert::nvidia::MegakernelRequested() &&
+      litert::nvidia::IsMegakernelBody(graph, std::string(subgraph->Name()))) {
+    for (const auto& op : graph.Ops()) {
+      LITERT_RETURN_IF_ERROR(
+          compiler_plugin->ctx->push_op(selected_ops, op.Get(), 0));
+    }
+    litert::nvidia::RememberMegakernelBody(graph);
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX megakernel: selected the %zu ops of "
+               "signature decode as one program",
+               num_graph_ops);
+    return kLiteRtStatusOk;
+  }
   const PartitionPolicy policy = GetPartitionPolicy();
   int total_ops = 0;
   int selected_op_count = 0;
@@ -1763,10 +1994,36 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   std::map<LiteRtOpCode, int> cap_rejected_counts;
   std::vector<LiteRtOpWithPartitionIndex> candidate_ops;
   const size_t max_selected_ops = MaxSelectedOpsPerSubgraph(policy);
+  // Qwen 4's n-gram hash (a BITWISE_XOR, which no other model has): with
+  // LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH=1 its ops and its table lookups
+  // run in the engine (IsHashOp), the lookups of tables too large for it on
+  // the CPU (KeepIntegerChainsOnCpu). Off by default: on the RTX 5080 the
+  // wide artifact's decode step measured slower that way (0.60-1.09 ms
+  // against 0.54-0.66 ms over five alternating runs), the engine's GEMVs
+  // slower, for a cause not found yet.
+  // A lookup whose result is a graph output (the n-gram context state, which
+  // LiteRT-LM binds in place, input and output one buffer) stays on the CPU:
+  // the engine could write it while its other readers still read the input.
+  bool has_hash = false;
+  for (const auto& op : graph.Ops()) {
+    has_hash |= op.Code() == kLiteRtOpCodeTflBitwiseXor;
+  }
+  std::unordered_set<LiteRtTensor> graph_outputs;
+  for (const auto& output : graph.Outputs()) graph_outputs.insert(output.Get());
+  const bool engine_hash =
+      EnvEnabled("LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
+                 /*default_value=*/false);
+  const auto engine_hash_op = [&](const litert::compiler::Op& op) {
+    return engine_hash && has_hash && policy == PartitionPolicy::kDefault &&
+           IsHashOp(op) &&
+           !(op.Code() == kLiteRtOpCodeTflGather &&
+             graph_outputs.count(op.Outputs()[0].Get()) != 0);
+  };
   for (const auto& op : graph.Ops()) {
     ++total_ops;
     const bool supported = litert::nvidia::IsTensorRtOpSupported(op);
-    const bool policy_allowed = IsPolicyAllowedOp(op, policy);
+    const bool policy_allowed =
+        IsPolicyAllowedOp(op, policy) || engine_hash_op(op);
     const bool env_disabled = IsEnvDisabledOp(op);
     if (supported && policy_allowed && !env_disabled) {
       if (max_selected_ops == 0 || candidate_ops.size() < max_selected_ops) {
@@ -1813,6 +2070,7 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                "NVIDIA TensorRT-RTX selected-op cap skipped op: %s count=%d",
                std::string(litert::GetOpCodeStringView(code)).c_str(), count);
   }
+  candidate_ops = KeepIntegerChainsOnCpu(graph, candidate_ops);
   auto filtered_ops = FilterSmallPartitions(compiler_plugin->ctx, candidate_ops,
                                             subgraph, policy);
   for (const auto& op : filtered_ops) {
@@ -1872,6 +2130,65 @@ std::unique_ptr<litert::nvidia::TensorRtWeightStoreBuilder> CreateWeightStore(
 // Describes, for the bytecode, the weight store of a plan from the holders
 // the plan was built with and where calibration found them. The description
 // borrows the private runs of `entry`.
+void DescribeWeightStore(
+    const litert::nvidia::TensorRtWeightStoreBuilder& store,
+    const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
+    litert::nvidia::TensorRtWeightHolderCalibration calibration,
+    PendingBundleEntry& entry);
+
+// Writes each batched decode engine of a decode partition (slot_network.h)
+// as a shard of its own at `<decode artifact>.slots<n>`, with the weight store
+// of its own plan: the dispatch maps the same segments as the decode
+// engine's.
+Expected<void> PersistSlotPlans(
+    const std::string& decode_artifact, const std::string& function_name,
+    const litert::nvidia::TensorRtBuildResult& engine,
+    const litert::nvidia::TensorRtWeightStoreBuilder& store,
+    const std::vector<litert::nvidia::TensorRtSharedWeight>& weights) {
+  if (engine.weight_holders.empty() || !engine.refit_weights.empty()) {
+    LITERT_LOG(LITERT_WARNING,
+               "NVIDIA TensorRT-RTX keeps no batched decode engine of %s: "
+               "only a weight-store plan without refit weights is supported",
+               function_name.c_str());
+    return {};
+  }
+  for (const auto& plan : engine.slot_plans) {
+    PendingBundleEntry pending;
+    pending.function_name =
+        function_name + "_slots" + std::to_string(plan.slots);
+    pending.input_names = plan.input_names;
+    pending.output_names = plan.output_names;
+    pending.engine = plan.engine;
+    LITERT_ASSIGN_OR_RETURN(auto calibration,
+                            litert::nvidia::CalibrateTensorRtWeightHolders(
+                                pending.engine.data(), pending.engine.size(),
+                                engine.weight_holders, store.granule()));
+    DescribeWeightStore(store, engine.weight_holders, std::move(calibration),
+                        pending);
+    litert::nvidia::TensorRtLlmHead head;
+    litert::nvidia::TensorRtStepFeed feed;
+    LITERT_ASSIGN_OR_RETURN(auto shard,
+                            litert::nvidia::PackTensorRtSharedWeightShard(
+                                weights, pending.View(head, feed)));
+    const std::string path =
+        litert::nvidia::SlotArtifactPath(decode_artifact, plan.slots);
+    // The path is the decode artifact's, not this plan's content: a compile
+    // that asks for another slot count rebuilds the plan, and TensorRT-RTX's
+    // build may give other bytes for the same engine. The newer plan
+    // replaces the older (a reader holds its own copy, SlotEngine::Open).
+    if (!PersistArtifactFile(path, shard.data(), shard.size())) {
+      unlink(path.c_str());
+      LITERT_RETURN_IF_ERROR(
+          PersistArtifactFile(path, shard.data(), shard.size()));
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX persisted the batched decode engine of %d "
+               "slots: artifact_bytes=%zu path=%s",
+               plan.slots, shard.size(), path.c_str());
+  }
+  return {};
+}
+
 void DescribeWeightStore(
     const litert::nvidia::TensorRtWeightStoreBuilder& builder,
     const std::vector<litert::nvidia::TensorRtWeightHolderBuildData>& holders,
@@ -1993,7 +2310,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
               cached_manifest->call_infos[i] == PartitionName(i);
         }
         if (call_layout_matches) {
+          // LiteRT gets the locators padded (bytecode.h).
           result->bytecodes = std::move(cached_manifest->locators);
+          for (auto& locator : result->bytecodes) {
+            litert::nvidia::PadTensorRtAotLocator(locator);
+          }
           result->call_infos = std::move(cached_manifest->call_infos);
           result->bytecode_indices.reserve(
               cached_manifest->bytecode_indices.size());
@@ -2057,7 +2378,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
-    auto engine_or = litert::nvidia::BuildTensorRtEngine(
+    // BuildMegakernelEngine only for a partition the megakernel's switch
+    // selected whole (experimental/megakernel).
+    auto engine_or = (litert::nvidia::IsMegakernelPartition(subgraph)
+                          ? litert::nvidia::BuildMegakernelEngine
+                          : litert::nvidia::BuildTensorRtEngine)(
         subgraph, read_only_inputs[i], plugin_weight_store.get(),
         shared_inputs[i]);
     if (!engine_or) {
@@ -2159,6 +2484,14 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             litert::nvidia::PackTensorRtSharedWeightShard(
                 weight_store.weights(), pending.View(head, feed)));
         memory_profiler.Log("aot_shard_pack_end", function_name.c_str());
+        // The batched decode engines go beside the decode engine's artifact,
+        // where the dispatch looks for them (`<artifact>.slots<n>`).
+        if (!engine.slot_plans.empty()) {
+          LITERT_RETURN_IF_ERROR(PersistSlotPlans(
+              AotArtifactPath(canonical_aot_cache_dir, packed_shard),
+              function_name, engine, *plugin_weight_store,
+              weight_store.weights()));
+        }
         LITERT_ASSIGN_OR_RETURN(
             auto persisted,
             PersistAotArtifact(canonical_aot_cache_dir, packed_shard, i,
@@ -2311,6 +2644,13 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     memory_profiler.Log("jit_handles_ready", soc_model);
   }
 
+  if (!aot_cache_dir.empty()) {
+    // The modules are locators: LiteRT gets them padded, as from the index,
+    // which has them as they were packed.
+    for (auto& locator : result->bytecodes) {
+      litert::nvidia::PadTensorRtAotLocator(locator);
+    }
+  }
   memory_profiler.Log("compile_end", soc_model);
   *compiled_result = result.release();
   return kLiteRtStatusOk;

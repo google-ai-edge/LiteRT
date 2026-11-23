@@ -16,7 +16,7 @@ import Foundation
 import CLiteRT
 
 #if os(Linux)
-  import SwiftGlibc
+  import Glibc
 #else
   import Darwin
 #endif

@@ -242,6 +242,22 @@ class Tensor {
     return !HasWeights() && !def_op.has_value();
   }
 
+  /// @brief Returns true if this tensor is an output of the subgraph being
+  /// rewritten by `builder`. Conservatively returns true if the query is
+  /// unsupported or fails.
+  bool IsSubgraphOutput(LiteRtBuilder builder) const {
+    if (!ctx_ ||
+        !LITERT_ABI_HAS_API(ctx_, /*req_major=*/1, is_subgraph_output)) {
+      return true;
+    }
+    bool is_output = true;
+    if (ctx_->is_subgraph_output(builder, tensor_, &is_output) !=
+        kLiteRtStatusOk) {
+      return true;
+    }
+    return is_output;
+  }
+
   uint32_t TensorIndex() const {
     uint32_t index = 0;
     if (ctx_ && ctx_->get_tensor_index) {

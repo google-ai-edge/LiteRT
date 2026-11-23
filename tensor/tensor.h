@@ -38,6 +38,7 @@ using Shape = graph::Shape;
 using Quantization = graph::Quantization;
 using PerChannelAffineQuantization = graph::PerChannelAffineQuantization;
 using BlockwiseQuantization = graph::BlockwiseQuantization;
+using ZeroPoints = graph::ZeroPoints;
 
 // Helps initializing TensorHandle objects.
 //

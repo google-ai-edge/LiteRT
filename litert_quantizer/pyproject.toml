@@ -35,7 +35,7 @@ dependencies = [
     "scipy",
     "ml_dtypes",
     "ai-edge-litert-nightly",
-    "litert-lm-builder",
+    "litert-lm-builder-nightly",
 ]
 
 [project.urls]
@@ -50,6 +50,7 @@ dev = [
     "colorama",
     "isort",
     "parameterized",
+    "pillow",
     "pyink",
     "pytest",
     "pytest-xdist",

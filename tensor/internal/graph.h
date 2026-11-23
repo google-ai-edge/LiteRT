@@ -37,9 +37,13 @@ limitations under the License.
 // that tensor is also kept alive. In turn that means that we can then serialize
 // a model from its outputs.
 
+#include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <initializer_list>
+#include <limits>
 #include <memory>
 #include <optional>
 #include <string>
@@ -52,11 +56,14 @@ limitations under the License.
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
+#include "tensor/utils/macros.h"
 
 namespace litert::tensor::graph {
 
@@ -84,12 +91,368 @@ struct Quantization {
   }
 };
 
+template <class T>
+struct ZeroPointView {
+  const T* data;
+  // 0 for symmetric/broadcast zero points, 1 for one value per channel/block.
+  size_t stride;
+
+  T operator[](size_t i) const { return data[i * stride]; }
+};
+
+// Zero points of a quantized tensor, stored as either integers (`int64_t`) or
+// floats (`float`, e.g. `-0.5f` for centered INT2):
+// - No data (`empty()`): symmetric quantization (all zero).
+// - 1 element: broadcast to all channels or blocks.
+// - N elements: one per channel or block.
+//
+// `IsSymmetric()` returns true when empty or when all stored zero points equal
+// zero. Conversions to integer types (and narrower integers) fail unless every
+// value is finite, integral, and in range; integer-to-float conversions use
+// `static_cast` directly (exact for magnitudes up to 2^24 in `float`).
+class ZeroPoints {
+ public:
+  static ZeroPoints From(std::vector<int64_t> values) {
+    return FromVector(std::move(values));
+  }
+  static ZeroPoints From(std::vector<float> values) {
+    return FromVector(std::move(values));
+  }
+  static ZeroPoints Int(std::vector<int64_t> values) {
+    return FromVector(std::move(values));
+  }
+  static ZeroPoints Float(std::vector<float> values) {
+    return FromVector(std::move(values));
+  }
+
+  ZeroPoints() = default;
+  ZeroPoints(const ZeroPoints&) = default;
+  ZeroPoints& operator=(const ZeroPoints&) = default;
+
+  ZeroPoints(ZeroPoints&& other) noexcept
+      : int_values_(std::move(other.int_values_)),
+        float_values_(std::move(other.float_values_)),
+        is_float_(std::exchange(other.is_float_, false)),
+        is_symmetric_(std::exchange(other.is_symmetric_, true)),
+        is_uniform_(std::exchange(other.is_uniform_, true)) {}
+
+  ZeroPoints& operator=(ZeroPoints&& other) noexcept {
+    if (this != &other) {
+      int_values_ = std::move(other.int_values_);
+      float_values_ = std::move(other.float_values_);
+      is_float_ = std::exchange(other.is_float_, false);
+      is_symmetric_ = std::exchange(other.is_symmetric_, true);
+      is_uniform_ = std::exchange(other.is_uniform_, true);
+    }
+    return *this;
+  }
+
+  // Implicit conversion preserved for pre-existing code passing
+  // `std::vector<int64_t>` or braced integer initializer lists. New callers
+  // should use `ZeroPoints::From(...)`, `ZeroPoints::Int(...)`, or
+  // `ZeroPoints::Float(...)`.
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  ZeroPoints(std::vector<int64_t> values)
+      : ZeroPoints(FromVector(std::move(values))) {}
+  // NOLINTNEXTLINE(google-explicit-constructor)
+  ZeroPoints(std::initializer_list<int64_t> values)
+      : ZeroPoints(FromVector(std::vector<int64_t>(values))) {}
+  ~ZeroPoints() = default;
+
+  // Preserved for pre-existing integer callers (e.g., `zero_points.assign(n,
+  // 0)`). New callers should assign `ZeroPoints::Int(...)` or
+  // `ZeroPoints::Float(...)`.
+  void assign(size_t count, int64_t value) {
+    *this = Int(std::vector<int64_t>(count, value));
+  }
+
+  bool empty() const { return size() == 0; }
+
+  // Returns true when no zero points are stored or all stored values are 0.
+  bool IsSymmetric() const { return is_symmetric_; }
+
+  // Returns true when no zero points are stored or all stored values are
+  // equal.
+  bool IsUniform() const { return is_uniform_; }
+
+  size_t size() const {
+    return is_float_ ? float_values_.size() : int_values_.size();
+  }
+
+  // Returns the underlying vector if stored as `T` (`int64_t` or `float`), or
+  // `absl::NotFoundError` otherwise.
+  template <class T>
+  absl::StatusOr<const std::vector<T>&> Data() const {
+    if constexpr (std::is_same_v<T, int64_t>) {
+      if (!is_float_) {
+        return int_values_;
+      }
+    } else if constexpr (std::is_same_v<T, float>) {
+      if (is_float_) {
+        return float_values_;
+      }
+    }
+    return absl::NotFoundError(
+        "Zero points are not stored as the requested element type.");
+  }
+
+  // OK if there are 0, 1, or `n` zero points and all of them can be
+  // represented as `T` (e.g. `-0.5f` cannot be an integer).
+  template <class T>
+  absl::Status Validate(size_t n) const {
+    return Visit([this, n](const auto& zps) -> absl::Status {
+      if (absl::Status status = CheckCount(zps.size(), n); !status.ok()) {
+        return status;
+      }
+      if (IsSymmetric()) {
+        return absl::OkStatus();
+      }
+      if (is_uniform_) {
+        return ConvertValue<T>(zps[0]).status();
+      }
+      for (const auto zp : zps) {
+        LRT_TENSOR_RETURN_IF_ERROR(ConvertValue<T>(zp).status());
+      }
+      return absl::OkStatus();
+    });
+  }
+
+  // Converts and broadcasts into `dst`:
+  // - empty -> zeros,
+  // - one value -> repeated,
+  // - `dst.size()` values -> converted.
+  //
+  // Same errors as `Validate`.
+  template <class T>
+  absl::Status CopyTo(absl::Span<T> dst) const {
+    return Visit([dst](const auto& zps) -> absl::Status {
+      if (absl::Status status = CheckCount(zps.size(), dst.size());
+          !status.ok()) {
+        return status;
+      }
+      if (zps.empty()) {
+        std::fill(dst.begin(), dst.end(), T{0});
+      } else if (zps.size() == 1) {
+        absl::StatusOr<T> value = ConvertValue<T>(zps[0]);
+        if (!value.ok()) {
+          return value.status();
+        }
+        std::fill(dst.begin(), dst.end(), *value);
+      } else {
+        for (size_t i = 0; i < dst.size(); ++i) {
+          absl::StatusOr<T> value = ConvertValue<T>(zps[i]);
+          if (!value.ok()) {
+            return value.status();
+          }
+          dst[i] = *value;
+        }
+      }
+      return absl::OkStatus();
+    });
+  }
+
+  // Returns an `n`-element vector populated by `CopyTo<T>`.
+  template <class T>
+  absl::StatusOr<std::vector<T>> CopyAs(size_t n) const {
+    std::vector<T> vec(n);
+    LRT_TENSOR_RETURN_IF_ERROR(CopyTo<T>(absl::MakeSpan(vec)));
+    return vec;
+  }
+
+  // Returns the single (or uniform) zero point converted to `T` (0 if
+  // symmetric). Fails if values differ or cannot be represented as `T`.
+  template <class T>
+  absl::StatusOr<T> Scalar() const {
+    if (IsSymmetric()) {
+      return T{0};
+    }
+    return Visit([this](const auto& zps) -> absl::StatusOr<T> {
+      if (!is_uniform_) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            "Expected a single or uniform zero point, got ", zps.size(), "."));
+      }
+      return ConvertValue<T>(zps[0]);
+    });
+  }
+
+  // Returns the zero point of channel or block `idx` converted to `T`: 0 if
+  // empty, the single value if broadcast, or element `idx` if stored per
+  // channel/block. Fails if `idx` is out of range or cannot be represented as
+  // `T`.
+  template <class T>
+  absl::StatusOr<T> At(size_t idx) const {
+    return Visit([idx](const auto& zps) -> absl::StatusOr<T> {
+      if (zps.empty()) {
+        return T{0};
+      }
+      if (zps.size() == 1) {
+        return ConvertValue<T>(zps[0]);
+      }
+      if (idx >= zps.size()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Zero point index ", idx, " is out of range for size ",
+                         zps.size(), "."));
+      }
+      return ConvertValue<T>(zps[idx]);
+    });
+  }
+
+  // Calls `func(view)` once with a `ZeroPointView<ElemT>` (`int64_t` or
+  // `float`) of length `n` without allocating or copying. Fails with
+  // `absl::InvalidArgumentError` if `size()` is not 0, 1, or `n`.
+  template <class F>
+  absl::Status Visit(size_t n, F&& func) const {
+    return Visit([n, &func](const auto& zps) -> absl::Status {
+      using ElemT = typename std::decay_t<decltype(zps)>::value_type;
+      if (absl::Status status = CheckCount(zps.size(), n); !status.ok()) {
+        return status;
+      }
+      static constexpr ElemT kZero = ElemT{0};
+      const ZeroPointView<ElemT> view =
+          zps.empty()
+              ? ZeroPointView<ElemT>{&kZero, 0}
+              : ZeroPointView<ElemT>{zps.data(),
+                                     zps.size() == 1 ? size_t{0} : size_t{1}};
+      if constexpr (std::is_same_v<
+                        std::invoke_result_t<F&, ZeroPointView<ElemT>>,
+                        absl::Status>) {
+        return std::forward<F>(func)(view);
+      } else {
+        static_assert(
+            std::is_void_v<std::invoke_result_t<F&, ZeroPointView<ElemT>>>,
+            "Visit callback must return void or absl::Status.");
+        std::forward<F>(func)(view);
+        return absl::OkStatus();
+      }
+    });
+  }
+
+  // Gives read-only access to the underlying vector for advanced operations.
+  template <class F>
+  decltype(auto) Visit(F&& func) const {
+    if (is_float_) {
+      return std::forward<F>(func)(float_values_);
+    }
+    return std::forward<F>(func)(int_values_);
+  }
+
+  bool operator==(const ZeroPoints& other) const {
+    if (is_float_ != other.is_float_) {
+      return false;
+    }
+    return is_float_ ? float_values_ == other.float_values_
+                     : int_values_ == other.int_values_;
+  }
+  bool operator!=(const ZeroPoints& other) const {
+    return !(*this == other);
+  }
+
+ private:
+  ZeroPoints(std::vector<int64_t> values, bool is_symmetric, bool is_uniform)
+      : int_values_(std::move(values)),
+        is_float_(false),
+        is_symmetric_(is_symmetric),
+        is_uniform_(is_uniform) {}
+
+  ZeroPoints(std::vector<float> values, bool is_symmetric, bool is_uniform)
+      : float_values_(std::move(values)),
+        is_float_(true),
+        is_symmetric_(is_symmetric),
+        is_uniform_(is_uniform) {}
+
+  template <class T>
+  static ZeroPoints FromVector(std::vector<T> values) {
+    bool is_uniform = true;
+    bool is_symmetric = true;
+    if (!values.empty()) {
+      const T first = values[0];
+      for (size_t i = 1; i < values.size(); ++i) {
+        if (!(values[i] == first)) {
+          is_uniform = false;
+          break;
+        }
+      }
+      is_symmetric = is_uniform && first == 0;
+    }
+    return ZeroPoints(std::move(values), is_symmetric, is_uniform);
+  }
+
+  static absl::Status CheckCount(size_t zp_size, size_t n) {
+    if (zp_size != 0 && zp_size != 1 && zp_size != n) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Expected 0, 1, or ", n, " zero points, got ", zp_size, "."));
+    }
+    return absl::OkStatus();
+  }
+
+  template <class Dst, class Src>
+  static absl::StatusOr<Dst> ConvertValue(Src value) {
+    static_assert(std::is_arithmetic_v<Dst> && !std::is_same_v<Dst, bool>,
+                  "Zero point target type must be numeric.");
+    if constexpr (std::is_same_v<Dst, Src>) {
+      return value;
+    } else if constexpr (std::is_floating_point_v<Dst>) {
+      // Integer-to-float conversion intentionally uses `static_cast` without a
+      // precision check (exact for magnitudes up to 2^24 in `float`), unlike
+      // float-to-integer conversions below which require exact whole numbers.
+      return static_cast<Dst>(value);
+    } else if constexpr (std::is_floating_point_v<Src>) {
+      if (!std::isfinite(value)) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Non-finite float zero point ", value, "."));
+      }
+      if (std::trunc(value) != value) {
+        return absl::UnimplementedError(absl::StrCat(
+            "Float zero point ", value,
+            " cannot be represented as an integer."));
+      }
+      const double d = static_cast<double>(value);
+      const double min_val =
+          static_cast<double>(std::numeric_limits<Dst>::min());
+      const double upper_bound =
+          std::ldexp(1.0, std::numeric_limits<Dst>::digits);
+      if (d < min_val || d >= upper_bound) {
+        return absl::UnimplementedError(absl::StrCat(
+            "Float zero point ", value, " is out of target integer range."));
+      }
+      return static_cast<Dst>(d);
+    } else if constexpr (std::is_signed_v<Dst>) {
+      if (value < std::numeric_limits<Dst>::min() ||
+          value > std::numeric_limits<Dst>::max()) {
+        return absl::UnimplementedError(absl::StrCat(
+            "Zero point ", value, " is out of target integer range."));
+      }
+      return static_cast<Dst>(value);
+    } else {
+      if (value < 0 ||
+          static_cast<uint64_t>(value) > std::numeric_limits<Dst>::max()) {
+        return absl::UnimplementedError(absl::StrCat(
+            "Zero point ", value,
+            " cannot be represented as the target unsigned integer type."));
+      }
+      return static_cast<Dst>(value);
+    }
+  }
+
+  // Stored as two separate vectors rather than `std::variant` to avoid a
+  // GCC 13 `-Wmaybe-uninitialized` false positive in libstdc++'s
+  // `std::variant` move constructor under `-O2 -Wall -Werror`.
+  std::vector<int64_t> int_values_;
+  std::vector<float> float_values_;
+  bool is_float_ = false;
+  bool is_symmetric_ = true;
+  bool is_uniform_ = true;
+};
+
 // Holds quantization parameters for a tensor.
+//
+// Dequantization formula for element `i` in channel `c`:
+//   w = scales[c] * (q_signed[i] - zp[c])
 struct PerChannelAffineQuantization : Quantization {
   PerChannelAffineQuantization() = default;
 
   PerChannelAffineQuantization(std::vector<float> scales,
-                               std::vector<int64_t> zero_points,
+                               ZeroPoints zero_points,
                                int quantized_dimension = 0)
       : scales(std::move(scales)),
         zero_points(std::move(zero_points)),
@@ -103,17 +466,19 @@ struct PerChannelAffineQuantization : Quantization {
   }
 
   std::vector<float> scales;
-  std::vector<int64_t> zero_points;
-  int quantized_dimension;
+  ZeroPoints zero_points;
+  int quantized_dimension = 0;
 };
 
 // Holds blockwise quantization parameters for a tensor.
+//
+// Dequantization formula for element `i` in block `b`:
+//   w = scales[b] * (q_signed[i] - zp[b])
 struct BlockwiseQuantization : Quantization {
   BlockwiseQuantization() = default;
 
-  BlockwiseQuantization(std::vector<float> scales,
-                        std::vector<int64_t> zero_points, int block_size,
-                        int quantized_dimension = 0)
+  BlockwiseQuantization(std::vector<float> scales, ZeroPoints zero_points,
+                        int block_size, int quantized_dimension = 0)
       : scales(std::move(scales)),
         zero_points(std::move(zero_points)),
         block_size(block_size),
@@ -127,9 +492,9 @@ struct BlockwiseQuantization : Quantization {
   }
 
   std::vector<float> scales;
-  std::vector<int64_t> zero_points;
-  int block_size;
-  int quantized_dimension;
+  ZeroPoints zero_points;
+  int block_size = 0;
+  int quantized_dimension = 0;
 };
 
 using Shape = std::vector<int32_t>;

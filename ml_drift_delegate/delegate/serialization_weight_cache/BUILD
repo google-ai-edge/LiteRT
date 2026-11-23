@@ -119,7 +119,7 @@ genrule(
     ],
     outs = ["srcs/build_identifier.cc"],
     # copybara:comment_begin(oss-only)
-    cmd = "python3 $(execpath generate_build_identifier.py) --output $@ $(SRCS)",
+    cmd = "$$(if python3 -V >/dev/null 2>&1; then echo python3; else echo python; fi) $(execpath generate_build_identifier.py) --output $@ $(SRCS)",
     tools = ["generate_build_identifier.py"],
     # copybara:comment_end_and_uncomment_begin
     # cmd = "$(execpath :generate_build_identifier_py) --output $@ $(SRCS)",

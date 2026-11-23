@@ -46,7 +46,7 @@ extern "C" {
 
 #if defined(__linux__)
 // Disable CFI check for calling shared library functions.
-#define LITERT_NO_CFI_CHECK __attribute__((no_sanitize("cfi-icall")))
+#define LITERT_NO_CFI_CHECK __attribute__((no_sanitize("cfi-icall", "kcfi")))
 #else
 #define LITERT_NO_CFI_CHECK
 #endif  // __linux__

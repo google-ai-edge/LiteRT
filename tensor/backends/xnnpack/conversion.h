@@ -65,6 +65,15 @@ class XnnpackBuildContext : public NnpackBuildContext {
     return static_cast<XnnpackGraph&>(*graph_).GetSubgraph();
   }
 
+  // Defines the constant int8 `weights` of a fully connected op, quantized per
+  // tensor, as weights quantized per output channel (`xnn_datatype_qcint8`)
+  // with the same scale and zero point for each channel: XNNPACK's fully
+  // connected operator only takes channelwise quantized weights with a float
+  // input. The value isn't shared with the other consumers of `weights`, which
+  // keep the per-tensor quantized value.
+  absl::StatusOr<uint32_t> DefinePerTensorQuantizedWeightsAsChannelwise(
+      const graph::Tensor& weights);
+
  protected:
   absl::Status EnsureInitialized() override;
   std::unique_ptr<NnpackGraph> CreateEmptyGraph() override;

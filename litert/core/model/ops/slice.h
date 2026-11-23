@@ -336,9 +336,25 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
   if (!in_data.empty() && indices_known && input_shape.size() == 1 &&
       processing_dims == 1 && input_shape[0] >= 0) {
     LiteRtElementType in_elem_type = ctx.GetInputElementType(0);
-    bool in_is_int64 = (in_elem_type == kLiteRtElementTypeInt64) ||
-                       (in_data.size() ==
-                        static_cast<size_t>(input_shape[0]) * sizeof(int64_t));
+    const size_t dim_elems = static_cast<size_t>(input_shape[0]);
+    size_t int64_bytes = 0;
+    size_t int32_bytes = 0;
+    const bool valid_int64_bytes =
+        SafeMultiply(dim_elems, sizeof(int64_t), int64_bytes);
+    const bool valid_int32_bytes =
+        SafeMultiply(dim_elems, sizeof(int32_t), int32_bytes);
+    const bool propagate_int64 = valid_int64_bytes &&
+                                 in_data.size() >= int64_bytes &&
+                                 in_data.size() % sizeof(int64_t) == 0 &&
+                                 (in_elem_type == kLiteRtElementTypeInt64 ||
+                                  (in_elem_type == kLiteRtElementTypeNone &&
+                                   in_data.size() == int64_bytes));
+    const bool propagate_int32 = !propagate_int64 && valid_int32_bytes &&
+                                 in_data.size() >= int32_bytes &&
+                                 in_data.size() % sizeof(int32_t) == 0 &&
+                                 (in_elem_type == kLiteRtElementTypeInt32 ||
+                                  (in_elem_type == kLiteRtElementTypeNone &&
+                                   in_data.size() == int32_bytes));
 
     int64_t dim_size = input_shape[0];
     int64_t stride = strides_vec[0];
@@ -363,13 +379,13 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
 
     if (shrink_axis_mask & 1) {
       if (start >= 0 && start < dim_size) {
-        if (in_is_int64 && in_data.size() % sizeof(int64_t) == 0) {
+        if (propagate_int64) {
           const int64_t* in_ptr =
               reinterpret_cast<const int64_t*>(in_data.data());
           std::vector<uint8_t> out_bytes(sizeof(int64_t));
           std::memcpy(out_bytes.data(), &in_ptr[start], sizeof(int64_t));
           result.propagated_data[0] = std::move(out_bytes);
-        } else if (!in_is_int64 && in_data.size() % sizeof(int32_t) == 0) {
+        } else if (propagate_int32) {
           const int32_t* in_ptr =
               reinterpret_cast<const int32_t*>(in_data.data());
           std::vector<uint8_t> out_bytes(sizeof(int32_t));
@@ -378,7 +394,7 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
         }
       }
     } else if (stride != 0) {
-      if (in_is_int64 && in_data.size() % sizeof(int64_t) == 0) {
+      if (propagate_int64) {
         const int64_t* in_ptr =
             reinterpret_cast<const int64_t*>(in_data.data());
         std::vector<int64_t> sliced_vals;
@@ -389,10 +405,12 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
           if (!SafeAdd(idx, stride, idx)) break;
         }
         std::vector<uint8_t> out_bytes(sliced_vals.size() * sizeof(int64_t));
-        std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
+        if (!out_bytes.empty()) {
+          std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
+        }
         result.propagated_data[0] = std::move(out_bytes);
         result.output_shapes[0] = {static_cast<int32_t>(sliced_vals.size())};
-      } else if (!in_is_int64 && in_data.size() % sizeof(int32_t) == 0) {
+      } else if (propagate_int32) {
         const int32_t* in_ptr =
             reinterpret_cast<const int32_t*>(in_data.data());
         std::vector<int32_t> sliced_vals;
@@ -403,7 +421,9 @@ inline LiteRtStatus InferStridedSlice(const ShapeInferenceContext& ctx,
           if (!SafeAdd(idx, stride, idx)) break;
         }
         std::vector<uint8_t> out_bytes(sliced_vals.size() * sizeof(int32_t));
-        std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
+        if (!out_bytes.empty()) {
+          std::memcpy(out_bytes.data(), sliced_vals.data(), out_bytes.size());
+        }
         result.propagated_data[0] = std::move(out_bytes);
         result.output_shapes[0] = {static_cast<int32_t>(sliced_vals.size())};
       }

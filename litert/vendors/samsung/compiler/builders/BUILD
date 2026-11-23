@@ -21,6 +21,7 @@ package(
 
 cc_library(
     name = "op_wrapper",
+    srcs = ["op_wrapper.cc"],
     hdrs = ["op_wrapper.h"],
     deps = [
         "//litert/c:litert_common",
@@ -35,6 +36,7 @@ cc_library(
     hdrs = ["utils.h"],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
         "//tflite/schema:schema_fbs",
@@ -329,6 +331,19 @@ cc_library(
 )
 
 cc_library(
+    name = "depth_to_space_op_builder",
+    srcs = ["depth_to_space_op_builder.cc"],
+    hdrs = ["depth_to_space_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_header",
+        "//litert/cc:litert_expected",
+        "//litert/compiler/cc:litert_model",
+    ],
+)
+
+cc_library(
     name = "hardswish_op_builder",
     srcs = ["hardswish_op_builder.cc"],
     hdrs = ["hardswish_op_builder.h"],
@@ -555,6 +570,7 @@ cc_library(
     hdrs = ["quantize_op_builder.h"],
     deps = [
         ":op_wrapper",
+        ":utils",
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
@@ -567,6 +583,7 @@ cc_library(
     hdrs = ["dequantize_op_builder.h"],
     deps = [
         ":op_wrapper",
+        ":utils",
         "//litert/c:litert_common",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
@@ -579,6 +596,19 @@ cc_library(
     hdrs = ["reversev2_op_builder.h"],
     deps = [
         ":op_wrapper",
+        "//litert/cc:litert_expected",
+        "//litert/compiler/cc:litert_model",
+    ],
+)
+
+cc_library(
+    name = "unpack_op_builder",
+    srcs = ["unpack_op_builder.cc"],
+    hdrs = ["unpack_op_builder.h"],
+    deps = [
+        ":op_wrapper",
+        "//litert/c:litert_common",
+        "//litert/c/internal:litert_compiler_context_header",
         "//litert/cc:litert_expected",
         "//litert/compiler/cc:litert_model",
     ],

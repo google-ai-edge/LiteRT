@@ -35,13 +35,14 @@ __device__ __forceinline__ int Unpack(const uint8_t* table, size_t index,
   return (pair ^ 2) - 2;
 }
 
-// The embedding of the token and the local mask of the next position, over the
-// position as it is before the scalars advance; the block that finishes last
-// (every other block has read the position by then) advances the scalars.
+// The embedding of the token (and the tail after it) and the local mask of the
+// next position, over the position as it is before the scalars advance; the
+// block that finishes last (every other block has read the position by then)
+// advances the scalars.
 __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
   __shared__ bool last;
   const int32_t token = p.token[0];
-  const int32_t position = p.positions[0];
+  const int32_t position = p.positions != nullptr ? p.positions[0] : 0;
   const int i = blockIdx.x * kThreads + threadIdx.x;
   const bool in_range = token >= 0 && token < p.vocab;
   if (i < p.dim) {
@@ -57,12 +58,18 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
       } else {
         scale = p.row_scales[token];
       }
-      // Two roundings, as the CPU embedder's dequantize then multiply.
-      value = __fmul_rn(static_cast<float>(q), scale);
+      // Two roundings, as the CPU embedder's dequantize then multiply (the
+      // difference to the zero point is exact).
+      value = __fmul_rn(static_cast<float>(q) - p.zero_point, scale);
       value = __fmul_rn(value, p.multiplier);
     }
     p.embeddings[i] = value;
     if (p.embeddings_mirror != nullptr) p.embeddings_mirror[i] = value;
+  }
+  if (p.tail != nullptr && i < p.tail_count) {
+    const float value = p.tail[i];
+    p.embeddings[p.dim + i] = value;
+    if (p.embeddings_mirror != nullptr) p.embeddings_mirror[p.dim + i] = value;
   }
   if (p.per_layer != nullptr && i < p.per_layer_count * p.per_layer_width) {
     float value = 0.0f;
@@ -93,6 +100,7 @@ __global__ void StepFeedKernel(LiteRtNvidiaStepFeedParams p) {
     if (p.local_mask_mirror != nullptr) p.local_mask_mirror[i] = readable;
   }
   if (i == 0 && p.token_mirror != nullptr) p.token_mirror[0] = token;
+  if (p.positions == nullptr) return;
   // The scalars: the position, the cache parameter, the global mask's new
   // key, by the last block to finish.
   __threadfence();
@@ -125,9 +133,29 @@ struct RowCopyBatch {
   LiteRtNvidiaRowCopy copies[kRowCopiesPerLaunch];
 };
 
-// Block b copies batch.copies[b], 16 bytes per thread per step.
+// Whether a copy moves whole 16-byte vectors between 16-byte addresses.
+__host__ __device__ bool Vectorized(const LiteRtNvidiaRowCopy& copy) {
+  return copy.width % 16 == 0 && copy.src_pitch % 16 == 0 &&
+         copy.dst_pitch % 16 == 0 &&
+         reinterpret_cast<uintptr_t>(copy.src) % 16 == 0 &&
+         reinterpret_cast<uintptr_t>(copy.dst) % 16 == 0;
+}
+
+// Block b copies batch.copies[b], 16 bytes per thread per step, or one byte
+// when the copy is not of whole vectors (a cache whose ring is its last
+// axis: every row one value).
 __global__ void RowCopiesKernel(RowCopyBatch batch) {
   const LiteRtNvidiaRowCopy copy = batch.copies[blockIdx.x];
+  if (!Vectorized(copy)) {
+    const size_t total = static_cast<size_t>(copy.width) * copy.height;
+    for (size_t i = threadIdx.x; i < total; i += blockDim.x) {
+      const size_t row = i / copy.width;
+      const size_t column = i - row * copy.width;
+      static_cast<char*>(copy.dst)[row * copy.dst_pitch + column] =
+          static_cast<const char*>(copy.src)[row * copy.src_pitch + column];
+    }
+    return;
+  }
   const uint32_t vectors_per_row = copy.width / 16;
   const uint32_t total = vectors_per_row * copy.height;
   for (uint32_t i = threadIdx.x; i < total; i += blockDim.x) {
@@ -148,10 +176,7 @@ extern "C" cudaError_t LiteRtNvidiaLaunchRowCopies(
   for (int i = 0; i < count; ++i) {
     const LiteRtNvidiaRowCopy& copy = copies[i];
     if (copy.src == nullptr || copy.dst == nullptr || copy.width == 0 ||
-        copy.height == 0 || copy.width % 16 != 0 || copy.src_pitch % 16 != 0 ||
-        copy.dst_pitch % 16 != 0 ||
-        reinterpret_cast<uintptr_t>(copy.src) % 16 != 0 ||
-        reinterpret_cast<uintptr_t>(copy.dst) % 16 != 0 ||
+        copy.height == 0 ||
         (copy.height > 1 && (copy.src_pitch < copy.width || copy.dst_pitch < copy.width))) {
       return cudaErrorInvalidValue;
     }
@@ -174,8 +199,12 @@ extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
       (params->row_scales == nullptr) == (params->block_scales == nullptr) ||
       (params->block_scales != nullptr &&
        (params->scale_block <= 0 || params->dim % params->scale_block != 0)) ||
-      params->embeddings == nullptr || params->positions == nullptr ||
-      params->blocks_done == nullptr ||
+      params->embeddings == nullptr ||
+      (params->positions == nullptr
+           ? params->param != nullptr || params->local_mask != nullptr ||
+                 params->global_mask != nullptr
+           : params->blocks_done == nullptr) ||
+      (params->tail != nullptr && params->tail_count <= 0) ||
       (params->bits != 4 && params->bits != 2) ||
       params->vocab <= 0 || params->dim <= 0 ||
       (params->dim * params->bits) % 8 != 0 ||
@@ -193,6 +222,9 @@ extern "C" cudaError_t LiteRtNvidiaLaunchStepFeed(
     return cudaErrorInvalidValue;
   }
   int span = params->dim;
+  if (params->tail != nullptr && params->tail_count > span) {
+    span = params->tail_count;
+  }
   if (params->local_mask != nullptr && params->ring > span) span = params->ring;
   if (params->per_layer != nullptr &&
       params->per_layer_count * params->per_layer_width > span) {

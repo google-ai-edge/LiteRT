@@ -585,4 +585,272 @@ TEST(SubbyteGemmTest, GatedProjectionsMatchReference) {
       {{256, 768, 512, kLiteRtNvidiaGemmGateGeluTanh}, Rows::kSparse, 2.0f});
 }
 
+// The grouped GEMM's own kernel against the dense one, over the same rows,
+// weights and blockwise scales (one expert): the products are the same, so
+// every row it multiplies is bit-identical. The second half of its second
+// tile holds no gathered rows (row_source -2): that block is skipped and its
+// output rows keep what they held.
+TEST(SubbyteGemmTest, GroupedGemmMatchesDenseAndSkipsBlocksWithoutRows) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "
+                    "shared memory per block.";
+  }
+  constexpr int kRows = 256;
+  constexpr int kInput = 832;  // 13 chunks
+  constexpr int kOutput = 200;
+  constexpr int kKept = 192;
+  for (const int gate :
+       {kLiteRtNvidiaGemmGateNone, kLiteRtNvidiaGemmGateGeluTanh}) {
+    SCOPED_TRACE(::testing::Message() << "gate=" << gate);
+    const int channels = gate != 0 ? 2 * kOutput : kOutput;
+    uint32_t state = 4242;
+    const auto next = [&state] {
+      state = state * 1664525u + 1013904223u;
+      return state;
+    };
+    std::vector<uint16_t> activation(static_cast<size_t>(kRows) * kInput);
+    for (auto& value : activation) {
+      value = FloatToBf16Bits(
+          static_cast<float>(next() >> 8 & 0xffff) / 16384.0f - 2.0f);
+    }
+    std::vector<uint8_t> weights(static_cast<size_t>(channels) * kInput / 2);
+    for (auto& byte : weights) byte = static_cast<uint8_t>(next() >> 24);
+    std::vector<uint16_t> scales(static_cast<size_t>(channels) * kInput / 32);
+    for (auto& scale : scales) {
+      scale = FloatToHalfBits(
+          0.001f +
+          0.003f * static_cast<float>(next() >> 8 & 0xffff) / 65535.0f);
+    }
+    const LiteRtNvidiaGemmShape shape = {kRows, kInput, kOutput, gate, 32};
+    auto activation_device = Upload(activation);
+    auto weights_device = Upload(weights);
+    auto scales_device = Upload(scales);
+    const size_t output_bytes =
+        static_cast<size_t>(kRows) * kOutput * sizeof(uint16_t);
+    auto dense = AllocateCuda(output_bytes);
+    auto workspace =
+        AllocateCuda(LiteRtNvidiaSubbyteGemmWorkspaceBytes(&shape));
+    ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4Gemm(
+                  &shape, activation_device.get(),
+                  static_cast<const uint8_t*>(weights_device.get()),
+                  scales_device.get(), dense.get(), workspace.get(), nullptr),
+              cudaSuccess);
+
+    auto row_scale = AllocateCuda(kRows * sizeof(float));
+    auto scaled = AllocateCuda(static_cast<size_t>(kRows) * kInput * 2);
+    ASSERT_EQ(LiteRtNvidiaLaunchGemmScaleRows(
+                  activation_device.get(), nullptr, kRows, kInput,
+                  static_cast<float*>(row_scale.get()), scaled.get(), nullptr),
+              cudaSuccess);
+    auto tile_experts = Upload(std::vector<int32_t>{0, 0});
+    std::vector<int32_t> sources(kRows);
+    for (int r = 0; r < kRows; ++r) sources[r] = r < kKept ? r : -2;
+    auto row_source = Upload(sources);
+    const auto* bytes = static_cast<const uint8_t*>(weights_device.get());
+    const auto* halves = static_cast<const uint16_t*>(scales_device.get());
+    const LiteRtNvidiaGroupedGemmWeights grouped_weights = {
+        bytes,
+        bytes + static_cast<size_t>(kOutput) * kInput / 2,
+        halves,
+        halves + static_cast<size_t>(kOutput) * kInput / 32,
+        kInput / 2,
+        kInput / 32,
+        0,
+        0,
+        static_cast<const int32_t*>(tile_experts.get()),
+        nullptr,
+        nullptr,
+        0,
+        0,
+        0,
+        static_cast<const int32_t*>(row_source.get())};
+    auto grouped = AllocateCuda(output_bytes);
+    ASSERT_EQ(cudaMemset(grouped.get(), 0xff, output_bytes), cudaSuccess);
+    ASSERT_EQ(
+        LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+            &shape, &grouped_weights, scaled.get(),
+            static_cast<const float*>(row_scale.get()), grouped.get(), nullptr),
+        cudaSuccess);
+    ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+    std::vector<uint16_t> expected(static_cast<size_t>(kRows) * kOutput);
+    std::vector<uint16_t> actual(expected.size());
+    ASSERT_EQ(cudaMemcpy(expected.data(), dense.get(), output_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    ASSERT_EQ(cudaMemcpy(actual.data(), grouped.get(), output_bytes,
+                         cudaMemcpyDeviceToHost),
+              cudaSuccess);
+    for (int r = 0; r < kRows; ++r) {
+      for (int n = 0; n < kOutput; ++n) {
+        const size_t i = static_cast<size_t>(r) * kOutput + n;
+        ASSERT_EQ(actual[i], r < kKept ? expected[i] : 0xffff)
+            << "row=" << r << " channel=" << n;
+      }
+    }
+  }
+}
+
+struct HostDeleter {
+  void operator()(void* pointer) const { cudaFreeHost(pointer); }
+};
+
+// Weights and scales in mapped host memory (an expert arena that did not fit
+// the device) are multiplied in whole tiles by the dense GEMM's kernel, with
+// the same products as the half tiles over device memory: over two experts,
+// with FP16 or compact scales, every row of a half tile that holds gathered
+// rows is bit-identical, and an unused tile's rows are not written.
+TEST(SubbyteGemmTest, GroupedGemmOverHostMemoryMatchesDeviceMemory) {
+  if (!LiteRtNvidiaSubbyteGemmAvailable()) {
+    GTEST_SKIP() << "Requires compute capability 8.0 or newer and 81 KB of "
+                    "shared memory per block.";
+  }
+  constexpr int kRows = 384;   // three tiles
+  constexpr int kInput = 832;  // 13 chunks
+  constexpr int kOutput = 200;
+  constexpr int kExperts = 2;
+  for (int variant = 0; variant < 4; ++variant) {
+    const int compact = variant / 2;
+    const int gate = variant % 2 != 0 ? kLiteRtNvidiaGemmGateGeluTanh
+                                      : kLiteRtNvidiaGemmGateNone;
+    SCOPED_TRACE(::testing::Message()
+                 << "compact=" << compact << " gate=" << gate);
+    // An expert's rows: its gate projection's channels, then its up
+    // projection's (an expert-major arena).
+    const int channels = gate != 0 ? 2 * kOutput : kOutput;
+    uint32_t state = 4343;
+    const auto next = [&state] {
+      state = state * 1664525u + 1013904223u;
+      return state;
+    };
+    std::vector<uint16_t> activation(static_cast<size_t>(kRows) * kInput);
+    for (auto& value : activation) {
+      value = FloatToBf16Bits(
+          static_cast<float>(next() >> 8 & 0xffff) / 16384.0f - 2.0f);
+    }
+    const size_t expert_bytes = static_cast<size_t>(channels) * kInput / 2;
+    const size_t expert_scales = static_cast<size_t>(channels) * kInput / 32;
+    std::vector<uint8_t> weights(kExperts * expert_bytes);
+    for (auto& byte : weights) byte = static_cast<uint8_t>(next() >> 24);
+    // FP16 scales, or compact ones: a byte per block (255ths of the
+    // channel's maximum) and the channels' FP16 maxima after them.
+    std::vector<uint16_t> scales;
+    if (compact != 0) {
+      std::vector<uint8_t> bytes(kExperts * expert_scales);
+      for (auto& byte : bytes) byte = static_cast<uint8_t>(1 + next() % 255);
+      scales.resize(bytes.size() / 2 + kExperts * channels);
+      std::memcpy(scales.data(), bytes.data(), bytes.size());
+      for (size_t i = bytes.size() / 2; i < scales.size(); ++i) {
+        scales[i] = FloatToHalfBits(
+            0.002f +
+            0.004f * static_cast<float>(next() >> 8 & 0xffff) / 65535.0f);
+      }
+    } else {
+      scales.resize(kExperts * expert_scales);
+      for (auto& scale : scales) {
+        scale = FloatToHalfBits(
+            0.001f +
+            0.003f * static_cast<float>(next() >> 8 & 0xffff) / 65535.0f);
+      }
+    }
+    // Tile 0: expert 1, every row gathered. Tile 1: expert 0, rows 128-167
+    // gathered, 168-191 zero rows, 192-255 none (-2). Tile 2: unused.
+    std::vector<int32_t> sources(kRows);
+    for (int r = 0; r < kRows; ++r) {
+      sources[r] = r < 168 ? r : r < 192 ? -1 : -2;
+    }
+    auto activation_device = Upload(activation);
+    auto row_source = Upload(sources);
+    auto tile_experts = Upload(std::vector<int32_t>{1, 0, -1});
+    auto row_scale = AllocateCuda(kRows * sizeof(float));
+    auto scaled = AllocateCuda(static_cast<size_t>(kRows) * kInput * 2);
+    ASSERT_EQ(LiteRtNvidiaLaunchGemmScaleRows(
+                  activation_device.get(),
+                  static_cast<const int32_t*>(row_source.get()), kRows, kInput,
+                  static_cast<float*>(row_scale.get()), scaled.get(), nullptr),
+              cudaSuccess);
+
+    void* host_weights = nullptr;
+    void* host_scales = nullptr;
+    ASSERT_EQ(cudaHostAlloc(&host_weights, weights.size(),
+                            cudaHostAllocMapped | cudaHostAllocPortable),
+              cudaSuccess);
+    std::unique_ptr<void, HostDeleter> weights_host(host_weights);
+    ASSERT_EQ(cudaHostAlloc(&host_scales, scales.size() * sizeof(uint16_t),
+                            cudaHostAllocMapped | cudaHostAllocPortable),
+              cudaSuccess);
+    std::unique_ptr<void, HostDeleter> scales_host(host_scales);
+    std::memcpy(host_weights, weights.data(), weights.size());
+    std::memcpy(host_scales, scales.data(), scales.size() * sizeof(uint16_t));
+    void* mapped_weights = nullptr;
+    void* mapped_scales = nullptr;
+    ASSERT_EQ(cudaHostGetDevicePointer(&mapped_weights, host_weights, 0),
+              cudaSuccess);
+    ASSERT_EQ(cudaHostGetDevicePointer(&mapped_scales, host_scales, 0),
+              cudaSuccess);
+    auto weights_device = Upload(weights);
+    auto scales_device = Upload(scales);
+
+    const LiteRtNvidiaGemmShape shape = {kRows, kInput, kOutput, gate, 32};
+    const size_t output_bytes =
+        static_cast<size_t>(kRows) * kOutput * sizeof(uint16_t);
+    const auto run = [&](const void* weight_base, const void* scale_base,
+                         int32_t host_memory, std::vector<uint16_t>* out) {
+      const auto* bytes = static_cast<const uint8_t*>(weight_base);
+      const auto* halves = static_cast<const uint16_t*>(scale_base);
+      const size_t up_scales = static_cast<size_t>(kOutput) * kInput / 32;
+      const auto* maxima = reinterpret_cast<const uint16_t*>(
+          static_cast<const uint8_t*>(scale_base) + kExperts * expert_scales);
+      const LiteRtNvidiaGroupedGemmWeights grouped_weights = {
+          bytes,
+          bytes + static_cast<size_t>(kOutput) * kInput / 2,
+          scale_base,
+          compact != 0
+              ? static_cast<const void*>(
+                    static_cast<const uint8_t*>(scale_base) + up_scales)
+              : static_cast<const void*>(halves + up_scales),
+          kInput / 2,
+          kInput / 32,
+          expert_bytes,
+          expert_scales,
+          static_cast<const int32_t*>(tile_experts.get()),
+          compact != 0 ? maxima : nullptr,
+          compact != 0 ? maxima + kOutput : nullptr,
+          compact != 0 ? 1u : 0u,
+          compact != 0 ? static_cast<uint64_t>(channels) : 0u,
+          compact,
+          static_cast<const int32_t*>(row_source.get()),
+          host_memory};
+      auto output = AllocateCuda(output_bytes);
+      ASSERT_EQ(cudaMemset(output.get(), 0xff, output_bytes), cudaSuccess);
+      ASSERT_EQ(LiteRtNvidiaLaunchBf16Int4GroupedGemm(
+                    &shape, &grouped_weights, scaled.get(),
+                    static_cast<const float*>(row_scale.get()), output.get(),
+                    nullptr),
+                cudaSuccess);
+      ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+      out->resize(static_cast<size_t>(kRows) * kOutput);
+      ASSERT_EQ(cudaMemcpy(out->data(), output.get(), output_bytes,
+                           cudaMemcpyDeviceToHost),
+                cudaSuccess);
+    };
+    std::vector<uint16_t> device_rows;
+    std::vector<uint16_t> host_rows;
+    ASSERT_NO_FATAL_FAILURE(
+        run(weights_device.get(), scales_device.get(), 0, &device_rows));
+    ASSERT_NO_FATAL_FAILURE(run(mapped_weights, mapped_scales, 1, &host_rows));
+    for (int r = 0; r < 192; ++r) {
+      for (int n = 0; n < kOutput; ++n) {
+        const size_t i = static_cast<size_t>(r) * kOutput + n;
+        ASSERT_NE(device_rows[i], 0xffff) << "row=" << r << " channel=" << n;
+        ASSERT_EQ(host_rows[i], device_rows[i])
+            << "row=" << r << " channel=" << n;
+      }
+    }
+    for (size_t i = static_cast<size_t>(256) * kOutput; i < host_rows.size();
+         ++i) {
+      ASSERT_EQ(host_rows[i], 0xffff) << "index=" << i;
+    }
+  }
+}
+
 }  // namespace

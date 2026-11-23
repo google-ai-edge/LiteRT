@@ -15,6 +15,7 @@
 """Python wrapper for LiteRT environments."""
 
 import dataclasses
+import enum
 import glob
 import os
 import sys
@@ -136,6 +137,17 @@ def _autodiscover_compiler_plugin_path(preferred_vendor: str = "") -> str:
   )
 
 
+class LogSeverity(enum.IntEnum):
+  """Severity levels of the LiteRT logger, from most to least verbose."""
+
+  DEBUG = -1
+  VERBOSE = 0
+  INFO = 1
+  WARNING = 2
+  ERROR = 3
+  SILENT = 4
+
+
 @dataclasses.dataclass(frozen=True)
 class EnvironmentOptions:
   """Environment-level options for a shared LiteRT environment.
@@ -150,15 +162,20 @@ class EnvironmentOptions:
     dispatch_library_path: Path to dispatch libraries. When empty,
       `Environment.create` auto-discovers a vendor dispatch directory in the
       installed package.
-    compiler_cache_dir: Directory used to cache on-device compiled models
-      across runs. When empty (the default, same as the C++ API), compiled
-      models are not cached.
+    compiler_cache_dir: Directory used to cache on-device compiled models across
+      runs. When empty (the default, same as the C++ API), compiled models are
+      not cached.
+    min_logger_severity: Lowest severity that the LiteRT logger prints. For
+      example, `LogSeverity.ERROR` hides INFO and WARNING messages. The setting
+      applies to the whole process. When None, the logger keeps its current
+      level.
   """
 
   runtime_path: Optional[str] = None
   compiler_plugin_path: str = ""
   dispatch_library_path: str = ""
   compiler_cache_dir: str = ""
+  min_logger_severity: LogSeverity | None = None
 
 
 class Environment:
@@ -190,6 +207,7 @@ class Environment:
       compiler_plugin_path: str = "",
       dispatch_library_path: str = "",
       compiler_cache_dir: str = "",
+      min_logger_severity: LogSeverity | None = None,
   ) -> "Environment":
     """Creates a reusable LiteRT environment.
 
@@ -215,6 +233,9 @@ class Environment:
         are not cached. Caching is skipped when the compiler plugin produces
         in-memory JIT executables (e.g.
         `QualcommOptions(enable_just_in_time=True)`).
+      min_logger_severity: Optional lowest severity that the LiteRT logger
+        prints, e.g. `LogSeverity.ERROR`. This shortcut is mutually exclusive
+        with options. The setting applies to the whole process.
 
     Returns:
       A new Environment instance.
@@ -230,6 +251,7 @@ class Environment:
         or compiler_plugin_path
         or dispatch_library_path
         or compiler_cache_dir
+        or min_logger_severity is not None
     ):
       raise ValueError("Pass either options or environment path shortcuts.")
     if options is None:
@@ -238,6 +260,7 @@ class Environment:
           compiler_plugin_path=compiler_plugin_path,
           dispatch_library_path=dispatch_library_path,
           compiler_cache_dir=compiler_cache_dir,
+          min_logger_severity=min_logger_severity,
       )
 
     # Auto-discover a vendor dispatch directory when the caller did not set
@@ -278,6 +301,11 @@ class Environment:
         compiler_plugin_path=options.compiler_plugin_path,
         dispatch_library_path=options.dispatch_library_path,
         compiler_cache_dir=options.compiler_cache_dir,
+        min_logger_severity=(
+            None
+            if options.min_logger_severity is None
+            else int(LogSeverity(options.min_logger_severity))
+        ),
     )
     return cls(
         capsule, dataclasses.replace(options, runtime_path=final_runtime_path)

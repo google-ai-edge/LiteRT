@@ -201,6 +201,12 @@ class CompiledModelWrapper {
   // Read-only ownership of original operators in delegate partitions.
   PyObject* GetOperatorDelegations();
 
+  // Returns whether the model is fully accelerated on non-CPU hardware.
+  PyObject* IsNonCpuFullyAccelerated();
+
+  // Returns delegation metrics (total node count and per-accelerator metrics).
+  PyObject* GetDelegationMetrics();
+
   // Resizes an input tensor by signature and input index.
   PyObject* ResizeInputTensor(int signature_index, int input_index,
                               const std::vector<int>& dims, bool strict);

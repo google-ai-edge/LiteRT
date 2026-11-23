@@ -35,7 +35,6 @@ cc_library(
     deps = [
         "//tflite/converter:const_tensor_utils",
         "//tflite/converter:control_edges",
-        "//tflite/converter:convert_type",
         "//tflite/converter:converter_flags_proto_cc",
         "//tflite/converter:flatbuffer_tflite_operator_lib",
         "//tflite/converter:lite_version",
@@ -46,6 +45,7 @@ cc_library(
         "//tflite/converter:stateful_ops_utils",
         "//tflite/converter:string_utils",
         "//tflite/converter:tensorflow_lite_ops",
+        "//tflite/converter:tf_convert_type",
         "//tflite/converter/core:macros",
         "//tflite/converter/core/c:tflite_common",
         "//tflite/converter/delegates/flex:allowlisted_flex_ops_lib",
@@ -120,6 +120,7 @@ cc_library(
         "//tflite/converter:model_flags_proto_cc",
         "//tflite/converter:types_proto_cc",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
+        "//tflite/converter/quantization/common/quantization_lib:tf_quantization_config",
         "//tflite/converter/tools/optimize:reduced_precision_metadata",
         "@com_google_absl//absl/log",
         "@com_google_absl//absl/status",

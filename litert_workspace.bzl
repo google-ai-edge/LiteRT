@@ -84,25 +84,25 @@ def litert_workspace():
     # XNNPACK
     tf_http_archive(
         name = "XNNPACK",
-        sha256 = "bb3bece5b610830882554f7f1557f3b3f0de61bed7ebbc52df7062f545a40d3e",
-        strip_prefix = "XNNPACK-878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7",
-        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/878f1d8ca60d7f8fb6670ab7c8cbe39a6d7415f7.zip"),
+        sha256 = "62bdcc276bc2233c34771e29d8dbf5811efc09520067d0b5a364b88bd7269233",
+        strip_prefix = "XNNPACK-7baca675bedab9b8a835deb0a3148f9a3364788c",
+        urls = tf_mirror_urls("https://github.com/google/XNNPACK/archive/7baca675bedab9b8a835deb0a3148f9a3364788c.zip"),
     )
 
     # KleidiAI (XNNPACK dependency)
     tf_http_archive(
         name = "KleidiAI",
-        sha256 = "a424e81535ebb6d0117e9282fba45d70aee0bedb481f603df55e1805bed0e21b",
-        strip_prefix = "kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4",
-        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/5147983e14600ce7f8a6583dc04ba07753ac54c4/kleidiai-5147983e14600ce7f8a6583dc04ba07753ac54c4.zip"),
+        sha256 = "0119fa3e386c27a10c8b4bb5673eec1c4e32a1c09943e8d84cdda2c6660fb79c",
+        strip_prefix = "kleidiai-0ec849c4ee7eecc8e79e6808d20bcdd10e8d137f",
+        urls = tf_mirror_urls("https://gitlab.arm.com/kleidi/kleidiai/-/archive/0ec849c4ee7eecc8e79e6808d20bcdd10e8d137f/kleidiai-0ec849c4ee7eecc8e79e6808d20bcdd10e8d137f.zip"),
     )
 
     # FXdiv
     tf_http_archive(
         name = "FXdiv",
-        sha256 = "3d7b0e9c4c658a84376a1086126be02f9b7f753caa95e009d9ac38d11da444db",
-        strip_prefix = "FXdiv-63058eff77e11aa15bf531df5dd34395ec3017c8",
-        urls = tf_mirror_urls("https://github.com/Maratyszcza/FXdiv/archive/63058eff77e11aa15bf531df5dd34395ec3017c8.zip"),
+        sha256 = "ab7dfb08829bee33dca38405d647868fb214ac685e379ec7ef2bebcd234cd44d",
+        strip_prefix = "FXdiv-b408327ac2a15ec3e43352421954f5b1967701d1",
+        urls = tf_mirror_urls("https://github.com/Maratyszcza/FXdiv/archive/b408327ac2a15ec3e43352421954f5b1967701d1.zip"),
     )
 
     # pthreadpool
@@ -116,9 +116,9 @@ def litert_workspace():
     # Slinky (XNNPACK dependency)
     tf_http_archive(
         name = "slinky",
-        sha256 = "56793854bfd71f81597a59e4590d2fa4c444319c917ac387f5bde8c83b407a0a",
-        strip_prefix = "slinky-9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f",
-        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/9b2ee975f1a8a67a4daf1df6ce0911b66e6faf9f.zip"),
+        sha256 = "066d6f62a2a6d8eeff6ea75c88aa1d3dc63b754342083e139534133416e9a979",
+        strip_prefix = "slinky-713283a0e7c9968e15b33df80feba7337cb19de1",
+        urls = tf_mirror_urls("https://github.com/dsharlet/slinky/archive/713283a0e7c9968e15b33df80feba7337cb19de1.zip"),
     )
 
     # cpuinfo
@@ -126,9 +126,9 @@ def litert_workspace():
         name = "cpuinfo",
         # Needed to build cpuinfo with MSVC for Windows ARM64.
         patch_file = ["//third_party/cpuinfo:cpuinfo_windows_arm64_msvc.patch"],
-        sha256 = "b93044263ee072e9be3577bda52f48d5a4dd9fcb80091529471c8d2bfe59219d",
-        strip_prefix = "cpuinfo-66ee79c038d70dad9f08705b2c9b3e58f6d8f512",
-        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/66ee79c038d70dad9f08705b2c9b3e58f6d8f512.zip"),
+        sha256 = "1cffb88e4b6cbb59eb67253cc0b1365e8d907afabd90b012299df780961d3b11",
+        strip_prefix = "cpuinfo-731932997e55e84900e6f95aefb6edd167b0edcc",
+        urls = tf_mirror_urls("https://github.com/pytorch/cpuinfo/archive/731932997e55e84900e6f95aefb6edd167b0edcc.zip"),
     )
 
     # Eigen
@@ -208,10 +208,10 @@ def litert_workspace():
     # Rules CC
     tf_http_archive(
         name = "rules_cc",
-        sha256 = "69e05df29f0010ba248ef8dafc1f084c8fd2f5c553da634422d8167f5c4b277b",
-        strip_prefix = "rules_cc-0.2.20",
+        sha256 = "bd7124a844d0403b4b353bcea34d6c8b2ba88dc26881c26c9ee668da89b71846",
+        strip_prefix = "rules_cc-0.2.25",
         urls = tf_mirror_urls(
-            "https://github.com/bazelbuild/rules_cc/releases/download/0.2.20/rules_cc-0.2.20.tar.gz",
+            "https://github.com/bazelbuild/rules_cc/releases/download/0.2.25/rules_cc-0.2.25.tar.gz",
         ),
     )
 

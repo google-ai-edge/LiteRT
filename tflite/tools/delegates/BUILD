@@ -216,6 +216,7 @@ cc_library_with_tflite(
         "//tflite/c:c_api_types",
         "//tflite/delegates/ynnpack:ynnpack_delegate",
         "//tflite/tools:command_line_flags",
+        "//tflite/tools:logging",
         "//tflite/tools:tool_params",
     ],
     alwayslink = 1,

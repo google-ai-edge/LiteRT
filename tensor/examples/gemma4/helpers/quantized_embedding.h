@@ -70,8 +70,8 @@ class GemmaEmbeddingTable {
   GemmaEmbeddingTable(TensorHandle tensor, int vocab_size, int emb_dim,
                       Type type);
 
-  virtual void DecodeRow(int32_t row, int col_start, int num_cols,
-                         float* dst) const = 0;
+  virtual absl::Status DecodeRow(int32_t row, int col_start, int num_cols,
+                                 float* dst) const = 0;
 
   int32_t ClampTokenId(int32_t token_id) const;
 

@@ -28,7 +28,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/proc_mappings.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 GpuDriverMappings SummarizeGpuDriverMappings(
     const std::vector<ProcMapping>& mappings) {
@@ -112,4 +112,4 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromAndroidSources(
   return usage;
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal

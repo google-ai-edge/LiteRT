@@ -99,3 +99,36 @@ so that `cl`, `link`, `lib` and `dumpbin` are on `PATH`.
      `kCompilerPluginLibraryDir` for JIT) when creating its `Environment`;
      the runtime does not search the executable's directory for these
      libraries. See `litert/tools/run_model.cc` for the reference.
+
+   * NPU (Intel OpenVINO on x64): `windows_x86_64` ships
+     `LiteRtDispatch_IntelOpenvino.dll`,
+     `LiteRtCompilerPlugin_IntelOpenvino.dll`, and `apply_plugin_main.exe`. Put
+     the Intel OpenVINO runtime DLLs on `PATH` and pass the directory containing
+     `LiteRtDispatch_IntelOpenvino.dll` (and
+     `LiteRtCompilerPlugin_IntelOpenvino.dll` for JIT) via
+     `EnvironmentOptions::Tag::kDispatchLibraryDir` /
+     `kCompilerPluginLibraryDir`.
+
+## Using with Coding Agents (Claude Code / Gemini CLI)
+
+`litert_cc_sdk` bundles an agent skill under
+`skills/litert-cc-sdk-prebuilt-onboarding/` that guides coding agents through
+CMake integration, dynamic linking against `libLiteRt`, offline Qualcomm NPU
+AOT compilation (`apply_plugin_main`), on-device JIT compilation, and GPU/NPU
+runtime library placement across Linux, Android, Windows (`x86_64` and `arm64`),
+and Qualcomm IoT.
+
+- **Claude Code (auto-discovered project skill):** Symlink or copy the skill
+  folder into `.claude/skills/` in your project root:
+
+  ```bash
+  mkdir -p .claude/skills
+  ln -s "$PWD/litert_cc_sdk/skills/litert-cc-sdk-prebuilt-onboarding" .claude/skills/
+  ```
+
+- **Direct prompt reference:** Reference the skill directly in your prompt:
+
+  ```text
+  @litert_cc_sdk/skills/litert-cc-sdk-prebuilt-onboarding/SKILL.md
+  Build a C++ CompiledModel app using this prebuilt archive for Android CPU, GPU, and Qualcomm NPU.
+  ```

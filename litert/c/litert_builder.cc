@@ -220,6 +220,36 @@ LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase) {
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtBuilderSetOpInput(LiteRtBuilder builder, LiteRtOp op,
+                                     LiteRtParamIndex input_index,
+                                     LiteRtTensor new_tensor) {
+  if (builder == nullptr || op == nullptr || new_tensor == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (input_index >= static_cast<LiteRtParamIndex>(op->Inputs().size())) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  builder->SetOpInput(op, input_index, new_tensor);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtBuilderIsSubgraphOutput(LiteRtBuilder builder,
+                                           LiteRtTensor tensor,
+                                           bool* is_subgraph_output) {
+  if (builder == nullptr || tensor == nullptr ||
+      is_subgraph_output == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  const LiteRtSubgraphT* target = builder->TargetSubgraph();
+  if (target == nullptr) {
+    return kLiteRtStatusErrorNotFound;
+  }
+  *is_subgraph_output =
+      litert::internal::FindOutput(*target, *tensor).has_value();
+  return kLiteRtStatusOk;
+}
+
 LiteRtStatus LiteRtBuilderBuildAddOpOption(LiteRtBuilder builder, LiteRtOp op,
                                            uint32_t* fused_activation) {
   if (builder == nullptr || op == nullptr ||

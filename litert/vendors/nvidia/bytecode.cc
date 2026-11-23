@@ -304,6 +304,9 @@ Expected<void> ValidateStepFeed(const TensorRtStepFeed& feed,
           ? 0
           : static_cast<size_t>(feed.vocab) * sizeof(float);
   if (feed.vocab == 0 || feed.dim == 0 || feed.dim % 2 != 0 ||
+      (feed.table_bits != 4 && feed.table_bits != 2) ||
+      (static_cast<uint64_t>(feed.dim) * feed.table_bits) % 8 != 0 ||
+      !std::isfinite(feed.table_zero_point) ||
       !std::isfinite(feed.multiplier) || feed.multiplier == 0.0f ||
       feed.row_scales_size != scales_size ||
       (feed.row_scales == nullptr && feed.row_scales_size != 0)) {
@@ -319,7 +322,7 @@ Expected<void> ValidateStepFeed(const TensorRtStepFeed& feed,
 }
 
 constexpr size_t kStepFeedFixedBytes =
-    sizeof(uint32_t) * 13 + sizeof(uint64_t) * 2 + sizeof(float);
+    sizeof(uint32_t) * 14 + sizeof(uint64_t) * 2 + sizeof(float) * 2;
 
 void AppendStepFeed(std::vector<uint8_t>& out, const TensorRtStepFeed& feed) {
   AppendScalar<uint32_t>(out, feed.embeddings_port);
@@ -340,9 +343,12 @@ void AppendStepFeed(std::vector<uint8_t>& out, const TensorRtStepFeed& feed) {
   AppendScalar<uint32_t>(out, feed.per_layer_port);
   AppendScalar<uint32_t>(out, feed.per_layer_count);
   AppendScalar<uint32_t>(out, feed.per_layer_width);
+  AppendScalar<uint32_t>(out, feed.table_bits);
+  AppendScalar<float>(out, feed.table_zero_point);
 }
 
-// A version 6 record stops at the row scales.
+// A version 6 record stops at the row scales, a version 7 record at the
+// per-layer embeddings: their table is INT4 with a zero point of 0.
 Expected<TensorRtStepFeed> ReadStepFeed(
     const uint8_t*& cur, const uint8_t* end, uint32_t version,
     const std::vector<std::string>& input_names,
@@ -377,6 +383,10 @@ Expected<TensorRtStepFeed> ReadStepFeed(
                             ReadScalar<uint32_t>(cur, end));
     LITERT_ASSIGN_OR_RETURN(feed.per_layer_width,
                             ReadScalar<uint32_t>(cur, end));
+  }
+  if (version >= kTensorRtBytecodeVersionWithFeedTableFormat) {
+    LITERT_ASSIGN_OR_RETURN(feed.table_bits, ReadScalar<uint32_t>(cur, end));
+    LITERT_ASSIGN_OR_RETURN(feed.table_zero_point, ReadScalar<float>(cur, end));
   }
   LITERT_RETURN_IF_ERROR(ValidateStepFeed(feed, input_names, output_names));
   return feed;
@@ -955,7 +965,7 @@ Expected<std::vector<uint8_t>> PackTensorRtSharedWeightBundleImpl(
   out.reserve(reserve_size);
   AppendScalar<uint32_t>(out, kMagic);
   AppendScalar<uint32_t>(
-      out, with_step_feed      ? kTensorRtBytecodeVersionWithPerLayerFeed
+      out, with_step_feed      ? kTensorRtBytecodeVersionWithFeedTableFormat
            : with_weight_store ? kTensorRtBytecodeVersionWithWeightStore
                                : kTensorRtBytecodeVersionWithSharedWeights);
   AppendScalar<uint32_t>(out, static_cast<uint32_t>(shared_weights.size()));
@@ -1151,6 +1161,13 @@ Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
   return out;
 }
 
+void PadTensorRtAotLocator(std::vector<uint8_t>& locator) {
+  locator.resize((locator.size() + kTensorRtAotLocatorAlignment - 1) /
+                     kTensorRtAotLocatorAlignment *
+                     kTensorRtAotLocatorAlignment,
+                 0);
+}
+
 Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
     const void* data, size_t size) {
   if (data == nullptr || size < sizeof(uint32_t)) {
@@ -1198,9 +1215,13 @@ Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
       locator.file_identity = identity;
     }
   }
+  // What may follow is the padding of a locator handed to LiteRT.
+  const bool padding_only =
+      static_cast<size_t>(end - cur) < kTensorRtAotLocatorAlignment &&
+      std::all_of(cur, end, [](uint8_t byte) { return byte == 0; });
   if (!IsAbsoluteFilePath(locator.path) ||
       absl::StrContains(locator.path, '\0') || locator.artifact_size == 0 ||
-      cur != end) {
+      !padding_only) {
     return Error(kLiteRtStatusErrorInvalidArgument,
                  "Invalid TensorRT AOT artifact locator");
   }
@@ -1359,7 +1380,8 @@ Expected<TensorRtBytecode> ParseTensorRtBytecode(const void* data, size_t size,
       version != kTensorRtBytecodeVersionWithSharedWeights &&
       version != kTensorRtBytecodeVersionWithWeightStore &&
       version != kTensorRtBytecodeVersionWithStepFeed &&
-      version != kTensorRtBytecodeVersionWithPerLayerFeed) {
+      version != kTensorRtBytecodeVersionWithPerLayerFeed &&
+      version != kTensorRtBytecodeVersionWithFeedTableFormat) {
     return Error(kLiteRtStatusErrorUnsupportedCompilerVersion,
                  "Unsupported TensorRT bytecode version");
   }

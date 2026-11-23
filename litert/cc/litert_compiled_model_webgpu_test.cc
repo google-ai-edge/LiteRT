@@ -13,6 +13,8 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <fstream>
+#include <ios>
 #include <memory>
 #include <optional>
 #include <string>
@@ -28,9 +30,13 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "webgpu/webgpu.h"  // from @dawn
+#include "flatbuffers/buffer.h"  // from @flatbuffers
+#include "flatbuffers/flatbuffer_builder.h"  // from @flatbuffers
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
-#include "litert/c/litert_environment_options.h"
+#include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/internal/scoped_weight_source.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
@@ -43,6 +49,7 @@
 #include "litert/cc/options/litert_gpu_options.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
+#include "tflite/schema/schema_generated.h"
 #include "litert/test/testdata/simple_model_test_vectors.h"
 
 using testing::FloatNear;
@@ -692,6 +699,166 @@ TEST(CompiledModelWebGpuTest, ShareWebGpuResourcesExternalBuffer) {
     }
     EXPECT_THAT(output, Pointwise(FloatNear(1e-5), kTestOutputTensor));
   }
+}
+
+std::vector<uint8_t> BuildSharedExternalWeightAddModel() {
+  flatbuffers::FlatBufferBuilder builder;
+
+  constexpr uint32_t kExternalBufferId = 1;
+  constexpr uint32_t kGroupId = 1;
+  constexpr uint64_t kWeightBytes = 4 * sizeof(float);
+  const std::vector<int32_t> shape = {1, 4};
+
+  auto build_subgraph = [&](absl::string_view name) {
+    auto t_input = tflite::CreateTensor(
+        builder, builder.CreateVector(shape), tflite::TensorType_FLOAT32,
+        /*buffer=*/0, builder.CreateString("x"));
+    auto t_weight = tflite::CreateTensor(
+        builder, builder.CreateVector(shape), tflite::TensorType_FLOAT32,
+        /*buffer=*/0, builder.CreateString("w"),
+        /*quantization=*/0, /*is_variable=*/false, /*sparsity=*/0,
+        /*shape_signature=*/0, /*has_rank=*/false, /*variant_tensors=*/0,
+        kExternalBufferId);
+    auto t_output = tflite::CreateTensor(
+        builder, builder.CreateVector(shape), tflite::TensorType_FLOAT32,
+        /*buffer=*/0, builder.CreateString("y"));
+
+    auto add_options =
+        tflite::CreateAddOptions(builder, tflite::ActivationFunctionType_NONE);
+    auto op = tflite::CreateOperator(
+        builder, /*opcode_index=*/0,
+        builder.CreateVector(std::vector<int32_t>{0, 1}),
+        builder.CreateVector(std::vector<int32_t>{2}),
+        tflite::BuiltinOptions_AddOptions, add_options.Union());
+
+    return tflite::CreateSubGraph(
+        builder,
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<tflite::Tensor>>{t_input, t_weight,
+                                                             t_output}),
+        builder.CreateVector(std::vector<int32_t>{0}),
+        builder.CreateVector(std::vector<int32_t>{2}),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<tflite::Operator>>{op}),
+        builder.CreateString(std::string(name)));
+  };
+
+  auto build_signature = [&](absl::string_view key, uint32_t subgraph_index) {
+    auto in_map =
+        tflite::CreateTensorMap(builder, builder.CreateString("x"), 0);
+    auto out_map =
+        tflite::CreateTensorMap(builder, builder.CreateString("y"), 2);
+    return tflite::CreateSignatureDef(
+        builder,
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<tflite::TensorMap>>{in_map}),
+        builder.CreateVector(
+            std::vector<flatbuffers::Offset<tflite::TensorMap>>{out_map}),
+        builder.CreateString(std::string(key)), subgraph_index);
+  };
+
+  auto op_code = tflite::CreateOperatorCode(
+      builder, /*deprecated_builtin_code=*/0, /*custom_code=*/0,
+      /*version=*/1, tflite::BuiltinOperator_ADD);
+  auto subgraphs = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::SubGraph>>{
+          build_subgraph("main_a"), build_subgraph("main_b")});
+  auto signatures = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::SignatureDef>>{
+          build_signature("sig_a", 0), build_signature("sig_b", 1)});
+  auto buffers = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::Buffer>>{
+          tflite::CreateBuffer(builder)});
+
+  auto placeholder_group = tflite::CreateExternalBufferGroupDirect(builder, "");
+  auto weights_group =
+      tflite::CreateExternalBufferGroupDirect(builder, "weights");
+  auto groups = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::ExternalBufferGroup>>{
+          placeholder_group, weights_group});
+  auto ext_buffer = tflite::CreateExternalBuffer(
+      builder, kExternalBufferId, kGroupId, /*offset=*/0, kWeightBytes,
+      builder.CreateString(""));
+  auto ext_buffers = builder.CreateVector(
+      std::vector<flatbuffers::Offset<tflite::ExternalBuffer>>{ext_buffer});
+
+  auto model = tflite::CreateModel(
+      builder, /*version=*/3,
+      builder.CreateVector(
+          std::vector<flatbuffers::Offset<tflite::OperatorCode>>{op_code}),
+      subgraphs, builder.CreateString("shared_ext_weight_add"), buffers,
+      /*metadata_buffer=*/0, /*metadata=*/0, signatures, groups, ext_buffers);
+  tflite::FinishModelBuffer(builder, model);
+
+  return std::vector<uint8_t>(builder.GetBufferPointer(),
+                              builder.GetBufferPointer() + builder.GetSize());
+}
+
+// Verifies that WebGPU automatically enables constant tensor sharing when a
+// weight loader is configured, without explicitly setting
+// GpuOptions::EnableConstantTensorsSharing(true).
+TEST(CompiledModelWebGpuTest, ExternalWeightsWithDefaultConstantTensorSharing) {
+  auto leak_guard = absl::LeakCheckDisabler();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+
+  const std::vector<float> external_weights = {10.0f, 20.0f, 30.0f, 40.0f};
+  const std::string weights_path =
+      absl::StrCat(::testing::TempDir(), "/webgpu_ext_weights.bin");
+  {
+    std::ofstream out(weights_path, std::ios::binary | std::ios::trunc);
+    ASSERT_TRUE(out.is_open());
+    out.write(reinterpret_cast<const char*>(external_weights.data()),
+              external_weights.size() * sizeof(float));
+    ASSERT_TRUE(out.good());
+  }
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto scoped_file, ScopedFile::Open(weights_path));
+  Options::ScopedWeightSectionMap sections;
+  sections.emplace(
+      "weights",
+      ScopedWeightSection{.offset = 0,
+                          .length = external_weights.size() * sizeof(float)});
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  ASSERT_TRUE(options.SetHardwareAccelerators(HwAccelerators::kGpu |
+                                              HwAccelerators::kCpu));
+  ASSERT_TRUE(
+      options.SetExternalWeightScopedFile(scoped_file, std::move(sections)));
+
+  const std::vector<uint8_t> model_bytes = BuildSharedExternalWeightAddModel();
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      CompiledModel::Create(
+          env, BufferRef<uint8_t>(model_bytes.data(), model_bytes.size()),
+          options));
+
+  auto run_and_verify = [&](absl::string_view signature_key,
+                            const std::vector<float>& input_vals,
+                            const std::vector<float>& expected_vals) {
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto input_buffers, compiled_model.CreateInputBuffers(signature_key));
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto output_buffers, compiled_model.CreateOutputBuffers(signature_key));
+    ASSERT_EQ(input_buffers.size(), 1);
+    ASSERT_EQ(output_buffers.size(), 1);
+    ASSERT_TRUE(
+        input_buffers[0].Write<float>(absl::MakeConstSpan(input_vals)));
+
+    ASSERT_TRUE(
+        compiled_model.Run(signature_key, input_buffers, output_buffers));
+    EXPECT_TRUE(output_buffers[0].IsWebGpuMemory());
+
+    auto lock_and_addr = TensorBufferScopedLock::Create<const float>(
+        output_buffers[0], TensorBuffer::LockMode::kRead);
+    ASSERT_TRUE(lock_and_addr);
+    auto output = absl::MakeSpan(lock_and_addr->second, expected_vals.size());
+    EXPECT_THAT(output, Pointwise(FloatNear(1e-5), expected_vals));
+  };
+
+  run_and_verify("sig_a", {1.0f, 2.0f, 3.0f, 4.0f},
+                 {11.0f, 22.0f, 33.0f, 44.0f});
+  run_and_verify("sig_b", {2.0f, 4.0f, 6.0f, 8.0f},
+                 {12.0f, 24.0f, 36.0f, 48.0f});
 }
 
 }  // namespace

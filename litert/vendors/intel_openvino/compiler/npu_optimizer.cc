@@ -15,6 +15,7 @@
 #include "litert/vendors/intel_openvino/compiler/npu_optimizer.h"
 
 #include <algorithm>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -28,8 +29,8 @@
 #include <utility>
 #include <vector>
 
-#include "litert/c/internal/litert_logging.h"
-#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
+#include "openvino/core/dimension.hpp"
+#include "litert/vendors/intel_openvino/hfa_history.h"
 #include "openvino/core/graph_util.hpp"
 #include "openvino/core/model.hpp"
 #include "openvino/core/node.hpp"
@@ -50,6 +51,7 @@
 #include "openvino/op/matmul.hpp"
 #include "openvino/op/multiply.hpp"
 #include "openvino/op/pad.hpp"
+#include "openvino/op/parameter.hpp"
 #include "openvino/op/reduce_sum.hpp"
 #include "openvino/op/reshape.hpp"
 #include "openvino/op/scaled_dot_product_attention.hpp"
@@ -72,6 +74,8 @@
 #include "openvino/pass/pattern/op/label.hpp"
 #include "openvino/pass/pattern/op/pattern.hpp"
 #include "openvino/pass/pattern/op/wrap_type.hpp"
+#include "litert/c/internal/litert_logging.h"
+#include "litert/vendors/intel_openvino/compiler/weight_bank_attributes.h"
 
 namespace litert {
 namespace openvino {
@@ -81,13 +85,163 @@ namespace {
 // to be a multiple of this alignment.
 constexpr int64_t kSdpaKvSeqAlignment = 16;
 
-// Additive-mask sentinel used for padded key positions. Value taken from
-// Gemma models.
-constexpr float kSdpaPadMaskBias = -100.0f;
+// Additive-mask bias written into padded key positions: large enough in
+// magnitude for exp() to underflow to zero while staying within fp16 range.
+constexpr float kSdpaPadMaskBias = -3e4f;
 
 // Returns true if |output| feeds exactly one consumer input.
 bool HasSingleConsumer(const ov::Output<ov::Node>& output) {
   return output.get_target_inputs().size() == 1;
+}
+
+// Resolves a Slice/StridedSlice start offset |start| against an axis of length
+// |dim|, following the ops' own semantics: a negative start counts back from
+// the end of the axis, and the result is clamped to [0, dim]. Returns nullopt
+// when |start| is negative but |dim| is dynamic, since the offset is then not
+// known at compile time.
+std::optional<int64_t> NormalizeSliceStart(int64_t start,
+                                           const ov::Dimension& dim) {
+  if (dim.is_dynamic()) {
+    if (start < 0) {
+      return std::nullopt;
+    }
+    return start;
+  }
+  const int64_t length = dim.get_length();
+  if (start < 0) {
+    start += length;
+  }
+  return std::clamp<int64_t>(start, 0, length);
+}
+
+// Returns true if any entry of a StridedSlice bit mask is set.
+bool AnyMaskBitSet(const std::vector<int64_t>& mask) {
+  return std::any_of(mask.begin(), mask.end(),
+                     [](int64_t bit) { return bit != 0; });
+}
+
+// Returns the compile-time start offset of |node| along the last axis of its
+// data input, for v8::Slice and v1::StridedSlice, normalized to [0, dim] (see
+// NormalizeSliceStart). Returns nullopt when |node| is neither of those, when
+// the offset is not a foldable constant, or when the slice is not a plain
+// forward, unit-step slice of the last axis.
+//
+// This exists so the SDPA fusion can tell which of two sibling slices reads
+// the *low* part of an axis and which reads the *high* part. Both slice types
+// spell that offset differently, hence the two branches. Anything that would
+// make "start" mean something other than "first element read" (a negative
+// step reads backwards from |start|; a StridedSlice ellipsis, new axis or
+// shrunk axis shifts which input axis begin[i] refers to) is rejected rather
+// than interpreted, so the fusion falls back to the unfused graph.
+std::optional<int64_t> LastAxisSliceStart(
+    const std::shared_ptr<ov::Node>& node) {
+  if (node == nullptr) {
+    return std::nullopt;
+  }
+  const auto& data_ps = node->get_input_partial_shape(0);
+  if (data_ps.rank().is_dynamic()) {
+    return std::nullopt;
+  }
+  const int64_t rank = data_ps.rank().get_length();
+  const int64_t last_axis = rank - 1;
+  const ov::Dimension& last_dim = data_ps[last_axis];
+
+  // v8::Slice: inputs are (data, start, stop, step[, axes]). When the optional
+  // axes input is present, the i-th entry of |start| and |step| applies to
+  // axes[i]; otherwise the i-th entry applies to axis i.
+  if (auto slice = std::dynamic_pointer_cast<ov::op::v8::Slice>(node)) {
+    auto start_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        slice->input_value(1).get_node_shared_ptr());
+    auto step_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        slice->input_value(3).get_node_shared_ptr());
+    if (!start_const || !step_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> starts = start_const->cast_vector<int64_t>();
+    const std::vector<int64_t> steps = step_const->cast_vector<int64_t>();
+    int64_t entry = -1;
+    if (slice->get_input_size() >= 5) {
+      auto axes_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          slice->input_value(4).get_node_shared_ptr());
+      if (!axes_const) {
+        return std::nullopt;
+      }
+      const std::vector<int64_t> axes = axes_const->cast_vector<int64_t>();
+      for (size_t i = 0; i < axes.size(); ++i) {
+        const int64_t axis = axes[i] < 0 ? axes[i] + rank : axes[i];
+        if (axis == last_axis) {
+          entry = static_cast<int64_t>(i);
+          break;
+        }
+      }
+      // An axis absent from |axes| is passed through whole, i.e. starts at 0.
+      if (entry < 0) {
+        return 0;
+      }
+    } else {
+      // Fewer start entries than the rank means the last axis is untouched.
+      if (static_cast<int64_t>(starts.size()) <= last_axis) {
+        return 0;
+      }
+      entry = last_axis;
+    }
+    if (entry >= static_cast<int64_t>(starts.size()) ||
+        entry >= static_cast<int64_t>(steps.size())) {
+      return std::nullopt;
+    }
+    // Only a forward, unit-step slice reads one contiguous range beginning at
+    // |start|; a negative step reads backwards and makes |start| the high end.
+    if (steps[entry] != 1) {
+      return std::nullopt;
+    }
+    return NormalizeSliceStart(starts[entry], last_dim);
+  }
+
+  // v1::StridedSlice: |begin| is indexed by axis directly, but a set bit in
+  // begin_mask means "ignore begin[axis]" and start from 0.
+  if (auto strided =
+          std::dynamic_pointer_cast<ov::op::v1::StridedSlice>(node)) {
+    // Ellipsis, new-axis and shrink-axis masks remap begin[i] onto a different
+    // input axis (or drop/insert axes), so begin[last_axis] would no longer be
+    // the last input axis's offset. Reject instead of modeling the remapping.
+    if (AnyMaskBitSet(strided->get_ellipsis_mask()) ||
+        AnyMaskBitSet(strided->get_new_axis_mask()) ||
+        AnyMaskBitSet(strided->get_shrink_axis_mask())) {
+      return std::nullopt;
+    }
+    auto begin_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+        strided->input_value(1).get_node_shared_ptr());
+    if (!begin_const) {
+      return std::nullopt;
+    }
+    const std::vector<int64_t> begins = begin_const->cast_vector<int64_t>();
+    if (static_cast<int64_t>(begins.size()) <= last_axis) {
+      return std::nullopt;
+    }
+    // The optional strides input defaults to 1 on every axis. As for Slice,
+    // anything but a unit stride on the last axis changes what |begin| means.
+    if (strided->get_input_size() >= 4) {
+      auto strides_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          strided->input_value(3).get_node_shared_ptr());
+      if (!strides_const) {
+        return std::nullopt;
+      }
+      const std::vector<int64_t> strides =
+          strides_const->cast_vector<int64_t>();
+      if (static_cast<int64_t>(strides.size()) > last_axis &&
+          strides[last_axis] != 1) {
+        return std::nullopt;
+      }
+    }
+    const auto& begin_mask = strided->get_begin_mask();
+    if (static_cast<int64_t>(begin_mask.size()) > last_axis &&
+        begin_mask[last_axis] == 1) {
+      return 0;
+    }
+    return NormalizeSliceStart(begins[last_axis], last_dim);
+  }
+
+  return std::nullopt;
 }
 
 // Pads |input| at the end of the (possibly negative) |axis| by |pad_amount|
@@ -314,6 +468,81 @@ FuseSplitAttentionToSDPA::FuseSplitAttentionToSDPA(bool pad_kv_to_alignment) {
                  "flags disagree (cache=%d, new=%d)",
                  root_name.c_str(), v_matmul_cache->get_transpose_b(),
                  v_matmul_new->get_transpose_b());
+      return false;
+    }
+
+    // Establish which V branch is which.
+    //
+    // The K side is unambiguous: the score Concat explicitly lists
+    // [QK_cache, QK_new], so input 0 is the cache and input 1 is the new
+    // token(s). The V side has no such guarantee — we reached it through
+    // `Add(attn_cache, attn_new)`, and an Add's operands carry no ordering.
+    // Both operands are MatMuls, so the casts above succeed either way and the
+    // mismatch is completely silent. If the Add happened to be emitted with
+    // its operands reversed, we would build SDPA with K ordered
+    // [cache, new] but V ordered [new, cache]: every attention weight would be
+    // applied to the wrong value vector. The model still compiles and still
+    // runs; it just produces garbage, which for a small instruction-tuned LLM
+    // shows up as EOS on the very first decoded token.
+    //
+    // Recover the true order from the slices that split the shared Softmax:
+    // the cache branch reads the low end of the score axis, the new-token
+    // branch reads the high end.
+    std::optional<int64_t> cache_branch_start =
+        LastAxisSliceStart(cache_src_node);
+    std::optional<int64_t> new_branch_start = LastAxisSliceStart(new_src_node);
+    if (!cache_branch_start.has_value() || !new_branch_start.has_value()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: cannot read constant "
+                 "slice offsets for the V branches, so their order cannot be "
+                 "established",
+                 root_name.c_str());
+      return false;
+    }
+    if (*cache_branch_start > *new_branch_start) {
+      std::swap(v_matmul_cache, v_matmul_new);
+      std::swap(cache_src_node, new_src_node);
+      std::swap(cache_branch_start, new_branch_start);
+      LITERT_LOG(LITERT_INFO,
+                 "FuseSplitAttentionToSDPA[%s]: Add operands were reversed "
+                 "relative to the score Concat; swapped the V branches to keep "
+                 "K and V in the same [cache, new] order",
+                 root_name.c_str());
+    }
+
+    // Cross-check the recovered order against the Concat: the cache branch
+    // must cover [0, split) and the new branch must start exactly at |split|,
+    // where |split| is the cache-side score width. Anything else means the
+    // graph splits the Softmax differently than this fusion assumes, and
+    // concatenating K/V in this order would misalign them.
+    const auto& qk_cache_ps = concat_node->get_input_partial_shape(0);
+    if (qk_cache_ps.rank().is_dynamic()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: score Concat input has "
+                 "dynamic rank",
+                 root_name.c_str());
+      return false;
+    }
+    const int64_t score_last_axis = qk_cache_ps.rank().get_length() - 1;
+    if (qk_cache_ps[score_last_axis].is_static()) {
+      const int64_t split = qk_cache_ps[score_last_axis].get_length();
+      if (*cache_branch_start != 0 || *new_branch_start != split) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "FuseSplitAttentionToSDPA[%s]: reject: V-branch slice "
+                   "offsets (cache=%lld, new=%lld) do not match the score "
+                   "Concat split point %lld",
+                   root_name.c_str(),
+                   static_cast<long long>(*cache_branch_start),
+                   static_cast<long long>(*new_branch_start),
+                   static_cast<long long>(split));
+        return false;
+      }
+    } else {
+      LITERT_LOG(LITERT_DEBUG,
+                 "FuseSplitAttentionToSDPA[%s]: reject: score Concat cache "
+                 "width is dynamic, so V-branch slice alignment cannot be "
+                 "verified",
+                 root_name.c_str());
       return false;
     }
 
@@ -1715,6 +1944,309 @@ bool UnfoldGqaSequenceFold::run_on_model(
   return changed;
 }
 
+namespace {
+
+// True when |node| is a Transpose whose order is the constant {0,1,3,2}.
+bool IsSwapLastTwoAxes(const std::shared_ptr<ov::Node>& node) {
+  if (!ov::is_type<ov::op::v1::Transpose>(node)) return false;
+  auto order = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      node->get_input_node_shared_ptr(1));
+  return order &&
+         order->cast_vector<int64_t>() == std::vector<int64_t>{0, 1, 3, 2};
+}
+
+// If |kv| is a {0,1,3,2} Transpose of a [B,H,D,S]-stored cache, directly or
+// under a GQA head repeat (Unsqueeze -> Broadcast -> Reshape), returns the
+// cache in its stored layout with the repeat rebuilt beneath the Transpose.
+// Otherwise returns nullopt. New nodes are appended to |created|.
+std::optional<ov::Output<ov::Node>> KvInStoredLayout(
+    const ov::Output<ov::Node>& kv, ov::NodeVector* created) {
+  auto node = kv.get_node_shared_ptr();
+  if (IsSwapLastTwoAxes(node)) return node->input_value(0);
+
+  auto reshape = std::dynamic_pointer_cast<ov::op::v1::Reshape>(node);
+  if (!reshape || !HasSingleConsumer(reshape->output(0))) return std::nullopt;
+  auto broadcast = reshape->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v3::Broadcast>(broadcast) ||
+      !HasSingleConsumer(broadcast->output(0))) {
+    return std::nullopt;
+  }
+  auto unsqueeze = broadcast->get_input_node_shared_ptr(0);
+  if (!ov::is_type<ov::op::v0::Unsqueeze>(unsqueeze) ||
+      !HasSingleConsumer(unsqueeze->output(0))) {
+    return std::nullopt;
+  }
+  auto transpose = unsqueeze->get_input_node_shared_ptr(0);
+  if (!IsSwapLastTwoAxes(transpose)) return std::nullopt;
+
+  const auto stored_shape = StaticShape4D(transpose->input_value(0));
+  const auto expanded_shape = StaticShape4D(reshape->output(0));
+  if (!stored_shape || !expanded_shape) return std::nullopt;
+  const size_t hkv = (*stored_shape)[1];
+  const size_t hq = (*expanded_shape)[1];
+  if (hkv == 0 || hq % hkv != 0) return std::nullopt;
+  const auto r = static_cast<int64_t>(hq / hkv);
+  return BroadcastKvOverHeads(transpose->input_value(0), *stored_shape, r,
+                              created);
+}
+
+// True when |node| folds a single-token (decode) query:
+// [1,1,Hq,D] -> [1,Hkv,r,D] with Hq == Hkv*r, r > 1.
+bool IsSingleTokenGqaFoldReshape(const std::shared_ptr<ov::Node>& node) {
+  if (!ov::is_type<ov::op::v1::Reshape>(node)) return false;
+  const auto in = StaticShape4D(node->input_value(0));
+  const auto out = StaticShape4D(node->output(0));
+  if (!in || !out) return false;
+  const size_t hq = (*in)[2];
+  const size_t hkv = (*out)[1];
+  return (*in)[0] == 1 && (*in)[1] == 1 && (*out)[0] == 1 &&
+         (*in)[3] == (*out)[3] && hkv > 0 && hq > hkv && hq % hkv == 0 &&
+         (*out)[2] == hq / hkv;
+}
+
+// If |out| is a Pad that only grows the last (KV) axis, at its end, returns
+// the Pad's input; nullopt otherwise. FuseSplitAttentionToSDPA adds such a Pad
+// to align a mask's KV length. It moves no column.
+std::optional<ov::Output<ov::Node>> ThroughKvAlignmentPad(
+    const ov::Output<ov::Node>& out) {
+  const auto pad =
+      std::dynamic_pointer_cast<ov::op::v1::Pad>(out.get_node_shared_ptr());
+  if (!pad) return std::nullopt;
+  auto begin = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      pad->get_input_node_shared_ptr(1));
+  auto end = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+      pad->get_input_node_shared_ptr(2));
+  if (!begin || !end) return std::nullopt;
+  const auto b = begin->cast_vector<int64_t>();
+  auto e = end->cast_vector<int64_t>();
+  if (e.empty()) return std::nullopt;
+  e.pop_back();
+  const auto zero = [](int64_t v) { return v == 0; };
+  if (!std::all_of(b.begin(), b.end(), zero) ||
+      !std::all_of(e.begin(), e.end(), zero)) {
+    return std::nullopt;
+  }
+  return pad->input_value(0);
+}
+
+// Rows of one copy when |mask| is n >= 2 copies of one 4-D source tiled on
+// axis 2 (the GQA row tiling, see MatchTiledMask) with n * rows == |q_rows|,
+// looking through the KV alignment Pad; nullopt otherwise.
+std::optional<size_t> TiledMaskRows(ov::Output<ov::Node> mask, size_t q_rows) {
+  if (const auto unpadded = ThroughKvAlignmentPad(mask)) mask = *unpadded;
+  const auto copies =
+      static_cast<int64_t>(mask.get_node_shared_ptr()->get_input_size());
+  if (copies < 2) return std::nullopt;
+  const auto source = MatchTiledMask(mask, copies);
+  if (!source) return std::nullopt;
+  const auto shape = StaticShape4D(*source);
+  if (!shape || (*shape)[2] * static_cast<size_t>(copies) != q_rows) {
+    return std::nullopt;
+  }
+  return (*shape)[2];
+}
+
+// Number of query tokens |sdpa| attends for, given its static Q shape
+// [B,H,S,D]. A Q folded by the GQA ratio r into the sequence axis counts S / r.
+size_t QueryTokenCount(const ov::op::v13::ScaledDotProductAttention& sdpa,
+                       const ov::Shape& q_shape) {
+  const auto q = sdpa.get_input_node_shared_ptr(0);
+  if (IsSingleTokenGqaFoldReshape(q)) return 1;
+  // With Hkv == 1 a decode step's token-major fold [1,1,Hq,D] -> [1,1,Hq,D]
+  // is the identity, so the graph no longer has it; the mask still has one
+  // row per token, tiled once per query head.
+  if (sdpa.get_input_size() >= 4) {
+    if (const auto rows = TiledMaskRows(sdpa.input_value(3), q_shape[2])) {
+      return *rows;
+    }
+  }
+  const auto r = MatchGqaFoldReshape(q);
+  return r ? q_shape[2] / static_cast<size_t>(*r) : q_shape[2];
+}
+
+// The graph input an SDPA's additive mask is read from, looking through a
+// Convert, the GQA fold's row tiling (see MatchTiledMask) and the end-of-axis
+// Pad FuseSplitAttentionToSDPA adds to align the KV length; none moves a
+// column. nullptr if the mask is computed.
+std::shared_ptr<ov::op::v0::Parameter> MaskInput(ov::Output<ov::Node> mask) {
+  while (true) {
+    const auto node = mask.get_node_shared_ptr();
+    if (auto param = std::dynamic_pointer_cast<ov::op::v0::Parameter>(node)) {
+      return param;
+    }
+    if (ov::is_type<ov::op::v0::Convert>(node)) {
+      mask = node->input_value(0);
+      continue;
+    }
+    if (ov::is_type<ov::op::v0::Concat>(node)) {
+      auto tiled = MatchTiledMask(
+          mask, static_cast<int64_t>(node->get_input_size()));
+      if (!tiled) return nullptr;
+      mask = *tiled;
+      continue;
+    }
+    if (const auto unpadded = ThroughKvAlignmentPad(mask)) {
+      mask = *unpadded;
+      continue;
+    }
+    return nullptr;
+  }
+}
+
+}  // namespace
+
+bool DecomposeSDPAForHFA::run_on_model(
+    const std::shared_ptr<ov::Model>& model) {
+  bool changed = false;
+  size_t rewritten = 0;
+  size_t v_stored = 0;
+  size_t single_token = 0;
+  // Graph inputs holding the masks of the decomposed SDPAs.
+  std::vector<std::shared_ptr<ov::op::v0::Parameter>> mask_inputs;
+  // Collect first: the rewrite replaces nodes.
+  std::vector<std::shared_ptr<ov::op::v13::ScaledDotProductAttention>> sdpas;
+  for (const auto& node : model->get_ops()) {
+    if (auto sdpa =
+            std::dynamic_pointer_cast<ov::op::v13::ScaledDotProductAttention>(
+                node)) {
+      sdpas.push_back(sdpa);
+    }
+  }
+
+  for (const auto& sdpa : sdpas) {
+    const std::string name = sdpa->get_friendly_name();
+    // Q, K, V, attn_mask [, scale]. Causal SDPAs and non-additive masks stay
+    // fused.
+    if (sdpa->get_input_size() < 4 || sdpa->get_input_size() > 5 ||
+        sdpa->get_causal()) {
+      continue;
+    }
+    ov::Output<ov::Node> mask = sdpa->input_value(3);
+    if (!mask.get_element_type().is_real()) {
+      LITERT_LOG(LITERT_DEBUG,
+                 "DecomposeSDPAForHFA[%s]: reject: mask is not additive (%s)",
+                 name.c_str(), mask.get_element_type().get_type_name().c_str());
+      continue;
+    }
+    const auto q_shape = StaticShape4D(sdpa->input_value(0));
+    if (!q_shape) continue;
+    // HFA only applies to a chunk of queries; decode steps stay fused.
+    if (QueryTokenCount(*sdpa, *q_shape) <= 1) {
+      ++single_token;
+      continue;
+    }
+
+    ov::NodeVector created;
+    const auto q_type = sdpa->get_input_element_type(0);
+
+    // Fold any scale other than 1.0 into Q ahead of the first MatMul.
+    ov::Output<ov::Node> q = sdpa->input_value(0);
+    float scale = 1.0f / std::sqrt(static_cast<float>((*q_shape)[3]));
+    if (sdpa->get_input_size() == 5) {
+      auto scale_const = std::dynamic_pointer_cast<ov::op::v0::Constant>(
+          sdpa->get_input_node_shared_ptr(4));
+      if (!scale_const || ov::shape_size(scale_const->get_shape()) != 1) {
+        LITERT_LOG(LITERT_DEBUG,
+                   "DecomposeSDPAForHFA[%s]: reject: scale is not a scalar "
+                   "Constant",
+                   name.c_str());
+        continue;
+      }
+      scale = scale_const->cast_vector<float>().front();
+    }
+    if (scale != 1.0f) {
+      auto scale_const =
+          ov::op::v0::Constant::create(q_type, ov::Shape{}, {scale});
+      auto q_scaled = std::make_shared<ov::op::v1::Multiply>(q, scale_const);
+      created.insert(created.end(), {scale_const, q_scaled});
+      q = q_scaled;
+    }
+
+    // Read a [B,H,D,S]-stored K/V through transpose_b instead of an explicit
+    // Transpose.
+    ov::Output<ov::Node> k = sdpa->input_value(1);
+    bool k_transpose_b = true;
+    if (auto stored = KvInStoredLayout(k, &created)) {
+      k = *stored;
+      k_transpose_b = false;
+    }
+    ov::Output<ov::Node> v = sdpa->input_value(2);
+    bool v_transpose_b = false;
+    if (auto stored = KvInStoredLayout(v, &created)) {
+      v = *stored;
+      v_transpose_b = true;
+      ++v_stored;
+    }
+
+    auto scores = std::make_shared<ov::op::v0::MatMul>(
+        q, k, /*transpose_a=*/false, k_transpose_b);
+    if (mask.get_element_type() != scores->get_output_element_type(0)) {
+      auto converted = std::make_shared<ov::op::v0::Convert>(
+          mask, scores->get_output_element_type(0));
+      created.push_back(converted);
+      mask = converted;
+    }
+    auto masked = std::make_shared<ov::op::v1::Add>(scores, mask);
+    auto probs = std::make_shared<ov::op::v8::Softmax>(masked, /*axis=*/-1);
+    auto out = std::make_shared<ov::op::v0::MatMul>(
+        probs, v, /*transpose_a=*/false, v_transpose_b);
+    created.insert(created.end(), {scores, masked, probs, out});
+
+    out->set_friendly_name(name);
+    ov::copy_runtime_info(sdpa, created);
+    ov::replace_node(sdpa, out);
+    LITERT_LOG(LITERT_DEBUG,
+               "DecomposeSDPAForHFA: decomposed '%s' (scale=%g, "
+               "k_stored_transposed=%d, v_stored_transposed=%d)",
+               name.c_str(), static_cast<double>(scale),
+               static_cast<int>(!k_transpose_b),
+               static_cast<int>(v_transpose_b));
+    ++rewritten;
+    changed = true;
+
+    if (auto input = MaskInput(sdpa->input_value(3))) {
+      const auto& shape = input->get_output_partial_shape(0);
+      // One mask row per query token, or the cache/chunk split is unknown.
+      if (shape.is_static() &&
+          CheckHistoryMask(input->get_element_type(), shape.to_shape())
+              .HasValue() &&
+          shape.to_shape()[2] == QueryTokenCount(*sdpa, *q_shape)) {
+        mask_inputs.push_back(input);
+      }
+    }
+  }
+
+  // Tag the mask dispatch reads NPUW's HFA history from (see hfa_history.h).
+  // Of several (e.g. global and sliding-window layers), the widest spans the
+  // whole cache.
+  std::shared_ptr<ov::op::v0::Parameter> history_mask;
+  for (const auto& input : mask_inputs) {
+    if (!history_mask || input->get_shape()[3] > history_mask->get_shape()[3]) {
+      history_mask = input;
+    }
+  }
+  if (history_mask) {
+    history_mask->output(0).get_tensor().add_names({kHfaHistoryMaskTensorName});
+    LITERT_LOG(LITERT_INFO,
+               "DecomposeSDPAForHFA: the HFA history is read from input '%s' "
+               "%s",
+               history_mask->get_friendly_name().c_str(),
+               history_mask->get_shape().to_string().c_str());
+  } else if (rewritten > 0) {
+    LITERT_LOG(LITERT_WARNING,
+               "DecomposeSDPAForHFA: no graph input is a [1,1,Q,past+Q] mask "
+               "of the decomposed SDPAs, so dispatch cannot report the HFA "
+               "history to NPUW");
+  }
+
+  LITERT_LOG(LITERT_INFO,
+             "DecomposeSDPAForHFA: decomposed %zu of %zu SDPA op(s) (%zu read "
+             "V in its stored [B,H,D,S] layout, %zu single-token skipped)",
+             rewritten, sdpas.size(), v_stored, single_token);
+  num_decomposed_ = rewritten;
+  return changed;
+}
+
 bool MoEGatherRewrite::run_on_model(const std::shared_ptr<ov::Model>& model) {
   // 1. Find all TopK nodes that look like MoE routers.
   auto layers = FindMoeLayers(model);
@@ -1809,6 +2341,11 @@ NpuOptimizer::Result NpuOptimizer::Run(
   if (unfold_gqa_sequence_fold_) {
     pass_manager.register_pass<UnfoldGqaSequenceFold>();
   }
+  // Must follow UnfoldGqaSequenceFold.
+  std::shared_ptr<DecomposeSDPAForHFA> decompose_pass;
+  if (decompose_sdpa_for_hfa_) {
+    decompose_pass = pass_manager.register_pass<DecomposeSDPAForHFA>();
+  }
   if (eliminate_matmul_fq_) {
     pass_manager.register_pass<EliminateMatMulFakeQuantize>();
   }
@@ -1828,6 +2365,8 @@ NpuOptimizer::Result NpuOptimizer::Run(
   Result result;
   result.moe_is_multi_token_chunk =
       moe_gather_pass && moe_gather_pass->is_multi_token_chunk();
+  result.num_sdpa_decomposed_for_hfa =
+      decompose_pass ? decompose_pass->num_decomposed() : 0;
   return result;
 }
 

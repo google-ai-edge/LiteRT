@@ -59,6 +59,7 @@ litert_dynamic_lib(
     visibility = [
         "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
+        "//litert:litert_friends",
     ],
     deps = [
         ":qnn_compose_graph",
@@ -84,6 +85,7 @@ litert_dynamic_lib(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/compiler/transformations:attention_chunk_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:entry_embedding_transformation",
+        "//litert/vendors/qualcomm/compiler/transformations:fold_const_dequantize",
         "//litert/vendors/qualcomm/compiler/transformations:gqa_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:legalize_int32_ops_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:mlp_quant_transformation",
@@ -171,6 +173,7 @@ litert_bin(
         "//litert/vendors/qualcomm:qnn_manager",
         "//litert/vendors/qualcomm/compiler/transformations:attention_chunk_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:entry_embedding_transformation",
+        "//litert/vendors/qualcomm/compiler/transformations:fold_const_dequantize",
         "//litert/vendors/qualcomm/compiler/transformations:gqa_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:legalize_int32_ops_transformation",
         "//litert/vendors/qualcomm/compiler/transformations:mlp_quant_transformation",

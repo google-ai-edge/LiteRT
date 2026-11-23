@@ -16,6 +16,7 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
@@ -125,6 +126,32 @@ TEST(LiteRtCompiledModelOptionsTest, AddAcceleratorCompilationOptionsWorks) {
 
   EXPECT_EQ(LiteRtGetNextOpaqueOptions(&options_it), kLiteRtStatusOk);
   EXPECT_EQ(options_it, *accelerator_compilation_options2);
+
+  LiteRtDestroyOptions(options);
+}
+
+TEST(LiteRtCompiledModelOptionsTest, SetOpResolverOptionWorks) {
+  LiteRtOptions options;
+  ASSERT_EQ(LiteRtCreateOptions(&options), kLiteRtStatusOk);
+
+  auto find_builtin = [](void* /*user_data*/, int /*op*/,
+                         int /*version*/) -> const TfLiteOperator* {
+    return nullptr;
+  };
+  auto find_custom = [](void* /*user_data*/, const char* /*custom_op*/,
+                        int /*version*/) -> const TfLiteOperator* {
+    return nullptr;
+  };
+  int dummy_user_data = 42;
+
+  EXPECT_EQ(LiteRtSetOpResolverOption(nullptr, find_builtin, find_custom,
+                                      &dummy_user_data),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LiteRtSetOpResolverOption(options, nullptr, nullptr, nullptr),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtSetOpResolverOption(options, find_builtin, find_custom,
+                                      &dummy_user_data),
+            kLiteRtStatusOk);
 
   LiteRtDestroyOptions(options);
 }

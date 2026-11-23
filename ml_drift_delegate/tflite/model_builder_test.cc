@@ -22,6 +22,8 @@
 #include <cstring>
 #include <memory>
 #include <numeric>
+#include <optional>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -1390,6 +1392,321 @@ TEST(ModelBuilderTest, BuildModel_EmbeddingLookupBlockwiseQuantized) {
 
   delete interpreter;
   interpreter = nullptr;
+}
+
+// Consumes input 1, a constant shared across subgraphs, through a value it adds
+// to the graph itself instead of reading it through the ObjectReader, as the
+// moe_experts parser does for its expert weights and block scales.
+class SharedConstantInputParser : public TFLiteOperationParser {
+ public:
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    ::ml_drift::Node* node = graph->NewNode();
+    node->operation.type = "shared_constant_consumer";
+    reader->AddInput(node, 0);
+    reader->AllowSharingInput(1);
+    const ObjectReader::ConstantInputSharingInfo share =
+        reader->GetSharingInfoByNodeInputIndex(1);
+    ASSERT_TRUE(share.IsShared());
+    const TfLiteTensor* tensor = reader->GetInputTensor(1);
+    ::ml_drift::Value* value = graph->NewValue();
+    value->tensor.type = ::ml_drift::DataType::kInt8;
+    value->tensor.shape =
+        ::ml_drift::BHWC(tensor->dims->data[0], 1, 1, tensor->dims->data[1]);
+    value->tensor.ref = reader->GetTensorId(1);
+    graph->AddConsumer(node->id, value->id);
+    reader->SetSharedTensor(value->id, share.PreferredId(),
+                            reader->GetTensorId(1), /*dequant_forced=*/false,
+                            /*layout=*/std::nullopt);
+    reader->AddOutputs(node);
+  }
+
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final {
+    return absl::OkStatus();
+  }
+};
+
+class SharedConstantInputParserFactory
+    : public TFLiteStablehloCompositeParserFactory {
+ public:
+  std::unique_ptr<TFLiteOperationParser> Create(
+      std::string_view op_name) override {
+    return std::make_unique<SharedConstantInputParser>();
+  }
+  bool SupportsIntegerTypes(std::string_view op_name) override {
+    return op_name == kOpName;
+  }
+  bool SupportsBoolTypes(std::string_view op_name) override { return false; }
+
+  static constexpr char kOpName[] = "shared_constant_consumer";
+};
+
+class InterpreterSharedConstantInput : public DelegatedInterpreter {
+ public:
+  InterpreterSharedConstantInput() : DelegatedInterpreter(1) {
+    EXPECT_EQ(interpreter_.AddTensors(3), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetInputs({0}), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetOutputs({2}), kTfLiteOk);
+
+    TfLiteRegistration reg_op = {};
+    reg_op.builtin_code = kTfLiteBuiltinCustom;
+    reg_op.custom_name = SharedConstantInputParserFactory::kOpName;
+    EXPECT_EQ(interpreter_.AddNodeWithParameters(
+                  /*inputs=*/{0, 1}, /*outputs=*/{2}, /*init_data=*/nullptr,
+                  /*init_data_size=*/0, /*builtin_data=*/nullptr,
+                  /*registration=*/&reg_op),
+              kTfLiteOk);
+
+    TfLiteQuantization no_quantization;
+    no_quantization.type = kTfLiteNoQuantization;
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  0, TfLiteType::kTfLiteFloat32, "src", {1, 1, 1, 8},
+                  no_quantization, false),
+              kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  1, TfLiteType::kTfLiteInt8, "weights", {4, 8},
+                  no_quantization, false),
+              kTfLiteOk);
+    interpreter_.tensor(1)->allocation_type = kTfLiteMmapRo;
+    interpreter_.tensor(1)->bytes = 4 * 8;
+    interpreter_.tensor(1)->data.raw =
+        static_cast<char*>(calloc(interpreter_.tensor(1)->bytes, 1));
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  2, TfLiteType::kTfLiteFloat32, "dst", {1, 1, 1, 4},
+                  no_quantization, false),
+              kTfLiteOk);
+
+    exec_plan()->data[0] = 0;
+  }
+
+  ~InterpreterSharedConstantInput() override {
+    free(interpreter_.tensor(1)->data.raw);
+  }
+};
+
+TEST(ModelBuilderTest,
+     BuildModel_SharedConstantAddedByParserGetsNoValueOfItsOwn) {
+  static auto* interpreter = new InterpreterSharedConstantInput();
+  TfLiteContext* context = interpreter->context();
+
+  TfLiteDelegateParams params;
+  params.nodes_to_replace = TfLiteIntArrayCreate(1);
+  params.nodes_to_replace->data[0] = 0;
+  params.input_tensors = TfLiteIntArrayCreate(1);
+  params.input_tensors->data[0] = 0;
+  params.output_tensors = TfLiteIntArrayCreate(1);
+  params.output_tensors->data[0] = 2;
+
+  context->GetExecutionPlan = [](struct TfLiteContext* context,
+                                 TfLiteIntArray** execution_plan) {
+    *execution_plan = interpreter->exec_plan();
+    return kTfLiteOk;
+  };
+  context->GetNodeAndRegistration = [](struct TfLiteContext*, int node_index,
+                                       TfLiteNode** node,
+                                       TfLiteRegistration** registration) {
+    *node = interpreter->node(node_index);
+    *registration = interpreter->registration(node_index);
+    return kTfLiteOk;
+  };
+
+  SharedConstTensorsMap shared_tensors;
+  TensorIndexToBufferIdMap tensor_to_buffer_id_map;
+  tensor_to_buffer_id_map[1] = 100;  // The weights are shared.
+  SharedConstantInputParserFactory parser_factory;
+  ::ml_drift::GraphFloat32 graph;
+  ASSERT_OK(BuildFinalModel(context, &params, /*options=*/{}, &graph,
+                            /*quant_conversion_map=*/nullptr, &shared_tensors,
+                            &tensor_to_buffer_id_map,
+                            /*tensor_to_external_buffer_id_map=*/nullptr,
+                            &parser_factory));
+
+  // The weights have exactly one value, the parser's, and every value is used:
+  // a value with neither producer nor consumer would be a graph input and
+  // output that the GPU backend allocates memory for.
+  int num_weights_values = 0;
+  for (const ::ml_drift::Value* value : graph.values()) {
+    if (value->tensor.ref == 1) ++num_weights_values;
+    EXPECT_TRUE(graph.FindProducer(value->id) != nullptr ||
+                !graph.FindConsumers(value->id).empty())
+        << "value " << value->id << " (tensor " << value->tensor.ref
+        << ") is not used";
+  }
+  EXPECT_EQ(num_weights_values, 1);
+  ASSERT_EQ(shared_tensors.size(), 1);
+  EXPECT_EQ(shared_tensors.begin()->second.tflite_tensor_id, 1);
+  EXPECT_EQ(shared_tensors.begin()->second.global_id, 100);
+
+  TfLiteIntArrayFree(params.nodes_to_replace);
+  TfLiteIntArrayFree(params.input_tensors);
+  TfLiteIntArrayFree(params.output_tensors);
+
+  delete interpreter;
+  interpreter = nullptr;
+}
+
+class VariableInputOpParser : public TFLiteOperationParser {
+ public:
+  explicit VariableInputOpParser(bool provide_new_value)
+      : provide_new_value_(provide_new_value) {}
+
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final {
+    ::ml_drift::Node* node = graph->NewNode();
+    node->operation.type = "variable_input_op";
+    reader->AddInput(node, 0);
+    reader->AddInput(node, 1);
+    reader->AddOutputs(node);
+    if (provide_new_value_) {
+      new_variable_input_values_[1] = graph->FindOutputs(node->id)[0]->id;
+    }
+  }
+
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final {
+    return absl::OkStatus();
+  }
+
+  absl::flat_hash_map<int, ::ml_drift::ValueId>
+  GetNewValueIdsForVariableInputNodes() final {
+    return new_variable_input_values_;
+  }
+
+ private:
+  bool provide_new_value_;
+  absl::flat_hash_map<int, ::ml_drift::ValueId> new_variable_input_values_;
+};
+
+class VariableInputOpParserFactory
+    : public TFLiteStablehloCompositeParserFactory {
+ public:
+  explicit VariableInputOpParserFactory(bool provide_new_value)
+      : provide_new_value_(provide_new_value) {}
+
+  std::unique_ptr<TFLiteOperationParser> Create(
+      std::string_view op_name) override {
+    return std::make_unique<VariableInputOpParser>(provide_new_value_);
+  }
+  bool SupportsIntegerTypes(std::string_view op_name) override {
+    return op_name == kOpName;
+  }
+  bool SupportsBoolTypes(std::string_view op_name) override { return false; }
+
+  static constexpr char kOpName[] = "variable_input_op";
+
+ private:
+  bool provide_new_value_;
+};
+
+class InterpreterVariableInput : public DelegatedInterpreter {
+ public:
+  InterpreterVariableInput() : DelegatedInterpreter(1) {
+    EXPECT_EQ(interpreter_.AddTensors(3), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetInputs({0, 1}), kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetOutputs({2}), kTfLiteOk);
+
+    TfLiteRegistration reg_op = {};
+    reg_op.builtin_code = kTfLiteBuiltinCustom;
+    reg_op.custom_name = VariableInputOpParserFactory::kOpName;
+    EXPECT_EQ(interpreter_.AddNodeWithParameters(
+                  /*inputs=*/{0, 1}, /*outputs=*/{2}, /*init_data=*/nullptr,
+                  /*init_data_size=*/0, /*builtin_data=*/nullptr,
+                  /*registration=*/&reg_op),
+              kTfLiteOk);
+
+    TfLiteQuantization no_quantization;
+    no_quantization.type = kTfLiteNoQuantization;
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  0, TfLiteType::kTfLiteFloat32, "src", {1, 1, 1, 8},
+                  no_quantization, /*is_variable=*/false),
+              kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  1, TfLiteType::kTfLiteFloat32, "state", {1, 1, 1, 4},
+                  no_quantization, /*is_variable=*/true),
+              kTfLiteOk);
+    EXPECT_EQ(interpreter_.SetTensorParametersReadWrite(
+                  2, TfLiteType::kTfLiteFloat32, "dst", {1, 1, 1, 4},
+                  no_quantization, /*is_variable=*/false),
+              kTfLiteOk);
+
+    exec_plan()->data[0] = 0;
+  }
+};
+
+absl::Status BuildVariableInputModel(bool provide_new_value,
+                                     ::ml_drift::GraphFloat32* graph) {
+  static InterpreterVariableInput* active_interpreter = nullptr;
+  InterpreterVariableInput interpreter;
+  active_interpreter = &interpreter;
+  TfLiteContext* context = interpreter.context();
+
+  TfLiteDelegateParams params;
+  params.nodes_to_replace = TfLiteIntArrayCreate(1);
+  params.nodes_to_replace->data[0] = 0;
+  params.input_tensors = TfLiteIntArrayCreate(2);
+  params.input_tensors->data[0] = 0;
+  params.input_tensors->data[1] = 1;
+  params.output_tensors = TfLiteIntArrayCreate(1);
+  params.output_tensors->data[0] = 2;
+
+  context->GetExecutionPlan = [](struct TfLiteContext* context,
+                                 TfLiteIntArray** execution_plan) {
+    *execution_plan = active_interpreter->exec_plan();
+    return kTfLiteOk;
+  };
+  context->GetNodeAndRegistration = [](struct TfLiteContext*, int node_index,
+                                       TfLiteNode** node,
+                                       TfLiteRegistration** registration) {
+    *node = active_interpreter->node(node_index);
+    *registration = active_interpreter->registration(node_index);
+    return kTfLiteOk;
+  };
+
+  VariableInputOpParserFactory parser_factory(provide_new_value);
+  absl::Status status = BuildFinalModel(
+      context, &params, /*options=*/{}, graph,
+      /*quant_conversion_map=*/nullptr, /*shared_tensors=*/nullptr,
+      /*tensor_to_buffer_id_map=*/nullptr,
+      /*tensor_to_external_buffer_id_map=*/nullptr, &parser_factory);
+
+  TfLiteIntArrayFree(params.nodes_to_replace);
+  TfLiteIntArrayFree(params.input_tensors);
+  TfLiteIntArrayFree(params.output_tensors);
+  active_interpreter = nullptr;
+  return status;
+}
+
+TEST(ModelBuilderTest, BuildModel_VariableInputAddsCopyNode) {
+  ::ml_drift::GraphFloat32 graph;
+  ASSERT_OK(BuildVariableInputModel(/*provide_new_value=*/true, &graph));
+
+  const ::ml_drift::Node* copy_node = nullptr;
+  for (const ::ml_drift::Node* node : graph.nodes()) {
+    if (node->operation.type ==
+        ::ml_drift::ToString(::ml_drift::OperationType::kCopy)) {
+      copy_node = node;
+    }
+  }
+  ASSERT_NE(copy_node, nullptr);
+  const std::vector<::ml_drift::Value*> copy_outputs =
+      graph.FindOutputs(copy_node->id);
+  ASSERT_EQ(copy_outputs.size(), 1);
+  EXPECT_EQ(copy_outputs[0]->tensor.ref, 1);
+  EXPECT_TRUE(copy_outputs[0]->tensor.is_variable_input);
+  EXPECT_TRUE(graph.IsGraphOutput(copy_outputs[0]->id));
+}
+
+TEST(ModelBuilderTest,
+     BuildModel_VariableInputWithoutNewValueReturnsInvalidArgument) {
+  ::ml_drift::GraphFloat32 graph;
+  EXPECT_THAT(BuildVariableInputModel(/*provide_new_value=*/false, &graph),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("did not provide a new value")));
 }
 
 class InterpreterBroadcastMul : public DelegatedInterpreter {
@@ -4702,17 +5019,38 @@ TEST(SoftmaxOperationParserTest, TestIsSupported) {
 }
 
 TEST(SplitOperationParserTest, TestIsSupported) {
-  // Always valid
   auto context = std::make_unique<StubTfLiteContext>(
       kTfLiteBuiltinSplit,
       /*op_version=*/1,
-      /*num_inputs=*/1,
+      /*num_inputs=*/2,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
   auto parser = NewOperationParser(context->node(), context->registration());
   TfLiteSplitParams* tf_options =
       static_cast<TfLiteSplitParams*>(context->node()->builtin_data);
   tf_options->num_splits = 1;
-  EXPECT_TRUE(
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 1);
+  EXPECT_EQ(graph.nodes()[0]->operation.type,
+            ToString(::ml_drift::OperationType::kReshape));
+  ASSERT_EQ(graph.FindInputs(graph.nodes()[0]->id).size(), 1);
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[0]->id)[0]->tensor.ref,
+            context->node()->inputs->data[1]);
+
+  // Reject when the value tensor (input 1) is constant instead of axis
+  // (input 0).
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteArenaRw);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  EXPECT_FALSE(
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());

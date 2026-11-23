@@ -17,13 +17,13 @@ limitations under the License.
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "absl/types/optional.h"  // from @com_google_absl
 #include "tensor/arithmetic_graph.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -147,8 +147,8 @@ void IsAUnaryElementwiseOp(absl::string_view op_name, TensorHandle in,
 
 void IsABinaryElementwiseOp(absl::string_view op_name, TensorHandle in_1,
                             TensorHandle in_2, TensorHandle out,
-                            absl::optional<Type>
-                              expected_output_type = absl::nullopt) {
+                            std::optional<Type>
+                              expected_output_type = std::nullopt) {
   ASSERT_THAT(in_1, IsValidTensor());
   ASSERT_THAT(in_2, IsValidTensor());
   ASSERT_THAT(out, IsValidTensor());
@@ -753,7 +753,7 @@ TEST(ArithmeticTest, EmbeddingLookupWithVectorWorks) {
 TEST(ArithmeticTest, DynamicUpdateSliceWorks) {
   auto quantization = std::make_shared<PerChannelAffineQuantization>();
   quantization->scales = {0.5f};
-  quantization->zero_points = {0};
+  quantization->zero_points = ZeroPoints::Int({0});
   Tensor operand(
       {.type = Type::kI8, .shape = {10, 10}, .quantization = quantization});
   Tensor update(

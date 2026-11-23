@@ -16,6 +16,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <exception>
+#include <filesystem>  // NOLINT
+#include <fstream>
 #include <ios>
 #include <limits>
 #include <map>
@@ -24,19 +27,26 @@
 #include <streambuf>
 #include <string>
 #include <string_view>
+#include <system_error>  // NOLINT
 #include <unordered_set>
 #include <utility>
 #include <vector>
 
 #include "openvino/core/any.hpp"
 #include "openvino/core/except.hpp"
+#include "openvino/core/model.hpp"
 #include "openvino/frontend/tensorflow_lite/frontend.hpp"
 #include "openvino/frontend/tensorflow_lite/graph_iterator.hpp"
 #include "openvino/op/parameter.hpp"
 #include "openvino/openvino.hpp"  // NOLINT
+#include "openvino/pass/manager.hpp"
+#include "openvino/pass/serialize.hpp"
 #include "openvino/runtime/core.hpp"
+#include "absl/strings/ascii.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/strings/strip.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_logging_helper_with_compiler_context.h"
@@ -248,6 +258,81 @@ class CustomOStreamBuf : public std::streambuf {
   std::string target_;
   size_t pos_;
 };
+
+// Role label for dump file names (e.g. "prefill_1024", "decode", "vision"),
+// guessed from the signature-style prefix of the partition's tensor names.
+// The plugin is not given the signature or model name; empty if none matches.
+std::string PartitionRoleLabel(const litert::compiler::Subgraph& subgraph) {
+  static constexpr std::pair<absl::string_view, absl::string_view> kRoles[] = {
+      {"prefill", "prefill"},  {"decode", "decode"}, {"vision", "vision"},
+      {"image", "vision"},     {"pixel", "vision"},  {"audio", "audio"},
+      {"spectrogram", "audio"}};
+  std::vector<litert::compiler::Tensor> tensors = subgraph.Inputs();
+  for (auto& output : subgraph.Outputs()) tensors.push_back(output);
+  for (const auto& tensor : tensors) {
+    const std::string name = absl::AsciiStrToLower(tensor.Name());
+    for (const auto& [prefix, label] : kRoles) {
+      if (!absl::StartsWith(name, prefix)) continue;
+      std::string role(label);
+      // Keep a trailing size such as the "1024" in "prefill_1024_input_pos".
+      absl::string_view rest = absl::string_view(name).substr(prefix.size());
+      if (absl::ConsumePrefix(&rest, "_")) {
+        size_t digits = 0;
+        while (digits < rest.size() && absl::ascii_isdigit(rest[digits])) {
+          ++digits;
+        }
+        if (digits > 0 && (digits == rest.size() || rest[digits] == '_')) {
+          absl::StrAppend(&role, "_", rest.substr(0, digits));
+        }
+      }
+      return role;
+    }
+  }
+  return "";
+}
+
+// Debug dump of |model| as |dir|/|name|.xml/.bin. Never throws; returns false
+// (after logging the cause) if the dump could not be written.
+bool DumpOvIr(const std::shared_ptr<ov::Model>& model, const std::string& dir,
+              const std::string& name, int partition_idx) {
+  // Plain strings and caller-owned streams keep std::filesystem::path from
+  // crossing the plugin/OpenVINO shared-library boundary.
+  const std::string xml_path = absl::StrCat(dir, "/", name, ".xml");
+  const std::string bin_path = absl::StrCat(dir, "/", name, ".bin");
+  try {
+    std::ofstream xml_file(xml_path);
+    std::ofstream bin_file(bin_path, std::ios::binary);
+    if (!xml_file || !bin_file) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to open OV IR dump files '%s' / '%s' for partition "
+                 "%d",
+                 xml_path.c_str(), bin_path.c_str(), partition_idx);
+      return false;
+    }
+    ov::pass::Manager manager;
+    manager.register_pass<ov::pass::Serialize>(xml_file, bin_file);
+    manager.run_passes(model);
+    xml_file.close();
+    bin_file.close();
+    if (xml_file.fail() || bin_file.fail()) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Failed to write OV IR dump for partition %d to %s",
+                 partition_idx, xml_path.c_str());
+      return false;
+    }
+    LITERT_LOG(LITERT_INFO, "Dumped OV IR for partition %d to %s",
+               partition_idx, xml_path.c_str());
+    return true;
+  } catch (const std::exception& e) {
+    LITERT_LOG(LITERT_ERROR, "Failed to dump OV IR for partition %d: %s",
+               partition_idx, e.what());
+  } catch (...) {
+    LITERT_LOG(LITERT_ERROR,
+               "Failed to dump OV IR for partition %d: unknown exception",
+               partition_idx);
+  }
+  return false;
+}
 
 }  // namespace
 
@@ -521,9 +606,26 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         std::make_shared<ov::frontend::tensorflow_lite::FrontEnd>();
 
     bool enable_weight_sharing = true;
+    std::string dump_ovir_dir;
     if (const auto& options = compiler_plugin->GetIntelOpenVinoOptions();
         options.HasValue()) {
       enable_weight_sharing = options.Value().GetEnableWeightSharing();
+      dump_ovir_dir = options.Value().GetDumpOvirDir();
+    }
+    if (!dump_ovir_dir.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "OV IR dump enabled: full model weights will be written "
+                 "unencrypted to '%s'",
+                 dump_ovir_dir.c_str());
+      std::error_code ec;
+      std::filesystem::create_directories(dump_ovir_dir, ec);
+      if (ec) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Aborting compilation: failed to create OV IR dump dir "
+                   "'%s': %s",
+                   dump_ovir_dir.c_str(), ec.message().c_str());
+        return kLiteRtStatusErrorCompilation;
+      }
     }
 
     // Cross-partition weight sharing: all partitions' distinct weights are
@@ -659,7 +761,27 @@ LiteRtStatus LiteRtCompilerPluginCompile(
         // Run NPU-specific optimization passes.
         const auto optimize_result = context.OptimizeModel(ov_model);
 
+        // Dump before weight-sharing rewrites so the IR is self-contained.
+        if (!dump_ovir_dir.empty()) {
+          // Only the dump file name carries the role; graph_name keys the
+          // GlobalGraph and the dispatch call info and must stay unchanged.
+          std::string dump_name = graph_name;
+          if (const std::string role =
+                  PartitionRoleLabel(expected_subgraph.Value());
+              !role.empty()) {
+            absl::StrAppend(&dump_name, "_", role);
+          }
+          if (!DumpOvIr(ov_model, dump_ovir_dir, dump_name, partition_idx)) {
+            LITERT_LOG(LITERT_ERROR,
+                       "Aborting compilation: the requested OV IR dump of "
+                       "partition %d to '%s' failed",
+                       partition_idx, dump_ovir_dir.c_str());
+            return kLiteRtStatusErrorCompilation;
+          }
+        }
+
         std::map<std::string, uint32_t> const_map;
+        bool npuw_configured = false;
         if (share_weights) {
           if (share_npu) {
             // NPU: alias+tag weights first, and enable NPUW weightless sharing
@@ -667,9 +789,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
             const size_t aliased = litert::openvino::AliasAndTagSharedConstants(
                 ov_model, weight_bank, pool_offset_of, partition_idx);
             if (aliased > 0) {
+              // Must run after OptimizeModel: it configures NPUW from what the
+              // passes classified, which is knowable only once they have run.
               LITERT_RETURN_IF_ERROR(context.ConfigureForNpuWeightSharing(
-                  npu_weights_bank_name,
-                  optimize_result.moe_is_multi_token_chunk));
+                  npu_weights_bank_name, optimize_result));
+              npuw_configured = true;
             }
           } else {
             // GPU: convert weights to Parameters bound to the shared bank at
@@ -682,6 +806,15 @@ LiteRtStatus LiteRtCompilerPluginCompile(
                        "parameters in partition %d",
                        converted, partition_idx);
           }
+        }
+        if (!npuw_configured &&
+            optimize_result.num_sdpa_decomposed_for_hfa > 0) {
+          LITERT_LOG(LITERT_WARNING,
+                     "enable_hfa: NPUW_ATTN=HFA is set only on NPU partitions "
+                     "that share pool weights; partition %d gets its attention "
+                     "decomposed but no HFA unless NPUW_ATTN=HFA is passed "
+                     "explicitly",
+                     partition_idx);
         }
         ov::AnyMap configs = context.ConfigsMap();
 

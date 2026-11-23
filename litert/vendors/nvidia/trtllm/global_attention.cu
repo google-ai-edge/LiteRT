@@ -46,6 +46,21 @@ constexpr int kStreamWarps = kStreamThreads / 32;
 constexpr int kMaxStreamSplits = 336;
 constexpr int kMinTiledRows = 128;
 
+// Where the 16 rows of a row tile are among the query rows, for tiles of
+// chunk = 1 << chunk_shift tokens. Rows in order (chunk 16): tile t holds
+// rows 16 t to 16 t + 15. Rows of `tokens` tokens per query head (row =
+// head * tokens + token): tile t holds tokens t * chunk to t * chunk +
+// chunk - 1 of each of its 16 / chunk heads, in the order a launch over
+// those tokens alone holds them.
+struct RowTiles {
+  int tokens;
+  int chunk_shift;
+  __host__ __device__ int Row(int tile, int r) const {
+    return (r >> chunk_shift) * tokens + (tile << chunk_shift) +
+           (r & ((1 << chunk_shift) - 1));
+  }
+};
+
 __device__ __forceinline__ void Mma(float& d0, float& d1, float& d2, float& d3,
                                     uint32_t a0, uint32_t a1, uint32_t a2,
                                     uint32_t a3, uint32_t b0, uint32_t b1) {
@@ -147,16 +162,16 @@ __global__ void __launch_bounds__(kStreamThreads)
 }
 
 // Writes, for thread `tid` < block_rows, the first masked key and the end of
-// the visible keys of query row r0 + tid, and resets its softmax state.
+// the visible keys of its query row, whose mask row is `mask_row`, and resets
+// its softmax state.
 __device__ __forceinline__ void InitializeRow(
-    int tid, int r0, const bool* mask, const int* summary, int mask_rows,
-    int segments, int seq, int* first_s, int* end_s, float* max_s,
-    float* sum_s) {
+    int tid, int mask_row, const bool* mask, const int* summary, int segments,
+    int seq, int* first_s, int* end_s, float* max_s, float* sum_s) {
   int first_masked = seq;
   int visible_end = mask == nullptr ? seq : 0;
   if (mask != nullptr) {
     const int* entry =
-        summary + static_cast<size_t>((r0 + tid) % mask_rows) * segments * 2;
+        summary + static_cast<size_t>(mask_row) * segments * 2;
     for (int s = 0; s < segments; ++s) {
       first_masked = min(first_masked, entry[2 * s]);
       visible_end = max(visible_end, entry[2 * s + 1]);
@@ -185,82 +200,128 @@ __device__ __forceinline__ void TileRange(const int* first_s, const int* end_s,
   *tile_end = end;
 }
 
-// grid (splits, rows / 16). Block (split, row tile) visits key tiles split,
+// grid (splits, blocks). Block (split, y) owns kTiles row tiles, from tile
+// kTiles * y on (those below `row_tiles`), and visits key tiles split,
 // split + splits, ... With one split the block writes `out`; otherwise its
-// partial sums go to the workspace (acc [blocks][16][depth], row maximum and
-// row sum [blocks][16]) for CombineKernel.
+// partial sums go to the workspace (acc [row tiles][splits][16][depth], row
+// maximum and row sum [row tiles][splits][16]) for CombineKernel.
+//
+// A block of two row tiles reads each key and value once for both. A long
+// cache is read at the memory's bandwidth whatever the rows, so two tiles
+// then cost what one does; each tile's sums are those of a block that owns
+// it alone (the same operations in the same order, over the same key tiles).
 //
 // Lane (g, t) of a warp (g = lane / 4) holds rows g and g + 8 of a 16-row
 // operand. Dims are assigned to lanes so that loads are contiguous: in the
 // score product lane t reads the 16-byte vectors 4m + t of a key row (the
 // four lanes of a group read 64 contiguous bytes per load), in the value
 // product the lanes of group g read dims 8g .. 8g + 7 of the warp's 64.
-template <typename T>
-__global__ void __launch_bounds__(kStreamThreads, 3)
+template <typename T, int kTiles>
+__global__ void __launch_bounds__(kStreamThreads, kTiles == 1 ? 3 : 2)
     StreamingAttentionKernel(const T* __restrict__ q,
                              const __half* __restrict__ k,
                              const __half* __restrict__ v,
                              const bool* __restrict__ mask,
                              const int* __restrict__ summary, int mask_rows,
                              int segments, int seq, float fill,
+                             RowTiles layout, int row_tiles,
                              float* __restrict__ ws_acc,
                              float* __restrict__ ws_m,
                              float* __restrict__ ws_l, T* __restrict__ out) {
   constexpr int kWarpDims = kDepth / kStreamWarps;
   constexpr int kNSlices = kWarpDims / 8;
-  __shared__ __align__(16) float scores_s[kStreamRows][kStreamTile];
-  __shared__ __align__(16) uint16_t probs_s[kStreamRows][kStreamTile];
-  __shared__ float max_s[kStreamRows];
-  __shared__ float sum_s[kStreamRows];
-  __shared__ float scale_s[kStreamRows];
-  __shared__ int first_s[kStreamRows];
-  __shared__ int end_s[kStreamRows];
-  // query_s[(slice * 4 + i) * 32 + lane]: operand word i of `slice` for the
-  // lane, so every load reads 32 consecutive words.
-  __shared__ uint32_t query_s[kSlices * 4 * 32];
+  __shared__ __align__(16) float scores_s[kTiles][kStreamRows][kStreamTile];
+  __shared__ __align__(16) uint16_t probs_s[kTiles][kStreamRows][kStreamTile];
+  __shared__ float max_s[kTiles][kStreamRows];
+  __shared__ float sum_s[kTiles][kStreamRows];
+  __shared__ float scale_s[kTiles][kStreamRows];
+  __shared__ int first_s[kTiles][kStreamRows];
+  __shared__ int end_s[kTiles][kStreamRows];
+  // query_s[tile][(slice * 4 + i) * 32 + lane]: operand word i of `slice` for
+  // the lane, so every load reads 32 consecutive words.
+  __shared__ uint32_t query_s[kTiles][kSlices * 4 * 32];
 
   const int splits = gridDim.x;
   const int split = blockIdx.x;
-  const int r0 = blockIdx.y * kStreamRows;
+  const int tile0 = blockIdx.y * kTiles;
   const int tid = threadIdx.x;
   const int warp = tid >> 5;
   const int lane = tid & 31;
   const int g = lane >> 2;
   const int t = lane & 3;
 
-  if (tid < kStreamRows) {
-    InitializeRow(tid, r0, mask, summary, mask_rows, segments, seq, first_s,
-                  end_s, max_s, sum_s);
-  }
-  for (int i = tid; i < kStreamRows * kVectorsPerRow; i += kStreamThreads) {
-    const int row = i / kVectorsPerRow;
-    const int vector = i % kVectorsPerRow;
-    const int4 loaded = LoadQueryVector(
-        q + static_cast<size_t>(r0 + row) * kDepth, vector);
-    const int owner = (row & 7) * 4 + (vector & 3);
-    const int slice = 2 * (vector >> 2);
-    const int high = row >> 3;
-    query_s[(slice * 4 + high) * 32 + owner] = loaded.x;
-    query_s[(slice * 4 + 2 + high) * 32 + owner] = loaded.y;
-    query_s[((slice + 1) * 4 + high) * 32 + owner] = loaded.z;
-    query_s[((slice + 1) * 4 + 2 + high) * 32 + owner] = loaded.w;
-  }
-  float acc[kNSlices][4];
+  float acc[kTiles][kNSlices][4];
+  // The row tiles the block owns (the last block of an odd number owns one),
+  // and the mask row of the row whose softmax the thread computes (tid / 16).
+  bool owns[kTiles];
+  const bool* mask_row[kTiles];
 #pragma unroll
-  for (int ns = 0; ns < kNSlices; ++ns) {
-    acc[ns][0] = acc[ns][1] = acc[ns][2] = acc[ns][3] = 0.0f;
+  for (int i = 0; i < kTiles; ++i) {
+#pragma unroll
+    for (int ns = 0; ns < kNSlices; ++ns) {
+      acc[i][ns][0] = acc[i][ns][1] = acc[i][ns][2] = acc[i][ns][3] = 0.0f;
+    }
+    owns[i] = kTiles == 1 || tile0 + i < row_tiles;
+    mask_row[i] = nullptr;
+    if (!owns[i]) {
+      continue;
+    }
+    if (tid < kStreamRows) {
+      InitializeRow(tid, layout.Row(tile0 + i, tid) % mask_rows, mask, summary,
+                    segments, seq, first_s[i], end_s[i], max_s[i], sum_s[i]);
+    }
+    if (mask != nullptr) {
+      mask_row[i] =
+          mask +
+          static_cast<size_t>(layout.Row(tile0 + i, tid >> 4) % mask_rows) *
+              seq;
+    }
+    for (int j = tid; j < kStreamRows * kVectorsPerRow; j += kStreamThreads) {
+      const int row = j / kVectorsPerRow;
+      const int vector = j % kVectorsPerRow;
+      const int4 loaded = LoadQueryVector(
+          q + static_cast<size_t>(layout.Row(tile0 + i, row)) * kDepth, vector);
+      const int owner = (row & 7) * 4 + (vector & 3);
+      const int slice = 2 * (vector >> 2);
+      const int high = row >> 3;
+      query_s[i][(slice * 4 + high) * 32 + owner] = loaded.x;
+      query_s[i][(slice * 4 + 2 + high) * 32 + owner] = loaded.y;
+      query_s[i][((slice + 1) * 4 + high) * 32 + owner] = loaded.z;
+      query_s[i][((slice + 1) * 4 + 2 + high) * 32 + owner] = loaded.w;
+    }
   }
   __syncthreads();
-  int full_end;
-  int tile_end;
-  TileRange(first_s, end_s, kStreamRows, kStreamTile, seq, &full_end,
-            &tile_end);
+  // Each row tile's key tiles are those its rows see, as in a block of its
+  // own; the block walks up to the last of them.
+  int full_end[kTiles];
+  int tile_end[kTiles];
+#pragma unroll
+  for (int i = 0; i < kTiles; ++i) {
+    full_end[i] = 0;
+    tile_end[i] = 0;
+    if (owns[i]) {
+      TileRange(first_s[i], end_s[i], kStreamRows, kStreamTile, seq,
+                &full_end[i], &tile_end[i]);
+    }
+  }
+  int last = tile_end[0];
+#pragma unroll
+  for (int i = 1; i < kTiles; ++i) {
+    last = max(last, tile_end[i]);
+  }
 
-  for (int c = split; c < tile_end; c += splits) {
+  for (int c = split; c < last; c += splits) {
     const int j0 = c * kStreamTile;
+    bool visits[kTiles];
+    float s[kTiles][4];
+    float u[kTiles][4];
+#pragma unroll
+    for (int i = 0; i < kTiles; ++i) {
+      visits[i] = kTiles == 1 || c < tile_end[i];
+      s[i][0] = s[i][1] = s[i][2] = s[i][3] = 0.0f;
+      u[i][0] = u[i][1] = u[i][2] = u[i][3] = 0.0f;
+    }
     // Scores for rows (g, g + 8) x keys (8 * warp + 2t, +1).
-    float s0 = 0.0f, s1 = 0.0f, s2 = 0.0f, s3 = 0.0f;
-    float u0 = 0.0f, u1 = 0.0f, u2 = 0.0f, u3 = 0.0f;
     {
       const int key = min(j0 + warp * 8 + g, seq - 1);
       const int4* k_row =
@@ -276,38 +337,51 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
         }
 #pragma unroll
         for (int b = 0; b < kBatch; ++b) {
-          const uint32_t* a = &query_s[(2 * (m0 + b)) * 4 * 32 + lane];
-          Mma(s0, s1, s2, s3, a[0], a[32], a[64], a[96], kv[b].x, kv[b].y);
-          Mma(u0, u1, u2, u3, a[128], a[160], a[192], a[224], kv[b].z,
-              kv[b].w);
+#pragma unroll
+          for (int i = 0; i < kTiles; ++i) {
+            if (!visits[i]) {
+              continue;
+            }
+            const uint32_t* a = &query_s[i][(2 * (m0 + b)) * 4 * 32 + lane];
+            Mma(s[i][0], s[i][1], s[i][2], s[i][3], a[0], a[32], a[64], a[96],
+                kv[b].x, kv[b].y);
+            Mma(u[i][0], u[i][1], u[i][2], u[i][3], a[128], a[160], a[192],
+                a[224], kv[b].z, kv[b].w);
+          }
         }
       }
     }
-    *reinterpret_cast<float2*>(&scores_s[g][warp * 8 + 2 * t]) =
-        make_float2(s0 + u0, s1 + u1);
-    *reinterpret_cast<float2*>(&scores_s[g + 8][warp * 8 + 2 * t]) =
-        make_float2(s2 + u2, s3 + u3);
+#pragma unroll
+    for (int i = 0; i < kTiles; ++i) {
+      if (!visits[i]) {
+        continue;
+      }
+      *reinterpret_cast<float2*>(&scores_s[i][g][warp * 8 + 2 * t]) =
+          make_float2(s[i][0] + u[i][0], s[i][1] + u[i][1]);
+      *reinterpret_cast<float2*>(&scores_s[i][g + 8][warp * 8 + 2 * t]) =
+          make_float2(s[i][2] + u[i][2], s[i][3] + u[i][3]);
+    }
     __syncthreads();
 
     // Online softmax: thread handles row tid / 16, keys 4 * (tid % 16) .. +3.
-    {
+#pragma unroll
+    for (int i = 0; i < kTiles; ++i) {
+      if (!visits[i]) {
+        continue;
+      }
       const int row = tid >> 4;
       const int kq = (tid & 15) * 4;
       float sc[4];
       *reinterpret_cast<float4*>(&sc[0]) =
-          *reinterpret_cast<const float4*>(&scores_s[row][kq]);
-      if (c >= full_end) {
-        const bool* mask_row =
-            mask == nullptr
-                ? nullptr
-                : mask + static_cast<size_t>((r0 + row) % mask_rows) * seq;
+          *reinterpret_cast<const float4*>(&scores_s[i][row][kq]);
+      if (c >= full_end[i]) {
 #pragma unroll
         for (int e = 0; e < 4; ++e) {
           // Keys past the end of the cache do not exist: no weight, even for
           // a row whose scores are all `fill`.
           const int key = j0 + kq + e;
           const bool visible =
-              mask_row == nullptr || mask_row[min(key, seq - 1)];
+              mask_row[i] == nullptr || mask_row[i][min(key, seq - 1)];
           sc[e] = key < seq ? (visible ? sc[e] : fill) : -INFINITY;
         }
       }
@@ -317,7 +391,7 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
         tile_max =
             fmaxf(tile_max, __shfl_xor_sync(0xffffffffu, tile_max, offset));
       }
-      const float old_max = max_s[row];
+      const float old_max = max_s[i][row];
       const float new_max = fmaxf(old_max, tile_max);
       const bool finite = new_max > -INFINITY;
       const __half2 p01 = __floats2half2_rn(
@@ -333,14 +407,14 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
       for (int offset = 8; offset > 0; offset >>= 1) {
         tile_sum += __shfl_xor_sync(0xffffffffu, tile_sum, offset);
       }
-      *reinterpret_cast<__half2*>(&probs_s[row][kq]) = p01;
-      *reinterpret_cast<__half2*>(&probs_s[row][kq + 2]) = p23;
+      *reinterpret_cast<__half2*>(&probs_s[i][row][kq]) = p01;
+      *reinterpret_cast<__half2*>(&probs_s[i][row][kq + 2]) = p23;
       if ((tid & 15) == 0) {
         const float scale =
             old_max > -INFINITY ? __expf(old_max - new_max) : 0.0f;
-        max_s[row] = new_max;
-        sum_s[row] = sum_s[row] * scale + tile_sum;
-        scale_s[row] = scale;
+        max_s[i][row] = new_max;
+        sum_s[i][row] = sum_s[i][row] * scale + tile_sum;
+        scale_s[i][row] = scale;
       }
     }
     __syncthreads();
@@ -349,39 +423,52 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
     // reads dims 8g .. 8g + 7 of them from keys 2t, 2t + 1, 2t + 8, 2t + 9 of
     // each 16-key slice.
     {
-      const float scale_lo = scale_s[g];
-      const float scale_hi = scale_s[g + 8];
-      if (scale_lo != 1.0f || scale_hi != 1.0f) {
 #pragma unroll
-        for (int ns = 0; ns < kNSlices; ++ns) {
-          acc[ns][0] *= scale_lo;
-          acc[ns][1] *= scale_lo;
-          acc[ns][2] *= scale_hi;
-          acc[ns][3] *= scale_hi;
+      for (int i = 0; i < kTiles; ++i) {
+        if (!visits[i]) {
+          continue;
+        }
+        const float scale_lo = scale_s[i][g];
+        const float scale_hi = scale_s[i][g + 8];
+        if (scale_lo != 1.0f || scale_hi != 1.0f) {
+#pragma unroll
+          for (int ns = 0; ns < kNSlices; ++ns) {
+            acc[i][ns][0] *= scale_lo;
+            acc[i][ns][1] *= scale_lo;
+            acc[i][ns][2] *= scale_hi;
+            acc[i][ns][3] *= scale_hi;
+          }
         }
       }
 #pragma unroll
       for (int ks = 0; ks < kStreamTile / 16; ++ks) {
-        const uint32_t a0 =
-            *reinterpret_cast<const uint32_t*>(&probs_s[g][16 * ks + 2 * t]);
-        const uint32_t a1 = *reinterpret_cast<const uint32_t*>(
-            &probs_s[g + 8][16 * ks + 2 * t]);
-        const uint32_t a2 = *reinterpret_cast<const uint32_t*>(
-            &probs_s[g][16 * ks + 8 + 2 * t]);
-        const uint32_t a3 = *reinterpret_cast<const uint32_t*>(
-            &probs_s[g + 8][16 * ks + 8 + 2 * t]);
+        uint32_t a[kTiles][4];
+#pragma unroll
+        for (int i = 0; i < kTiles; ++i) {
+          if (!visits[i]) {
+            continue;
+          }
+          a[i][0] = *reinterpret_cast<const uint32_t*>(
+              &probs_s[i][g][16 * ks + 2 * t]);
+          a[i][1] = *reinterpret_cast<const uint32_t*>(
+              &probs_s[i][g + 8][16 * ks + 2 * t]);
+          a[i][2] = *reinterpret_cast<const uint32_t*>(
+              &probs_s[i][g][16 * ks + 8 + 2 * t]);
+          a[i][3] = *reinterpret_cast<const uint32_t*>(
+              &probs_s[i][g + 8][16 * ks + 8 + 2 * t]);
+        }
         const int key = j0 + 16 * ks + 2 * t;
         const size_t column = static_cast<size_t>(warp) * kWarpDims + g * 8;
         uint32_t words[4][4];
 #pragma unroll
-        for (int i = 0; i < 4; ++i) {
-          const int key_i = min(key + (i & 1) + (i >> 1) * 8, seq - 1);
+        for (int w = 0; w < 4; ++w) {
+          const int key_w = min(key + (w & 1) + (w >> 1) * 8, seq - 1);
           const int4 loaded = *reinterpret_cast<const int4*>(
-              v + static_cast<size_t>(key_i) * kDepth + column);
-          words[i][0] = loaded.x;
-          words[i][1] = loaded.y;
-          words[i][2] = loaded.z;
-          words[i][3] = loaded.w;
+              v + static_cast<size_t>(key_w) * kDepth + column);
+          words[w][0] = loaded.x;
+          words[w][1] = loaded.y;
+          words[w][2] = loaded.z;
+          words[w][3] = loaded.w;
         }
 #pragma unroll
         for (int ns = 0; ns < kNSlices; ++ns) {
@@ -391,49 +478,64 @@ __global__ void __launch_bounds__(kStreamThreads, 3)
                               ((words[1][word] >> shift) << 16);
           const uint32_t b1 = ((words[2][word] >> shift) & 0xffffu) |
                               ((words[3][word] >> shift) << 16);
-          Mma(acc[ns][0], acc[ns][1], acc[ns][2], acc[ns][3], a0, a1, a2, a3,
-              b0, b1);
+#pragma unroll
+          for (int i = 0; i < kTiles; ++i) {
+            if (!visits[i]) {
+              continue;
+            }
+            Mma(acc[i][ns][0], acc[i][ns][1], acc[i][ns][2], acc[i][ns][3],
+                a[i][0], a[i][1], a[i][2], a[i][3], b0, b1);
+          }
         }
       }
     }
   }
   __syncthreads();
 
-  // acc[ns][{0, 1}] are row g, dims 16t + {0, 8} + ns of the warp's range.
+  // acc[i][ns][{0, 1}] are row g, dims 16t + {0, 8} + ns of the warp's range.
   const size_t column = static_cast<size_t>(warp) * kWarpDims + 16 * t;
-  if (splits == 1) {
-    const float sum_lo = sum_s[g];
-    const float sum_hi = sum_s[g + 8];
-    const float inv_lo = sum_lo > 0.0f ? 1.0f / sum_lo : 0.0f;
-    const float inv_hi = sum_hi > 0.0f ? 1.0f / sum_hi : 0.0f;
-    T* out_lo = out + static_cast<size_t>(r0 + g) * kDepth + column;
-    T* out_hi = out + static_cast<size_t>(r0 + g + 8) * kDepth + column;
 #pragma unroll
-    for (int ns = 0; ns < kNSlices; ns += 2) {
-      *reinterpret_cast<uint32_t*>(out_lo + ns) =
-          PackOutput<T>(acc[ns][0] * inv_lo, acc[ns + 1][0] * inv_lo);
-      *reinterpret_cast<uint32_t*>(out_lo + 8 + ns) =
-          PackOutput<T>(acc[ns][1] * inv_lo, acc[ns + 1][1] * inv_lo);
-      *reinterpret_cast<uint32_t*>(out_hi + ns) =
-          PackOutput<T>(acc[ns][2] * inv_hi, acc[ns + 1][2] * inv_hi);
-      *reinterpret_cast<uint32_t*>(out_hi + 8 + ns) =
-          PackOutput<T>(acc[ns][3] * inv_hi, acc[ns + 1][3] * inv_hi);
+  for (int i = 0; i < kTiles; ++i) {
+    if (!owns[i]) {
+      continue;
     }
-    return;
-  }
-  const size_t part = static_cast<size_t>(blockIdx.y) * splits + split;
-  float* acc_lo = ws_acc + (part * kStreamRows + g) * kDepth + column;
-  float* acc_hi = ws_acc + (part * kStreamRows + g + 8) * kDepth + column;
+    if (splits == 1) {
+      const float sum_lo = sum_s[i][g];
+      const float sum_hi = sum_s[i][g + 8];
+      const float inv_lo = sum_lo > 0.0f ? 1.0f / sum_lo : 0.0f;
+      const float inv_hi = sum_hi > 0.0f ? 1.0f / sum_hi : 0.0f;
+      T* out_lo =
+          out + static_cast<size_t>(layout.Row(tile0 + i, g)) * kDepth + column;
+      T* out_hi = out +
+                  static_cast<size_t>(layout.Row(tile0 + i, g + 8)) * kDepth +
+                  column;
 #pragma unroll
-  for (int ns = 0; ns < kNSlices; ++ns) {
-    acc_lo[ns] = acc[ns][0];
-    acc_lo[8 + ns] = acc[ns][1];
-    acc_hi[ns] = acc[ns][2];
-    acc_hi[8 + ns] = acc[ns][3];
-  }
-  if (tid < kStreamRows) {
-    ws_m[part * kStreamRows + tid] = max_s[tid];
-    ws_l[part * kStreamRows + tid] = sum_s[tid];
+      for (int ns = 0; ns < kNSlices; ns += 2) {
+        *reinterpret_cast<uint32_t*>(out_lo + ns) = PackOutput<T>(
+            acc[i][ns][0] * inv_lo, acc[i][ns + 1][0] * inv_lo);
+        *reinterpret_cast<uint32_t*>(out_lo + 8 + ns) = PackOutput<T>(
+            acc[i][ns][1] * inv_lo, acc[i][ns + 1][1] * inv_lo);
+        *reinterpret_cast<uint32_t*>(out_hi + ns) = PackOutput<T>(
+            acc[i][ns][2] * inv_hi, acc[i][ns + 1][2] * inv_hi);
+        *reinterpret_cast<uint32_t*>(out_hi + 8 + ns) = PackOutput<T>(
+            acc[i][ns][3] * inv_hi, acc[i][ns + 1][3] * inv_hi);
+      }
+      continue;
+    }
+    const size_t part = static_cast<size_t>(tile0 + i) * splits + split;
+    float* acc_lo = ws_acc + (part * kStreamRows + g) * kDepth + column;
+    float* acc_hi = ws_acc + (part * kStreamRows + g + 8) * kDepth + column;
+#pragma unroll
+    for (int ns = 0; ns < kNSlices; ++ns) {
+      acc_lo[ns] = acc[i][ns][0];
+      acc_lo[8 + ns] = acc[i][ns][1];
+      acc_hi[ns] = acc[i][ns][2];
+      acc_hi[8 + ns] = acc[i][ns][3];
+    }
+    if (tid < kStreamRows) {
+      ws_m[part * kStreamRows + tid] = max_s[i][tid];
+      ws_l[part * kStreamRows + tid] = sum_s[i][tid];
+    }
   }
 }
 
@@ -446,7 +548,7 @@ __global__ void __launch_bounds__(kCombineThreads)
     CombineKernel(const float* __restrict__ ws_acc,
                   const float* __restrict__ ws_m,
                   const float* __restrict__ ws_l, int splits,
-                  T* __restrict__ out) {
+                  RowTiles layout, T* __restrict__ out) {
   constexpr int kElems = kDepth / kCombineThreads;  // dims per thread
   __shared__ float max_s[kCombineWarps];
   const int row = blockIdx.x;
@@ -489,9 +591,9 @@ __global__ void __launch_bounds__(kCombineThreads)
   }
   const float inv = l > 0.0f ? 1.0f / l : 0.0f;
   static_assert(kElems == 2, "one packed word per thread");
-  *reinterpret_cast<uint32_t*>(out + static_cast<size_t>(row) * kDepth +
-                               tid * kElems) =
-      PackOutput<T>(acc[0] * inv, acc[1] * inv);
+  *reinterpret_cast<uint32_t*>(
+      out + static_cast<size_t>(layout.Row(row / kStreamRows, r)) * kDepth +
+      tid * kElems) = PackOutput<T>(acc[0] * inv, acc[1] * inv);
 }
 
 // The split count bounds the workspace, which is sized from the shapes alone
@@ -513,8 +615,11 @@ size_t SummaryBytes(int mask_rows) {
   return (bytes + 255) / 256 * 256;
 }
 
-size_t StreamingWorkspaceBytes(int rows, int mask_rows, int seq) {
-  const size_t parts = static_cast<size_t>(rows) * MaxSplits(rows, seq);
+// `split_rows`: the rows of the launch whose split count this one takes
+// (Launch).
+size_t StreamingWorkspaceBytes(int rows, int split_rows, int mask_rows,
+                               int seq) {
+  const size_t parts = static_cast<size_t>(rows) * MaxSplits(split_rows, seq);
   return SummaryBytes(mask_rows) +
          parts * (static_cast<size_t>(kDepth) + 2) * sizeof(float);
 }
@@ -527,10 +632,14 @@ bool TiledShape(int rows, int mask_rows, int seq,
   return rows >= kMinTiledRows && LiteRtNvidiaTiledAttentionSupports(shape);
 }
 
+// `split_rows` is `rows`, or 16 for row tiles that are each computed as a
+// 16-row launch of their own computes them: the splits are then that
+// launch's, and a block owns two row tiles.
 template <typename T>
 cudaError_t Launch(const T* q, const __half* k, const __half* v,
                    const bool* mask, int mask_rows, int rows, int seq,
-                   float fill, T* out, void* workspace, cudaStream_t stream) {
+                   float fill, RowTiles layout, int split_rows, T* out,
+                   void* workspace, cudaStream_t stream) {
   int device = 0;
   int multiprocessors = 0;
   cudaError_t status = cudaGetDevice(&device);
@@ -540,8 +649,9 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
   if (status != cudaSuccess) return status;
   // About two blocks per multiprocessor, within the workspace bound.
   const int row_tiles = rows / kStreamRows;
-  const int max_splits = MaxSplits(rows, seq);
-  int splits = (2 * multiprocessors + row_tiles - 1) / row_tiles;
+  const int split_tiles = split_rows / kStreamRows;
+  const int max_splits = MaxSplits(split_rows, seq);
+  int splits = (2 * multiprocessors + split_tiles - 1) / split_tiles;
   splits = splits < max_splits ? splits : max_splits;
   const int segments = SegmentCount(mask_rows);
   int* summary = static_cast<int*>(workspace);
@@ -556,14 +666,21 @@ cudaError_t Launch(const T* q, const __half* k, const __half* v,
     status = cudaGetLastError();
     if (status != cudaSuccess) return status;
   }
-  StreamingAttentionKernel<T>
-      <<<dim3(splits, row_tiles), kStreamThreads, 0, stream>>>(
-          q, k, v, mask, summary, mask_rows, segments, seq, fill, ws_acc, ws_m,
-          ws_l, out);
+  if (split_rows == rows) {
+    StreamingAttentionKernel<T, 1>
+        <<<dim3(splits, row_tiles), kStreamThreads, 0, stream>>>(
+            q, k, v, mask, summary, mask_rows, segments, seq, fill, layout,
+            row_tiles, ws_acc, ws_m, ws_l, out);
+  } else {
+    StreamingAttentionKernel<T, 2>
+        <<<dim3(splits, (row_tiles + 1) / 2), kStreamThreads, 0, stream>>>(
+            q, k, v, mask, summary, mask_rows, segments, seq, fill, layout,
+            row_tiles, ws_acc, ws_m, ws_l, out);
+  }
   status = cudaGetLastError();
   if (status != cudaSuccess || splits == 1) return status;
-  CombineKernel<T><<<rows, kCombineThreads, 0, stream>>>(ws_acc, ws_m, ws_l,
-                                                         splits, out);
+  CombineKernel<T><<<rows, kCombineThreads, 0, stream>>>(
+      ws_acc, ws_m, ws_l, splits, layout, out);
   return cudaGetLastError();
 }
 
@@ -586,7 +703,8 @@ extern "C" size_t LiteRtNvidiaGlobalAttentionWorkspaceBytes(int32_t rows,
   }
   // The streaming kernel also serves the shapes of the tiled kernel on
   // devices that cannot run it.
-  const size_t streaming = StreamingWorkspaceBytes(rows, mask_rows, seq);
+  const size_t streaming =
+      StreamingWorkspaceBytes(rows, rows, mask_rows, seq);
   LiteRtNvidiaAttentionShape shape;
   if (!TiledShape(rows, mask_rows, seq, &shape)) {
     return streaming;
@@ -615,13 +733,70 @@ extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttention(
         &shape, q, q_bf16, k, v, /*k_new=*/nullptr, /*v_new=*/nullptr, mask,
         fill, out, workspace, stream);
   }
+  const RowTiles in_order = {/*tokens=*/0, /*chunk_shift=*/4};
   if (q_bf16) {
     return Launch(static_cast<const __nv_bfloat16*>(q),
                   static_cast<const __half*>(k), static_cast<const __half*>(v),
-                  mask, mask_rows, rows, seq, fill,
+                  mask, mask_rows, rows, seq, fill, in_order, rows,
                   static_cast<__nv_bfloat16*>(out), workspace, stream);
   }
   return Launch(static_cast<const __half*>(q), static_cast<const __half*>(k),
                 static_cast<const __half*>(v), mask, mask_rows, rows, seq,
-                fill, static_cast<__half*>(out), workspace, stream);
+                fill, in_order, rows, static_cast<__half*>(out), workspace,
+                stream);
+}
+
+extern "C" bool LiteRtNvidiaGlobalAttentionTokensSupports(int32_t rows,
+                                                          int32_t tokens,
+                                                          int32_t mask_rows,
+                                                          int32_t depth) {
+  if (depth != kDepth || rows <= 0 || tokens <= 0 || rows % tokens != 0) {
+    return false;
+  }
+  // A row tile holds 16 / heads tokens of each query head.
+  const int32_t heads = rows / tokens;
+  return heads <= kStreamRows && (heads & (heads - 1)) == 0 &&
+         tokens % (kStreamRows / heads) == 0 &&
+         (mask_rows == 1 || mask_rows == tokens);
+}
+
+extern "C" size_t LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(
+    int32_t rows, int32_t tokens, int32_t mask_rows, int32_t seq,
+    int32_t depth) {
+  if (!LiteRtNvidiaGlobalAttentionTokensSupports(rows, tokens, mask_rows,
+                                                 depth) ||
+      seq <= 0) {
+    return 0;
+  }
+  return StreamingWorkspaceBytes(rows, kStreamRows, mask_rows, seq);
+}
+
+extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttentionTokens(
+    const void* q, bool q_bf16, const void* k, const void* v, const bool* mask,
+    int32_t mask_rows, int32_t tokens, int32_t rows, int32_t seq, int32_t depth,
+    float fill, void* out, void* workspace, cudaStream_t stream) {
+  if (mask == nullptr) {
+    mask_rows = 1;
+  }
+  if (q == nullptr || k == nullptr || v == nullptr || out == nullptr ||
+      workspace == nullptr || seq <= 0 ||
+      !LiteRtNvidiaGlobalAttentionTokensSupports(rows, tokens, mask_rows,
+                                                 depth)) {
+    return cudaErrorInvalidValue;
+  }
+  int chunk_shift = 0;
+  while ((rows / tokens) << chunk_shift < kStreamRows) {
+    ++chunk_shift;
+  }
+  const RowTiles by_token = {tokens, chunk_shift};
+  if (q_bf16) {
+    return Launch(static_cast<const __nv_bfloat16*>(q),
+                  static_cast<const __half*>(k), static_cast<const __half*>(v),
+                  mask, mask_rows, rows, seq, fill, by_token, kStreamRows,
+                  static_cast<__nv_bfloat16*>(out), workspace, stream);
+  }
+  return Launch(static_cast<const __half*>(q), static_cast<const __half*>(k),
+                static_cast<const __half*>(v), mask, mask_rows, rows, seq,
+                fill, by_token, kStreamRows, static_cast<__half*>(out),
+                workspace, stream);
 }

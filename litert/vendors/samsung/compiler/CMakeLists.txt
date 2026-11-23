@@ -31,6 +31,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/conv2d_op_builder.cc
     builders/conv3d_op_builder.cc
     builders/cumsum_op_builder.cc
+    builders/depth_to_space_op_builder.cc
     builders/dequantize_op_builder.cc
     builders/elementwise_op_builder.cc
     builders/fully_connected_op_builder.cc
@@ -41,6 +42,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/l2normalization_op_builder.cc
     builders/leakyrelu_op_builder.cc
     builders/logistic_op_builder.cc
+    builders/op_wrapper.cc
     builders/pad_op_builder.cc
     builders/pool2d_op_builder.cc
     builders/quantize_op_builder.cc
@@ -64,6 +66,7 @@ add_library(samsung_compiler_plugin SHARED
     builders/tanh_op_builder.cc
     builders/transpose_conv_op_builder.cc
     builders/transpose_op_builder.cc
+    builders/unpack_op_builder.cc
     builders/utils.cc
 )
 

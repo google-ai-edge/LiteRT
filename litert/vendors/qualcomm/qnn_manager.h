@@ -91,8 +91,8 @@ class QnnManager {
  public:
   using Ptr = std::unique_ptr<QnnManager>;
   using SystemContextHandle =
-      std::unique_ptr<std::remove_pointer<QnnSystemContext_Handle_t>::type,
-                      QnnSystemContext_FreeFn_t>;
+      std::unique_ptr<std::remove_pointer_t<QnnSystemContext_Handle_t>,
+                      ::qnn::QnnHandleDeleter<QnnSystemContext_FreeFn_t>>;
   class ContextHandle;
 
   static Expected<Ptr> Create(

@@ -17,6 +17,7 @@
 #import <Metal/Metal.h>
 #include <unistd.h>
 
+#include <atomic>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -193,20 +194,18 @@ absl::Status GpuBackendMetal::WaitForCompletion() {
     return absl::OkStatus();
   }
 
-  // We need only synchronization so volatile works better than atomic which reads from global
-  // memory each time.
-  __block volatile bool buffer_completed = false;
+  auto buffer_completed = std::make_shared<std::atomic<bool>>(false);
 
   if (wait_type_ == kGpuDelegateWaitTypeActive) {
     [command_buffer_ addCompletedHandler:^(id<MTLCommandBuffer>) {
-      buffer_completed = true;
+      buffer_completed->store(true, std::memory_order_release);
     }];
   }
 
   [command_buffer_ commit];
 
   if (wait_type_ == kGpuDelegateWaitTypeActive) {
-    while (!buffer_completed) {
+    while (!buffer_completed->load(std::memory_order_acquire)) {
       // Busy wait. Use local variable. Volatile uses RAM access all the time.
       for (volatile int i = 0; i < 100; ++i) {
       }
@@ -466,16 +465,16 @@ absl::StatusOr<::ml_drift::GpuSpatialTensor*> GpuInferenceContextMetal::GetSpati
 
 absl::Status GpuInferenceContextMetal::BindSpatialTensor(::ml_drift::ValueId tensor_id,
                                                          ::ml_drift::GpuSpatialTensor* tensor) {
-  auto* old_tensor = ctx_->GetTensor(tensor_id);
-  id<MTLBuffer> old_buffer = old_tensor != nullptr ? old_tensor->GetBufferHandle() : nil;
-  id<MTLTexture> old_texture = old_tensor != nullptr ? old_tensor->GetTextureHandle() : nil;
+  @autoreleasepool {
+    auto* old_tensor = ctx_->GetTensor(tensor_id);
+    id<MTLBuffer> old_buffer = old_tensor != nullptr ? old_tensor->GetBufferHandle() : nil;
+    id<MTLTexture> old_texture = old_tensor != nullptr ? old_tensor->GetTextureHandle() : nil;
 
-  auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
-  ABSL_RETURN_IF_ERROR(ctx_->SetTensor(tensor_id, metal_tensor));
-  if (@available(macOS 15.0, iOS 18.0, *)) {
-    id<MTLResidencySet> res_set = backend_->residency_set();
-    if (res_set != nil) {
-      @autoreleasepool {
+    auto* metal_tensor = static_cast<::ml_drift::metal::MetalSpatialTensor*>(tensor);
+    ABSL_RETURN_IF_ERROR(ctx_->SetTensor(tensor_id, metal_tensor));
+    if (@available(macOS 15.0, iOS 18.0, *)) {
+      id<MTLResidencySet> res_set = backend_->residency_set();
+      if (res_set != nil) {
         id<MTLBuffer> new_buffer = metal_tensor != nullptr ? metal_tensor->GetBufferHandle() : nil;
         id<MTLTexture> new_texture =
             metal_tensor != nullptr ? metal_tensor->GetTextureHandle() : nil;

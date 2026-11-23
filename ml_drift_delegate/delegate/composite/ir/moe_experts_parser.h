@@ -32,12 +32,17 @@ struct MoeExpertsAttributes {
     kInt8,
     kInt4,
   };
+  enum class Activation {
+    kGeluTanh,
+    kSilu,
+  };
 
   int num_experts = 0;
   int num_active_experts = 0;
   int model_dim = 0;
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
+  Activation activation = Activation::kGeluTanh;
   std::optional<MoeScaleTensor> ff_gate_scale;
   std::optional<MoeScaleTensor> ff1_scale;
   std::optional<MoeScaleTensor> linear_scale;

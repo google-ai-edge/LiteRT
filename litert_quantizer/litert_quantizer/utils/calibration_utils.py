@@ -27,6 +27,7 @@ from ai_edge_litert.tools import flatbuffer_utils
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import constrained_ops_utils
+from litert_quantizer.utils import histogram_utils
 from litert_quantizer.utils import tfl_flatbuffer_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 
@@ -77,6 +78,12 @@ def load_calibration_results(
       qsv["min"] = np.array(qsv["min"])
     if "max" in qsv:
       qsv["max"] = np.array(qsv["max"])
+    if "num_samples" in qsv:
+      qsv["num_samples"] = np.array(qsv["num_samples"])
+    if qsv.get("histogram"):
+      qsv["histogram"] = histogram_utils.DynamicHistogram.from_dict(
+          qsv["histogram"]
+      ).to_dict()
 
   return model_qsvs, metadata
 
@@ -258,16 +265,29 @@ class CalibrationQsvAlignmentUtils:
             )
     return output_tensor_name
 
+  def _get_signature_tensor_names(
+      self, signature_data: _SignatureData
+  ) -> list[str]:
+    """Returns all tensor names matching `signature_data`."""
+    tensor_names = []
+    for signature_key, signature_names in signature_data.items():
+      for signature_name in signature_names:
+        tensor_names.extend(
+            self._search_tensor_by_signature_name(signature_key, signature_name)
+        )
+    return tensor_names
+
   def align_quant_stats(
       self, qsv: dict[str, Any], signature_data: _SignatureData
   ) -> tuple[np.ndarray, np.ndarray]:
-    """Aligns quantization statistics (QSVs) across tensors in the given signatures.
+    """Aligns quantization statistics across tensors in the given signatures.
 
     This function identifies all tensors associated with the provided
     signatures, finds the global minimum and maximum values across those tensors
     in the `qsv` dictionary, and updates the dictionary so all these tensors
-    share these same min/max values. This ensures consistent quantization
-    parameters.
+    share these same min/max values. Any `histogram` entries on these tensors
+    are removed so they quantize from the aligned min/max. This ensures
+    consistent quantization parameters.
 
     Example:
       To align the KV cache tensors 'kv_cache_k_0' and 'kv_slice_k_0' across
@@ -299,22 +319,17 @@ class CalibrationQsvAlignmentUtils:
       A tuple (min_value, max_value), where min_value is the global minimum
       value and max_value is the global maximum value used for alignment.
     """
-    # Go over all signature info and find the corresponding tensor names.
-    tensor_names = []
-    for signature_key, signature_names in signature_data.items():
-      for signature_name in signature_names:
-        tensor_name = self._search_tensor_by_signature_name(
-            signature_key, signature_name
-        )
-        tensor_names.extend(tensor_name)
+    tensor_names = self._get_signature_tensor_names(signature_data)
 
-    # Find min and max values accross all tensors.
+    # Find min and max values across all tensors.
     min_value, max_value = _find_overall_min_max(qsv, tensor_names)
 
-    # Overwrite the min and max values in the QSV.
+    # Drop histograms so aligned tensors always quantize from the aligned
+    # min/max, matching tensors updated by `update_quant_stats` in other models.
     for tensor_name in tensor_names:
       qsv[tensor_name]["min"] = min_value
       qsv[tensor_name]["max"] = max_value
+      qsv[tensor_name].pop("histogram", None)
 
     return min_value, max_value
 
@@ -325,14 +340,15 @@ class CalibrationQsvAlignmentUtils:
       min_value: np.ndarray,
       max_value: np.ndarray,
   ) -> None:
-    """Updates quantization statistics for tensors associated with the given signatures.
+    """Updates quantization statistics for tensors in the given signatures.
 
     This function identifies all tensors associated with the provided
     signatures,
     and updates their min/max values in the `qsv` dictionary with the provided
-    `min_value` and `max_value`. This is typically used to apply aligned
-    quantization parameters across different models (e.g., applying parameters
-    aligned on a main model to an auxiliary model).
+    `min_value` and `max_value`, removing any `histogram` entries. This is
+    typically used to apply aligned quantization parameters across different
+    models (e.g., applying parameters aligned on a main model to an auxiliary
+    model).
 
     Example:
       To apply pre-computed min and max values to KV cache tensors
@@ -357,16 +373,8 @@ class CalibrationQsvAlignmentUtils:
       min_value: The global minimum value to apply.
       max_value: The global maximum value to apply.
     """
-    # Go over all signature info and find the corresponding tensor names.
-    tensor_names = []
-    for signature_key, signature_names in signature_data.items():
-      for signature_name in signature_names:
-        tensor_name = self._search_tensor_by_signature_name(
-            signature_key, signature_name
-        )
-        tensor_names.extend(tensor_name)
-
-    # Overwrite the min and max values in the QSV.
-    for tensor_name in tensor_names:
+    for tensor_name in self._get_signature_tensor_names(signature_data):
       qsv[tensor_name]["min"] = min_value
       qsv[tensor_name]["max"] = max_value
+      # Drop histograms so these tensors quantize from the aligned min/max.
+      qsv[tensor_name].pop("histogram", None)

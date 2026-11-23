@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <any>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -42,6 +43,7 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"
@@ -1079,7 +1081,8 @@ std::string GenerateWorkGroupFlashDecodeCode(
   // Keys scored by each work item per chunk: enough for the keys of a split,
   // but at most `MaxFlashDecodeKeysPerThread`, which the local memory budget
   // in `FlashDecodeLocalMemoryBytes` assumes.
-  const int max_keys_per_thread = MaxFlashDecodeKeysPerThread(heads, threads);
+  const int max_keys_per_thread =
+      MaxFlashDecodeKeysPerThread(config.tuning, heads);
   const int split_keys = (cache_size + splits - 1) / splits;
   const int keys_per_thread =
       std::clamp((split_keys + threads - 1) / threads, 1, max_keys_per_thread);
@@ -1373,7 +1376,47 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
                   chunk, ") {\n", per_head("    float tmax$g = -1.0e30f;\n"));
   // Pass r scores keys base + r * keys_per_pass + key_lane: lane part
   // `key_part` of the key reads channel slices [key_part * part_slices,
-  // (key_part + 1) * part_slices).
+  // (key_part + 1) * part_slices). When `lanes_per_key == 1` and a tail chunk
+  // has at most `threads / 4` remaining keys, 4 adjacent lanes cooperate on
+  // each remaining key to shorten the serial slice loop by 4x.
+  const bool cooperative_tail =
+      lanes_per_key == 1 && threads % 4 == 0 && slices % 4 == 0;
+  if (cooperative_tail) {
+    const int tail_keys = threads / 4;
+    const int tail_slices = slices / 4;
+    absl::StrAppend(
+        &c, "    if (key_end - base <= ", tail_keys, R"() {
+      int t_part = tid % 4;
+      int t_lane = tid / 4;
+      int key = base + t_lane;
+)",
+        per_head("      float d$g = 0.0f;\n"),
+        R"(      bool valid = key < key_end;
+      if (valid) {
+        int k_idx = k_head + key + t_part * )",
+        tail_slices * k_stride_slice, R"(;
+        int q_idx = t_part * )",
+        tail_slices, R"(;
+        for (int sl = 0; sl < )",
+        tail_slices, R"(; ++sl) {
+          float4 kv = ucl::Convert<float4>(args.k.Read(k_idx));
+)",
+        per_head(absl::StrCat("          d$g += dot(q_local[$g * ", slices,
+                              " + q_idx + sl], kv);\n")),
+        "          k_idx += ", k_stride_slice, ";\n        }\n      }\n",
+        per_head("      d$g += ucl::WaveShuffleXor(d$g, 1);\n"
+                 "      d$g += ucl::WaveShuffleXor(d$g, 2);\n"),
+        "      if (t_part == 0 && valid) {\n",
+        FlashDecodeScoreEpilogueCode(heads, has_softcap, has_mask, is_bool_mask,
+                                     mask_width),
+        "      }\n",
+        per_head(absl::StrCat(
+            "      float s$g = (t_part == 0 && valid) ? d$g : -1.0e30f;\n"
+            "      tmax$g = max(tmax$g, s$g);\n"
+            "      p_local[$g * ",
+            chunk, " + t_part * ", tail_keys, " + t_lane] = s$g;\n")),
+        "    } else {\n");
+  }
   for (int r = 0; r < lanes_per_key; ++r) {
     absl::StrAppend(&c, "    {\n      int key = base + ", r * keys_per_pass,
                     " + key_lane;\n", per_head("      float d$g = 0.0f;\n"),
@@ -1407,6 +1450,9 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
         per_head(absl::StrCat("        p_local[$g * ", chunk, " + ",
                               r * keys_per_pass, " + key_lane] = s$g;\n")),
         "      }\n    }\n");
+  }
+  if (cooperative_tail) {
+    absl::StrAppend(&c, "    }\n");
   }
   // Chunk maximum, rescaling and probabilities. The barrier after `max_local`
   // also makes the scores in `p_local` visible to every work item.
@@ -1447,34 +1493,64 @@ std::string GenerateSimdWorkGroupFlashDecodeCode(
                             "; ++i) {\n", "    l_total$g += sum_local[$g * ",
                             simd_groups, " + i];\n", "  }\n")));
 
-  // Key-group reduction and output, one head at a time.
-  for (int g = 0; g < heads; ++g) {
-    if (reuse_scores) {
-      absl::StrAppend(&c, "  p_local[tid * 4] = acc", g, ".x;\n",
-                      "  p_local[tid * 4 + 1] = acc", g, ".y;\n",
-                      "  p_local[tid * 4 + 2] = acc", g, ".z;\n",
-                      "  p_local[tid * 4 + 3] = acc", g, ".w;\n",
-                      "  ucl::SyncThreads<WorkGroup, Local>();\n",
-                      "  if (tid < ", slices, ") {\n",
-                      "    float4 sum = ucl::Init<float4>(0.0f);\n",
-                      "    for (int i = 0; i < ", key_groups, "; ++i) {\n",
-                      "      int a = (i * ", slices, " + tid) * 4;\n",
-                      "      sum += ucl::Init<float4>(p_local[a], "
-                      "p_local[a + 1], p_local[a + 2], p_local[a + 3]);\n",
-                      "    }\n");
-    } else {
+  // Key-group reduction and output, batching heads through `p_local` when
+  // `reuse_scores` holds (`tid < slices` already has key_group 0 in `acc<g>`).
+  if (key_groups == 1) {
+    for (int g = 0; g < heads; ++g) {
+      absl::StrAppend(
+          &c, "  if (tid < ", slices, ") {\n    float4 sum = acc", g, ";\n",
+          FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+          "  }\n");
+    }
+  } else if (reuse_scores) {
+    const int rem_threads = threads - slices;
+    const int batch_heads =
+        std::min(heads, std::max(1, (heads * chunk) / (rem_threads * 4)));
+    for (int g0 = 0; g0 < heads; g0 += batch_heads) {
+      const int g_end = std::min(heads, g0 + batch_heads);
+      absl::StrAppend(&c, "  if (tid >= ", slices, ") {\n");
+      for (int g = g0; g < g_end; ++g) {
+        absl::StrAppend(&c, "    {\n      int a = (",
+                        (g - g0) * rem_threads - slices, " + tid) * 4;\n",
+                        "      p_local[a] = acc", g,
+                        ".x;\n      p_local[a + 1] = acc", g,
+                        ".y;\n      p_local[a + 2] = acc", g,
+                        ".z;\n      p_local[a + 3] = acc", g, ".w;\n    }\n");
+      }
+      absl::StrAppend(&c,
+                      "  }\n  ucl::SyncThreads<WorkGroup, Local>();\n"
+                      "  if (tid < ",
+                      slices, ") {\n");
+      for (int g = g0; g < g_end; ++g) {
+        absl::StrAppend(&c, "    {\n      float4 sum = acc", g,
+                        ";\n      for (int i = 1; i < ", key_groups,
+                        "; ++i) {\n        int a = (", (g - g0) * rem_threads,
+                        " + (i - 1) * ", slices, " + tid) * 4;\n",
+                        "        sum += ucl::Init<float4>(p_local[a], "
+                        "p_local[a + 1], p_local[a + 2], p_local[a + 3]);\n"
+                        "      }\n",
+                        FlashDecodeResultWriteCode(g, splits, slices,
+                                                   is_flattened_dst),
+                        "    }\n");
+      }
+      absl::StrAppend(&c, "  }\n");
+      if (g_end < heads) {
+        absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+      }
+    }
+  } else {
+    for (int g = 0; g < heads; ++g) {
       absl::StrAppend(
           &c, "  acc_local[tid] = acc", g, ";\n",
           "  ucl::SyncThreads<WorkGroup, Local>();\n", "  if (tid < ", slices,
           ") {\n", "    float4 sum = acc_local[tid];\n",
           "    for (int i = 1; i < ", key_groups, "; ++i) {\n",
-          "      sum += acc_local[i * ", slices, " + tid];\n", "    }\n");
-    }
-    absl::StrAppend(
-        &c, FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
-        "  }\n");
-    if (g + 1 < heads) {
-      absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+          "      sum += acc_local[i * ", slices, " + tid];\n", "    }\n",
+          FlashDecodeResultWriteCode(g, splits, slices, is_flattened_dst),
+          "  }\n");
+      if (g + 1 < heads) {
+        absl::StrAppend(&c, "  ucl::SyncThreads<WorkGroup, Local>();\n");
+      }
     }
   }
   absl::StrAppend(&c, "}\n");
@@ -1597,8 +1673,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeCombine(
     const ::ml_drift::TensorDescriptor& part_desc,
     const ::ml_drift::TensorDescriptor& dst_desc, int slices, int q_heads,
     int splits, bool is_flattened_dst) {
+  const int wg_size = std::min(slices, 32);
   FusedFlashDecodeCombineOp op(slices, q_heads, splits);
-  op.work_group_size_ = ::ml_drift::int3(slices, 1, 1);
+  op.work_group_size_ = ::ml_drift::int3(wg_size, 1, 1);
   op.AddSrcTensor("part", part_desc);
   op.AddDstTensor("dst", dst_desc);
   const std::string ml_read =
@@ -1607,9 +1684,25 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashDecodeCombine(
   op.code_ = absl::StrCat(
       R"(
 MAIN_FUNCTION($0) {
+  int tid = ucl::GetLocalId<0>();
   int slice = ucl::GetGlobalId<0>();
   int head = ucl::GetGlobalId<1>();
   int X = ucl::GetGlobalId<2>();
+  __local float ml_m[)",
+      splits, R"(];
+  __local float ml_l[)",
+      splits, R"(];
+  if (head < )",
+      q_heads, R"() {
+    for (int i = tid; i < )",
+      splits, "; i += ", wg_size, R"() {
+      float4 ml = )",
+      ml_read, R"(;
+      ml_m[i] = ml.x;
+      ml_l[i] = ml.y;
+    }
+  }
+  ucl::SyncThreads<WorkGroup, Local>();
   if (slice >= )",
       slices, " || head >= ", q_heads, R"() {
     return;
@@ -1617,21 +1710,18 @@ MAIN_FUNCTION($0) {
   float m_max = -1.0e30f;
   for (int i = 0; i < )",
       splits, R"(; ++i) {
-    float4 ml = )",
-      ml_read, R"(;
-    if (ml.y > 0.0f) {
-      m_max = max(m_max, ml.x);
+    if (ml_l[i] > 0.0f) {
+      m_max = max(m_max, ml_m[i]);
     }
   }
   float l_sum = 0.0f;
   float4 acc = ucl::Init<float4>(0.0f);
   for (int i = 0; i < )",
       splits, R"(; ++i) {
-    float4 ml = )",
-      ml_read, R"(;
-    if (ml.y > 0.0f) {
-      float w = exp(ml.x - m_max);
-      l_sum += w * ml.y;
+    float li = ml_l[i];
+    if (li > 0.0f) {
+      float w = exp(ml_m[i] - m_max);
+      l_sum += w * li;
       acc += w * ucl::Convert<float4>(args.part.Read(X * )",
       splits, R"( + i, head, slice));
     }
@@ -2268,7 +2358,8 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
     const ::ml_drift::GpuModelBuilder::Weights bmm1_external_weights =
         ::ml_drift::CreateExternalWeights(
             k, attr.bmm1_weights.desc, attr.bmm1_weights.weights_shape,
-            ::ml_drift::OHWI(attr.scale_k->shape.v, 1, 1, 1), scale_k);
+            ::ml_drift::OHWI(attr.bmm1_weights.weights_shape.o, 1, 1, 1),
+            scale_k);
     logits = model_builder->FullyConnectedInt8ExternalWeights(
         q_rows, bmm1_external_weights, /*biases=*/nullptr,
         /*src_exp=*/nullptr, bmm1_runtime_check, param_tensor);
@@ -2327,7 +2418,13 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
     if (mask->tensor_desc.GetDataType() == ::ml_drift::DataType::kBool) {
       logits = SelectBoolMask(model_builder, logits, *mask);
     } else {
-      logits = model_builder->Add(logits, *mask);
+      ::ml_drift::GpuModelBuilder::TensorHandle mask_for_add = *mask;
+      if (mask_for_add.tensor_desc.GetDataType() !=
+          logits.tensor_desc.GetDataType()) {
+        mask_for_add =
+            model_builder->Cast(mask_for_add, logits.tensor_desc.GetDataType());
+      }
+      logits = model_builder->Add(logits, mask_for_add);
     }
     if (reshape_logits_for_mask) {
       logits = model_builder->Reshape(
@@ -2354,7 +2451,8 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
     const ::ml_drift::GpuModelBuilder::Weights bmm2_external_weights =
         ::ml_drift::CreateExternalWeights(
             v, attr.bmm2_weights.desc, attr.bmm2_weights.weights_shape,
-            ::ml_drift::OHWI(attr.scale_v->shape.v, 1, 1, 1), scale_v);
+            ::ml_drift::OHWI(attr.bmm2_weights.weights_shape.o, 1, 1, 1),
+            scale_v);
     return model_builder->FullyConnectedInt8ExternalWeights(
         logits, bmm2_external_weights, /*biases=*/nullptr, &sfmx_partial,
         bmm2_runtime_check, param_tensor);
@@ -2382,7 +2480,159 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> BuildDecomposedSdpa(
                                       bmm2_runtime_check, param_tensor);
 }
 
+class UnpackInt4KvCacheToInt8Op : public ::ml_drift::GPUOperation {
+ public:
+  UnpackInt4KvCacheToInt8Op(int cache_size, int kv_heads, int half_slices)
+      : cache_size_(cache_size),
+        kv_heads_(kv_heads),
+        half_slices_(half_slices) {}
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(cache_size_, kv_heads_, half_slices_);
+  }
+
+  UnpackInt4KvCacheToInt8Op(UnpackInt4KvCacheToInt8Op&&) = default;
+  UnpackInt4KvCacheToInt8Op& operator=(UnpackInt4KvCacheToInt8Op&&) = default;
+  UnpackInt4KvCacheToInt8Op(const UnpackInt4KvCacheToInt8Op&) = delete;
+  UnpackInt4KvCacheToInt8Op& operator=(const UnpackInt4KvCacheToInt8Op&) =
+      delete;
+
+ private:
+  int cache_size_ = 1;
+  int kv_heads_ = 1;
+  int half_slices_ = 1;
+};
+
+// One dequantization scale per output channel of a matmul that reads a
+// symmetric per-tensor quantized K/V cache as external weights.
+::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+BroadcastScale(float scale, int channels) {
+  ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+      scale_tensor;
+  scale_tensor.shape = ::ml_drift::Linear(channels);
+  scale_tensor.data = std::vector<float>(channels, scale);
+  return scale_tensor;
+}
+
+// Writes `result` to the output tensor `output_id`, casting it to the output
+// data type first: a dequantized INT8 query inside a mixed-precision partition
+// is FLOAT32 on the GPU, whereas the attention output tensor can be FLOAT16.
+absl::Status UpdateOutputTensorWithCast(
+    ::ml_drift::GpuModelBuilder::TensorHandle result, uint32_t output_id,
+    ::ml_drift::DataType output_dtype,
+    ::ml_drift::GpuModelBuilder* model_builder) {
+  if (result.tensor_desc.GetDataType() != output_dtype) {
+    result = model_builder->Cast(result, output_dtype);
+  }
+  return model_builder->UpdateOutputTensor(result, output_id);
+}
+
 }  // namespace
+
+std::unique_ptr<::ml_drift::GPUOperation> CreateUnpackInt4KvCacheToInt8(
+    const ::ml_drift::TensorDescriptor& src_k,
+    const ::ml_drift::TensorDescriptor& src_v,
+    const ::ml_drift::TensorDescriptor& dst_k,
+    const ::ml_drift::TensorDescriptor& dst_v,
+    const ::ml_drift::TensorDescriptor* params, int param_index,
+    int empty_end_tokens) {
+  const ::ml_drift::BHWC dst_k_shape = dst_k.GetBHWCShape();
+  const int kv_heads = dst_k_shape.h;
+  const int cache_size = dst_k_shape.w;
+  const int half_slices = dst_k_shape.c / 8;
+
+  UnpackInt4KvCacheToInt8Op op(cache_size, kv_heads, half_slices);
+  op.args_.AddInt("cache_size", cache_size);
+  op.args_.AddInt("kv_heads", kv_heads);
+  op.args_.AddInt("half_slices", half_slices);
+  op.AddSrcTensor("src_k", src_k);
+  op.AddSrcTensor("src_v", src_v);
+  if (params != nullptr) {
+    op.args_.AddInt("param_index", param_index);
+    op.args_.AddInt("empty_end_tokens", empty_end_tokens);
+    op.AddSrcTensor("params", *params);
+  }
+  op.AddDstTensor("dst_k", dst_k);
+  op.AddDstTensor("dst_v", dst_v);
+
+  std::string c = R"(
+MAIN_FUNCTION($0) {
+  int X = ucl::GetGlobalId<0>();
+  int Y = ucl::GetGlobalId<1>();
+  int Z = ucl::GetGlobalId<2>();
+  if (X >= args.cache_size || Y >= args.kv_heads || Z >= args.half_slices) {
+    return;
+  }
+)";
+  if (params != nullptr) {
+    absl::StrAppend(
+        &c, R"(  {
+    int param_slice = args.param_index / 4;
+    int param_comp = args.param_index % 4;
+    float4 p_vec = ucl::Convert<float4>(args.params.Read(0, 0, param_slice, 0));
+    float p_raw = p_vec.x;
+    if (param_comp == 1) {
+      p_raw = p_vec.y;
+    } else if (param_comp == 2) {
+      p_raw = p_vec.z;
+    } else if (param_comp == 3) {
+      p_raw = p_vec.w;
+    }
+    int valid_tokens = ucl::Convert<int>(p_raw);
+    int end_tokens = args.empty_end_tokens;
+    if (valid_tokens > 0) {
+      int aligned = ((valid_tokens + )",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment - 1, ") / ",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment, ") * ",
+        ::ml_drift::ConvRuntimeCheckDesc::kChannelsAlignment, R"(;
+      end_tokens = min(args.cache_size, aligned);
+    }
+    if (X >= end_tokens) {
+      return;
+    }
+  }
+)");
+  }
+  absl::StrAppend(&c, R"(  int c_slices = (args.cache_size + 3) / 4;
+  int x_slice = X / 4;
+  int x_rem = X % 4;
+  int h_slices_in = args.half_slices;
+  int h_slices_out = args.half_slices * 2;
+  {
+    int k_in_idx = ((Y * h_slices_in + Z) * c_slices + x_slice) * 4 + x_rem;
+    uint4 u_k = ucl::Convert<uint4>(args.src_k.Read(k_in_idx));
+    uint4 k_lo_u = (u_k & ucl::Init<uint4>(15u)) + ucl::Init<uint4>(120u);
+    uint4 k_hi_u =
+        ((u_k / ucl::Init<uint4>(16u)) & ucl::Init<uint4>(15u)) +
+        ucl::Init<uint4>(120u);
+    uchar4 k_lo = ucl::Convert<uchar4>(k_lo_u);
+    uchar4 k_hi = ucl::Convert<uchar4>(k_hi_u);
+    int k_out0 = ((Y * h_slices_out + Z * 2) * c_slices + x_slice) * 4 + x_rem;
+    int k_out1 =
+        ((Y * h_slices_out + (Z * 2 + 1)) * c_slices + x_slice) * 4 + x_rem;
+    args.dst_k.WriteLinear(k_lo, k_out0);
+    args.dst_k.WriteLinear(k_hi, k_out1);
+  }
+  {
+    int v_in_idx = ((Y * c_slices + x_slice) * h_slices_in + Z) * 4 + x_rem;
+    uint4 u_v = ucl::Convert<uint4>(args.src_v.Read(v_in_idx));
+    uint4 v_lo_u = (u_v & ucl::Init<uint4>(15u)) + ucl::Init<uint4>(120u);
+    uint4 v_hi_u =
+        ((u_v / ucl::Init<uint4>(16u)) & ucl::Init<uint4>(15u)) +
+        ucl::Init<uint4>(120u);
+    uchar4 v_lo = ucl::Convert<uchar4>(v_lo_u);
+    uchar4 v_hi = ucl::Convert<uchar4>(v_hi_u);
+    int v_out0 = ((Y * c_slices + x_slice) * h_slices_out + Z * 2) * 4 + x_rem;
+    int v_out1 =
+        ((Y * c_slices + x_slice) * h_slices_out + (Z * 2 + 1)) * 4 + x_rem;
+    args.dst_v.WriteLinear(v_lo, v_out0);
+    args.dst_v.WriteLinear(v_hi, v_out1);
+  }
+}
+)");
+  op.code_ = std::move(c);
+  return std::make_unique<UnpackInt4KvCacheToInt8Op>(std::move(op));
+}
 
 absl::Status BuildSdpaTransposedGpuGraph(
     const std::vector<uint32_t>& input_ids, uint32_t output_id,
@@ -2398,6 +2648,38 @@ absl::Status BuildSdpaTransposedGpuGraph(
   ABSL_ASSIGN_OR_RETURN(auto q, model_builder->GetTensor(input_ids[0]));
   ABSL_ASSIGN_OR_RETURN(auto k, model_builder->GetTensor(input_ids[1]));
   ABSL_ASSIGN_OR_RETURN(auto v, model_builder->GetTensor(input_ids[2]));
+  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
+
+  const ::ml_drift::DataType output_dtype =
+      output_ref.tensor_desc.GetDataType();
+  if (!::ml_drift::IsFloatType(output_dtype)) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects a float output tensor.");
+  }
+  if (q.tensor_desc.GetDataType() == ::ml_drift::DataType::kInt8) {
+    if (!attr.scale_q.has_value() || !std::isfinite(*attr.scale_q) ||
+        *attr.scale_q <= 0.0f) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed expects a finite positive scale_q for INT8 query "
+          "tensors.");
+    }
+    const ::ml_drift::DataType compute_dtype =
+        ::ml_drift::IsFloatType(k.tensor_desc.GetDataType())
+            ? k.tensor_desc.GetDataType()
+            : output_dtype;
+    q = model_builder->Cast(q, ::ml_drift::DataType::kFloat32);
+    q = model_builder->Multiplication(q, *attr.scale_q);
+    if (compute_dtype != ::ml_drift::DataType::kFloat32) {
+      q = model_builder->Cast(q, compute_dtype);
+    }
+  } else if (attr.scale_q.has_value()) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed received scale_q for a non-INT8 query tensor.");
+  } else if (::ml_drift::IsFloatType(q.tensor_desc.GetDataType()) &&
+             ::ml_drift::IsFloatType(k.tensor_desc.GetDataType()) &&
+             q.tensor_desc.GetDataType() != k.tensor_desc.GetDataType()) {
+    q = model_builder->Cast(q, k.tensor_desc.GetDataType());
+  }
 
   const ::ml_drift::TensorDescriptor* mask_desc = nullptr;
   ::ml_drift::GpuModelBuilder::TensorHandle mask;
@@ -2424,32 +2706,65 @@ absl::Status BuildSdpaTransposedGpuGraph(
 
   const ::ml_drift::BHWC q_shape = q.tensor_desc.GetBHWCShape();
   const ::ml_drift::BHWC k_cache_shape = k.tensor_desc.GetBHWCShape();
+  const ::ml_drift::BHWC v_cache_shape = v.tensor_desc.GetBHWCShape();
   const bool supports_fused_kernels =
       SupportsFusedSdpaKernels(model_builder->gpu_info());
 
-  // INT8 symmetric per-tensor quantized K/V caches arrive as kUint8 byte
-  // tensors with per-output-channel dequantization scales (see
-  // `SdpaTransposedAttributes::scale_k`). They only take the decomposed
-  // FullyConnected path below, so the fused Flash kernels are skipped.
-  const bool int8_k =
+  // INT8 and INT4 symmetric per-tensor quantized K/V caches arrive as kUint8
+  // byte tensors with dequantization scales `SdpaTransposedAttributes::scale_k`
+  // and `scale_v`. They take the decomposed FullyConnected path below, so the
+  // fused Flash kernels are skipped.
+  const bool quant_k =
       k.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
-  const bool int8_v =
+  const bool quant_v =
       v.tensor_desc.GetDataType() == ::ml_drift::DataType::kUint8;
-  if (int8_k != attr.scale_k.has_value() ||
-      int8_v != attr.scale_v.has_value()) {
+  if (quant_k != attr.scale_k.has_value() ||
+      quant_v != attr.scale_v.has_value()) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects dequantization scales exactly for INT8 K/V "
-        "caches.");
+        "SDPA transposed expects dequantization scales exactly for quantized "
+        "K/V caches.");
   }
-  if (int8_k != int8_v) {
+  if (quant_k != quant_v) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects both or none of the K/V caches to be INT8.");
+        "SDPA transposed expects both or none of the K/V caches to be "
+        "quantized.");
   }
-  const bool int8_kv = int8_k && int8_v;
-  if (int8_kv && !attr.from_cache_update) {
+  const bool quant_kv = quant_k && quant_v;
+  const bool int4_kv = attr.kv_cache_dtype == ::ml_drift::DataType::kInt4;
+  if (quant_kv != (int4_kv ||
+                   attr.kv_cache_dtype == ::ml_drift::DataType::kInt8) ||
+      (!quant_kv && attr.kv_cache_dtype != ::ml_drift::DataType::kUnknown)) {
     return absl::InvalidArgumentError(
-        "SDPA transposed expects INT8 K/V caches in the odml.cache_update "
+        "SDPA transposed expects kv_cache_dtype kInt8 or kInt4 exactly for "
+        "kUint8 K/V cache descriptors.");
+  }
+  if (quant_kv &&
+      (!std::isfinite(*attr.scale_k) || *attr.scale_k <= 0.0f ||
+       !std::isfinite(*attr.scale_v) || *attr.scale_v <= 0.0f)) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects finite positive scale_k and scale_v.");
+  }
+  if (quant_kv && !attr.from_cache_update) {
+    return absl::InvalidArgumentError(
+        "SDPA transposed expects quantized K/V caches in the odml.cache_update "
         "layout.");
+  }
+  if (int4_kv) {
+    if (k.tensor_desc.GetStorageType() !=
+            ::ml_drift::TensorStorageType::kBuffer ||
+        v.tensor_desc.GetStorageType() !=
+            ::ml_drift::TensorStorageType::kBuffer) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed expects INT4 K/V caches in BUFFER storage.");
+    }
+    if (q_shape.c <= 0 || q_shape.c % 8 != 0 || k_cache_shape.w <= 0 ||
+        k_cache_shape.w % 4 != 0 || k_cache_shape.c * 2 != q_shape.c ||
+        v_cache_shape.h != k_cache_shape.h ||
+        v_cache_shape.w * 2 != q_shape.c ||
+        v_cache_shape.c != k_cache_shape.w) {
+      return absl::InvalidArgumentError(
+          "SDPA transposed packed INT4 K/V cache shapes do not match query.");
+    }
   }
 
   // The fused Flash-Attention prefill kernel indexes K and V directly in the
@@ -2460,7 +2775,7 @@ absl::Status BuildSdpaTransposedGpuGraph(
   // cache (`IsSupportedFlashPrefillShape`). Everything else falls back to the
   // multi-op graph below.
   const bool is_supported_flash_prefill =
-      attr.is_prefill && attr.from_cache_update && !int8_kv &&
+      attr.is_prefill && attr.from_cache_update && !quant_kv &&
       IsSupportedFlashPrefillShape(q_shape, k_cache_shape) &&
       k.tensor_desc.GetStorageType() ==
           ::ml_drift::TensorStorageType::kBuffer &&
@@ -2481,7 +2796,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
     if (param_desc) src_tensors.push_back(param_tensor);
     model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op),
                                    "flash_prefill_sdpa");
-    return model_builder->UpdateOutputTensor(dst, output_id);
+    return UpdateOutputTensorWithCast(dst, output_id, output_dtype,
+                                      model_builder);
   }
 
   // The work-group Flash-Decode kernel processes one query token per work group
@@ -2514,7 +2830,6 @@ absl::Status BuildSdpaTransposedGpuGraph(
                              v.tensor_desc, mask_desc);
 
   if (is_supported_flash_decode) {
-    ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
     const ::ml_drift::BHWC output_shape = output_ref.tensor_desc.GetBHWCShape();
     const bool is_flattened_dst =
         output_shape.h == 1 && output_shape.c == q_shape.h * q_shape.c;
@@ -2546,7 +2861,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
           decode_config.splits, is_flattened_dst);
       model_builder->AddGpuOperation({part}, {dst}, std::move(combine),
                                      absl::StrCat(op_name, "_combine"));
-      return model_builder->UpdateOutputTensor(dst, output_id);
+      return UpdateOutputTensorWithCast(dst, output_id, output_dtype,
+                                      model_builder);
     }
     ABSL_ASSIGN_OR_RETURN(
         auto op, CreateFusedFlashDecodeSdpa(
@@ -2554,7 +2870,8 @@ absl::Status BuildSdpaTransposedGpuGraph(
                      v.tensor_desc, mask_desc, param_desc, dst.tensor_desc,
                      attr, is_flattened_dst, decode_config));
     model_builder->AddGpuOperation(src_tensors, {dst}, std::move(op), op_name);
-    return model_builder->UpdateOutputTensor(dst, output_id);
+    return UpdateOutputTensorWithCast(dst, output_id, output_dtype,
+                                      model_builder);
   }
 
   // The parsers prune the BOOL causal mask only when `UsesFusedSdpaKernel`
@@ -2574,7 +2891,41 @@ absl::Status BuildSdpaTransposedGpuGraph(
         "BuildSdpaTransposedGpuGraph disagree."));
   }
 
-  const auto k_shape = k.tensor_desc.GetBHWCShape();
+  ::ml_drift::GpuModelBuilder::TensorHandle k_for_bmm = k;
+  ::ml_drift::GpuModelBuilder::TensorHandle v_for_bmm = v;
+  if (int4_kv) {
+    // TODO(b/585686521): Unpack the INT4 nibbles inside the K/V matmuls. For
+    // now, the packed caches are expanded into transient INT8 caches (2x the
+    // packed size, plus one pass over the active cache slots) so that the
+    // existing `FullyConnectedInt8ExternalWeights` kernels read them unchanged.
+    auto unpacked_k = model_builder->AddTensor(
+        k_cache_shape.b, k_cache_shape.h, k_cache_shape.w, q_shape.c,
+        ::ml_drift::TensorStorageType::kBuffer, ::ml_drift::DataType::kUint8);
+    auto unpacked_v = model_builder->AddTensor(
+        v_cache_shape.b, v_cache_shape.h, q_shape.c, v_cache_shape.c,
+        ::ml_drift::TensorStorageType::kBuffer, ::ml_drift::DataType::kUint8);
+    // The unpacked slots match the slots read by the matmuls, which bound them
+    // by the same active tokens in `params`.
+    const bool bound_by_params =
+        param_desc != nullptr &&
+        attr.runtime_check.src_end_ch_index.has_value();
+    auto unpack_op = CreateUnpackInt4KvCacheToInt8(
+        k.tensor_desc, v.tensor_desc, unpacked_k.tensor_desc,
+        unpacked_v.tensor_desc, bound_by_params ? param_desc : nullptr,
+        attr.runtime_check.src_end_ch_index.value_or(0),
+        /*empty_end_tokens=*/k_cache_shape.w);
+    std::vector<::ml_drift::GpuModelBuilder::TensorHandle> unpack_srcs = {k, v};
+    if (bound_by_params) {
+      unpack_srcs.push_back(param_tensor);
+    }
+    model_builder->AddGpuOperation(unpack_srcs, {unpacked_k, unpacked_v},
+                                   std::move(unpack_op),
+                                   "unpack_int4_kv_cache");
+    k_for_bmm = unpacked_k;
+    v_for_bmm = unpacked_v;
+  }
+
+  const auto k_shape = k_for_bmm.tensor_desc.GetBHWCShape();
   if (k_shape.h <= 0 || q_shape.h < k_shape.h || q_shape.h % k_shape.h != 0) {
     return absl::InvalidArgumentError(
         "Query heads must be a positive multiple of KV heads.");
@@ -2613,15 +2964,19 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                             attr.from_cache_update))
           : 1;
   const int chunk_rows = gqa_ratio / num_chunks * q_shape.w;
-  // The dequantization scales of INT8 K/V caches, shared by all chunks. The
-  // matmuls output the query data type, so both scales use it.
+  // The dequantization scales of quantized K/V caches, broadcast to one per
+  // matmul output channel (the cache slots for Q*K^T and the head_dim elements
+  // for P*V) and shared by all chunks. The matmuls output the query data type,
+  // so both scales use it.
   ::ml_drift::GpuModelBuilder::TensorHandle scale_k;
   ::ml_drift::GpuModelBuilder::TensorHandle scale_v;
-  if (int8_kv) {
-    scale_k = model_builder->AddConstantTensor(*attr.scale_k,
-                                               q.tensor_desc.GetDataType());
-    scale_v = model_builder->AddConstantTensor(*attr.scale_v,
-                                               q.tensor_desc.GetDataType());
+  if (quant_kv) {
+    scale_k = model_builder->AddConstantTensor(
+        BroadcastScale(*attr.scale_k, attr.bmm1_weights.weights_shape.o),
+        q.tensor_desc.GetDataType());
+    scale_v = model_builder->AddConstantTensor(
+        BroadcastScale(*attr.scale_v, attr.bmm2_weights.weights_shape.o),
+        q.tensor_desc.GetDataType());
   }
   std::vector<::ml_drift::GpuModelBuilder::TensorHandle> chunk_outputs;
   chunk_outputs.reserve(num_chunks);
@@ -2635,11 +2990,11 @@ absl::Status BuildSdpaTransposedGpuGraph(
                                    q_shape.c));
     ABSL_ASSIGN_OR_RETURN(
         auto chunk_output,
-        BuildDecomposedSdpa(attr, q_shape, q_rows, k, v,
+        BuildDecomposedSdpa(attr, q_shape, q_rows, k_for_bmm, v_for_bmm,
                             mask_desc != nullptr ? &mask : nullptr,
                             param_desc != nullptr ? &param_tensor : nullptr,
-                            int8_kv ? &scale_k : nullptr,
-                            int8_kv ? &scale_v : nullptr, model_builder));
+                            quant_kv ? &scale_k : nullptr,
+                            quant_kv ? &scale_v : nullptr, model_builder));
     chunk_outputs.push_back(chunk_output);
   }
   ::ml_drift::GpuModelBuilder::TensorHandle output =
@@ -2647,12 +3002,12 @@ absl::Status BuildSdpaTransposedGpuGraph(
           ? chunk_outputs[0]
           : model_builder->Concat(chunk_outputs, ::ml_drift::Axis::kWidth);
 
-  ABSL_ASSIGN_OR_RETURN(auto output_ref, model_builder->GetTensor(output_id));
   const auto output_shape = output_ref.tensor_desc.GetBHWCShape();
   if (output.tensor_desc.GetBHWCShape() != output_shape) {
     output = model_builder->Reshape(output, output_shape);
   }
-  return model_builder->UpdateOutputTensor(output, output_id);
+  return UpdateOutputTensorWithCast(output, output_id, output_dtype,
+                                    model_builder);
 }
 
 absl::Status CreateSdpaTransposedFromNode(

@@ -15,7 +15,7 @@
 
 """LiteRT Quantizer API."""
 
-from collections.abc import Iterable, Sequence
+from collections.abc import Iterable, Mapping, Sequence
 import dataclasses
 import json
 import logging
@@ -337,6 +337,7 @@ class Quantizer:
       weight_num_bits: int,
       weight_granularity: qtyping.QuantGranularity = qtyping.QuantGranularity.CHANNELWISE,
       algorithm_key: str = algorithm_manager.AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+      activation_algorithm_params: Mapping[str, Any] | None = None,
   ):
     """Adds a static quantization configuration to the recipe.
 
@@ -357,6 +358,10 @@ class Quantizer:
       weight_num_bits: Number of bits for weight quantization.
       weight_granularity: Granularity of weight quantization.
       algorithm_key: Algorithm key to be applied.
+      activation_algorithm_params: Optional algorithm parameters for the
+        activation tensors, e.g. `{"range_method": "histogram_mse"}` to derive
+        activation ranges from calibration histograms. See
+        `naive_min_max_quantize.ActivationRangeMethod`.
     """
     self._recipe_manager.add_static_config(
         regex,
@@ -365,6 +370,7 @@ class Quantizer:
         weight_num_bits,
         weight_granularity,
         algorithm_key,
+        activation_algorithm_params,
     )
 
   @property
@@ -382,7 +388,10 @@ class Quantizer:
     """Calibrates the float model (required by static range quantization).
 
     Args:
-      calibration_data: Calibration data for a model signature.
+      calibration_data: Calibration data for a model signature. For a model
+        without signatures, use `serving_default` as the signature key, and key
+        each sample by input tensor name (the `:0` suffix is optional), e.g.
+        `{'serving_default': [{'input_tensor_name': x}]}`.
       previous_calibration_result: Previous calibration result to be loaded. The
         calibration process will be resumed from the previous result.
       num_threads: Number of threads to use for calibration.
@@ -423,14 +432,30 @@ class Quantizer:
   ):
     """Checks if the calibration result has sufficient QSV."""
 
+    # Histogram range methods need histograms from calibration. Check the whole
+    # result rather than each tensor, since tensors with an aligned or fixed
+    # range have no histogram by design.
+    if self._recipe_manager.need_histogram() and not any(
+        qsv and qsv.get('histogram') for qsv in calibration_result.values()
+    ):
+      raise ValueError(
+          'The quantization recipe uses a histogram activation `range_method`,'
+          ' but the calibration result has no histograms. Calibrate with the'
+          ' same recipe used for quantization (e.g. pass it as'
+          ' `quantization_recipe` to `CalibrationInterpreter`).'
+      )
+
     # Find all tensor names with empty entries.
     empty_qsvs = [key for key, value in calibration_result.items() if not value]
 
     # Go over every signature and check if empty entry tensor belongs to it.
+    # Models without signatures run subgraph 0 under the default key.
     tfl_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
         self._float_model_buffer  # pyrefly: ignore[bad-argument-type]
     )
-    for signature_key in tfl_interpreter.get_signature_list():
+    for signature_key in tfl_interpreter.get_signature_list() or [
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY
+    ]:
       subgraph_idx = tfl_interpreter_utils.get_signature_main_subgraph_index(
           tfl_interpreter, signature_key
       )

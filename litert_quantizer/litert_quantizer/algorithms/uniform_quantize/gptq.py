@@ -46,6 +46,7 @@ import numpy as np
 import scipy.linalg
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
+from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.algorithms.uniform_quantize import uniform_quantize_tensor
 from litert_quantizer.algorithms.utils import common_utils
 
@@ -239,27 +240,29 @@ def get_tensor_quant_params(
   if tensor_quant_config.dtype == qtyping.TensorDataType.UINT:
     raise ValueError("Unsigned quantization is not supported by GPTQ.")
 
+  if tensor_content is None:
+    # GPTQ only changes weights. Activations use the shared min/max path, which
+    # also supports histogram activation ranges.
+    return naive_min_max_quantize.get_tensor_quant_params(
+        op_info,
+        tensor_quant_config,
+        tensor_qsv=None if tensor_qsv is None else dict(tensor_qsv),
+    )
+
   activation_tensor_qsv = (
       tensor_qsv.get("activation_tensor_qsv") if tensor_qsv else None
   )
   # Get quant params.
   if tensor_qsv is None or "min" not in tensor_qsv:
-    if tensor_content is not None:
-      # We need min/max to calculate quantization parameters, which
-      # should be collected during the calibration process. However,
-      # weight-only and DRQ do not require calibration, thus it is
-      # possible that this information is missing here. In that case we
-      # collect min/max on the spot.
-      tensor_min_max = common_quantize.init_tensor_min_max(
-          tensor_content,
-          op_info,
-      )
-    else:
-      raise ValueError(
-          f"{op_info.op_name}(index: {op_info.subgraph_op_index}) not found in"
-          " tensor_name_to_qsv. Check if the correct calibration results are"
-          " passed into the ParamsGenerator."
-      )
+    # We need min/max to calculate quantization parameters, which
+    # should be collected during the calibration process. However,
+    # weight-only and DRQ do not require calibration, thus it is
+    # possible that this information is missing here. In that case we
+    # collect min/max on the spot.
+    tensor_min_max = common_quantize.init_tensor_min_max(
+        tensor_content,
+        op_info,
+    )
   else:
     tensor_min_max = tensor_qsv
 
@@ -290,9 +293,6 @@ def get_tensor_quant_params(
           tensor_quant_config.granularity
       ),
   )
-  if tensor_content is None:
-    return quant_params
-
   if activation_tensor_qsv is None or "hessian" not in activation_tensor_qsv:
     return quant_params
   return _apply_gptq(

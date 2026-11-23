@@ -55,6 +55,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
     ],
 )
 
@@ -220,8 +221,10 @@ cc_library(
 #         ":transformer_ops_graph",
 #         ":transformer_ops_xnnpack",
 #         "@com_google_googletest//:gtest_main",
+#         "@XNNPACK",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_matchers",
+#         "@com_google_absl//absl/strings",
 #         "@com_google_absl//absl/types:span",
 #         "//tensor",
 #         "//tensor:arithmetic",
@@ -230,6 +233,7 @@ cc_library(
 #         "//tensor/backends/common_nnpack:conversion",
 #         "//tensor/backends/xnnpack:arithmetic",
 #         "//tensor/backends/xnnpack:conversion",
+#         "//tensor/backends/xnnpack:graph",
 #         "//tensor/internal:graph",
 #         "//tensor/internal:mixin",
 #         "//tensor/runners/xnnpack:runner",

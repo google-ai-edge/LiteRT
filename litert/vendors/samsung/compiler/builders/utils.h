@@ -16,7 +16,9 @@
 #define ODML_LITERT_LITERT_VENDORS_SAMSUNG_COMPILER_BUILDERS_UTILS_H_
 
 #include <cstdint>
+#include <optional>
 #include <string>
+#include <vector>
 
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -24,10 +26,22 @@
 
 namespace litert::samsung {
 
+struct QuantizationParams {
+  std::vector<float> scales;
+  std::vector<int32_t> zero_points;
+};
+
 Expected<std::string> GetFusedActivationName(uint32_t tfl_fused_activation);
 
 absl::InlinedVector<int32_t, kExpectedMaxTensorRank> GetDimensions(
     const litert::compiler::Tensor& t);
+
+// Extracts the scales/zero-points of the quantization declared on `tensor`
+// (per-tensor or per-channel). Returns std::nullopt when the tensor carries
+// no quantization usable as node params: no quantization, an unknown
+// quantization type, or no channels.
+std::optional<QuantizationParams> GetQuantizationParams(
+    const litert::compiler::Tensor& tensor);
 
 Expected<const char*> MapToElementTypeStr(ElementType element_type);
 

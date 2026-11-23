@@ -22,17 +22,19 @@
 #include <unistd.h>
 
 #include "litert/vendors/arm_vulkan_ml/dispatch/device_memory_allocator.h"
-#include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_validation.h"
 #if defined(__ANDROID__)
 #include <android/hardware_buffer.h>
 
 #include "vulkan/vulkan_android.h"
 #endif
 #include <algorithm>
+#include <cstdio>
 #include <cstring>
 #include <utility>
 
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "absl/time/clock.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "litert/vendors/arm_vulkan_ml/dispatch/device_capabilities.h"
 #include "litert/vendors/arm_vulkan_ml/dispatch/tensor_capabilities.h"
 #include "vulkan/vulkan.h"
@@ -44,7 +46,7 @@ namespace {
 constexpr VkStructureType kShaderReplicatedCompositesFeaturesType =
     VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_SHADER_REPLICATED_COMPOSITES_FEATURES_EXT;
 constexpr VkStructureType kSessionBindPointRequirementsInfoType{
-    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM};
+    VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENTS_INFO_ARM};  // NOLINT(whitespace/line_length)
 constexpr VkStructureType kSessionBindPointRequirementType =
     VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_BIND_POINT_REQUIREMENT_ARM;
 constexpr VkStructureType kSessionMemoryRequirementsInfoType =
@@ -61,7 +63,6 @@ size_t Bytes(const TensorDescriptor& tensor) {
 }  // namespace
 
 struct VulkanInvocation::Impl {
-  VulkanValidation validation;
   std::shared_ptr<const CompiledPartition> artifact;
   absl::Mutex mutex;
   void* library = nullptr;
@@ -72,9 +73,10 @@ struct VulkanInvocation::Impl {
   PFN_vkGetPhysicalDeviceExternalTensorPropertiesARM external_properties =
       nullptr;
   PFN_vkGetMemoryFdPropertiesKHR fd_properties = nullptr;
-  bool dma_enabled = false, ahb_enabled = false;
+  bool dma_enabled = false, ahb_enabled = false, dump_timings = false;
   std::shared_ptr<HardwareBufferApi> hardware_api;
   CopyStatistics statistics;
+  InitStatistics init_statistics;
   VkPhysicalDevice physical = VK_NULL_HANDLE;
   VkDevice device = VK_NULL_HANDLE;
   VkQueue queue = VK_NULL_HANDLE;
@@ -190,13 +192,14 @@ struct VulkanInvocation::Impl {
     }
     if (module) DestroyShaderModule(device, module, nullptr);
     if (device && DestroyDevice) DestroyDevice(device, nullptr);
-    validation.Close();
     if (instance && destroy_instance) destroy_instance(instance, nullptr);
     if (library) dlclose(library);
   }
 
   bool Initialize(bool allow_emulation,
                   PFN_vkGetInstanceProcAddr resolver = nullptr) {
+    const absl::Time init_start_time = absl::Now();
+    absl::Time stage_start_time = absl::Now();
     get = resolver;
     if (!get) {
       const char* kVulkanLibrary = VulkanLibraryName();
@@ -225,11 +228,9 @@ struct VulkanInvocation::Impl {
     app.apiVersion = VK_API_VERSION_1_3;
     VkInstanceCreateInfo ci{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
     ci.pApplicationInfo = &app;
-    if (!validation.Prepare(get, ci, error)) return false;
     VK_CHECK(create(&ci, nullptr, &instance));
     destroy_instance = reinterpret_cast<PFN_vkDestroyInstance>(
         get(instance, "vkDestroyInstance"));
-    if (!validation.Attach(get, instance, error)) return false;
 #define INSTANCE_FN(name)                                                \
   auto name = reinterpret_cast<PFN_vk##name>(get(instance, "vk" #name)); \
   if (!name) {                                                           \
@@ -244,6 +245,9 @@ struct VulkanInvocation::Impl {
     INSTANCE_FN(GetPhysicalDeviceMemoryProperties);
     INSTANCE_FN(CreateDevice);
     INSTANCE_FN(GetDeviceProcAddr);
+    const double vk_instance_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     uint32_t count = 0;
     VK_CHECK(EnumeratePhysicalDevices(instance, &count, nullptr));
     std::vector<VkPhysicalDevice> candidates(count);
@@ -311,6 +315,9 @@ struct VulkanInvocation::Impl {
           "VK_ANDROID_external_memory_android_hardware_buffer");
       extensions.push_back(VK_EXT_QUEUE_FAMILY_FOREIGN_EXTENSION_NAME);
     }
+    const double vk_caps_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     VkPhysicalDeviceTensorFeaturesARM tensor_features{
         VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_TENSOR_FEATURES_ARM};
     VkPhysicalDeviceDataGraphFeaturesARM graph_features{
@@ -420,6 +427,12 @@ struct VulkanInvocation::Impl {
     GetPhysicalDeviceMemoryProperties(physical, &memory_properties);
     allocator = std::make_unique<DeviceMemoryAllocator>(
         device, memory_properties, max_allocations, AllocateMemory);
+    init_statistics.dlopen_and_instance_ms = vk_instance_ms;
+    init_statistics.query_capabilities_ms = vk_caps_ms;
+    init_statistics.create_device_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    init_statistics.device_setup_total_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - init_start_time);
     return Build();
   }
 
@@ -502,6 +515,8 @@ struct VulkanInvocation::Impl {
     return true;
   }
   bool Requirements(size_t slot, BufferRequirements& out) {
+    const absl::Time req_start_time =
+        dump_timings ? absl::Now() : absl::InfinitePast();
     if (slot >= tensors.size()) {
       error = "Invalid tensor slot";
       return false;
@@ -524,11 +539,22 @@ struct VulkanInvocation::Impl {
           std::max(out.bytes, static_cast<size_t>(req.memoryRequirements.size));
       out.alignment = std::max(
           out.alignment, static_cast<size_t>(req.memoryRequirements.alignment));
-      if (handle == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT)
+      if (handle == VK_EXTERNAL_MEMORY_HANDLE_TYPE_DMA_BUF_BIT_EXT) {
         out.dma_buf = true;
-      else
+      } else {
         out.ahb = true;
+      }
       DestroyTensor(t);
+    }
+    if (dump_timings) {
+      const double req_ms =
+          absl::ToDoubleMilliseconds(absl::Now() - req_start_time);
+      std::fprintf(stderr,
+                   "[ArmVulkanML][Timing][VulkanInvocation::Requirements] "
+                   "slot=%zu ms=%.3f (dma_buf=%d, ahb=%d, bytes=%zu)\n",
+                   slot, req_ms, out.dma_buf ? 1 : 0, out.ahb ? 1 : 0,
+                   out.bytes);
+      std::fflush(stderr);
     }
     return true;
   }
@@ -704,11 +730,16 @@ struct VulkanInvocation::Impl {
   }
 
   bool Build() {
+    const absl::Time build_start_time = absl::Now();
+    absl::Time stage_start_time = absl::Now();
     VkShaderModuleCreateInfo shader{
         VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
     shader.codeSize = artifact->spirv.size() * sizeof(uint32_t);
     shader.pCode = artifact->spirv.data();
     VK_CHECK(CreateShaderModule(device, &shader, nullptr, &module));
+    const double shader_module_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     std::vector<TensorDescriptor> io = artifact->inputs;
     io.insert(io.end(), artifact->outputs.begin(), artifact->outputs.end());
     std::vector<std::vector<int64_t>> shapes;
@@ -797,14 +828,24 @@ struct VulkanInvocation::Impl {
     pipeline_info.layout = pipeline_layout;
     pipeline_info.resourceInfoCount = resources.size();
     pipeline_info.pResourceInfos = resources.data();
+    const double descriptor_and_const_table_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     VK_CHECK(CreateDataGraphPipelinesARM(device, VK_NULL_HANDLE, VK_NULL_HANDLE,
                                          1, &pipeline_info, nullptr,
                                          &pipeline));
+    const double create_data_graph_pipeline_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     VkDataGraphPipelineSessionCreateInfoARM session_info{
         VK_STRUCTURE_TYPE_DATA_GRAPH_PIPELINE_SESSION_CREATE_INFO_ARM};
     session_info.dataGraphPipeline = pipeline;
     VK_CHECK(CreateDataGraphPipelineSessionARM(device, &session_info, nullptr,
                                                &session));
+    const double create_session_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
+    size_t total_session_scratch_bytes = 0;
     VkDataGraphPipelineSessionBindPointRequirementsInfoARM query{
         kSessionBindPointRequirementsInfoType};
     query.session = session;
@@ -830,6 +871,8 @@ struct VulkanInvocation::Impl {
         VkMemoryRequirements2 memory{VK_STRUCTURE_TYPE_MEMORY_REQUIREMENTS_2};
         GetDataGraphPipelineSessionMemoryRequirementsARM(device, &info,
                                                          &memory);
+        total_session_scratch_bytes +=
+            static_cast<size_t>(memory.memoryRequirements.size);
         session_memory.push_back(VK_NULL_HANDLE);
         if (!Allocate(memory.memoryRequirements, 0, session_memory.back()))
           return false;
@@ -842,6 +885,9 @@ struct VulkanInvocation::Impl {
         VK_CHECK(BindDataGraphPipelineSessionMemoryARM(device, 1, &bind));
       }
     }
+    const double session_memory_alloc_bind_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    stage_start_time = absl::Now();
     VkCommandPoolCreateInfo command_info{
         VK_STRUCTURE_TYPE_COMMAND_POOL_CREATE_INFO};
     command_info.queueFamilyIndex = queue_family;
@@ -855,6 +901,20 @@ struct VulkanInvocation::Impl {
     VK_CHECK(AllocateCommandBuffers(device, &allocate, &command));
     VkFenceCreateInfo fence_info{VK_STRUCTURE_TYPE_FENCE_CREATE_INFO};
     VK_CHECK(CreateFence(device, &fence_info, nullptr, &fence));
+    const double cmd_pool_fence_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - stage_start_time);
+    init_statistics.create_shader_module_ms = shader_module_ms;
+    init_statistics.descriptors_and_constants_ms =
+        descriptor_and_const_table_ms;
+    init_statistics.create_data_graph_pipeline_ms =
+        create_data_graph_pipeline_ms;
+    init_statistics.create_session_ms = create_session_ms;
+    init_statistics.session_memory_alloc_bind_ms = session_memory_alloc_bind_ms;
+    init_statistics.cmd_pool_and_fence_ms = cmd_pool_fence_ms;
+    init_statistics.build_total_ms =
+        absl::ToDoubleMilliseconds(absl::Now() - build_start_time);
+    init_statistics.session_memory_objects = session_memory.size();
+    init_statistics.session_memory_bytes = total_session_scratch_bytes;
     return true;
   }
 
@@ -935,18 +995,29 @@ struct VulkanInvocation::Impl {
     return true;
   }
 
+  bool profiled_first_run = false;
   bool Run(const std::vector<const void*>& inputs,
            const std::vector<void*>& outputs) {
+    const bool profile_first_run = !profiled_first_run && dump_timings;
+    const absl::Time run_start_time =
+        profile_first_run ? absl::Now() : absl::InfinitePast();
     if (inputs.size() != artifact->inputs.size() ||
         outputs.size() != artifact->outputs.size()) {
       error = "Vulkan invocation input/output count mismatch";
       return false;
     }
     statistics = {};
+    absl::Time stage_start_time =
+        profile_first_run ? absl::Now() : absl::InfinitePast();
     for (size_t slot = 0; slot < tensors.size(); ++slot) {
       if (!tensors[slot].tensor && !PrepareTensor(slot, nullptr)) return false;
       if (tensors[slot].external) ++statistics.imported_slots;
     }
+    const double prepare_tensors_ms =
+        profile_first_run
+            ? absl::ToDoubleMilliseconds(absl::Now() - stage_start_time)
+            : 0.0;
+    if (profile_first_run) stage_start_time = absl::Now();
     for (size_t i = 0; i < inputs.size(); ++i) {
       if (tensors[i].external) continue;
       if (!inputs[i]) {
@@ -956,12 +1027,23 @@ struct VulkanInvocation::Impl {
       std::memcpy(tensors[i].mapped, inputs[i], tensors[i].bytes);
       statistics.input_bytes += tensors[i].bytes;
     }
-    for (size_t i = 0; i < outputs.size(); ++i)
+    for (size_t i = 0; i < outputs.size(); ++i) {
       if (!outputs[i] && !tensors[inputs.size() + i].external) {
         error = "Null output";
         return false;
       }
+    }
+    const double input_copy_ms =
+        profile_first_run
+            ? absl::ToDoubleMilliseconds(absl::Now() - stage_start_time)
+            : 0.0;
+    if (profile_first_run) stage_start_time = absl::Now();
     if (!RecordCommands()) return false;
+    const double record_cmds_ms =
+        profile_first_run
+            ? absl::ToDoubleMilliseconds(absl::Now() - stage_start_time)
+            : 0.0;
+    if (profile_first_run) stage_start_time = absl::Now();
     VK_CHECK(ResetFences(device, 1, &fence));
     VkSubmitInfo submit{VK_STRUCTURE_TYPE_SUBMIT_INFO};
     submit.commandBufferCount = 1;
@@ -977,11 +1059,34 @@ struct VulkanInvocation::Impl {
       failed_submission = true;
       return false;
     }
+    const double submit_wait_ms =
+        profile_first_run
+            ? absl::ToDoubleMilliseconds(absl::Now() - stage_start_time)
+            : 0.0;
+    if (profile_first_run) stage_start_time = absl::Now();
     for (size_t i = 0; i < outputs.size(); ++i) {
       const auto& t = tensors[inputs.size() + i];
       if (t.external) continue;
       std::memcpy(outputs[i], t.mapped, t.bytes);
       statistics.output_bytes += t.bytes;
+    }
+    const double output_copy_ms =
+        profile_first_run
+            ? absl::ToDoubleMilliseconds(absl::Now() - stage_start_time)
+            : 0.0;
+    if (profile_first_run) {
+      profiled_first_run = true;
+      const double run_total_ms =
+          absl::ToDoubleMilliseconds(absl::Now() - run_start_time);
+      std::fprintf(
+          stderr,
+          "[ArmVulkanML][Timing][VulkanInvocation::FirstRun] total=%.3f ms | "
+          "PrepareTensors=%.3f ms | InputCopy=%.3f ms | "
+          "RecordCommands=%.3f ms | QueueSubmitAndWait=%.3f ms | "
+          "OutputCopy=%.3f ms\n",
+          run_total_ms, prepare_tensors_ms, input_copy_ms, record_cmds_ms,
+          submit_wait_ms, output_copy_ms);
+      std::fflush(stderr);
     }
     return true;
   }
@@ -994,22 +1099,39 @@ VulkanInvocation::~VulkanInvocation() = default;
 std::unique_ptr<VulkanInvocation> VulkanInvocation::Create(
     std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
     std::string& error) {
-  return CreateWithResolver(std::move(artifact), allow_emulation, nullptr,
-                            error);
+  CreateOptions options;
+  options.allow_emulation = allow_emulation;
+  return Create(std::move(artifact), options, error);
+}
+std::unique_ptr<VulkanInvocation> VulkanInvocation::Create(
+    std::shared_ptr<const CompiledPartition> artifact,
+    const CreateOptions& options, std::string& error) {
+  return CreateWithResolver(std::move(artifact), options, nullptr, error,
+                            nullptr);
 }
 std::unique_ptr<VulkanInvocation> VulkanInvocation::CreateWithResolver(
     std::shared_ptr<const CompiledPartition> artifact, bool allow_emulation,
     PFN_vkGetInstanceProcAddr resolver, std::string& error,
     std::shared_ptr<HardwareBufferApi> hardware_api) {
+  CreateOptions options;
+  options.allow_emulation = allow_emulation;
+  return CreateWithResolver(std::move(artifact), options, resolver, error,
+                            std::move(hardware_api));
+}
+std::unique_ptr<VulkanInvocation> VulkanInvocation::CreateWithResolver(
+    std::shared_ptr<const CompiledPartition> artifact,
+    const CreateOptions& options, PFN_vkGetInstanceProcAddr resolver,
+    std::string& error, std::shared_ptr<HardwareBufferApi> hardware_api) {
   if (!artifact || artifact->spirv.empty() || artifact->outputs.empty()) {
     error = "Empty compiled artifact";
     return nullptr;
   }
   auto impl = std::make_unique<Impl>();
+  impl->dump_timings = options.dump_timings;
   impl->hardware_api =
       hardware_api ? std::move(hardware_api) : AndroidHardwareBufferApi();
   impl->artifact = std::move(artifact);
-  if (!impl->Initialize(allow_emulation, resolver)) {
+  if (!impl->Initialize(options.allow_emulation, resolver)) {
     error = impl->error;
     return nullptr;
   }
@@ -1018,7 +1140,7 @@ std::unique_ptr<VulkanInvocation> VulkanInvocation::CreateWithResolver(
 }
 bool VulkanInvocation::Requirements(size_t slot, BufferRequirements& r,
                                     std::string& error) {
-  absl::MutexLock lock(&impl_->mutex);
+  absl::MutexLock lock(impl_->mutex);
   if (!impl_->Requirements(slot, r)) {
     error = impl_->error;
     return false;
@@ -1028,7 +1150,7 @@ bool VulkanInvocation::Requirements(size_t slot, BufferRequirements& r,
 bool VulkanInvocation::AttachExternal(size_t slot,
                                       std::shared_ptr<ExternalBuffer> buffer,
                                       std::string& error) {
-  absl::MutexLock lock(&impl_->mutex);
+  absl::MutexLock lock(impl_->mutex);
   if (impl_->failed_submission ||
       !impl_->PrepareTensor(slot, std::move(buffer))) {
     error = impl_->error;
@@ -1037,7 +1159,7 @@ bool VulkanInvocation::AttachExternal(size_t slot,
   return true;
 }
 void VulkanInvocation::DetachExternal(size_t slot) {
-  absl::MutexLock lock(&impl_->mutex);
+  absl::MutexLock lock(impl_->mutex);
   if (slot < impl_->tensors.size()) {
     if (impl_->failed_submission) impl_->DeviceWaitIdle(impl_->device);
     if (impl_->tensors[slot].tensor) impl_->command_recorded = false;
@@ -1045,13 +1167,17 @@ void VulkanInvocation::DetachExternal(size_t slot) {
   }
 }
 VulkanInvocation::CopyStatistics VulkanInvocation::Statistics() const {
-  absl::MutexLock lock(&impl_->mutex);
+  absl::MutexLock lock(impl_->mutex);
   return impl_->statistics;
+}
+VulkanInvocation::InitStatistics VulkanInvocation::InitStats() const {
+  absl::MutexLock lock(impl_->mutex);
+  return impl_->init_statistics;
 }
 bool VulkanInvocation::Run(const std::vector<const void*>& inputs,
                            const std::vector<void*>& outputs,
                            std::string& error) {
-  absl::MutexLock lock(&impl_->mutex);
+  absl::MutexLock lock(impl_->mutex);
   if (impl_->failed_submission) {
     error = "Invocation has an incomplete submission";
     return false;

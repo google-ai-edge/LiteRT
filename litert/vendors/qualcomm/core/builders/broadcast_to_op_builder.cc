@@ -125,6 +125,11 @@ std::vector<OpWrapper> BuildBroadcastToOp(
           &CreateStaticTensor<int16_t>(tensor_pool, input_tensor, static_dims);
       break;
     }
+    case QNN_DATATYPE_FLOAT_16: {
+      static_tensor =
+          &CreateStaticTensor<uint16_t>(tensor_pool, input_tensor, static_dims);
+      break;
+    }
     case QNN_DATATYPE_FLOAT_32: {
       static_tensor =
           &CreateStaticTensor<float>(tensor_pool, input_tensor, static_dims);

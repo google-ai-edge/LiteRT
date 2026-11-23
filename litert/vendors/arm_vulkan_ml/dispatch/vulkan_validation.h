@@ -27,7 +27,7 @@ class VulkanValidation {
  public:
   ~VulkanValidation();
   bool Prepare(PFN_vkGetInstanceProcAddr get, VkInstanceCreateInfo& info,
-               std::string& error);
+               const char* mode, const char* directory, std::string& error);
   bool Attach(PFN_vkGetInstanceProcAddr get, VkInstance instance,
               std::string& error);
   void Close();

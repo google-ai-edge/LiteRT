@@ -4,7 +4,7 @@
 workloads, metrics and flags, the same run directory, so llama/report.tool reads both alike.
 
 usage: bench.tool --model e2b|e4b|12b|26b|qwen27b --out DIR [options]
-  --workload short|8k|16k|30k|128k   (default short)
+  --workload short|8k|16k|30k|128k|256k   (default short)
   --metric latency|memory|cold       latency: llama-bench prefill of the whole prompt and decode
                                      at that depth, or with --prompt-file llama-server completions;
                                      memory: one prefill+decode pass (llama-bench -pg) under GPU
@@ -40,7 +40,7 @@ def load(name, directory):
 
 common = load('common', ROOT / 'windows')
 PRESETS = {'short': (1024, 256, 2048, 5), '8k': (8192, 256, 9216, 3), '16k': (16384, 256, 17408, 3),
-           '30k': (30720, 256, 31744, 3), '128k': (128001, 128, 130048, 2)}
+           '30k': (30720, 256, 31744, 3), '128k': (128001, 128, 130048, 2), '256k': (256001, 128, 262144, 2)}
 
 
 class Server:

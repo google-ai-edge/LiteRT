@@ -14,6 +14,7 @@
 # ==============================================================================
 
 import pathlib
+from unittest import mock
 
 from absl.testing import absltest
 from absl.testing import parameterized
@@ -27,6 +28,7 @@ from litert_quantizer import default_policy
 from litert_quantizer import model_validator
 from litert_quantizer import qtyping
 from litert_quantizer import quantizer
+from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
 from litert_quantizer.utils import recipe_utils
 from litert_quantizer.utils import test_utils
 from litert_quantizer.utils import tfl_interpreter_utils
@@ -909,6 +911,243 @@ class CalibrationModesParityTest(parameterized.TestCase):
             1e-10,
             f'Output mismatch for {sig_key}:{output_name}',
         )
+
+  @parameterized.parameters(
+      ('single_fc.tflite', 'histogram_mse', 1, 1e-10),
+      ('conv_fc_mnist.tflite', 'histogram_mse', 1, 1e-10),
+      ('two_signatures.tflite', 'histogram_percentile', 1, 1e-10),
+      ('single_fc.tflite', 'histogram_mse', 4, 1e-4),
+      ('conv_fc_mnist.tflite', 'histogram_mse', 4, 1e-4),
+      ('two_signatures.tflite', 'histogram_percentile', 4, 1e-4),
+  )
+  @absltest.skipIf(
+      not hasattr(calibrator._pywrap_tfl_calibration, 'TensorHistogram'),
+      'Requires _pywrap_tfl_calibration.TensorHistogram',
+  )
+  def test_parity_between_calibration_modes_with_histogram_range(
+      self, model_name, range_method, num_samples, mse_tol
+  ):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models' / model_name
+    )
+    input_data = tfl_interpreter_utils.create_random_normal_input_data(
+        model_path, num_samples=num_samples, random_seed=0
+    )
+    qt = quantizer.Quantizer(model_path)
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': range_method},
+    )
+    self.assertTrue(qt.need_calibration)
+
+    calib_preserve = qt.calibrate(
+        input_data, mode=_CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS
+    )
+    model_preserve = qt.quantize(calib_preserve).quantized_model
+
+    calib_profiler = qt.calibrate(
+        input_data, mode=_CalibrationMode.CALIBRATION_PROFILER_BASED
+    )
+    model_profiler = qt.quantize(calib_profiler).quantized_model
+
+    validation_result = model_validator.compare_model(
+        model_preserve,
+        model_profiler,
+        input_data,
+        error_metrics=[quantizer.ValidationErrorMetric.MSE],
+    )
+
+    for sig_key in validation_result.available_signature_keys():
+      sig_result = validation_result.get_signature_comparison_result(sig_key)
+      for output_name, errors in sig_result.output_tensors.items():
+        self.assertLess(
+            errors[quantizer.ValidationErrorMetric.MSE.value],
+            mse_tol,
+            f'Output mismatch for {sig_key}:{output_name}',
+        )
+
+  @parameterized.parameters(
+      _CalibrationMode.CALIBRATION_PRESERVE_ALL_TENSORS,
+      _CalibrationMode.CALIBRATION_PROFILER_BASED,
+  )
+  def test_signatureless_model_matches_signature_model(self, mode):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    signatureless_model = test_utils.read_model_without_signatures(model_path)
+    samples = [
+        _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+        for _ in range(4)
+    ]
+
+    def calibrate_and_quantize(float_model, input_name):
+      qt = quantizer.Quantizer(float_model)
+      qt.add_static_config(
+          regex='.*',
+          operation_name=_TFLOpName.ALL_SUPPORTED,
+          activation_num_bits=8,
+          weight_num_bits=8,
+      )
+      calib_result = qt.calibrate(
+          {
+              tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+                  {input_name: x} for x in samples
+              ]
+          },
+          mode=mode,
+      )
+      return qt.quantize(calib_result).quantized_model
+
+    expected_model = calibrate_and_quantize(model_path, 'input_1')
+    # Without signatures, inputs are keyed by tensor name.
+    actual_model = calibrate_and_quantize(
+        signatureless_model, 'serving_default_input_1'
+    )
+
+    actual_interpreter = tfl_interpreter_utils.create_tfl_interpreter(
+        actual_model
+    )
+    self.assertEmpty(actual_interpreter.get_signature_list())
+    expected_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        tfl_interpreter_utils.create_tfl_interpreter(expected_model),
+        {'input_1': samples[0]},
+    )
+    actual_output = tfl_interpreter_utils.invoke_interpreter_signature(
+        actual_interpreter, {'serving_default_input_1': samples[0]}
+    )
+    self.assertEqual(list(actual_output), ['StatefulPartitionedCall:0'])
+    np.testing.assert_array_equal(
+        actual_output['StatefulPartitionedCall:0'],
+        next(iter(expected_output.values())),
+    )
+
+  def test_quantize_signatureless_model_raises_on_missing_qsv(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    qt = quantizer.Quantizer(
+        test_utils.read_model_without_signatures(model_path)
+    )
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+    )
+    calib_result = qt.calibrate({
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [{
+            'serving_default_input_1': (
+                _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+            )
+        }]
+    })
+    self.assertIn('StatefulPartitionedCall:0', calib_result)
+    calib_result['StatefulPartitionedCall:0'] = {}
+
+    with self.assertRaisesRegex(
+        ValueError, 'Missing QSVs .* StatefulPartitionedCall:0'
+    ):
+      qt.quantize(calib_result)
+
+  def test_validate_signatureless_model_with_random_data(self):
+    model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    qt = quantizer.Quantizer(
+        test_utils.read_model_without_signatures(model_path)
+    )
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+    )
+    calib_result = qt.calibrate({
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [{
+            'serving_default_input_1': (
+                _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)
+            )
+        }]
+    })
+    qt.quantize(calib_result)
+
+    validation_result = qt.validate()
+
+    self.assertEqual(
+        validation_result.available_signature_keys(),
+        [tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY],
+    )
+    signature_result = validation_result.get_signature_comparison_result(
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY
+    )
+    self.assertIn('serving_default_input_1:0', signature_result.input_tensors)
+    self.assertIn('StatefulPartitionedCall:0', signature_result.output_tensors)
+
+
+class HistogramRangeMethodQsvTest(absltest.TestCase):
+
+  def setUp(self):
+    super().setUp()
+    self._model_path = str(
+        pathlib.Path(TEST_DATA_PREFIX_PATH) / 'tests/models/single_fc.tflite'
+    )
+    self._calibration_data = {
+        tfl_interpreter_utils.DEFAULT_SIGNATURE_KEY: [
+            {'input_1': _RNG.uniform(-1.0, 1.0, size=(1, 8)).astype(np.float32)}
+            for _ in range(4)
+        ]
+    }
+
+  def _create_quantizer(self, range_method: str) -> quantizer.Quantizer:
+    qt = quantizer.Quantizer(self._model_path)
+    qt.add_static_config(
+        regex='.*',
+        operation_name=_TFLOpName.ALL_SUPPORTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': range_method},
+    )
+    return qt
+
+  def test_quantize_raises_if_calibration_result_has_no_histograms(self):
+    # Calibrating with a min/max recipe collects no histograms.
+    calibration_result = self._create_quantizer('min_max').calibrate(
+        self._calibration_data
+    )
+    self.assertFalse(
+        any('histogram' in qsv for qsv in calibration_result.values())
+    )
+
+    with self.assertRaisesRegex(
+        ValueError, 'calibration result has no histograms'
+    ):
+      self._create_quantizer('histogram_mse').quantize(calibration_result)
+
+  def test_quantize_warns_for_tensors_without_histograms(self):
+    qt = self._create_quantizer('histogram_mse')
+    calibration_result = qt.calibrate(self._calibration_data)
+    hist_tensor_names = [
+        name for name, qsv in calibration_result.items() if 'histogram' in qsv
+    ]
+    self.assertGreater(len(hist_tensor_names), 1)
+    # Keep one histogram, as for tensors with an aligned or fixed range.
+    for name in hist_tensor_names[1:]:
+      del calibration_result[name]['histogram']
+
+    with mock.patch.object(
+        naive_min_max_quantize.logging, 'log_first_n', autospec=True
+    ) as mock_log:
+      qt.quantize(calibration_result)
+
+    self.assertTrue(
+        any(
+            'No histogram in QSV' in call.args[1]
+            for call in mock_log.call_args_list
+        )
+    )
 
 
 if __name__ == '__main__':

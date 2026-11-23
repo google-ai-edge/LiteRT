@@ -14,13 +14,21 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/internal/graph.h"
 
+#include <cstddef>
+#include <cstdint>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <utility>
+#include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
@@ -29,7 +37,12 @@ limitations under the License.
 namespace litert::tensor::graph {
 namespace {
 
+using ::absl_testing::IsOkAndHolds;
+using ::absl_testing::StatusIs;
+using testing::ElementsAre;
 using testing::ElementsAreArray;
+using testing::FloatEq;
+using testing::IsEmpty;
 using testing::Not;
 using testing::SizeIs;
 using testing::StrEq;
@@ -109,7 +122,7 @@ struct DummyQuantization : Quantization {
 };
 
 TEST(QuantizationTest, As) {
-  PerChannelAffineQuantization quant({1.0f}, {0}, 0);
+  PerChannelAffineQuantization quant({1.0f}, std::vector<int64_t>{0}, 0);
   Quantization& quant_ref = quant;
 
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(PerChannelAffineQuantization & quant_as,
@@ -123,6 +136,311 @@ TEST(QuantizationTest, As) {
       const_quant_ref.As<PerChannelAffineQuantization>());
   EXPECT_EQ(&const_quant_as, &quant);
   EXPECT_THAT(const_quant_ref.As<DummyQuantization>(), Not(IsOk()));
+}
+
+TEST(QuantizationTest, DefaultsToSymmetricZeroPoints) {
+  PerChannelAffineQuantization pcq;
+  EXPECT_TRUE(pcq.zero_points.empty());
+  EXPECT_TRUE(pcq.zero_points.IsSymmetric());
+  EXPECT_EQ(pcq.zero_points.size(), 0);
+  EXPECT_THAT(pcq.zero_points.Data<int64_t>(), IsOkAndHolds(IsEmpty()));
+  EXPECT_THAT(pcq.zero_points.Data<float>(),
+              StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(pcq.zero_points.Scalar<int64_t>(), IsOkAndHolds(0));
+  EXPECT_THAT(pcq.zero_points.Scalar<float>(), IsOkAndHolds(FloatEq(0.0f)));
+  EXPECT_THAT(pcq.zero_points.At<float>(0), IsOkAndHolds(FloatEq(0.0f)));
+
+  BlockwiseQuantization bwq;
+  EXPECT_TRUE(bwq.zero_points.empty());
+  EXPECT_TRUE(bwq.zero_points.IsSymmetric());
+  EXPECT_EQ(bwq.zero_points.size(), 0);
+  EXPECT_THAT(bwq.zero_points.Data<int64_t>(), IsOkAndHolds(IsEmpty()));
+}
+
+TEST(QuantizationTest, PreservesZeroPointsWithoutNormalizingAllZeros) {
+  const ZeroPoints empty;
+  EXPECT_EQ(ZeroPoints::Int({}), empty);
+  EXPECT_TRUE(ZeroPoints::Float({}).empty());
+  EXPECT_TRUE(ZeroPoints::Float({}).IsSymmetric());
+  EXPECT_THAT(ZeroPoints::Float({}).Data<float>(), IsOkAndHolds(IsEmpty()));
+
+  const ZeroPoints zero_ints = ZeroPoints::From(std::vector<int64_t>{0, 0});
+  EXPECT_FALSE(zero_ints.empty());
+  EXPECT_TRUE(zero_ints.IsSymmetric());
+  EXPECT_TRUE(zero_ints.IsUniform());
+  EXPECT_EQ(zero_ints.size(), 2);
+  EXPECT_NE(zero_ints, empty);
+  EXPECT_THAT(zero_ints.Data<int64_t>(), IsOkAndHolds(ElementsAre(0, 0)));
+  EXPECT_THAT(zero_ints.Scalar<int32_t>(), IsOkAndHolds(0));
+  // Wrongly sized all-zero vectors are still rejected by Validate.
+  EXPECT_THAT(zero_ints.Validate<int32_t>(3),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  const ZeroPoints zero_floats =
+      ZeroPoints::From(std::vector<float>{0.0f, -0.0f});
+  EXPECT_FALSE(zero_floats.empty());
+  EXPECT_TRUE(zero_floats.IsSymmetric());
+  EXPECT_EQ(zero_floats.size(), 2);
+  EXPECT_THAT(zero_floats.Data<float>(),
+              IsOkAndHolds(ElementsAre(FloatEq(0.0f), FloatEq(-0.0f))));
+  EXPECT_THAT(zero_floats.Data<int64_t>(),
+              StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(zero_floats.Scalar<int32_t>(), IsOkAndHolds(0));
+
+  const ZeroPoints uniform_ints = ZeroPoints::Int({8, 8, 8});
+  EXPECT_FALSE(uniform_ints.IsSymmetric());
+  EXPECT_TRUE(uniform_ints.IsUniform());
+  EXPECT_THAT(uniform_ints.Scalar<int32_t>(), IsOkAndHolds(8));
+  EXPECT_THAT(ZeroPoints::Float({-0.5f, -0.5f}).Scalar<float>(),
+              IsOkAndHolds(FloatEq(-0.5f)));
+  EXPECT_THAT(ZeroPoints::Float({-0.5f, -0.5f}).Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  EXPECT_NE(ZeroPoints::Int({1}), empty);
+  EXPECT_NE(ZeroPoints::Int({1}), ZeroPoints::Float({1.0f}));
+}
+
+TEST(QuantizationTest, IntegerZeroPoints) {
+  PerChannelAffineQuantization pcq({0.5f, 0.25f},
+                                   /*zero_points=*/ZeroPoints::Int({0, 3}),
+                                   /*quantized_dimension=*/0);
+  EXPECT_FALSE(pcq.zero_points.IsSymmetric());
+  EXPECT_FALSE(pcq.zero_points.IsUniform());
+  EXPECT_EQ(pcq.zero_points.size(), 2);
+  EXPECT_THAT(pcq.zero_points.Data<int64_t>(), IsOkAndHolds(ElementsAre(0, 3)));
+  EXPECT_THAT(pcq.zero_points.Data<float>(),
+              StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(pcq.zero_points.Scalar<int64_t>(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(pcq.zero_points.At<int64_t>(0), IsOkAndHolds(0));
+  EXPECT_THAT(pcq.zero_points.At<int64_t>(1), IsOkAndHolds(3));
+  EXPECT_THAT(pcq.zero_points.At<float>(2),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  std::vector<int32_t> copied(2);
+  EXPECT_THAT(pcq.zero_points.Validate<int32_t>(2), ::testing::tensor::IsOk());
+  EXPECT_THAT(pcq.zero_points.CopyTo<int32_t>(absl::MakeSpan(copied)),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(copied, ElementsAre(0, 3));
+  EXPECT_THAT(pcq.zero_points.CopyAs<int32_t>(2),
+              IsOkAndHolds(ElementsAre(0, 3)));
+  EXPECT_THAT(pcq.zero_points.Validate<int32_t>(3),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  BlockwiseQuantization bwq({0.5f, 0.25f},
+                            /*zero_points=*/ZeroPoints::Int({2}),
+                            /*block_size=*/32);
+  EXPECT_EQ(bwq.zero_points.size(), 1);
+  EXPECT_THAT(bwq.zero_points.Scalar<int64_t>(), IsOkAndHolds(2));
+  EXPECT_THAT(bwq.zero_points.At<float>(0), IsOkAndHolds(FloatEq(2.0f)));
+  EXPECT_THAT(bwq.zero_points.At<float>(1), IsOkAndHolds(FloatEq(2.0f)));
+  std::vector<int32_t> broadcast(3);
+  EXPECT_THAT(bwq.zero_points.CopyTo<int32_t>(absl::MakeSpan(broadcast)),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(broadcast, ElementsAre(2, 2, 2));
+}
+
+TEST(QuantizationTest, FloatZeroPoints) {
+  PerChannelAffineQuantization pcq({0.5f, 0.25f},
+                                   /*zero_points=*/ZeroPoints::Float({-0.5f}),
+                                   /*quantized_dimension=*/0);
+  EXPECT_FALSE(pcq.zero_points.IsSymmetric());
+  EXPECT_EQ(pcq.zero_points.size(), 1);
+  EXPECT_THAT(pcq.zero_points.Data<int64_t>(),
+              StatusIs(absl::StatusCode::kNotFound));
+  EXPECT_THAT(pcq.zero_points.Data<float>(),
+              IsOkAndHolds(ElementsAre(FloatEq(-0.5f))));
+  EXPECT_THAT(pcq.zero_points.Scalar<float>(), IsOkAndHolds(FloatEq(-0.5f)));
+  EXPECT_THAT(pcq.zero_points.Scalar<int64_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(pcq.zero_points.Validate<int32_t>(2),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(pcq.zero_points.At<float>(0), IsOkAndHolds(FloatEq(-0.5f)));
+  EXPECT_THAT(pcq.zero_points.At<float>(1), IsOkAndHolds(FloatEq(-0.5f)));
+
+  BlockwiseQuantization bwq(
+      {0.5f, 0.25f},
+      /*zero_points=*/ZeroPoints::Float({-0.5f, 0.25f}),
+      /*block_size=*/32, /*quantized_dimension=*/0);
+  EXPECT_EQ(bwq.zero_points.size(), 2);
+  EXPECT_THAT(bwq.zero_points.At<float>(0), IsOkAndHolds(FloatEq(-0.5f)));
+  EXPECT_THAT(bwq.zero_points.At<float>(1), IsOkAndHolds(FloatEq(0.25f)));
+  EXPECT_THAT(bwq.zero_points.At<float>(2),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  const ZeroPoints whole_float = ZeroPoints::Float({2.0f, -3.0f});
+  EXPECT_THAT(whole_float.Validate<int32_t>(2), ::testing::tensor::IsOk());
+  std::vector<int32_t> ints(2);
+  EXPECT_THAT(whole_float.CopyTo<int32_t>(absl::MakeSpan(ints)),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(ints, ElementsAre(2, -3));
+
+  const ZeroPoints nan_zp =
+      ZeroPoints::Float({std::numeric_limits<float>::quiet_NaN()});
+  EXPECT_THAT(nan_zp.Scalar<int64_t>(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(QuantizationTest, ZeroPointsConversionRangeLimits) {
+  const ZeroPoints pos_inf =
+      ZeroPoints::Float({std::numeric_limits<float>::infinity()});
+  const ZeroPoints neg_inf =
+      ZeroPoints::Float({-std::numeric_limits<float>::infinity()});
+  EXPECT_THAT(pos_inf.Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(neg_inf.Scalar<int64_t>(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  const ZeroPoints above_i32 = ZeroPoints::Float({2147483648.0f});
+  EXPECT_THAT(above_i32.Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(above_i32.Scalar<int64_t>(), IsOkAndHolds(int64_t{2147483648}));
+
+  const ZeroPoints min_i32 = ZeroPoints::Float({-2147483648.0f});
+  EXPECT_THAT(min_i32.Scalar<int32_t>(),
+              IsOkAndHolds(std::numeric_limits<int32_t>::min()));
+
+  const ZeroPoints below_i32 = ZeroPoints::Float({-4294967296.0f});
+  EXPECT_THAT(below_i32.Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  const ZeroPoints above_i64 = ZeroPoints::Float({9223372036854775808.0f});
+  EXPECT_THAT(above_i64.Scalar<int64_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  const ZeroPoints neg_int = ZeroPoints::Int({-1});
+  const ZeroPoints neg_float = ZeroPoints::Float({-1.0f});
+  EXPECT_THAT(neg_int.Scalar<uint32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(neg_float.Scalar<uint32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  const ZeroPoints u8_fit = ZeroPoints::Int({255});
+  const ZeroPoints u8_overflow = ZeroPoints::Int({256});
+  EXPECT_THAT(u8_fit.Scalar<uint8_t>(), IsOkAndHolds(uint8_t{255}));
+  EXPECT_THAT(u8_overflow.Scalar<uint8_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  const ZeroPoints i64_above_i32 = ZeroPoints::Int(
+      {static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1});
+  const ZeroPoints i64_below_i32 = ZeroPoints::Int(
+      {static_cast<int64_t>(std::numeric_limits<int32_t>::min()) - 1});
+  EXPECT_THAT(i64_above_i32.Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(i64_below_i32.Scalar<int32_t>(),
+              StatusIs(absl::StatusCode::kUnimplemented));
+
+  const ZeroPoints mixed_fractional = ZeroPoints::Float({2.0f, 0.5f});
+  std::vector<int32_t> copy_dst(2);
+  EXPECT_THAT(mixed_fractional.CopyTo<int32_t>(absl::MakeSpan(copy_dst)),
+              StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(QuantizationTest, ZeroPointsStridedVisitView) {
+  std::vector<float> visited;
+  auto collect = [&visited](size_t n) {
+    return [&visited, n](auto view) {
+      visited.clear();
+      for (size_t i = 0; i < n; ++i) {
+        visited.push_back(static_cast<float>(view[i]));
+      }
+    };
+  };
+
+  EXPECT_THAT(ZeroPoints{}.Visit(3, collect(3)), ::testing::tensor::IsOk());
+  EXPECT_THAT(visited,
+              ElementsAre(FloatEq(0.0f), FloatEq(0.0f), FloatEq(0.0f)));
+
+  EXPECT_THAT(ZeroPoints::Int({4}).Visit(3, collect(3)),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(visited,
+              ElementsAre(FloatEq(4.0f), FloatEq(4.0f), FloatEq(4.0f)));
+
+  EXPECT_THAT(ZeroPoints::Float({-0.5f, 1.25f, 2.0f}).Visit(3, collect(3)),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(visited,
+              ElementsAre(FloatEq(-0.5f), FloatEq(1.25f), FloatEq(2.0f)));
+
+  EXPECT_THAT(ZeroPoints::Int({1, 2}).Visit(3, collect(3)),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+
+  EXPECT_THAT(ZeroPoints::Int({5}).Visit(
+                  2,
+                  [](auto view) -> absl::Status {
+                    return view[0] == 5 && view[1] == 5
+                               ? absl::OkStatus()
+                               : absl::InternalError("unexpected value");
+                  }),
+              ::testing::tensor::IsOk());
+}
+
+MATCHER(IsEmptySymmetric, "") {
+  return testing::ExplainMatchResult(testing::IsTrue(), arg.empty(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(testing::Eq(0u), arg.size(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(testing::IsTrue(), arg.IsSymmetric(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(testing::IsTrue(), arg.IsUniform(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(IsOkAndHolds(0),
+                                     arg.template Scalar<int64_t>(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(IsOkAndHolds(FloatEq(0.0f)),
+                                     arg.template Scalar<float>(),
+                                     result_listener) &&
+         testing::ExplainMatchResult(testing::tensor::IsOk(),
+                                     arg.template Validate<int32_t>(0),
+                                     result_listener);
+}
+
+TEST(QuantizationTest, ZeroPointsMovePreservesMovedFromInvariants) {
+  // Move construction from uniform non-zero integers.
+  ZeroPoints int_src = ZeroPoints::Int({5, 5});
+  ZeroPoints dst(std::move(int_src));
+  EXPECT_FALSE(dst.IsSymmetric());
+  EXPECT_TRUE(dst.IsUniform());
+  EXPECT_THAT(dst.Data<int64_t>(), IsOkAndHolds(ElementsAre(5, 5)));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_THAT(int_src, IsEmptySymmetric());
+
+  // Move assignment across representations (Float -> Int destination).
+  ZeroPoints float_src = ZeroPoints::Float({-0.5f, 1.25f});
+  dst = std::move(float_src);
+  EXPECT_FALSE(dst.IsSymmetric());
+  EXPECT_FALSE(dst.IsUniform());
+  EXPECT_THAT(dst.Data<float>(),
+              IsOkAndHolds(ElementsAre(FloatEq(-0.5f), FloatEq(1.25f))));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_THAT(float_src, IsEmptySymmetric());
+
+  // Move assignment across representations (Int -> Float destination).
+  ZeroPoints int_src2 = ZeroPoints::Int({3});
+  dst = std::move(int_src2);
+  EXPECT_FALSE(dst.IsSymmetric());
+  EXPECT_TRUE(dst.IsUniform());
+  EXPECT_THAT(dst.Data<int64_t>(), IsOkAndHolds(ElementsAre(3)));
+  // NOLINTNEXTLINE(bugprone-use-after-move)
+  EXPECT_THAT(int_src2, IsEmptySymmetric());
+
+  // Self-move-assignment preserves state.
+  ZeroPoints self = ZeroPoints::Int({7, 7});
+  ZeroPoints& self_ref = self;
+  self = std::move(self_ref);
+  EXPECT_FALSE(self.IsSymmetric());
+  EXPECT_TRUE(self.IsUniform());
+  EXPECT_THAT(self.Data<int64_t>(), IsOkAndHolds(ElementsAre(7, 7)));
+
+  // Compatibility `assign(count, value)` resets flags and element type.
+  ZeroPoints assigned = ZeroPoints::Float({-0.5f});
+  assigned.assign(3, 0);
+  EXPECT_TRUE(assigned.IsSymmetric());
+  EXPECT_TRUE(assigned.IsUniform());
+  EXPECT_THAT(assigned.Data<int64_t>(), IsOkAndHolds(ElementsAre(0, 0, 0)));
+  assigned.assign(2, 4);
+  EXPECT_FALSE(assigned.IsSymmetric());
+  EXPECT_TRUE(assigned.IsUniform());
+  EXPECT_THAT(assigned.Data<int64_t>(), IsOkAndHolds(ElementsAre(4, 4)));
 }
 
 struct DummyOp : Operation {

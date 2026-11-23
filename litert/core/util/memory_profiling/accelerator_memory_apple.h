@@ -28,7 +28,7 @@
 
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // The accelerator part of the kernel's memory ledger for this process: the
 // bytes of phys_footprint (HostMemoryUsage::platform_attributed_bytes) that
@@ -77,6 +77,6 @@ AcceleratorMemoryUsage AcceleratorMemoryUsageFromAppleSources(
     const AppleAcceleratorLedger& ledger,
     const std::vector<MetalDeviceMemory>& devices);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_APPLE_H_

@@ -318,8 +318,8 @@ calibration.
   intermediate activations.
 * **`CALIBRATION_PROFILER_BASED` (Recommended, except for GPTQ)**: Uses TFLite's
   internal C++ profiler-based calibration. It executes directly in C++ with
-  lower memory overhead and is significantly faster. Currently, only min/max
-  collection is supported by this mode, so it can be utilized for all
+  lower memory overhead and is significantly faster. It supports both min/max
+  and histogram collection natively in C++, so it can be utilized for all
   quantization algorithms except GPTQ.
 
 #### Calibration API: `Quantizer.calibrate()`
@@ -383,6 +383,43 @@ for samples in dataset:
 # 3. Extract accumulated calibration statistics.
 calibration_result = interpreter.get_calibration_results()
 ```
+
+By default (`quantization_recipe=None`), `CalibrationInterpreter` collects
+min/max statistics only (no histograms or GPTQ statistics). To quantize with a
+histogram activation `range_method` (see below), pass the same recipe you will
+quantize with through its `quantization_recipe` argument.
+
+#### Histogram-Based Activation Calibration
+
+For models with heavy-tailed activation distributions or outliers, set the
+activation `range_method` to `"histogram_mse"` or `"histogram_percentile"`.
+Calibration then collects bounded histograms of the activations, and
+quantization chooses clipping ranges that minimize quantization MSE or clip
+extreme tail percentiles (`"min_percentile"` and `"max_percentile"`, default
+0.001 and 99.999). This works with any algorithm whose activations use min/max
+ranges, in both `CALIBRATION_PROFILER_BASED` and
+`CALIBRATION_PRESERVE_ALL_TENSORS` modes:
+
+```python
+from litert_quantizer import calibrator, quantizer, recipe
+
+qt = quantizer.Quantizer("path/to/model.tflite")
+qt.load_quantization_recipe(
+    recipe.static_wi8_ai8(
+        activation_algorithm_params={"range_method": "histogram_mse"}
+    )
+)
+calibration_result = qt.calibrate(
+    calibration_data,
+    mode=calibrator.CalibrationMode.CALIBRATION_PROFILER_BASED,
+)
+quantized_model = qt.quantize(calibration_result=calibration_result)
+```
+
+When calibrating with `CalibrationInterpreter`, pass the same recipe through
+its `quantization_recipe` argument so it collects the histograms. Quantizing
+with a histogram `range_method` raises a `ValueError` if the calibration result
+has no histograms.
 
 ### Step 4: Quantize & Export the Model
 

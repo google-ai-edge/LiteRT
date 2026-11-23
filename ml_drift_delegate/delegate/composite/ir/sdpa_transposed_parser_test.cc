@@ -18,8 +18,10 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <optional>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -44,9 +46,9 @@
 namespace litert::ml_drift::ir {
 namespace {
 
-using ::testing::Each;
 using ::testing::Eq;
 using ::testing::FloatEq;
+using ::testing::Optional;
 using ::testing::SizeIs;
 
 TfLiteStablehloCompositeParams* CreateSdpaTransposedParams(
@@ -492,8 +494,8 @@ void SetQuantizationScale(TfLiteTensor* tensor, float scale) {
 }
 
 // INT8 symmetric per-tensor K/V caches are handed to the kernel as kUint8 byte
-// tensors, read by both matmuls as int8 external weights dequantized with one
-// scale per output channel.
+// tensors, read by both matmuls as int8 external weights dequantized with the
+// per-tensor scales.
 TEST_F(ConvertSdpaTransposedTest, Int8KvCache) {
   SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
   builder.AddInput(kTfLiteFloat32, {1, 8, 1, 64});     // q (decode)
@@ -537,13 +539,9 @@ TEST_F(ConvertSdpaTransposedTest, Int8KvCache) {
   EXPECT_EQ(attr->bmm1_weights.desc.layout,
             ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4);
   EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::kUint8);
-  // One scale per cache slot for Q*K^T and per head_dim element for P*V.
-  ASSERT_TRUE(attr->scale_k.has_value());
-  EXPECT_EQ(attr->scale_k->shape.v, 128);
-  EXPECT_THAT(attr->scale_k->data, Each(FloatEq(0.25f)));
-  ASSERT_TRUE(attr->scale_v.has_value());
-  EXPECT_EQ(attr->scale_v->shape.v, 64);
-  EXPECT_THAT(attr->scale_v->data, Each(FloatEq(0.125f)));
+  EXPECT_EQ(attr->kv_cache_dtype, ::ml_drift::DataType::kInt8);
+  EXPECT_THAT(attr->scale_k, Optional(FloatEq(0.25f)));
+  EXPECT_THAT(attr->scale_v, Optional(FloatEq(0.125f)));
 }
 
 // Mixed int8 K / float V caches are not supported and must be left to the CPU
@@ -567,6 +565,367 @@ TEST_F(ConvertSdpaTransposedTest, Int8KeyWithFloatValueIsNotSupported) {
   const absl::Status status = parser.is_supported(
       interpreter->primary_subgraph().context(), &pair->first, &pair->second);
   EXPECT_EQ(status.code(), absl::StatusCode::kUnavailable) << status;
+}
+
+void SetQuantizationZeroPoint(TfLiteTensor* tensor, int32_t zero_point) {
+  ASSERT_EQ(tensor->quantization.type, kTfLiteAffineQuantization);
+  auto* quantization =
+      static_cast<TfLiteAffineQuantization*>(tensor->quantization.params);
+  ASSERT_EQ(quantization->zero_point->size, 1);
+  quantization->zero_point->data[0] = zero_point;
+  tensor->params.zero_point = zero_point;
+}
+
+// INT4 symmetric per-tensor K/V caches are retagged as kUint8 byte tensors with
+// the head_dim axis packed by half, keep their BOOL causal mask even on Apple
+// Metal, and record unpacked logical weight shapes in `bmm1_weights` /
+// `bmm2_weights` with an INT4 `kv_cache_dtype`.
+TEST_F(ConvertSdpaTransposedTest, Int4KvCacheKeepsBoolMaskAndPacksShapes) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 8, 1, 64});   // q (decode)
+  builder.AddInput(kTfLiteInt4, {1, 2, 128, 64});    // k
+  builder.AddInput(kTfLiteInt4, {1, 2, 64, 128});    // v
+  builder.AddInput(kTfLiteBool, {1, 1, 1, 128});     // bool mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});      // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 512});  // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams(
+      /*softcap=*/std::nullopt, /*is_causal=*/true,
+      /*from_cache_update=*/true);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(1), 0.25f);
+  SetQuantizationScale(interpreter->tensor(2), 0.125f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  // Quantized K/V takes the decomposed path, so the BOOL mask is NOT pruned.
+  ASSERT_THAT(op->inputs, SizeIs(5));
+  EXPECT_THAT(op->outputs, SizeIs(1));
+
+  const ::ml_drift::ir::IrTensor* k_cache = ir_model->tensor(op->inputs[1]);
+  const ::ml_drift::ir::IrTensor* v_cache = ir_model->tensor(op->inputs[2]);
+  ASSERT_NE(k_cache, nullptr);
+  ASSERT_NE(v_cache, nullptr);
+  EXPECT_EQ(k_cache->desc.GetDataType(), ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(v_cache->desc.GetDataType(), ::ml_drift::DataType::kUint8);
+  EXPECT_FALSE(k_cache->quant_params.has_value());
+  EXPECT_FALSE(v_cache->quant_params.has_value());
+  EXPECT_EQ(k_cache->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 128, 32));
+  EXPECT_EQ(v_cache->desc.GetBHWCShape(), ::ml_drift::BHWC(1, 2, 32, 128));
+
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_cache_dtype, ::ml_drift::DataType::kInt4);
+  EXPECT_TRUE(attr->from_cache_update);
+  EXPECT_EQ(attr->bmm1_weights.weights_shape, ::ml_drift::OHWI(128, 2, 1, 64));
+  EXPECT_EQ(attr->bmm1_weights.desc.type, ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(attr->bmm1_weights.desc.layout,
+            ::ml_drift::WeightsLayout::kOSpatialIOGroupO4I4);
+  EXPECT_EQ(attr->bmm2_weights.weights_shape, ::ml_drift::OHWI(64, 2, 1, 128));
+  EXPECT_EQ(attr->bmm2_weights.desc.type, ::ml_drift::DataType::kUint8);
+  EXPECT_THAT(attr->scale_k, Optional(FloatEq(0.25f)));
+  EXPECT_THAT(attr->scale_v, Optional(FloatEq(0.125f)));
+}
+
+TEST_F(ConvertSdpaTransposedTest, Int8QueryWithInt4KvCache) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt8, {1, 8, 4, 256});      // q (prefill)
+  builder.AddInput(kTfLiteInt4, {1, 2, 128, 256});    // k
+  builder.AddInput(kTfLiteInt4, {1, 2, 256, 128});    // v
+  builder.AddInput(kTfLiteBool, {1, 1, 4, 128});      // bool mask
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 4, 256});  // result
+
+  TfLiteStablehloCompositeParams* params = CreateSdpaTransposedParams(
+      /*softcap=*/std::nullopt, /*is_causal=*/true,
+      /*from_cache_update=*/true);
+  builder.SetParameters(params);
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(0), 0.03125f);
+  SetQuantizationScale(interpreter->tensor(1), 0.25f);
+  SetQuantizationScale(interpreter->tensor(2), 0.125f);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::SdpaTransposedAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->kv_cache_dtype, ::ml_drift::DataType::kInt4);
+  // Partition-input INT8 queries (no GPU producer) are retagged to raw kInt8
+  // and carry `scale_q` for on-GPU dequantization.
+  const ::ml_drift::ir::IrTensor* q_ir = ir_model->tensor(op->inputs[0]);
+  ASSERT_NE(q_ir, nullptr);
+  EXPECT_EQ(q_ir->desc.GetDataType(), ::ml_drift::DataType::kInt8);
+  EXPECT_FALSE(q_ir->quant_params.has_value());
+  ASSERT_TRUE(attr->scale_q.has_value());
+  EXPECT_FLOAT_EQ(*attr->scale_q, 0.03125f);
+}
+
+TEST_F(ConvertSdpaTransposedTest, Int4KvInvalidAlignmentIsNotSupported) {
+  struct BadShapes {
+    int cache_size;
+    int head_dim;
+  };
+  const BadShapes cases[] = {{128, 60}, {126, 64}};
+  for (const BadShapes& s : cases) {
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+    builder.AddInput(kTfLiteFloat32, {1, 8, 1, s.head_dim});
+    builder.AddInput(kTfLiteInt4, {1, 2, s.cache_size, s.head_dim});
+    builder.AddInput(kTfLiteInt4, {1, 2, s.head_dim, s.cache_size});
+    builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+    builder.AddOutput(kTfLiteFloat32, {1, 8, 1, s.head_dim});
+    builder.SetParameters(CreateSdpaTransposedParams());
+
+    auto interpreter = builder.Build();
+    ASSERT_NE(interpreter, nullptr);
+    const auto* pair = interpreter->node_and_registration(0);
+    const CustomIrOpParser parser = GetSdpaTransposedParser();
+    const absl::Status status = parser.is_supported(
+        interpreter->primary_subgraph().context(), &pair->first, &pair->second);
+    EXPECT_EQ(status.code(), absl::StatusCode::kUnavailable) << status;
+  }
+}
+
+TEST_F(ConvertSdpaTransposedTest, AsymmetricQuantizedInputsAreNotSupported) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt8, {1, 8, 1, 64});
+  builder.AddInput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddInput(kTfLiteInt4, {1, 2, 64, 128});
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 512});
+  builder.SetParameters(CreateSdpaTransposedParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationZeroPoint(interpreter->tensor(0), 5);
+  const auto* pair = interpreter->node_and_registration(0);
+  const CustomIrOpParser parser = GetSdpaTransposedParser();
+  EXPECT_EQ(parser
+                .is_supported(interpreter->primary_subgraph().context(),
+                              &pair->first, &pair->second)
+                .code(),
+            absl::StatusCode::kUnavailable);
+}
+
+TEST_F(ConvertSdpaTransposedTest, Int4QueryIsNotSupported) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt4, {1, 8, 1, 64});
+  builder.AddInput(kTfLiteInt4, {1, 2, 128, 64});
+  builder.AddInput(kTfLiteInt4, {1, 2, 64, 128});
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+  builder.AddOutput(kTfLiteFloat32, {1, 1, 1, 512});
+  builder.SetParameters(CreateSdpaTransposedParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  const auto* pair = interpreter->node_and_registration(0);
+  const CustomIrOpParser parser = GetSdpaTransposedParser();
+  EXPECT_EQ(parser
+                .is_supported(interpreter->primary_subgraph().context(),
+                              &pair->first, &pair->second)
+                .code(),
+            absl::StatusCode::kUnavailable);
+}
+
+// Returns parameters of a StableHLO composite named `name` without attributes.
+TfLiteStablehloCompositeParams* CreateCompositeParams(const char* name) {
+  auto* params = static_cast<TfLiteStablehloCompositeParams*>(
+      calloc(1, sizeof(TfLiteStablehloCompositeParams)));
+  params->name = name;
+  return params;
+}
+
+// Appends a StableHLO composite node with `params` reading `inputs` to
+// `interpreter`, and returns its new float output of `output_shape`.
+int AddCompositeNode(::tflite::Interpreter& interpreter,
+                     const std::vector<int>& inputs,
+                     const std::vector<int>& output_shape,
+                     TfLiteStablehloCompositeParams* params) {
+  const int output = interpreter.tensors_size();
+  EXPECT_EQ(interpreter.AddTensors(1), kTfLiteOk);
+  EXPECT_EQ(interpreter.SetTensorParametersReadWrite(
+                output, kTfLiteFloat32, "", output_shape,
+                TfLiteQuantization{kTfLiteNoQuantization, nullptr}),
+            kTfLiteOk);
+  TfLiteRegistration registration = {};
+  registration.builtin_code = kTfLiteBuiltinStablehloComposite;
+  registration.version = 1;
+  EXPECT_EQ(interpreter.AddNodeWithParameters(inputs, {output},
+                                              /*init_data=*/nullptr,
+                                              /*init_data_size=*/0, params,
+                                              &registration),
+            kTfLiteOk);
+  return output;
+}
+
+// A partition-input INT8 query is retagged to raw kInt8 in place, so it must
+// not be read by other nodes.
+TEST_F(ConvertSdpaTransposedTest, Int8QueryReadByAnotherNodeIsNotDelegated) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteInt8, {1, 8, 1, 64});       // q
+  builder.AddInput(kTfLiteFloat32, {1, 2, 128, 64});  // k
+  builder.AddInput(kTfLiteFloat32, {1, 2, 64, 128});  // v
+  builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});       // param tensor
+  builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 64});   // result
+  builder.SetParameters(CreateSdpaTransposedParams());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  SetQuantizationScale(interpreter->tensor(0), 0.25f);
+  // A second SDPA reading the same query.
+  const int second_output =
+      AddCompositeNode(*interpreter, {0, 1, 2, 3}, {1, 8, 1, 64},
+                       CreateSdpaTransposedParams());
+  ASSERT_EQ(interpreter->SetOutputs({4, second_output}), kTfLiteOk);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+// Builds `odml.sdpa_transposed` reading INT8 K/V caches written by a CPU
+// composite `producer` from float updates.
+std::unique_ptr<::tflite::Interpreter> BuildSdpaWithKvCacheProducer(
+    const char* producer) {
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});  // 0: K update
+  builder.AddInput(kTfLiteFloat32, {1, 2, 1, 64});  // 1: V update
+  builder.AddOutput(kTfLiteInt8, {1, 2, 128, 64});  // 2: K cache
+  builder.AddOutput(kTfLiteInt8, {1, 2, 64, 128});  // 3: V cache
+  builder.SetParameters(CreateCompositeParams(producer));
+
+  auto interpreter = builder.Build();
+  SetQuantizationScale(interpreter->tensor(2), 0.25f);
+  SetQuantizationScale(interpreter->tensor(3), 0.125f);
+  const int q = interpreter->tensors_size();
+  EXPECT_EQ(interpreter->AddTensors(2), kTfLiteOk);
+  EXPECT_EQ(interpreter->SetTensorParametersReadWrite(
+                q, kTfLiteFloat32, "", {1, 8, 1, 64},
+                TfLiteQuantization{kTfLiteNoQuantization, nullptr}),
+            kTfLiteOk);
+  EXPECT_EQ(interpreter->SetTensorParametersReadWrite(
+                q + 1, kTfLiteInt32, "", {1, 1, 1, 7},
+                TfLiteQuantization{kTfLiteNoQuantization, nullptr}),
+            kTfLiteOk);
+  const int output = AddCompositeNode(*interpreter, {q, 2, 3, q + 1},
+                                      {1, 8, 1, 64},
+                                      CreateSdpaTransposedParams());
+  EXPECT_EQ(interpreter->SetInputs({0, 1, q, q + 1}), kTfLiteOk);
+  EXPECT_EQ(interpreter->SetOutputs({output}), kTfLiteOk);
+  return interpreter;
+}
+
+// Quantized caches written by `odml.cache_update` (here on CPU) enter the GPU
+// partition as raw bytes in its packed layout.
+TEST_F(ConvertSdpaTransposedTest, QuantizedKvCacheFromCacheUpdateIsDelegated) {
+  auto interpreter = BuildSdpaWithKvCacheProducer("odml.cache_update");
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_NE(ir_model, nullptr);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("sdpa_transposed"));
+  EXPECT_EQ(ir_model->tensor(op->inputs[1])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+  EXPECT_EQ(ir_model->tensor(op->inputs[2])->desc.GetDataType(),
+            ::ml_drift::DataType::kUint8);
+}
+
+// Quantized caches are read in the packed `odml.cache_update` layout, so they
+// must be graph inputs or `odml.cache_update` outputs.
+TEST_F(ConvertSdpaTransposedTest,
+       QuantizedKvCacheFromOtherProducerIsNotDelegated) {
+  auto interpreter = BuildSdpaWithKvCacheProducer("odml.other");
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  if (ir_model != nullptr) {
+    EXPECT_THAT(ir_model->ops(), SizeIs(0));
+  }
+}
+
+// The packed quantized cache layouts can not merge a model batch, and K and V
+// must have the same heads.
+TEST_F(ConvertSdpaTransposedTest,
+       QuantizedKvCacheWithBatchOrMismatchedHeadsIsNotSupported) {
+  struct Shapes {
+    std::vector<int> q;
+    std::vector<int> k;
+    std::vector<int> v;
+  };
+  const Shapes cases[] = {
+      {{2, 8, 1, 64}, {2, 2, 128, 64}, {2, 2, 64, 128}},
+      {{1, 8, 1, 64}, {1, 2, 128, 64}, {1, 4, 64, 128}},
+  };
+  for (const TfLiteType kv_type : {kTfLiteInt8, kTfLiteInt4}) {
+    for (const Shapes& shapes : cases) {
+      SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+      builder.AddInput(kTfLiteFloat32, shapes.q);
+      builder.AddInput(kv_type, shapes.k);
+      builder.AddInput(kv_type, shapes.v);
+      builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+      builder.AddOutput(kTfLiteFloat32, shapes.q);
+      builder.SetParameters(CreateSdpaTransposedParams());
+
+      auto interpreter = builder.Build();
+      ASSERT_NE(interpreter, nullptr);
+      const auto* pair = interpreter->node_and_registration(0);
+      const CustomIrOpParser parser = GetSdpaTransposedParser();
+      EXPECT_EQ(parser
+                    .is_supported(interpreter->primary_subgraph().context(),
+                                  &pair->first, &pair->second)
+                    .code(),
+                absl::StatusCode::kUnavailable);
+    }
+  }
+}
+
+TEST_F(ConvertSdpaTransposedTest, NonFiniteQuantizationScaleIsNotSupported) {
+  for (const float bad_scale : {std::numeric_limits<float>::quiet_NaN(),
+                                std::numeric_limits<float>::infinity()}) {
+    // Input 0 is an INT8 query with float K/V, input 1 an INT8 K/V cache with a
+    // float query.
+    for (const int bad_input : {0, 1}) {
+      SingleOpInterpreterBuilder builder(kTfLiteBuiltinStablehloComposite);
+      const TfLiteType q_type = bad_input == 0 ? kTfLiteInt8 : kTfLiteFloat32;
+      const TfLiteType kv_type = bad_input == 0 ? kTfLiteFloat32 : kTfLiteInt8;
+      builder.AddInput(q_type, {1, 8, 1, 64});
+      builder.AddInput(kv_type, {1, 2, 128, 64});
+      builder.AddInput(kv_type, {1, 2, 64, 128});
+      builder.AddInput(kTfLiteInt32, {1, 1, 1, 7});
+      builder.AddOutput(kTfLiteFloat32, {1, 8, 1, 64});
+      builder.SetParameters(CreateSdpaTransposedParams());
+
+      auto interpreter = builder.Build();
+      ASSERT_NE(interpreter, nullptr);
+      SetQuantizationScale(interpreter->tensor(bad_input), bad_scale);
+      const auto* pair = interpreter->node_and_registration(0);
+      const CustomIrOpParser parser = GetSdpaTransposedParser();
+      EXPECT_EQ(parser
+                    .is_supported(interpreter->primary_subgraph().context(),
+                                  &pair->first, &pair->second)
+                    .code(),
+                absl::StatusCode::kUnavailable);
+    }
+  }
 }
 
 }  // namespace

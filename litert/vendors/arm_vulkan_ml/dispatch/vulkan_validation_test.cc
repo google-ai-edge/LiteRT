@@ -15,7 +15,6 @@
 #include "litert/vendors/arm_vulkan_ml/dispatch/vulkan_validation.h"
 
 #include <dirent.h>
-#include <stdlib.h>
 #include <sys/stat.h>
 
 #include <cstdint>
@@ -112,13 +111,11 @@ VKAPI_ATTR PFN_vkVoidFunction VKAPI_CALL Get(VkInstance, const char* name) {
 }
 TEST(VulkanValidation, CapturesMessagesAndSyncConfiguration) {
   const auto dir = MakeLogSubdir("validation-capture");
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "sync", 1);
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", dir.c_str(), 1);
   available = true;
   VulkanValidation context;
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   std::string error;
-  ASSERT_TRUE(context.Prepare(Get, info, error)) << error;
+  ASSERT_TRUE(context.Prepare(Get, info, "sync", dir.c_str(), error)) << error;
   auto* debug =
       static_cast<const VkDebugUtilsMessengerCreateInfoEXT*>(info.pNext);
   auto* features = static_cast<const VkValidationFeaturesEXT*>(debug->pNext);
@@ -140,32 +137,24 @@ TEST(VulkanValidation, CapturesMessagesAndSyncConfiguration) {
   EXPECT_TRUE(absl::StrContains(text, "VUID-test-09921"));
   EXPECT_TRUE(absl::StrContains(text, "\\\"message\\\""));
   EXPECT_TRUE(absl::StrContains(text, "closed"));
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
 }
 TEST(VulkanValidation, ExplicitRequestFailsWhenLayerUnavailable) {
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "core", 1);
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", testing::TempDir().c_str(),
-         1);
   available = false;
   VulkanValidation context;
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   std::string error;
-  EXPECT_FALSE(context.Prepare(Get, info, error));
+  EXPECT_FALSE(
+      context.Prepare(Get, info, "core", testing::TempDir().c_str(), error));
   EXPECT_NE(error.find("unavailable"), std::string::npos);
   available = true;
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
 }
 
 TEST(VulkanValidation, EscapesControlCharactersValidUtf8AndInvalidUtf8) {
   const auto dir = MakeLogSubdir("validation-utf8");
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "core", 1);
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", dir.c_str(), 1);
   VulkanValidation context;
   VkInstanceCreateInfo info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
   std::string error;
-  ASSERT_TRUE(context.Prepare(Get, info, error)) << error;
+  ASSERT_TRUE(context.Prepare(Get, info, "core", dir.c_str(), error)) << error;
   ASSERT_TRUE(context.Attach(Get, VK_NULL_HANDLE, error)) << error;
 
   const std::string rich_msg =
@@ -198,9 +187,6 @@ TEST(VulkanValidation, EscapesControlCharactersValidUtf8AndInvalidUtf8) {
                                 "utf8:\xc3\xa9|\xe2\x82\xac|\xf0\x9f\x9a\x80"));
   EXPECT_TRUE(absl::StrContains(combined, "bad:\\ufffd"));
   EXPECT_TRUE(absl::StrContains(combined, "\"lost\":true"));
-
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
 }
 
 TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
@@ -208,46 +194,40 @@ TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
   std::string error;
 
   // Off mode is a no-op and Attach succeeds without calling Vulkan.
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "off", 1);
   {
     VulkanValidation off_ctx;
-    EXPECT_TRUE(off_ctx.Prepare(Get, info, error));
+    EXPECT_TRUE(off_ctx.Prepare(Get, info, "off", nullptr, error));
     EXPECT_TRUE(off_ctx.Attach(Get, VK_NULL_HANDLE, error));
   }
 
   // Invalid mode string.
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "bogus", 1);
   {
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "bogus", nullptr, error));
     EXPECT_EQ(error, "Invalid Vulkan validation mode");
   }
 
-  // Missing log directory env var.
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION", "core", 1);
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
+  // Missing log directory.
   {
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", nullptr, error));
     EXPECT_EQ(error, "Validation log directory missing");
   }
 
   // Non-existent log directory.
   const std::string missing_dir = testing::TempDir() + "/missing-log-subdir";
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", missing_dir.c_str(), 1);
   {
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", missing_dir.c_str(), error));
     EXPECT_EQ(error, "Cannot open Vulkan validation log");
   }
 
   const std::string valid_dir = MakeLogSubdir("validation-errors");
-  setenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR", valid_dir.c_str(), 1);
 
   for (int step : {1, 2}) {
     fail_layers_step = step;
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", valid_dir.c_str(), error));
     EXPECT_EQ(error, "Cannot enumerate validation layers");
     fail_layers_step = 0;
   }
@@ -255,7 +235,7 @@ TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
   omit_extensions_fn = true;
   {
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", valid_dir.c_str(), error));
     EXPECT_EQ(error, "Cannot enumerate instance extensions");
   }
   omit_extensions_fn = false;
@@ -263,7 +243,7 @@ TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
   for (int step : {1, 2}) {
     fail_extensions_step = step;
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", valid_dir.c_str(), error));
     EXPECT_EQ(error, "Extension enumeration failed");
     fail_extensions_step = 0;
   }
@@ -271,7 +251,7 @@ TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
   omit_required_extension = true;
   {
     VulkanValidation ctx;
-    EXPECT_FALSE(ctx.Prepare(Get, info, error));
+    EXPECT_FALSE(ctx.Prepare(Get, info, "core", valid_dir.c_str(), error));
     EXPECT_TRUE(
         absl::StrContains(error, "Required validation extension unavailable"));
   }
@@ -281,14 +261,12 @@ TEST(VulkanValidation, ReportsPrepareAndAttachConfigurationErrors) {
   {
     VulkanValidation ctx;
     VkInstanceCreateInfo local_info{VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO};
-    ASSERT_TRUE(ctx.Prepare(Get, local_info, error)) << error;
+    ASSERT_TRUE(ctx.Prepare(Get, local_info, "core", valid_dir.c_str(), error))
+        << error;
     EXPECT_FALSE(ctx.Attach(Get, VK_NULL_HANDLE, error));
     EXPECT_EQ(error, "Cannot attach validation messenger");
   }
   fail_messenger_create = false;
-
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION");
-  unsetenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
 }
 }  // namespace
 }  // namespace litert::arm_vulkan_ml

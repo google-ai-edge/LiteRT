@@ -1,0 +1,1260 @@
+// Copyright 2026 The LiteRT Authors. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+#include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdint>
+#include <cstring>
+#include <iomanip>
+#include <optional>
+#include <sstream>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "tosa-for-spirv-codegen/tosa/Graph.hpp"  // from @tosa_for_spirv_codegen
+#include "tosa-for-spirv-codegen/tosa/Tensor.hpp"  // from @tosa_for_spirv_codegen
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
+#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/litert_element_type.h"
+#include "litert/cc/litert_model_types.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/conv2d.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/portable_ops.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/quantization.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
+#include "litert/vendors/arm_vulkan_ml/compiler/special_ops.h"
+
+namespace litert::arm_vulkan_ml {
+namespace {
+using ::tfsc::tosa::Attribute;
+using ::tfsc::tosa::DataType;
+using ::tfsc::tosa::ResId;
+using TosaTensor = ::tfsc::tosa::Tensor;
+
+bool SameQuantization(const GraphValue& a, const GraphValue& b) {
+  return a.logical_type == b.logical_type && a.storage_type == b.storage_type &&
+         a.scales == b.scales && a.zero_points == b.zero_points &&
+         a.quantized_dimension == b.quantized_dimension;
+}
+QuantizedTensor Quantized(const GraphValue& value) {
+  return {value.shape, value.scales.empty() ? 1 : value.scales[0],
+          value.zero_points.empty()
+              ? 0
+              : static_cast<int32_t>(value.zero_points[0]),
+          value.storage_type == DataType::float32_t, value.storage_type};
+}
+size_t ElementSize(const GraphValue& value) {
+  if (value.storage_type == DataType::int16_t) return 2;
+  if (value.storage_type == DataType::int48_t) return 8;
+  return value.storage_type == DataType::int32_t ||
+                 value.storage_type == DataType::float32_t
+             ? 4
+             : 1;
+}
+bool IsShape(const GraphNode& node) {
+  return !node.body.portable && !node.body.typed && !node.transform_only &&
+         node.output_transforms.empty() && node.inputs.size() == 1 &&
+         node.outputs.size() == 1 &&
+         (node.body.code == kLiteRtOpCodeTflReshape ||
+          node.body.code == kLiteRtOpCodeTflTranspose);
+}
+CompositeKind Classify(const OperationPlan& plan) {
+  if (plan.special) return CompositeKind::kAnalyzedOperation;
+  if (plan.typed || plan.portable || plan.decomposition ||
+      plan.inputs[0].floating || plan.output.floating ||
+      plan.output_type != DataType::int8_t)
+    return CompositeKind::kAnalyzedOperation;
+  switch (plan.code) {
+    case kLiteRtOpCodeTflSoftmax:
+      return CompositeKind::kSoftmax;
+    case kLiteRtOpCodeTflConv2d:
+      return CompositeKind::kConvolution;
+    case kLiteRtOpCodeTflDepthwiseConv2d:
+      return CompositeKind::kDepthwiseConvolution;
+    case kLiteRtOpCodeTflTransposeConv:
+      return CompositeKind::kTransposeConvolution;
+    case kLiteRtOpCodeTflFullyConnected:
+      return CompositeKind::kFullyConnected;
+    case kLiteRtOpCodeTflAdd:
+    case kLiteRtOpCodeTflSub:
+    case kLiteRtOpCodeTflMul:
+      return CompositeKind::kBinary;
+    case kLiteRtOpCodeTflAveragePool2d:
+    case kLiteRtOpCodeTflMaxPool2d:
+      return CompositeKind::kPool;
+    default:
+      return CompositeKind::kAnalyzedOperation;
+  }
+}
+void Origins(GraphNode& target, const GraphNode& other) {
+  target.source_operators.insert(target.source_operators.end(),
+                                 other.source_operators.begin(),
+                                 other.source_operators.end());
+  std::sort(target.source_operators.begin(), target.source_operators.end());
+  target.source_operators.erase(std::unique(target.source_operators.begin(),
+                                            target.source_operators.end()),
+                                target.source_operators.end());
+}
+void Decision(OptimizationReport* report, const char* pass,
+              const GraphNode& node, bool applied, const std::string& reason) {
+  if (report) {
+    report->decisions.push_back({pass, node.source_operators, applied, reason});
+  }
+}
+void ReplaceUses(CompilerGraph& graph, ValueId old_value, ValueId new_value) {
+  for (GraphNode& node : graph.nodes) {
+    if (!node.removed) {
+      for (ValueId& input : node.inputs) {
+        if (input == old_value) input = new_value;
+      }
+    }
+  }
+  for (ValueId& output : graph.outputs) {
+    if (output == old_value) output = new_value;
+  }
+}
+struct Uses {
+  std::vector<size_t> count;
+  std::vector<size_t> producer;
+  explicit Uses(const CompilerGraph& graph)
+      : count(graph.values.size()),
+        producer(graph.values.size(), graph.nodes.size()) {
+    for (size_t i = 0; i < graph.nodes.size(); ++i) {
+      if (!graph.nodes[i].removed) {
+        for (ValueId input : graph.nodes[i].inputs) ++count[input];
+        for (ValueId output : graph.nodes[i].outputs) producer[output] = i;
+      }
+    }
+  }
+};
+bool Removable(const CompilerGraph& graph, ValueId value, const Uses& uses) {
+  return uses.count[value] == 1 && !graph.values[value].graph_input &&
+         !graph.values[value].graph_output && !graph.values[value].persistent;
+}
+Int8Range ComposeClamps(Int8Range first, Int8Range second) {
+  return {std::clamp(first.minimum, second.minimum, second.maximum),
+          std::clamp(first.maximum, second.minimum, second.maximum)};
+}
+// All currently admitted scales are SINGLE_ROUND. Reducing an even multiplier
+// and its shift leaves the exact rational/rounding boundary unchanged. Recheck
+// the input domain, since shifts below 32 have a narrower legal range. Never
+// apply this rule to a future DOUBLE_ROUND stage without a separate proof.
+bool NormalizeScale(Scale32& scale, AccumulatorRange range) {
+  bool changed = false;
+  while (scale.shift > 2 && scale.multiplier > 0 && scale.multiplier % 2 == 0) {
+    Scale32 candidate{scale.multiplier / 2,
+                      static_cast<int8_t>(scale.shift - 1)};
+    if (!IsScale32RangeValid(candidate, range.minimum, range.maximum)) break;
+    scale = candidate;
+    changed = true;
+  }
+  return changed;
+}
+void NormalizeScales(GraphNode& node, OptimizationReport* report) {
+  if (node.body.output_type != DataType::int8_t) return;
+  bool changed = false;
+  for (auto& scale : node.body.scales)
+    changed |= NormalizeScale(scale, {INT32_MIN, INT32_MAX});
+  if (node.body.convolution) {
+    auto& conv = *node.body.convolution;
+    for (size_t i = 0; i < conv.scales.size(); ++i)
+      changed |= NormalizeScale(conv.scales[i], conv.accumulator_ranges[i]);
+  }
+  if (changed)
+    Decision(
+        report, "normalize_scales", node, true,
+        "exact rational value, SINGLE_ROUND and legal input domain preserved");
+}
+
+bool FoldConstantLayout(CompilerGraph& graph, GraphNode& node,
+                        OptimizationReport* report) {
+  if (!IsShape(node) || !graph.values[node.inputs[0]].is_constant ||
+      graph.values[node.inputs[0]].persistent ||
+      graph.values[node.outputs[0]].persistent) {
+    return false;
+  }
+  const GraphValue& input = graph.values[node.inputs[0]];
+  GraphValue& output = graph.values[node.outputs[0]];
+  if (!SameQuantization(input, output)) return false;
+  output.constant.resize(input.constant.size());
+  if (node.body.code == kLiteRtOpCodeTflReshape) {
+    output.constant = input.constant;
+  } else {
+    const size_t rank = input.shape.size(), width = ElementSize(input);
+    std::vector<size_t> strides(rank, 1);
+    for (size_t i = rank; i > 1; --i) {
+      strides[i - 2] = strides[i - 1] * input.shape[i - 1];
+    }
+    for (size_t i = 0; i < output.constant.size() / width; ++i) {
+      size_t remaining = i, offset = 0;
+      for (size_t j = rank; j > 0; --j) {
+        size_t axis = j - 1;
+        offset += (remaining % output.shape[axis]) *
+                  strides[node.body.parameters[axis]];
+        remaining /= output.shape[axis];
+      }
+      std::memcpy(output.constant.data() + i * width,
+                  input.constant.data() + offset * width, width);
+    }
+  }
+  output.is_constant = true;
+  node.removed = true;
+  Decision(report, "fold_constant_layout", node, true,
+           "owned immutable bytes transformed before emission");
+  return true;
+}
+
+bool ShapePass(CompilerGraph& graph, OptimizationReport* report) {
+  bool changed = false;
+  Uses uses(graph);
+  for (GraphNode& node : graph.nodes) {
+    if (node.removed || !IsShape(node)) continue;
+    if (FoldConstantLayout(graph, node, report)) {
+      changed = true;
+      continue;
+    }
+    if (node.body.code == kLiteRtOpCodeTflTranspose) {
+      const std::vector<uint32_t>& shape = graph.values[node.inputs[0]].shape;
+      std::vector<int32_t> before, after;
+      for (size_t i = 0; i < shape.size(); ++i) {
+        if (shape[i] != 1) before.push_back(static_cast<int32_t>(i));
+      }
+      for (int32_t axis : node.body.parameters) {
+        if (shape[axis] != 1) after.push_back(axis);
+      }
+      if (before == after) {
+        node.body.code = kLiteRtOpCodeTflReshape;
+        node.body.parameters.assign(node.body.output.shape.begin(),
+                                    node.body.output.shape.end());
+        Decision(report, "metadata_transpose", node, true,
+                 "only unit axes move; element order unchanged");
+        changed = true;
+      }
+    }
+    ValueId input = node.inputs[0], output = node.outputs[0];
+    if (node.body.code == kLiteRtOpCodeTflReshape &&
+        graph.values[input].shape == graph.values[output].shape &&
+        !graph.values[output].graph_output &&
+        !graph.values[output].persistent && uses.count[output] == 1) {
+      node.removed = true;
+      // Transfer provenance only to the consumers being rewired. Other users
+      // of the original input do not belong to this eliminated operation.
+      for (GraphNode& consumer : graph.nodes) {
+        if (!consumer.removed &&
+            std::find(consumer.inputs.begin(), consumer.inputs.end(), output) !=
+                consumer.inputs.end()) {
+          Origins(consumer, node);
+        }
+      }
+      ReplaceUses(graph, output, input);
+      Decision(report, "identity_shape", node, true,
+               "same shape and element order");
+      changed = true;
+      continue;
+    }
+    size_t pi = uses.producer[input];
+    if (pi == graph.nodes.size() || graph.nodes[pi].removed ||
+        !IsShape(graph.nodes[pi])) {
+      continue;
+    }
+    GraphNode& previous = graph.nodes[pi];
+    if (!Removable(graph, input, uses)) {
+      Decision(report, "compose_shapes", node, false,
+               "intermediate is graph IO or has additional consumers");
+      continue;
+    }
+    if (node.body.code != previous.body.code) continue;
+    if (node.body.code == kLiteRtOpCodeTflTranspose) {
+      std::vector<int32_t> permutation = node.body.parameters;
+      for (size_t i = 0; i < permutation.size(); ++i) {
+        node.body.parameters[i] = previous.body.parameters[permutation[i]];
+      }
+    }
+    node.inputs[0] = previous.inputs[0];
+    node.body.inputs[0] = Quantized(graph.values[node.inputs[0]]);
+    previous.removed = true;
+    Origins(node, previous);
+    Decision(report, "compose_shapes", node, true,
+             "single consumer; no intermediate element conversion");
+    changed = true;
+  }
+  return changed;
+}
+
+bool BoundPass(CompilerGraph& graph, OptimizationReport* report) {
+  Uses uses(graph);
+  auto bound = [](const GraphNode& n) {
+    return n.body.special &&
+           (n.body.special->kind == SpecialPlan::Kind::kMinimum ||
+            n.body.special->kind == SpecialPlan::Kind::kMaximum);
+  };
+  bool changed = false;
+  for (auto& node : graph.nodes) {
+    if (node.removed || !bound(node)) continue;
+    size_t producer = uses.producer[node.inputs[0]];
+    if (producer == graph.nodes.size()) continue;
+    auto& before = graph.nodes[producer];
+    if (before.removed || !bound(before) ||
+        !Removable(graph, node.inputs[0], uses))
+      continue;
+    auto& a = *before.body.special;
+    auto& b = *node.body.special;
+    if (a.output.scale != b.output.scale ||
+        a.output.zero_point != b.output.zero_point)
+      continue;
+    b.activation = ComposeClamps(a.activation, b.activation);
+    node.inputs[0] = before.inputs[0];
+    before.removed = true;
+    Origins(node, before);
+    changed = true;
+    Decision(report, "combine_integer_bounds", node, true,
+             "matching-quantization INT16 guard bounds retained in one CLAMP");
+  }
+  return changed;
+}
+
+bool IsSpatialZeroPad(const GraphNode& pad, const GraphValue& input,
+                      const GraphValue& padded) {
+  const auto& p = pad.body.parameters;
+  return p.size() == 8 && p[0] == 0 && p[1] == 0 && p[2] >= 0 && p[3] >= 0 &&
+         p[4] >= 0 && p[5] >= 0 && p[6] == 0 && p[7] == 0 &&
+         input.shape.size() == 4 && padded.shape.size() == 4 &&
+         !pad.body.inputs.empty() && SameQuantization(input, padded) &&
+         pad.body.pad_value == pad.body.inputs[0].zero_point;
+}
+
+std::optional<Conv2dPlan> AnalyzeFoldedZeroPadConv(
+    const GraphNode& conv, const std::vector<int32_t>& p,
+    const GraphValue& spatial_input, uint32_t input_channels,
+    const char** failure_reason) {
+  if (!conv.body.convolution || spatial_input.shape.size() != 4) {
+    return std::nullopt;
+  }
+  auto spec = conv.body.convolution->spec;
+  if (std::any_of(spec.padding.begin(), spec.padding.end(),
+                  [](int32_t x) { return x != 0; })) {
+    if (failure_reason) *failure_reason = "convolution already has padding";
+    return std::nullopt;
+  }
+  for (size_t axis = 0; axis < 2; ++axis) {
+    int64_t effective =
+        (int64_t{spec.weight_shape[axis + 1]} - 1) * spec.dilation[axis] + 1;
+    if (p[2 + 2 * axis] >= effective || p[3 + 2 * axis] >= effective) {
+      if (failure_reason) {
+        *failure_reason = "padding must be smaller than the effective kernel";
+      }
+      return std::nullopt;
+    }
+    spec.padding[2 * axis] = p[2 + 2 * axis];
+    spec.padding[2 * axis + 1] = p[3 + 2 * axis];
+  }
+  spec.input_shape = {spatial_input.shape[0], spatial_input.shape[1],
+                      spatial_input.shape[2], input_channels};
+  std::string reason;
+  auto plan = AnalyzeConv2d(std::move(spec), reason);
+  if (!plan) {
+    if (failure_reason) {
+      *failure_reason =
+          "folded geometry/range rejected by convolution analysis";
+    }
+    return std::nullopt;
+  }
+  plan->activation_range = conv.body.convolution->activation_range;
+  return plan;
+}
+
+// Pushes spatial-only real-zero PAD through channel-only SLICE fan-out so each
+// downstream convolution absorbs its padding directly.
+bool FoldSpatialZeroPadThroughSliceFanOut(CompilerGraph& graph,
+                                          OptimizationReport* report) {
+  bool changed = false;
+  Uses slice_uses(graph);
+  for (size_t pad_idx = 0; pad_idx < graph.nodes.size(); ++pad_idx) {
+    auto& pad = graph.nodes[pad_idx];
+    if (pad.removed ||
+        (pad.body.code != kLiteRtOpCodeTflPad &&
+         pad.body.code != kLiteRtOpCodeTflPadv2) ||
+        pad.inputs.size() != 1 || pad.outputs.size() != 1 ||
+        !pad.output_transforms.empty()) {
+      continue;
+    }
+    const ValueId pad_out = pad.outputs[0];
+    const auto& input = graph.values[pad.inputs[0]];
+    const auto& padded = graph.values[pad_out];
+    if (padded.graph_input || padded.graph_output || padded.persistent ||
+        slice_uses.count[pad_out] == 0 ||
+        !IsSpatialZeroPad(pad, input, padded)) {
+      continue;
+    }
+    const auto& p = pad.body.parameters;
+    struct BranchFold {
+      size_t slice_idx;
+      size_t conv_idx;
+      Conv2dPlan plan;
+    };
+    std::vector<BranchFold> branches;
+    bool all_branches_valid = true;
+    for (size_t i = 0; i < graph.nodes.size(); ++i) {
+      const auto& slice = graph.nodes[i];
+      if (slice.removed) continue;
+      if (std::find(slice.inputs.begin(), slice.inputs.end(), pad_out) ==
+          slice.inputs.end()) {
+        continue;
+      }
+      if (slice.body.code != kLiteRtOpCodeTflSlice || slice.body.portable ||
+          slice.body.typed || slice.transform_only ||
+          !slice.output_transforms.empty() || slice.inputs.size() != 1 ||
+          slice.body.inputs.empty() || slice.outputs.size() != 1 ||
+          slice.body.kernel.size() != 4 || slice.body.parameters.size() != 4 ||
+          slice.body.kernel[0] != 0 || slice.body.kernel[1] != 0 ||
+          slice.body.kernel[2] != 0 ||
+          slice.body.parameters[0] != static_cast<int32_t>(padded.shape[0]) ||
+          slice.body.parameters[1] != static_cast<int32_t>(padded.shape[1]) ||
+          slice.body.parameters[2] != static_cast<int32_t>(padded.shape[2])) {
+        all_branches_valid = false;
+        break;
+      }
+      const ValueId slice_out = slice.outputs[0];
+      if (!Removable(graph, slice_out, slice_uses) ||
+          graph.values[slice_out].shape.size() != 4 ||
+          !SameQuantization(padded, graph.values[slice_out])) {
+        all_branches_valid = false;
+        break;
+      }
+      size_t conv_idx = graph.nodes.size();
+      for (size_t j = 0; j < graph.nodes.size(); ++j) {
+        const auto& candidate = graph.nodes[j];
+        if (!candidate.removed && !candidate.inputs.empty() &&
+            candidate.inputs[0] == slice_out) {
+          conv_idx = j;
+          break;
+        }
+      }
+      if (conv_idx == graph.nodes.size()) {
+        all_branches_valid = false;
+        break;
+      }
+      const auto& conv = graph.nodes[conv_idx];
+      if ((conv.kind != CompositeKind::kConvolution &&
+           conv.kind != CompositeKind::kDepthwiseConvolution) ||
+          conv.inputs.size() != 1 || conv.body.inputs.empty()) {
+        all_branches_valid = false;
+        break;
+      }
+      auto plan = AnalyzeFoldedZeroPadConv(
+          conv, p, input, graph.values[slice_out].shape[3], nullptr);
+      if (!plan) {
+        all_branches_valid = false;
+        break;
+      }
+      branches.push_back({i, conv_idx, std::move(*plan)});
+    }
+    if (!all_branches_valid || branches.size() != slice_uses.count[pad_out]) {
+      continue;
+    }
+    for (auto& branch : branches) {
+      auto& slice = graph.nodes[branch.slice_idx];
+      auto& conv = graph.nodes[branch.conv_idx];
+      const ValueId slice_out = slice.outputs[0];
+      slice.inputs[0] = pad.inputs[0];
+      slice.body.inputs[0] = Quantized(input);
+      slice.body.parameters[1] = static_cast<int32_t>(input.shape[1]);
+      slice.body.parameters[2] = static_cast<int32_t>(input.shape[2]);
+      graph.values[slice_out].shape[1] = input.shape[1];
+      graph.values[slice_out].shape[2] = input.shape[2];
+      slice.body.output = Quantized(graph.values[slice_out]);
+      conv.body.convolution = std::move(branch.plan);
+      conv.body.inputs[0] = Quantized(graph.values[slice_out]);
+      Origins(conv, pad);
+      Decision(report, "fold_zero_pad", conv, true,
+               "real-zero spatial PAD absorbed across channel SLICE; geometry "
+               "and accumulator ranges rechecked");
+    }
+    pad.removed = true;
+    changed = true;
+  }
+  return changed;
+}
+
+bool PadPass(CompilerGraph& graph, OptimizationReport* report) {
+  Uses uses(graph);
+  bool changed = false;
+  for (auto& conv : graph.nodes) {
+    if (conv.removed || (conv.kind != CompositeKind::kConvolution &&
+                         conv.kind != CompositeKind::kDepthwiseConvolution))
+      continue;
+    size_t pi = uses.producer[conv.inputs[0]];
+    if (pi == graph.nodes.size()) continue;
+    auto& pad = graph.nodes[pi];
+    if (pad.removed || (pad.body.code != kLiteRtOpCodeTflPad &&
+                        pad.body.code != kLiteRtOpCodeTflPadv2))
+      continue;
+    auto skip = [&](const char* message) {
+      Decision(report, "fold_zero_pad", conv, false, message);
+    };
+    if (!Removable(graph, conv.inputs[0], uses) ||
+        !pad.output_transforms.empty()) {
+      skip(
+          "intermediate is graph IO, has additional consumers or an output "
+          "transform");
+      continue;
+    }
+    const auto& p = pad.body.parameters;
+    const auto& input = graph.values[pad.inputs[0]];
+    const auto& padded = graph.values[pad.outputs[0]];
+    if (!IsSpatialZeroPad(pad, input, padded)) {
+      skip(
+          "requires spatial-only padding of real zero with unchanged "
+          "quantization");
+      continue;
+    }
+    const char* failure_reason = nullptr;
+    auto plan = AnalyzeFoldedZeroPadConv(conv, p, input, input.shape[3],
+                                         &failure_reason);
+    if (!plan) {
+      if (failure_reason) skip(failure_reason);
+      continue;
+    }
+    conv.body.convolution = std::move(plan);
+    conv.body.inputs[0] = Quantized(input);
+    conv.inputs[0] = pad.inputs[0];
+    pad.removed = true;
+    Origins(conv, pad);
+    Decision(report, "fold_zero_pad", conv, true,
+             "real-zero spatial PAD absorbed; geometry and accumulator ranges "
+             "rechecked");
+    changed = true;
+  }
+
+  changed |= FoldSpatialZeroPadThroughSliceFanOut(graph, report);
+  return changed;
+}
+
+bool QualifyRequantization(GraphNode& node, OptimizationReport* report) {
+  bool changed = false;
+  for (auto& t : node.output_transforms) {
+    if (t.kind != OutputTransform::Kind::kTable || !t.affine_requantization)
+      continue;
+    auto scale = MakeScale32(t.input.scale / t.output.scale);
+    if (!scale || !IsScale32RangeValid(*scale, -128 - t.input.zero_point,
+                                       127 - t.input.zero_point)) {
+      Decision(report, "native_requantization", node, false,
+               "native scale/input range not representable");
+      continue;
+    }
+    int maximum = 0, total = 0;
+    for (int code = -128; code <= 127; ++code) {
+      auto scaled = ApplyScale32(code - t.input.zero_point, *scale);
+      if (!scaled) {
+        maximum = 256;
+        break;
+      }
+      int64_t value =
+          std::clamp(int64_t{*scaled} + t.output.zero_point,
+                     int64_t{t.clamp.minimum}, int64_t{t.clamp.maximum});
+      int error = std::abs(static_cast<int>(value) - t.table[code + 128]);
+      maximum = std::max(maximum, error);
+      total += error;
+    }
+    std::ostringstream result;
+    result << "all 256 codes: max=" << maximum << ", mean=" << total / 256.0;
+    if (maximum != 0) {
+      Decision(report, "native_requantization", node, false,
+               result.str() + "; non-exact code difference rejected");
+      continue;
+    }
+    t.kind = OutputTransform::Kind::kRescale;
+    t.scales = {*scale};
+    t.ranges = {{-128 - t.input.zero_point, 127 - t.input.zero_point}};
+    t.table.clear();
+    t.approximate = false;
+    Decision(report, "native_requantization", node, true,
+             result.str() + "; exact");
+    changed = true;
+  }
+  return changed;
+}
+
+bool HasBodyClamp(const GraphNode& node) {
+  switch (node.kind) {
+    case CompositeKind::kConvolution:
+      // Grouped convolution reconstructs each group's original activation.
+      return node.body.convolution->spec.input_shape[3] ==
+             node.body.convolution->spec.weight_shape[3];
+    case CompositeKind::kDepthwiseConvolution:
+    case CompositeKind::kFullyConnected:
+    case CompositeKind::kTransposeConvolution:
+    case CompositeKind::kBinary:
+    case CompositeKind::kPool:
+      return true;
+    default:
+      return false;
+  }
+}
+void NormalizeTransforms(GraphNode& node, OptimizationReport* report) {
+  auto& transforms = node.output_transforms;
+  if (!node.transform_only && HasBodyClamp(node) && !transforms.empty() &&
+      transforms[0].kind == OutputTransform::Kind::kClamp) {
+    auto& range = (node.kind == CompositeKind::kConvolution ||
+                   node.kind == CompositeKind::kDepthwiseConvolution)
+                      ? node.body.convolution->activation_range
+                      : node.body.activation;
+    range = ComposeClamps(range, transforms[0].clamp);
+    transforms.erase(transforms.begin());
+    Decision(
+        report, "compose_clamps", node, true,
+        "clamp absorbed into quantized body; rounding and saturation retained");
+  }
+  for (size_t i = 1; i < transforms.size();) {
+    auto& first = transforms[i - 1];
+    const auto& second = transforms[i];
+    if (first.kind == OutputTransform::Kind::kClamp &&
+        second.kind == OutputTransform::Kind::kClamp) {
+      first.clamp = ComposeClamps(first.clamp, second.clamp);
+      first.output = second.output;
+      Decision(report, "compose_clamps", node, true,
+               "ordered clamp composition, including disjoint ranges");
+    } else if (first.kind == OutputTransform::Kind::kTable &&
+               second.kind == OutputTransform::Kind::kTable) {
+      for (auto& code : first.table)
+        code = second.table[static_cast<int>(code) + 128];
+      first.output = second.output;
+      first.affine_requantization = false;
+      Decision(report, "compose_int8_tables", node, true,
+               "exact composition of all 256 codes including intermediate "
+               "rounding/saturation");
+    } else {
+      ++i;
+      continue;
+    }
+    transforms.erase(transforms.begin() + static_cast<ptrdiff_t>(i));
+  }
+}
+
+bool DequantizeQuantizePass(CompilerGraph& graph, OptimizationReport* report) {
+  Uses uses(graph);
+  bool changed = false;
+  auto valid_int8 = [](const GraphValue& v) {
+    return v.logical_type == kLiteRtElementTypeInt8 &&
+           v.storage_type == DataType::int8_t&& v.scales.size() == 1 &&
+           v.zero_points.size() == 1 && std::isfinite(v.scales[0]) &&
+           v.scales[0] > 0 && v.zero_points[0] >= -128 &&
+           v.zero_points[0] <= 127;
+  };
+  for (auto& q : graph.nodes) {
+    if (q.removed || q.body.code != kLiteRtOpCodeTflQuantize ||
+        q.body.portable || q.body.typed || !q.output_transforms.empty() ||
+        q.inputs.size() != 1 || q.outputs.size() != 1) {
+      continue;
+    }
+    const ValueId mid_id = q.inputs[0];
+    const ValueId out_id = q.outputs[0];
+    const GraphValue& mid_val = graph.values[mid_id];
+    const GraphValue& out_val = graph.values[out_id];
+    if (mid_val.storage_type != DataType::float32_t || q.body.output.floating ||
+        q.body.output_type != DataType::int8_t || !valid_int8(out_val) ||
+        !Removable(graph, mid_id, uses)) {
+      continue;
+    }
+    const size_t pi = uses.producer[mid_id];
+    if (pi == graph.nodes.size()) continue;
+    auto& dq = graph.nodes[pi];
+    if (dq.removed || dq.body.code != kLiteRtOpCodeTflDequantize ||
+        dq.body.portable || dq.body.typed || !dq.output_transforms.empty() ||
+        dq.inputs.size() != 1 || dq.outputs.size() != 1 ||
+        dq.outputs[0] != mid_id || dq.body.inputs[0].floating) {
+      continue;
+    }
+    const ValueId in_id = dq.inputs[0];
+    const GraphValue& in_val = graph.values[in_id];
+    if (!valid_int8(in_val) || in_val.shape != out_val.shape) {
+      continue;
+    }
+    if (SameQuantization(in_val, out_val)) {
+      if (!out_val.graph_output && !out_val.persistent) {
+        for (GraphNode& consumer : graph.nodes) {
+          if (!consumer.removed &&
+              std::find(consumer.inputs.begin(), consumer.inputs.end(),
+                        out_id) != consumer.inputs.end()) {
+            Origins(consumer, dq);
+            Origins(consumer, q);
+          }
+        }
+        ReplaceUses(graph, out_id, in_id);
+        dq.removed = true;
+        q.removed = true;
+        Decision(report, "fold_dequantize_quantize", q, true,
+                 "matching-quantization INT8 DEQUANTIZE->QUANTIZE bypassed");
+        changed = true;
+        continue;
+      }
+      q.kind = CompositeKind::kInt8Function;
+      q.transform_only = true;
+      q.inputs = {in_id};
+      q.body.inputs = {Quantized(in_val)};
+      q.body.output = Quantized(out_val);
+      dq.removed = true;
+      Origins(q, dq);
+      Decision(report, "fold_dequantize_quantize", q, true,
+               "matching-quantization INT8 DEQUANTIZE->QUANTIZE collapsed");
+      changed = true;
+      continue;
+    }
+    const int32_t in_zp = static_cast<int32_t>(in_val.zero_points[0]);
+    const int32_t out_zp = static_cast<int32_t>(out_val.zero_points[0]);
+    bool affine = true;
+    std::optional<std::vector<int8_t>> table =
+        RequantizeTable(in_val.scales[0], in_zp, out_val.scales[0], out_zp);
+    if (!table) {
+      affine = false;
+      std::vector<int8_t> fallback(256);
+      const double scale = in_val.scales[0] / out_val.scales[0];
+      for (int code = -128; code <= 127; ++code) {
+        const double v = static_cast<double>(code - in_zp) * scale +
+                         static_cast<double>(out_zp);
+        fallback[code + 128] = static_cast<int8_t>(
+            std::clamp<int64_t>(std::llround(v), -128, 127));
+      }
+      table = std::move(fallback);
+    }
+    OutputTransform transform;
+    transform.kind = OutputTransform::Kind::kTable;
+    transform.input = Quantized(in_val);
+    transform.output = Quantized(out_val);
+    transform.clamp = {-128, 127};
+    transform.table = std::move(*table);
+    transform.affine_requantization = affine;
+    q.kind = CompositeKind::kInt8Function;
+    q.transform_only = true;
+    q.inputs = {in_id};
+    q.body.inputs = {transform.input};
+    q.body.output = transform.output;
+    q.output_transforms = {std::move(transform)};
+    dq.removed = true;
+    Origins(q, dq);
+    QualifyRequantization(q, report);
+    const char* fold_reason =
+        q.output_transforms.front().kind == OutputTransform::Kind::kRescale
+            ? "INT8 DEQUANTIZE->QUANTIZE collapsed to native requantization"
+            : "INT8 DEQUANTIZE->QUANTIZE collapsed to LUT fallback";
+    Decision(report, "fold_dequantize_quantize", q, true, fold_reason);
+    changed = true;
+  }
+  return changed;
+}
+
+bool FuseTransforms(CompilerGraph& graph, OptimizationReport* report) {
+  Uses uses(graph);
+  bool changed = false;
+  for (auto& node : graph.nodes) {
+    if (node.removed || !node.transform_only || node.inputs.size() != 1)
+      continue;
+    size_t pi = uses.producer[node.inputs[0]];
+    if (pi == graph.nodes.size()) continue;
+    auto& previous = graph.nodes[pi];
+    if (previous.removed || previous.outputs.size() != 1 ||
+        (previous.kind == CompositeKind::kAnalyzedOperation &&
+         !previous.transform_only))
+      continue;
+    if (!Removable(graph, node.inputs[0], uses)) {
+      Decision(report, "fuse_output_transform", node, false,
+               "intermediate is graph IO or has additional consumers");
+      continue;
+    }
+    // Body output quantization remains unchanged; the ordered transforms own
+    // every subsequent quantization boundary. No rounded scale is multiplied.
+    previous.output_transforms.insert(previous.output_transforms.end(),
+                                      node.output_transforms.begin(),
+                                      node.output_transforms.end());
+    previous.outputs = node.outputs;
+    Origins(previous, node);
+    node.removed = true;
+    NormalizeTransforms(previous, report);
+    Decision(
+        report, "fuse_output_transform", previous, true,
+        "single-consumer quantized composite; ordered transforms preserved");
+    changed = true;
+  }
+  return changed;
+}
+void Cleanup(CompilerGraph& graph, OptimizationReport* report) {
+  std::vector<bool> live(graph.values.size(), false);
+  for (ValueId output : graph.outputs) live[output] = true;
+  for (size_t i = 0; i < graph.values.size(); ++i) {
+    if (graph.values[i].persistent) live[i] = true;
+  }
+  for (size_t i = graph.nodes.size(); i > 0; --i) {
+    GraphNode& node = graph.nodes[i - 1];
+    if (node.removed) continue;
+    bool needed = false;
+    for (ValueId output : node.outputs) needed |= live[output];
+    if (!needed) {
+      node.removed = true;
+      Decision(report, "dead_nodes", node, true, "no live output consumers");
+    } else {
+      for (ValueId input : node.inputs) live[input] = true;
+    }
+  }
+  for (size_t i = 0; i < graph.values.size(); ++i) {
+    if (!live[i] && graph.values[i].is_constant) {
+      graph.values[i].constant.clear();
+    }
+  }
+}
+}  // namespace
+
+const char* CompositeKindName(CompositeKind kind) {
+  switch (kind) {
+    case CompositeKind::kAnalyzedOperation:
+      return "analyzed_operation";
+    case CompositeKind::kConvolution:
+      return "quantized_convolution";
+    case CompositeKind::kDepthwiseConvolution:
+      return "quantized_depthwise_convolution";
+    case CompositeKind::kTransposeConvolution:
+      return "quantized_transpose_convolution";
+    case CompositeKind::kBinary:
+      return "quantized_binary";
+    case CompositeKind::kFullyConnected:
+      return "quantized_fully_connected";
+    case CompositeKind::kPool:
+      return "quantized_pool";
+    case CompositeKind::kInt8Function:
+      return "int8_function";
+    case CompositeKind::kSoftmax:
+      return "quantized_softmax";
+  }
+  return "invalid";
+}
+
+std::optional<CompilerGraph> ImportGraph(const Subgraph& subgraph,
+                                         std::string& reason,
+                                         SoftmaxLutType softmax_lut,
+                                         Int16NormMode int16_norm_mode) {
+  CompilerGraph graph;
+  absl::flat_hash_map<LiteRtTensor, ValueId> tensors;
+  auto value = [&](const Tensor& tensor) -> std::optional<ValueId> {
+    auto existing = tensors.find(tensor.Get());
+    if (existing != tensors.end()) return existing->second;
+    auto type = tensor.RankedTensorType();
+    if (!type || type->Layout().HasStrides()) return std::nullopt;
+    GraphValue result;
+    result.original_tensor = reinterpret_cast<uintptr_t>(tensor.Get());
+    result.logical_type = static_cast<LiteRtElementType>(tensor.ElementType());
+    switch (tensor.ElementType()) {
+      case ElementType::Int16:
+        result.storage_type = DataType::int16_t;
+        break;
+      case ElementType::Int64:
+        result.storage_type = DataType::int48_t;
+        break;
+      case ElementType::Int8:
+      case ElementType::Bool:
+        result.storage_type = DataType::int8_t;
+        break;
+      case ElementType::Int32:
+      case ElementType::UInt32:
+        result.storage_type = DataType::int32_t;
+        break;
+      case ElementType::Float32:
+      case ElementType::Complex64:
+        result.storage_type = DataType::float32_t;
+        break;
+      default:
+        return std::nullopt;
+    }
+    uint64_t count = 1;
+    for (auto dim : type->Layout().Dimensions()) {
+      if (dim <= 0 || count > uint64_t{INT32_MAX} / dim) return std::nullopt;
+      count *= dim;
+      result.shape.push_back(static_cast<uint32_t>(dim));
+    }
+    result.logical_scalar = result.shape.empty();
+    if (tensor.ElementType() == ElementType::Complex64) {
+      result.shape.push_back(2);
+      count *= 2;
+    } else if (result.logical_scalar) {
+      result.shape = {1};
+    }
+    if (tensor.QTypeId() == QuantizationTypeId::PerTensor) {
+      auto q = tensor.PerTensorQuantization();
+      result.scales = {q.scale};
+      result.zero_points = {q.zero_point};
+    } else if (tensor.QTypeId() == QuantizationTypeId::PerChannel) {
+      auto q = tensor.PerChannelQuantization();
+      result.scales.assign(q.scales, q.scales + q.num_channels);
+      result.zero_points.assign(q.zero_points, q.zero_points + q.num_channels);
+      result.quantized_dimension = q.quantized_dimension;
+    }
+    if (tensor.HasWeights()) {
+      auto bytes = tensor.Weights().Bytes();
+      if (bytes.size() != count * ElementSize(result)) return std::nullopt;
+      result.constant.assign(bytes.begin(), bytes.end());
+      result.is_constant = true;
+    }
+    ValueId id = graph.values.size();
+    tensors.emplace(tensor.Get(), id);
+    graph.values.push_back(std::move(result));
+    return id;
+  };
+  for (const auto& tensor : subgraph.Inputs()) {
+    if (tensor.HasWeights()) continue;
+    auto id = value(tensor);
+    if (!id) {
+      reason = "Invalid partition input layout/type";
+      return std::nullopt;
+    }
+    graph.inputs.push_back(*id);
+    graph.values[*id].graph_input = true;
+  }
+  for (const auto& op : subgraph.Ops()) {
+    auto plan = AnalyzeOperation(op, reason, softmax_lut, int16_norm_mode);
+    if (!plan) return std::nullopt;
+    graph.requires_float_fallback |= plan->requires_float_fallback;
+    GraphNode node;
+    node.kind = Classify(*plan);
+    node.source_operators = {graph.original_operator_count++};
+    for (auto index : plan->runtime_inputs) {
+      auto id = value(op.Inputs()[index]);
+      if (!id) {
+        reason = "Invalid runtime input/constant";
+        return std::nullopt;
+      }
+      node.inputs.push_back(*id);
+    }
+    for (const auto& tensor : op.Outputs()) {
+      auto id = value(tensor);
+      if (!id) {
+        reason = "Invalid operation output";
+        return std::nullopt;
+      }
+      node.outputs.push_back(*id);
+    }
+    const bool int8_unary =
+        node.inputs.size() == 1 && node.outputs.size() == 1 && !plan->special &&
+        !plan->typed && !plan->portable && !plan->inputs[0].floating &&
+        !plan->output.floating &&
+        plan->output_type ==
+            DataType::int8_t&& graph.values[node.outputs[0]].logical_type ==
+            kLiteRtElementTypeInt8;
+    if (int8_unary &&
+        (!plan->table.empty() || plan->code == kLiteRtOpCodeTflRelu ||
+         plan->code == kLiteRtOpCodeTflRelu6 ||
+         plan->code == kLiteRtOpCodeTflQuantize)) {
+      OutputTransform transform;
+      transform.input = plan->inputs[0];
+      transform.output = plan->output;
+      transform.clamp = plan->activation;
+      transform.table = plan->table;
+      transform.kind = transform.table.empty() ? OutputTransform::Kind::kClamp
+                                               : OutputTransform::Kind::kTable;
+      transform.affine_requantization =
+          plan->code == kLiteRtOpCodeTflQuantize ||
+          plan->code == kLiteRtOpCodeTflRelu ||
+          plan->code == kLiteRtOpCodeTflRelu6;
+      // A same-quantization QUANTIZE is already an identity in the legacy path.
+      if (plan->code != kLiteRtOpCodeTflQuantize || !transform.table.empty())
+        node.output_transforms.push_back(std::move(transform));
+      node.transform_only = true;
+      node.kind = CompositeKind::kInt8Function;
+    }
+    node.body = std::move(*plan);
+    graph.nodes.push_back(std::move(node));
+  }
+  for (const auto& tensor : subgraph.Outputs()) {
+    auto id = value(tensor);
+    if (!id) {
+      reason = "Invalid partition output layout/type";
+      return std::nullopt;
+    }
+    graph.outputs.push_back(*id);
+    graph.values[*id].graph_output = true;
+  }
+  if (!ValidateGraph(graph, reason)) return std::nullopt;
+  return graph;
+}
+
+bool ValidateGraph(const CompilerGraph& graph, std::string& reason) {
+  auto reject = [&](const char* message) {
+    reason = message;
+    return false;
+  };
+  if (graph.nodes.empty() || graph.outputs.empty())
+    return reject("Empty compiler graph or outputs");
+  std::vector<bool> defined(graph.values.size(), false);
+  for (size_t i = 0; i < graph.values.size(); ++i)
+    defined[i] = graph.values[i].is_constant;
+  for (auto id : graph.inputs) {
+    if (id >= defined.size()) return reject("Invalid graph input value");
+    defined[id] = true;
+  }
+  for (const GraphNode& node : graph.nodes) {
+    if (!node.removed) {
+      if (node.inputs.empty() || node.outputs.empty() ||
+          node.source_operators.empty()) {
+        return reject("Invalid IR node");
+      }
+      for (ValueId input : node.inputs) {
+        if (input >= defined.size() || !defined[input]) {
+          return reject(
+              "Partition is not topologically ordered or has an unbound input");
+        }
+      }
+      for (size_t source : node.source_operators) {
+        if (source >= graph.original_operator_count) {
+          return reject("Invalid original operator provenance");
+        }
+      }
+      for (ValueId output : node.outputs) {
+        if (output >= defined.size() || defined[output]) {
+          return reject("Invalid or multiply-defined IR output");
+        }
+        defined[output] = true;
+      }
+      if (node.inputs.size() != node.body.runtime_inputs.size()) {
+        return reject("IR/body runtime input count mismatch");
+      }
+      if (node.body.portable) {
+        const PortablePlan& portable = *node.body.portable;
+        if (!node.output_transforms.empty() ||
+            node.outputs.size() != portable.outputs.size()) {
+          return reject("Invalid portable IR expansion");
+        }
+        for (size_t i = 0; i < node.outputs.size(); ++i) {
+          if (graph.values[node.outputs[i]].shape != portable.outputs[i]) {
+            return reject("Portable IR output shape mismatch");
+          }
+        }
+        continue;
+      }
+      if (node.outputs.size() != 1 || node.body.inputs.empty()) {
+        return reject("Invalid analyzed IR expansion");
+      }
+      auto same = [](const QuantizedTensor& a, const QuantizedTensor& b) {
+        return a.shape == b.shape && a.floating == b.floating &&
+               a.type == b.type && a.scale == b.scale &&
+               a.zero_point == b.zero_point;
+      };
+      QuantizedTensor current = node.transform_only
+                                    ? Quantized(graph.values[node.inputs[0]])
+                                    : node.body.output;
+      for (const OutputTransform& transform : node.output_transforms) {
+        if (!same(current, transform.input) ||
+            transform.input.shape != transform.output.shape ||
+            transform.input.floating || transform.output.floating ||
+            !std::isfinite(transform.output.scale) ||
+            transform.output.scale <= 0 || transform.input.zero_point < -128 ||
+            transform.input.zero_point > 127 ||
+            transform.output.zero_point < -128 ||
+            transform.output.zero_point > 127) {
+          return reject(
+              "Output transform shape/type/quantization boundary mismatch");
+        }
+        if (transform.kind == OutputTransform::Kind::kClamp &&
+            !same(transform.input, transform.output)) {
+          return reject("CLAMP cannot change quantization");
+        }
+        if (transform.clamp.minimum < -128 || transform.clamp.maximum > 127 ||
+            transform.clamp.minimum > transform.clamp.maximum) {
+          return reject("Invalid output clamp");
+        }
+        if (transform.kind == OutputTransform::Kind::kTable &&
+            transform.table.size() != 256) {
+          return reject("Invalid INT8 lookup table");
+        }
+        if (transform.kind == OutputTransform::Kind::kRescale &&
+            (transform.scales.size() != 1 || transform.ranges.size() != 1 ||
+             !IsScale32RangeValid(transform.scales[0],
+                                  transform.ranges[0].minimum,
+                                  transform.ranges[0].maximum))) {
+          return reject("Invalid output rescale range");
+        }
+        if (transform.kind == OutputTransform::Kind::kRescale &&
+            (transform.ranges[0].minimum > -128 - transform.input.zero_point ||
+             transform.ranges[0].maximum < 127 - transform.input.zero_point)) {
+          return reject(
+              "Output rescale proof does not cover every INT8 input code");
+        }
+        current = transform.output;
+      }
+      const GraphValue& output = graph.values[node.outputs[0]];
+      if (current.shape != output.shape ||
+          ((output.logical_type == kLiteRtElementTypeInt8 ||
+            output.logical_type == kLiteRtElementTypeInt16) &&
+           !same(current, Quantized(output)))) {
+        return reject("IR output shape/quantization mismatch");
+      }
+    }
+  }
+  for (ValueId output : graph.outputs) {
+    if (output >= defined.size() || !defined[output]) {
+      return reject("Unbound graph output");
+    }
+  }
+  return true;
+}
+
+bool OptimizeGraph(CompilerGraph& graph, OptimizationReport* report,
+                   std::string& reason) {
+  if (!ValidateGraph(graph, reason)) return false;
+  if (report) {
+    *report = {};
+    report->before_ir = DumpGraph(graph);
+  }
+  for (GraphNode& node : graph.nodes) NormalizeScales(node, report);
+  // Normalize native TABLE representation before table composition. Otherwise
+  // affine semantic tags are lost and the native RESCALE opportunity vanishes.
+  for (GraphNode& node : graph.nodes) QualifyRequantization(node, report);
+  const size_t limit = graph.nodes.size() * 2 + 2;
+  for (size_t iteration = 0; iteration < limit; ++iteration) {
+    bool changed = DequantizeQuantizePass(graph, report);
+    changed |= ShapePass(graph, report);
+    changed |= PadPass(graph, report);
+    changed |= BoundPass(graph, report);
+    changed |= FuseTransforms(graph, report);
+    if (!changed) break;
+    if (iteration + 1 == limit) {
+      reason = "Optimizer failed to converge";
+      return false;
+    }
+  }
+  // Deterministic deduplication of immutable values, preserving type/shape/q.
+  for (size_t i = 0; i < graph.values.size(); ++i) {
+    if (graph.values[i].is_constant && !graph.values[i].persistent) {
+      for (size_t j = 0; j < i; ++j) {
+        if (graph.values[j].is_constant && !graph.values[j].persistent &&
+            graph.values[i].shape == graph.values[j].shape &&
+            graph.values[i].logical_scalar == graph.values[j].logical_scalar &&
+            SameQuantization(graph.values[i], graph.values[j]) &&
+            graph.values[i].constant == graph.values[j].constant) {
+          ReplaceUses(graph, i, j);
+          if (report) {
+            report->decisions.push_back(
+                {"intern_constant_values",
+                 {},
+                 true,
+                 absl::StrCat("v", i, " aliases immutable v", j,
+                              "; same logical/storage type, logical rank, "
+                              "shape, quantization and bytes")});
+          }
+          break;
+        }
+      }
+    }
+  }
+  Cleanup(graph, report);
+  if (!ValidateGraph(graph, reason)) return false;
+  if (report) report->after_ir = DumpGraph(graph);
+  return true;
+}
+
+std::string DumpGraph(const CompilerGraph& graph) {
+  std::ostringstream out;
+  out << std::setprecision(17);
+  for (size_t i = 0; i < graph.values.size(); ++i) {
+    const auto& v = graph.values[i];
+    out << "v" << i << " logical=" << static_cast<int>(v.logical_type)
+        << " storage=" << static_cast<int>(v.storage_type) << " shape=[";
+    for (auto dim : v.shape) out << dim << ",";
+    out << "] scalar=" << v.logical_scalar << " scales=[";
+    for (auto scale : v.scales) out << scale << ",";
+    out << "] zero_points=[";
+    for (auto zp : v.zero_points) out << zp << ",";
+    out << "] qdim=" << v.quantized_dimension
+        << " constant_bytes=" << v.constant.size() << " input=" << v.graph_input
+        << " output=" << v.graph_output << " persistent=" << v.persistent
+        << "\n";
+  }
+  for (size_t i = 0; i < graph.nodes.size(); ++i) {
+    const auto& n = graph.nodes[i];
+    out << "n" << i << " " << CompositeKindName(n.kind)
+        << " code=" << n.body.code << " removed=" << n.removed << " sources=[";
+    for (auto source : n.source_operators) out << source << ",";
+    out << "] inputs=[";
+    for (auto input : n.inputs) out << "v" << input << ",";
+    out << "] outputs=[";
+    for (auto output : n.outputs) out << "v" << output << ",";
+    out << "] body_clamp=[" << n.body.activation.minimum << ","
+        << n.body.activation.maximum << "]";
+    if (n.body.softmax_pro_fp) {
+      out << " softmax=pro_fp";
+    } else if (n.body.softmax16) {
+      out << " softmax_lut=int16";
+    } else if (n.body.softmax) {
+      out << " softmax_lut=" << SoftmaxLutTypeName(n.body.softmax->lut_type)
+          << " normalization_shift="
+          << static_cast<int>(n.body.softmax->normalization_shift);
+    }
+    if (n.body.convolution) {
+      const auto& conv = *n.body.convolution;
+      out << " convolution_padding=[";
+      for (auto pad : conv.spec.padding) out << pad << ",";
+      out << "] accumulator_ranges=[";
+      for (auto range : conv.accumulator_ranges)
+        out << range.minimum << ":" << range.maximum << ",";
+      out << "] scales=[";
+      for (auto scale : conv.scales)
+        out << scale.multiplier << "/2^" << static_cast<int>(scale.shift)
+            << ",";
+      out << "] weights=" << conv.spec.weights.size()
+          << " bias=" << conv.spec.bias.size();
+    }
+    out << " transforms=[";
+    for (const auto& t : n.output_transforms) {
+      out << (t.kind == OutputTransform::Kind::kClamp   ? "CLAMP"
+              : t.kind == OutputTransform::Kind::kTable ? "TABLE"
+                                                        : "RESCALE")
+          << "(zp=" << t.input.zero_point << "->" << t.output.zero_point
+          << ",clamp=" << t.clamp.minimum << ":" << t.clamp.maximum
+          << ",approx=" << t.approximate << "),";
+    }
+    out << "]\n";
+  }
+  return out.str();
+}
+
+ResId EmitOutputTransform(tfsc::tosa::Graph& graph, ResId input,
+                          const OutputTransform& t,
+                          GraphConstantPool& constants) {
+  TosaTensor output(DataType::int8_t, t.output.shape);
+  if (t.kind == OutputTransform::Kind::kTable) {
+    const auto* raw = reinterpret_cast<const uint8_t*>(t.table.data());
+    std::vector<uint8_t> bytes(raw, raw + t.table.size());
+    return graph.AddTableOperator(
+        input,
+        AddGraphConstant(graph, TosaTensor(DataType::int8_t, {256}),
+                         std::move(bytes), constants),
+        output);
+  }
+  if (t.kind == OutputTransform::Kind::kRescale) {
+    input = EmitNativeRescale(graph, input, DataType::int8_t, DataType::int8_t,
+                              t.output.shape, t.input.zero_point,
+                              t.output.zero_point, t.scales, constants);
+    if (t.clamp.minimum == -128 && t.clamp.maximum == 127) return input;
+  }
+  return graph.AddClampOperator(input,
+                                Attribute(static_cast<int8_t>(t.clamp.minimum)),
+                                Attribute(static_cast<int8_t>(t.clamp.maximum)),
+                                Attribute(int32_t{1}), output);
+}
+}  // namespace litert::arm_vulkan_ml

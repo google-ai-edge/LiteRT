@@ -59,4 +59,32 @@ extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttention(
     int32_t mask_rows, int32_t rows, int32_t seq, int32_t depth, float fill,
     void* out, void* workspace, cudaStream_t stream);
 
+// The same attention for a few tokens of several query heads whose rows
+// exceed 16 (Gemma 4 26B's verify step: 8 query heads per KV head): q and out
+// are [rows, depth] with row = head * tokens + token, and the mask has
+// `tokens` rows (one per token) or 1. The 16 / heads tokens that fill 16
+// rows form a row tile, and every row tile gets, bit for bit, the result of
+// a LiteRtNvidiaLaunchGlobalAttention launch over its 16 rows alone (rows
+// ordered head * (16 / heads) + token, each with its token's mask row).
+// Such launches read the whole cache once each; here two row tiles share
+// every key and value a block reads, which halves the traffic of a long
+// cache.
+//
+// Supports depth 512, rows / tokens query heads in {1, 2, 4, 8, 16} and
+// tokens a multiple of 16 / heads. `workspace` needs
+// LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes() bytes.
+extern "C" bool LiteRtNvidiaGlobalAttentionTokensSupports(int32_t rows,
+                                                          int32_t tokens,
+                                                          int32_t mask_rows,
+                                                          int32_t depth);
+
+extern "C" size_t LiteRtNvidiaGlobalAttentionTokensWorkspaceBytes(
+    int32_t rows, int32_t tokens, int32_t mask_rows, int32_t seq,
+    int32_t depth);
+
+extern "C" cudaError_t LiteRtNvidiaLaunchGlobalAttentionTokens(
+    const void* q, bool q_bf16, const void* k, const void* v, const bool* mask,
+    int32_t mask_rows, int32_t tokens, int32_t rows, int32_t seq, int32_t depth,
+    float fill, void* out, void* workspace, cudaStream_t stream);
+
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_TRTLLM_GLOBAL_ATTENTION_H_

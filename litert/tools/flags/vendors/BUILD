@@ -71,7 +71,7 @@ cc_library(
     name = "google_tensor_flags",
     srcs = ["google_tensor_flags.cc"],
     hdrs = ["google_tensor_flags.h"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],
@@ -91,7 +91,7 @@ cc_library(
 cc_test(
     name = "google_tensor_flags_test",
     srcs = ["google_tensor_flags_test.cc"],
-    copts = [
+    copts = commandline_flag_copts() + [
         "-DINCLUDE_GOOGLE_TENSOR_COMPILE_FLAGS",
         "-DINCLUDE_GOOGLE_TENSOR_RUNTIME_FLAGS",
     ],
@@ -217,4 +217,37 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+# ARM VULKAN ML ###############################################################################
+
+cc_library(
+    name = "arm_vulkan_ml_flags",
+    srcs = ["arm_vulkan_ml_flags.cc"],
+    hdrs = ["arm_vulkan_ml_flags.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//litert/tools/flags:options_parser_registry",
+        "@com_google_absl//absl/flags:flag",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "arm_vulkan_ml_flags_test",
+    srcs = ["arm_vulkan_ml_flags_test.cc"],
+    deps = [
+        ":arm_vulkan_ml_flags",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_arm_vulkan_ml_options",
+        "//litert/test:matchers",
+        "//litert/tools/flags:options_parser_registry",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:reflection",
+        "@com_google_googletest//:gtest_main",
+    ],
 )

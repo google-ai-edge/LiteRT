@@ -155,6 +155,7 @@ if(ANDROID)
         PRIVATE
             litert_tool_display
             "-Wl,--whole-archive"
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -171,6 +172,7 @@ elseif(APPLE)
     target_link_libraries(litert_npu_numerics_check
         PRIVATE
             litert_tool_display
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -186,6 +188,7 @@ elseif(WIN32)
     target_link_libraries(litert_npu_numerics_check
         PRIVATE
             litert_tool_display
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -199,6 +202,7 @@ elseif(WIN32)
     )
     if(MSVC)
         foreach(_litert_tool_flag_lib
+                litert_tool_flags_arm_vulkan_ml
                 litert_tool_flags_google_tensor
                 litert_tool_flags_intel_openvino
                 litert_tool_flags_mediatek
@@ -213,6 +217,7 @@ else()
         PRIVATE
             litert_tool_display
             "-Wl,--whole-archive"
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -253,6 +258,7 @@ if(ANDROID)
         PRIVATE
             litert_tool_display
             "-Wl,--whole-archive"
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -269,6 +275,7 @@ elseif(APPLE)
     target_link_libraries(run_model
         PRIVATE
             litert_tool_display
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -284,6 +291,7 @@ elseif(WIN32)
     target_link_libraries(run_model
         PRIVATE
             litert_tool_display
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -297,6 +305,7 @@ elseif(WIN32)
     )
     if(MSVC)
         foreach(_litert_tool_flag_lib
+                litert_tool_flags_arm_vulkan_ml
                 litert_tool_flags_google_tensor
                 litert_tool_flags_intel_openvino
                 litert_tool_flags_mediatek
@@ -311,6 +320,7 @@ else()
         PRIVATE
             litert_tool_display
             "-Wl,--whole-archive"
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
             litert_tool_flags_mediatek
@@ -524,6 +534,7 @@ target_include_directories(npu_numerics_check
 if(ANDROID OR APPLE OR WIN32)
     target_link_libraries(npu_numerics_check
         PRIVATE
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_qualcomm
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino
@@ -536,6 +547,7 @@ if(ANDROID OR APPLE OR WIN32)
     )
     if(MSVC)
         foreach(_litert_tool_flag_lib
+                litert_tool_flags_arm_vulkan_ml
                 litert_tool_flags_qualcomm
                 litert_tool_flags_google_tensor
                 litert_tool_flags_intel_openvino
@@ -547,6 +559,7 @@ if(ANDROID OR APPLE OR WIN32)
 else()
     target_link_libraries(npu_numerics_check
         PRIVATE
+            litert_tool_flags_arm_vulkan_ml
             litert_tool_flags_qualcomm
             litert_tool_flags_google_tensor
             litert_tool_flags_intel_openvino

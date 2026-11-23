@@ -17,6 +17,9 @@
 load("@rules_cc//cc/common:cc_info.bzl", "CcInfo")
 load("@rules_platform//platform_data:defs.bzl", "platform_data")
 load("//litert/build_common:litert_build_defs.bzl", "absolute_label")
+load("//litert/build_common:ynnpack_platform_data.bzl", _windows_dlls = "windows_dlls")
+
+windows_dlls = _windows_dlls
 
 # DEVICE PATHS #####################################################################################
 
@@ -110,7 +113,7 @@ def make_path_args(spec):
 
 # COMMON
 
-def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, mh_user = None, host_libs = [], version_target_suffix = "", platform = "android"):
+def BackendSpec(id, libs = [], mh_devices = [], soc_mh_devices = {}, dispatch = None, plugin = None, mh_user = None, host_libs = [], version_target_suffix = "", platform = "android"):
     """
     Defines a backend specification.
 
@@ -119,6 +122,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         libs: A list of tuples of (library target, environment variable). Path to the target
             will be added to the environment variable.
         mh_devices: A list of mobile harness device specifications.
+        soc_mh_devices: Optional dictionary mapping a short SoC key to its Mobile Harness device dimensions.
         dispatch: The dispatch library target name.
         plugin: The compiler plugin library target name.
         mh_user: The "run_as" arg to use in device cloud if it is enabled.
@@ -162,6 +166,7 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
         env_paths = make_path_args(env_paths) if platform == "android" else [],
         mh_devices = mh_devices,
         default_mh_device = mh_devices[0],
+        soc_mh_devices = soc_mh_devices,
         dispatch = dispatch,
         plugin = plugin,
         mh_user = mh_user,
@@ -173,19 +178,27 @@ def BackendSpec(id, libs = [], mh_devices = [], dispatch = None, plugin = None, 
 
 def _QualcommSpec(version = "V75"):
     # copybara:uncomment_begin(google-only)
-    # stub_lib = "//litert/integration_test:libQnnHtp%sStub.so" % version
-    # skel_lib = "//litert/integration_test:libQnnHtp%sSkel.so" % version
+    # htp_versions = ["V69", "V73", "V75", "V79", "V81"] if version == "V75" else [version]
+    # stub_libs = [
+    # ("//litert/integration_test:libQnnHtp%sStub.so" % v, "LD_LIBRARY_PATH")
+    # for v in htp_versions
+    # ]
+    # skel_libs = [
+    # ("//litert/integration_test:libQnnHtp%sSkel.so" % v, "ADSP_LIBRARY_PATH")
+    # for v in htp_versions
+    # ]
     #
     # copybara:uncomment_end
     # copybara:comment_begin
-    stub_lib = "@qairt//:libQnnHtp%sStub.so" % version
-    skel_lib = "@qairt//:libQnnHtp%sSkel.so" % version
+    stub_libs = [("@qairt//:libQnnHtp%sStub.so" % version, "LD_LIBRARY_PATH")]
+    skel_libs = [("@qairt//:libQnnHtp%sSkel.so" % version, "ADSP_LIBRARY_PATH")]
 
     # copybara:comment_end
     version_suffix = version.lower()
     id = "qualcomm_%s" % version_suffix
 
     mh = {}
+    soc_mh = {}
 
     if version == "V75":
         # No suffix will be used for V75 by default as to not break existing scripts.
@@ -194,6 +207,28 @@ def _QualcommSpec(version = "V75"):
         mh = {
             "model": "regex:sm-s928b|sm-s928u1",
             "pool": "shared",
+        }
+        soc_mh = {
+            "sm8450": {
+                "model": "regex:sm-s901u|sm-s901u1|sm-s906u1|sm-s908u1",
+                "pool": "shared",
+            },
+            "sm8550": {
+                "model": "regex:sm-s911u|sm-s911u1|sm-s916u1|sm-s918u1|sm-s918b",
+                "pool": "shared",
+            },
+            "sm8650": {
+                "model": "regex:sm-s928b|sm-s928u1",
+                "pool": "shared",
+            },
+            "sm8750": {
+                "model": "regex:sm-s938*",
+                "pool": "shared",
+            },
+            "sm8850": {
+                "model": "regex:sm-s942u1|sm-s947u1|sm-s948u1",
+                "pool": "shared",
+            },
         }
     elif version == "V79":
         mh = {
@@ -207,25 +242,23 @@ def _QualcommSpec(version = "V75"):
             libs = [
                 # copybara:uncomment_begin(google-only)
                 # ("//litert/integration_test:libQnnHtp.so", "LD_LIBRARY_PATH"),
-                # (stub_lib, "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnIr.so", "LD_LIBRARY_PATH"),
                 # ("//litert/integration_test:libQnnSaver.so", "LD_LIBRARY_PATH"),
-                # (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
                 ("@qairt//:libQnnHtp.so", "LD_LIBRARY_PATH"),
-                (stub_lib, "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnSystem.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnHtpPrepare.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnIr.so", "LD_LIBRARY_PATH"),
                 ("@qairt//:libQnnSaver.so", "LD_LIBRARY_PATH"),
-                (skel_lib, "ADSP_LIBRARY_PATH"),
                 # copybara:comment_end
+            ] + stub_libs + skel_libs + [
                 ("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", "LD_LIBRARY_PATH"),
                 ("//litert/vendors/qualcomm/compiler:libLiteRtCompilerPlugin_Qualcomm.so", "LD_LIBRARY_PATH"),
             ],
             mh_devices = [mh],
+            soc_mh_devices = soc_mh,
             plugin = "libLiteRtCompilerPlugin_Qualcomm.so",
             dispatch = "libLiteRtDispatch_Qualcomm.so",
             host_libs = [
@@ -264,6 +297,24 @@ def _MediatekSpec():
                 "hardware": "mt6989",
                 "label": "odml-test",
             }],
+            soc_mh_devices = {
+                "mt6877": {
+                    "hardware": "mt6877",
+                    "pool": "shared",
+                },
+                "mt6985": {
+                    "hardware": "mt6985",
+                    "pool": "shared",
+                },
+                "mt6989": {
+                    "hardware": "mt6989",
+                    "pool": "shared",
+                },
+                "mt6991": {
+                    "hardware": "mt6991",
+                    "pool": "shared",
+                },
+            },
             dispatch = "libLiteRtDispatch_MediaTek.so",
             plugin = "libLiteRtCompilerPlugin_MediaTek.so",
             # Prebuilt libneuron_adapter.so dynamically links against C++/GCC
@@ -287,11 +338,14 @@ def _IntelOpenVinoSpec():
                 ("//litert/vendors/intel_openvino/compiler:libLiteRtCompilerPlugin_IntelOpenvino.so", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_begin(oss openvino)
                 # ("@intel_openvino//:libopenvino_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libopenvino_ir_frontend_so", "LD_LIBRARY_PATH"),
                 # ("@intel_openvino//:libopenvino_tensorflow_lite_frontend_so", "LD_LIBRARY_PATH"),
                 # ("@intel_openvino//:libopenvino_intel_cpu_plugin_so", "LD_LIBRARY_PATH"),
                 # ("@intel_openvino//:libopenvino_intel_npu_plugin_so", "LD_LIBRARY_PATH"),
+                # ("@intel_openvino//:libtbb_so_file", "LD_LIBRARY_PATH"),
                 # copybara:uncomment_end_and_comment_begin
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino.so", "LD_LIBRARY_PATH"),
+                ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_ir_frontend.so", "LD_LIBRARY_PATH"),
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so", "LD_LIBRARY_PATH"),
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_cpu_plugin.so", "LD_LIBRARY_PATH"),
                 ("@intel_openvino//:openvino_android/runtime/lib/intel64/libopenvino_intel_npu_plugin.so", "LD_LIBRARY_PATH"),
@@ -302,15 +356,20 @@ def _IntelOpenVinoSpec():
                 "device": "regex:ruby|moonstone|lapis",
                 "label": "litert-test-intel-ptl",
             }],
+            mh_user = "litert-eng-ptl-acl",
             dispatch = "libLiteRtDispatch_IntelOpenvino.so",
             plugin = "libLiteRtCompilerPlugin_IntelOpenvino.so",
             host_libs = [
                 # copybara:uncomment_begin(oss openvino)
-                # "@intel_openvino//:libopenvino_so",
-                # "@intel_openvino//:libopenvino_tensorflow_lite_frontend_so",
+                # "//third_party/openvino_npu_compiler:openvino_runtime",
                 # copybara:uncomment_end_and_comment_begin
                 "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_ir_frontend.so",
                 "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_tensorflow_lite_frontend.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_intel_cpu_plugin.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_intel_npu_plugin.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_intel_npu_compiler_loader.so",
+                "@intel_openvino//:openvino/runtime/lib/intel64/libopenvino_intel_npu_compiler.so",
                 # copybara:comment_end
             ],
         ),
@@ -330,6 +389,23 @@ def _GoogleTensorSpec():
                 "label": "odml-test",
                 "model": "pixel 9",
             }],
+            soc_mh_devices = {
+                "g4": {
+                    "build_type": "userdebug",
+                    "model": "pixel 9",
+                    "pool": "shared",
+                },
+                "g5": {
+                    "build_type": "userdebug",
+                    "model": "pixel 10",
+                    "pool": "shared",
+                },
+                "g6": {
+                    "build_type": "userdebug",
+                    "model": "pixel 11",
+                    "pool": "shared",
+                },
+            },
             mh_user = "odml-team",
             dispatch = "libLiteRtDispatch_GoogleTensor.so",
             plugin = "libLiteRtCompilerPlugin_google_tensor.so",
@@ -363,6 +439,16 @@ def _SamsungSpec():
                 "hardware": "E9965",
                 "pool": "shared",
             }],
+            soc_mh_devices = {
+                "e9955": {
+                    "hardware": "s5e9955",
+                    "pool": "shared",
+                },
+                "e9965": {
+                    "hardware": "s5e9965",
+                    "pool": "shared",
+                },
+            },
             host_libs = [
                 # copybara:uncomment_begin(google-only)
                 # "//third_party/odml/litert/opensource_only/third_party/exynos_ai_litecore:lib_x86_64_linux",
@@ -477,6 +563,28 @@ def get_libs(name, platform = "android"):
 def get_spec(name, platform = "android"):
     return _Specs(name, platform = platform)
 
+def get_mh_device(name, soc_key = None, platform = "android"):
+    """Gets the Mobile Harness device specification for a backend and optional SoC key.
+
+    Args:
+        name: Backend name (e.g. "qualcomm", "google_tensor", "mediatek").
+        soc_key: Optional short SoC key (e.g. "sm8650", "g6", "mt6989").
+        platform: Target OS platform (defaults to "android").
+
+    Returns:
+        A Mobile Harness device dimensions dict for the requested backend/SoC.
+    """
+    spec = _Specs(name, platform = platform)
+    if soc_key != None and spec.soc_mh_devices:
+        if soc_key not in spec.soc_mh_devices:
+            fail("Unknown soc_key %r for backend %r; add it to soc_mh_devices (known: %s)" % (
+                soc_key,
+                name,
+                sorted(spec.soc_mh_devices.keys()),
+            ))
+        return spec.soc_mh_devices[soc_key]
+    return spec.default_mh_device
+
 # Get the host libs for the given backend.
 def get_host_libs(name, platform = "android"):
     return _Specs(name, platform = platform).host_libs
@@ -543,7 +651,12 @@ def split_dep_platform(
 
             # copybara:uncomment_begin(google-only)
             # # Prebuilt QAIRT host libraries require GLIBC >= 2.34 rather than GRTE v5 (glibc 2.27).
-            # host_platform = "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else host_platform
+            # host_platform = (
+            # "//litert/integration_test:host_cots_linux" if "qualcomm" in backend_id else select({
+            # "//litert:linux_aarch64": "//litert/integration_test:host_arm64",
+            # "//conditions:default": host_platform,
+            # })
+            # )
             #
             # copybara:uncomment_end
             platform_data(
@@ -628,33 +741,5 @@ windows_bin_only = rule(
     implementation = _windows_bin_only_impl,
     attrs = {
         "src": attr.label(mandatory = True),
-    },
-)
-
-def _platform_transition_impl(_settings, attr):
-    return {"//command_line_option:platforms": str(attr.platform)}
-
-_platform_transition = transition(
-    implementation = _platform_transition_impl,
-    inputs = [],
-    outputs = ["//command_line_option:platforms"],
-)
-
-# Transitions Windows runtime dependencies to `platform` and forwards their .dll files.
-def _windows_dlls_impl(ctx):
-    dlls = []
-    seen = {}
-    for dep in ctx.attr.deps:
-        for f in dep[DefaultInfo].files.to_list():
-            if f.basename.lower().endswith(".dll") and f.basename not in seen:
-                seen[f.basename] = True
-                dlls.append(f)
-    return [DefaultInfo(files = depset(dlls), runfiles = ctx.runfiles(files = dlls))]
-
-windows_dlls = rule(
-    implementation = _windows_dlls_impl,
-    attrs = {
-        "deps": attr.label_list(cfg = _platform_transition),
-        "platform": attr.label(mandatory = True),
     },
 )

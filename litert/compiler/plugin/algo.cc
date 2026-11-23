@@ -542,7 +542,7 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
   }
 
   // Find the main subgraph containing the destination op.
-  LiteRtSubgraphT* main_subgraph;
+  LiteRtSubgraphT* main_subgraph = nullptr;
   for (auto& subgraph : model.Subgraphs()) {
     for (auto& op : subgraph->Ops()) {
       if (op == &destination_op) {
@@ -550,6 +550,14 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
         break;
       }
     }
+    if (main_subgraph != nullptr) {
+      break;
+    }
+  }
+  if (main_subgraph == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Failed to find the subgraph containing the op during "
+                      "inlining.");
   }
 
   // Maps of cloned tensors and ops in main subgraph.

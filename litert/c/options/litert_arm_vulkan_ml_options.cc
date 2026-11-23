@@ -27,6 +27,8 @@
 
 struct LrtArmVulkanMLOptionsT {
   bool enable_just_in_time = false;
+  bool dump_op_timings = false;
+  bool float_fallback = true;
 };
 
 const char* LrtArmVulkanMLOptionsGetIdentifier() { return "ArmVulkanML"; }
@@ -59,6 +61,12 @@ LiteRtStatus LrtCreateArmVulkanMLOptionsFromToml(
         if (key == "enable_just_in_time") {
           LITERT_ASSIGN_OR_RETURN(options_ref.enable_just_in_time,
                                   litert::internal::ParseTomlBool(value));
+        } else if (key == "dump_op_timings") {
+          LITERT_ASSIGN_OR_RETURN(options_ref.dump_op_timings,
+                                  litert::internal::ParseTomlBool(value));
+        } else if (key == "float_fallback") {
+          LITERT_ASSIGN_OR_RETURN(options_ref.float_fallback,
+                                  litert::internal::ParseTomlBool(value));
         }
         return kLiteRtStatusOk;
       });
@@ -86,6 +94,10 @@ LiteRtStatus LrtGetOpaqueArmVulkanMLOptionsData(
   litert::internal::OptionsEncoder encoder;
   LITERT_RETURN_IF_ERROR(
       encoder.EncodeBool("enable_just_in_time", options->enable_just_in_time));
+  LITERT_RETURN_IF_ERROR(
+      encoder.EncodeBool("dump_op_timings", options->dump_op_timings));
+  LITERT_RETURN_IF_ERROR(
+      encoder.EncodeBool("float_fallback", options->float_fallback));
 
   *identifier = LrtArmVulkanMLOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
@@ -107,5 +119,41 @@ LiteRtStatus LrtArmVulkanMLOptionsGetEnableJustInTime(
     return kLiteRtStatusErrorInvalidArgument;
   }
   *enable_just_in_time = options->enable_just_in_time;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtArmVulkanMLOptionsSetDumpOpTimings(
+    LrtArmVulkanMLOptions options, bool dump_op_timings) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->dump_op_timings = dump_op_timings;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtArmVulkanMLOptionsGetDumpOpTimings(
+    LrtArmVulkanMLOptions options, bool* dump_op_timings) {
+  if (options == nullptr || dump_op_timings == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *dump_op_timings = options->dump_op_timings;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtArmVulkanMLOptionsSetFloatFallback(
+    LrtArmVulkanMLOptions options, bool enable) {
+  if (options == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->float_fallback = enable;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtArmVulkanMLOptionsGetFloatFallback(
+    LrtArmVulkanMLOptions options, bool* enabled) {
+  if (options == nullptr || enabled == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *enabled = options->float_fallback;
   return kLiteRtStatusOk;
 }

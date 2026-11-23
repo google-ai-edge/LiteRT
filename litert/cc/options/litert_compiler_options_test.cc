@@ -70,6 +70,35 @@ TEST(CompilerOptionsTest, SetAndGetPartitionStrategyReturnsSetValue) {
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
 }
 
+TEST(CompilerOptionsTest, AddShapeSpecializationSerializesToToml) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
+
+  LITERT_EXPECT_OK(options.AddShapeSpecialization(
+      "decode", "decode_128", {{"tokens", {1, 128}}, {"positions", {1, 128}}}));
+  const int32_t tokens512[] = {1, 512};
+  LITERT_EXPECT_OK(options.AddShapeSpecializationInputShape(
+      "decode", "decode_512", "tokens", absl::MakeConstSpan(tokens512)));
+  EXPECT_FALSE(options.AddShapeSpecialization("decode", "decode_0", {}));
+  EXPECT_FALSE(
+      options.AddShapeSpecialization("decode", "", {{"tokens", {1, 128}}}));
+  EXPECT_FALSE(
+      options.AddShapeSpecialization("decode", "d", {{"tokens", {1, -1}}}));
+
+  const char* identifier;
+  void* payload = nullptr;
+  void (*payload_deleter)(void*) = nullptr;
+  ASSERT_EQ(LrtGetOpaqueCompilerOptionsData(options.Get(), &identifier,
+                                            &payload, &payload_deleter),
+            kLiteRtStatusOk);
+  const std::string toml_str = static_cast<const char*>(payload);
+  payload_deleter(payload);
+
+  EXPECT_EQ(toml_str,
+            "shape_specializations = [\"decode@decode_128@tokens@1:128\", "
+            "\"decode@decode_128@positions@1:128\", "
+            "\"decode@decode_512@tokens@1:512\"]\n");
+}
+
 TEST(CompilerOptionsTest, AddInputShapesSerializeToToml) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto options, CompilerOptions::Create());
 

@@ -25,7 +25,7 @@
 
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 
-namespace litert::internal {
+namespace litert::profiling::internal {
 
 // Video memory used by this process on a single GPU. (Windows calls a GPU an
 // "adapter"; the two terms are used interchangeably in this directory.)
@@ -63,6 +63,6 @@ struct AdapterVideoMemory {
 AcceleratorMemoryUsage AcceleratorMemoryUsageFromAdapters(
     const std::vector<AdapterVideoMemory>& adapters);
 
-}  // namespace litert::internal
+}  // namespace litert::profiling::internal
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_ACCELERATOR_MEMORY_WINDOWS_H_

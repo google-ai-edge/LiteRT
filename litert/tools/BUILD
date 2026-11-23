@@ -19,7 +19,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 # copybara:uncomment load("@rules_python//python:py_library.bzl", "py_library")
 # copybara:uncomment load("@rules_python//python:py_test.bzl", "py_test")
-load("//litert/build_common:litert_build_defs.bzl", "gtest_main_no_heapcheck_deps", "litert_bin")
+load("//litert/build_common:litert_build_defs.bzl", "commandline_flag_copts", "gtest_main_no_heapcheck_deps", "litert_bin")
 load("//litert/build_common:special_rule.bzl", "litert_gpu_accelerator_deps", "litert_gpu_accelerator_prebuilts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_exec", "litert_device_test")
 load("//litert/integration_test:litert_device_common.bzl", "dispatch_device_rlocation", "plugin_device_rlocation")
@@ -595,6 +595,7 @@ cc_library(
         "//litert/core/util:perfetto_profiling",
         "//litert/runtime:compiled_model",
         "//litert/tools/flags:options_parser_registry",
+        "//litert/tools/flags/vendors:arm_vulkan_ml_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -636,6 +637,7 @@ cc_test(
         "//litert/cc/options:litert_gpu_options",
         "//litert/cc/options:litert_mediatek_options",
         "//litert/cc/options:litert_qualcomm_options",
+        "//litert/tools/flags/vendors:arm_vulkan_ml_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -817,10 +819,12 @@ cc_test(
 cc_binary(
     name = "npu_numerics_check",
     srcs = ["npu_numerics_check.cc"],
+    copts = commandline_flag_copts(),
     deps = NUMERICS_CHECK_DEPS + [
         ":tensor_utils",
         "//litert/cc:litert_common",
         "//litert/tools/flags:options_parser_registry",
+        "//litert/tools/flags/vendors:arm_vulkan_ml_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",
@@ -974,6 +978,7 @@ cc_library(
     srcs = ["benchmark_litert_model_main.cc"],
     deps = [
         ":benchmark_litert_model",
+        "//litert/tools/flags/vendors:arm_vulkan_ml_flags",
         "//litert/tools/flags/vendors:google_tensor_flags",
         "//litert/tools/flags/vendors:intel_openvino_flags",
         "//litert/tools/flags/vendors:mediatek_flags",

@@ -39,13 +39,19 @@ struct FlashDecodeTuning {
   // Work items that combine the per-work-item values in the first stage of a
   // work-group reduction. Every work item then does the second stage itself.
   int reduce_threads = 32;
+  // Maximum number of keys scored by each work item per chunk in the portable
+  // work-group reduction kernel. The kernel keeps one score per key and query
+  // head of the work group in registers, so more keys per work item raise its
+  // register use.
+  int max_keys_per_thread = 4;
   // Maximum number of query heads sharing one K/V head to process per work
   // group in the work-group reduction kernel so per-head accumulators stay in
   // registers. Larger GQA groups are partitioned across multiple work groups.
   int max_heads_per_work_group = 8;
   // The keys of every query token and K/V head group are split across work
   // groups until there are at least `target_work_groups` work groups, but
-  // every split keeps at least `min_split_keys` keys.
+  // every split keeps at least `min_split_keys` keys. `GetFlashDecodeTuning`
+  // scales this up to at least two work groups per GPU compute unit.
   int target_work_groups = 40;
   int min_split_keys = 256;
   // Local memory budget in bytes of the work-group reduction kernel. Apple GPUs
@@ -77,19 +83,28 @@ struct FlashDecodeTuning {
 // compiler limits the kernel to fewer work items than it is launched with
 // (b/578633071). The wave-SIMD kernel uses 16 waves on Apple GPUs.
 //
-// On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant with
-// at most 4 query heads per work group. Measured on M4 Pro with Gemma 4
-// 26B-A4B decode, the global attention layers (head dim 512, 8 query heads per
-// K/V head) take 53 us at 1K and 686 us at a 31.8K context, compared with 103
-// us and 899 us for the portable kernel. With 8 heads per work group, which
-// reads K/V only once, they take 83 us and 671 us.
+// On Apple GPUs (Metal) the work-group kernel uses its SIMD-group variant. At
+// short contexts it processes at most 4 query heads per work group with 4 SIMD
+// lanes per key: measured on M4 Pro with Gemma 4 26B-A4B decode, the global
+// attention layers (head dim 512, 8 query heads per K/V head) take 53 us at 1K
+// vs. 83 us with 8 heads, because the second K/V read hits the GPU cache. Once
+// the K and V caches of a layer reach `kSimdWorkGroupFullGqaKvBytes`, where K/V
+// reads come from DRAM, `GetFlashDecodeConfig` processes up to 8 query heads
+// per work group with one lane per key so each K/V entry is read from DRAM once
+// in coalesced cache lines with uniform `q_local` broadcasts.
 // TODO(b/553029558): Tune for Mali, Intel, Nvidia and AMD GPUs.
 FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info);
 
+// Combined F16 size in bytes of a layer's K and V caches from which the
+// SIMD-group work-group Flash-Decode kernel processes up to 8 GQA query heads
+// per work group with one SIMD lane per key instead of splitting 8-head GQA
+// groups across two 4-head work groups.
+inline constexpr uint64_t kSimdWorkGroupFullGqaKvBytes = 32ull << 20;
+
 // Keys scored by each work item per chunk of the portable work-group
 // Flash-Decode kernel: at most as many as keep the probabilities of a chunk
-// within 8 KB of local memory.
-int MaxFlashDecodeKeysPerThread(int heads, int threads);
+// within 8 KB of local memory, and at most `tuning.max_keys_per_thread`.
+int MaxFlashDecodeKeysPerThread(const FlashDecodeTuning& tuning, int heads);
 
 // Upper bound of the local memory in bytes used by the work-group Flash-Decode
 // kernel for `heads` query heads per work group and `slices` channel slices
@@ -129,8 +144,9 @@ bool SupportsWaveMatrixPrefill(const ::ml_drift::GpuInfo& gpu_info);
 // - Metal on Apple GPUs: the wave-matrix MMA prefill kernel and the wave-SIMD
 //   or work-group Flash-Decode kernel.
 // - OpenCL and WebGPU: the work-group kernel, for decode and, since it handles
-//   one query token per work group, also for prefill whose score tensor would
-//   be too large (`UsesWorkGroupFlashPrefill`).
+//   one query token per work group, also for prefill whose score tensor (or,
+//   with `PrefersChunkedDecomposedPrefill`, score chunk) would be too large
+//   (`UsesWorkGroupFlashPrefill`).
 // Shape-specific conditions are checked separately (`UsesFusedSdpaKernel`).
 bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 
@@ -147,6 +163,23 @@ bool SupportsFusedSdpaKernels(const ::ml_drift::GpuInfo& gpu_info);
 // on the GEMM and moves a 32K cache of 16 or more query heads (>= 1 GiB, which
 // exceeds the maximum buffer allocation on Adreno) to the Flash kernel.
 inline constexpr uint64_t kMaxDecomposedSdpaScoreBytes = 768ull << 20;
+
+// Whether multi-token prefill without the wave-matrix MMA kernel runs the
+// decomposed graph on score chunks, as Metal does where the MMA kernel does not
+// apply, instead of switching to the work-group Flash kernel above
+// `kMaxDecomposedSdpaScoreBytes`: WebGPU on Apple GPUs.
+//
+// Measured on M5 Max (WebGPU) with Gemma 4 26B-A4B, whose 5 global attention
+// layers have 16 query heads sharing 2 K/V heads of head dim 512, warm prefill
+// of a full context:
+//   32K (31,744 tokens): 965 tok/s on the work-group kernel, 1,300 chunked.
+//   64K (63,488 tokens): 568 tok/s on the work-group kernel, 1,038 chunked.
+// The chunks keep one chunk-sized score buffer live (128 MiB at 32K and 256 MiB
+// at 64K for that model). Score tensors between
+// `kMaxDecomposedSdpaScoreChunkBytes` and `kMaxDecomposedSdpaScoreBytes`, which
+// other WebGPU devices keep on one GEMM, are split as well.
+// TODO(b/553029558): Measure other WebGPU and OpenCL devices.
+bool PrefersChunkedDecomposedPrefill(const ::ml_drift::GpuInfo& gpu_info);
 
 // Bytes of the score tensor of the decomposed graph for query `q_shape`
 // [b, heads, tokens, head_dim] and K cache `k_shape`
@@ -173,8 +206,9 @@ inline constexpr uint64_t kMaxDecomposedSdpaScoreChunkBytes = 128ull << 20;
 // prefill (`UsesWorkGroupFlashPrefill`). They only split larger scores, which
 // reach the decomposed graph when the Flash kernel does not apply (e.g. INT8 or
 // plain K/V tensors), so their budget is the larger of `max_score_bytes` and
-// `max_chunk_bytes`. Other backends split above `max_chunk_bytes`. On OpenCL,
-// the budget is at most the maximum buffer allocation of the device.
+// `max_chunk_bytes`. Other backends, and those that prefer chunked prefill
+// (`PrefersChunkedDecomposedPrefill`), split above `max_chunk_bytes`. On
+// OpenCL, the budget is at most the maximum buffer allocation of the device.
 uint64_t DecomposedSdpaScoreChunkBudget(
     const ::ml_drift::GpuInfo& gpu_info,
     uint64_t max_score_bytes = kMaxDecomposedSdpaScoreBytes,
@@ -206,8 +240,14 @@ int NumDecomposedSdpaScoreChunks(const ::ml_drift::BHWC& q_shape,
 // Whether multi-token prefill (`q_shape.w > 1`) on a backend without the
 // wave-matrix MMA kernel runs on the work-group Flash kernel: when the score
 // tensor of the decomposed graph exceeds `max_score_bytes` or, on OpenCL, the
-// maximum buffer allocation of the device. Tests lower `max_score_bytes` to run
-// small prefill shapes on the work-group kernel.
+// maximum buffer allocation of the device. On backends that prefer chunked
+// prefill (`PrefersChunkedDecomposedPrefill`), the largest score chunk of
+// F16 scores under `kMaxDecomposedSdpaScoreChunkBytes` is compared instead of
+// the whole score tensor, so the work-group kernel only takes shapes whose
+// chunks stay too large (e.g. plain multi-head attention with a long cache).
+// This assumes a mask shared by the query heads: with a mask per query head,
+// the decomposed graph keeps a single chunk. Tests lower `max_score_bytes` to
+// run small prefill shapes on the work-group kernel.
 bool UsesWorkGroupFlashPrefill(
     const ::ml_drift::GpuInfo& gpu_info, const ::ml_drift::BHWC& q_shape,
     const ::ml_drift::BHWC& k_shape,

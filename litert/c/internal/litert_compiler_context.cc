@@ -28,7 +28,7 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
               .struct_size = sizeof(LiteRtCompilerContext),
               // LINT.IfChange(compiler_context_version)
               .major_version = 1,
-              .minor_version = 5,
+              .minor_version = 6,
               .reserved = 0,
               // LINT.ThenChange(./litert_compiler_context.h:compiler_context_table)
           },
@@ -315,6 +315,8 @@ LiteRtCompilerContext* LrtGetCompilerContext() {
           LiteRtGetConv3dTransposeDilationHOption,
       .build_conv_3d_transpose_op_option =
           LiteRtBuilderBuildConv3dTransposeOpOption,
+      .set_op_input = LiteRtBuilderSetOpInput,
+      .is_subgraph_output = LiteRtBuilderIsSubgraphOutput,
   };
   return &ctx;
 }

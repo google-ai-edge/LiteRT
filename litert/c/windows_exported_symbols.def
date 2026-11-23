@@ -70,6 +70,8 @@ EXPORTS
   LiteRtBuilderBuildUnpackOpOption
   LiteRtBuilderBuildWeights
   LiteRtBuilderEraseOp
+  LiteRtBuilderIsSubgraphOutput
+  LiteRtBuilderSetOpInput
   LiteRtClearTensorBuffer
   LiteRtClearTensorBufferEvent
   LiteRtCompiledModelClearErrors
@@ -380,6 +382,7 @@ EXPORTS
   LiteRtSetDelegateFunction
   LiteRtSetIsAcceleratorDelegateResponsibleForJitCompilation
   LiteRtSetOpaqueOptionsHash
+  LiteRtSetOpResolverOption
   LiteRtSetOptionsHardwareAccelerators
   LiteRtSetProfilerCurrentEventSource
   LiteRtSetTensorBufferEvent

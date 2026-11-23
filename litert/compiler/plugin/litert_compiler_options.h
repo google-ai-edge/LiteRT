@@ -30,6 +30,17 @@ struct LiteRtCompilerOptionsInputShapeEntry {
   std::vector<int32_t> dims;
 };
 
+// One input of an "Add" shape specialization: `source_signature_key` is
+// instantiated again as static signature `new_signature_key` with signature
+// input `input_name` fixed to `dims`. Entries sharing `new_signature_key`
+// describe one specialization.
+struct LiteRtCompilerOptionsShapeSpecializationEntry {
+  std::string source_signature_key;
+  std::string new_signature_key;
+  std::string input_name;
+  std::vector<int32_t> dims;
+};
+
 // Internal LiteRt compiler options struct.
 struct LiteRtCompilerOptionsT {
   LiteRtCompilerOptionsPartitionStrategy partition_strategy =
@@ -43,9 +54,19 @@ struct LiteRtCompilerOptionsT {
   std::vector<LiteRtCompilerOptionsInputShapeEntry> tensor_input_shapes;
   std::vector<LiteRtCompilerOptionsInputShapeEntry> signature_input_shapes;
 
+  // "Add" mode shape specializations (new static signatures cloned from a
+  // source signature). In-place refinement of a source is expressed with the
+  // *_input_shapes lists above.
+  std::vector<LiteRtCompilerOptionsShapeSpecializationEntry>
+      shape_specializations;
+
   bool HasInputShapes() const {
     return !positional_input_shapes.empty() || !tensor_input_shapes.empty() ||
            !signature_input_shapes.empty();
+  }
+
+  bool HasShapeSpecializations() const {
+    return !shape_specializations.empty();
   }
 
   static const char* Identifier() { return "compiler_options_string"; }

@@ -22,6 +22,15 @@ package(
     default_visibility = ["//litert:__subpackages__"],
 )
 
+# Headers that experimental/megakernel's cuda_library takes by label.
+exports_files(
+    [
+        "decode_attention.h",
+        "int4_block_gemv.h",
+    ],
+    visibility = ["//litert/vendors/nvidia/experimental/megakernel:__pkg__"],
+)
+
 cuda_library(
     name = "gemma4_head_kernels_cuda",
     srcs = [
@@ -30,9 +39,14 @@ cuda_library(
         "gated_delta_net.cu",
         "global_attention.cu",
         "head_kernels.cu",
+        "hyper_connection.cu",
         "int2_gemv.cu",
         "int4_block_gemv.cu",
+        "ple_tail.cu",
         "qkv_norm_rope.cu",
+        "quant_cache.cu",
+        "quant_gemm.cu",
+        "quant_linear.cu",
         "subbyte_gemm.cu",
         "subbyte_gemm_int8.cu",
         "tiled_attention.cu",
@@ -43,10 +57,15 @@ cuda_library(
         "gated_delta_net.h",
         "global_attention.h",
         "head_kernels.h",
+        "hyper_connection.h",
         "int2_gemv.h",
         "int4_block_gemv.cuh",
         "int4_block_gemv.h",
+        "ple_tail.h",
         "qkv_norm_rope.h",
+        "quant_cache.h",
+        "quant_gemm.h",
+        "quant_linear.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -80,9 +99,14 @@ cc_library(
         "gated_delta_net.h",
         "global_attention.h",
         "head_kernels.h",
+        "hyper_connection.h",
         "int2_gemv.h",
         "int4_block_gemv.h",
+        "ple_tail.h",
         "qkv_norm_rope.h",
+        "quant_cache.h",
+        "quant_gemm.h",
+        "quant_linear.h",
         "subbyte_gemm.h",
         "tiled_attention.h",
     ],
@@ -90,6 +114,61 @@ cc_library(
     deps = [
         ":gemma4_head_kernels_archive",
         "@local_cuda//:cuda_headers",
+    ],
+)
+
+# Host references of the quant_linear kernels, for tests.
+cc_library(
+    name = "quant_linear_reference",
+    testonly = 1,
+    hdrs = ["quant_linear_reference.h"],
+    tags = ["manual"],
+    deps = [":gemma4_head_kernels"],
+)
+
+cc_test(
+    name = "quant_linear_test",
+    srcs = ["quant_linear_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":quant_linear_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "quant_gemm_test",
+    srcs = ["quant_gemm_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":quant_linear_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
     ],
 )
 
@@ -162,6 +241,50 @@ cc_test(
 cc_test(
     name = "gated_delta_net_test",
     srcs = ["gated_delta_net_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "hyper_connection_test",
+    srcs = ["hyper_connection_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:linux_aarch64": [],
+        "//litert:windows": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "ple_tail_test",
+    srcs = ["ple_tail_test.cc"],
     tags = [
         "exclusive",
         "manual",
@@ -270,9 +393,61 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "quant_attention_reference",
+    testonly = True,
+    hdrs = ["quant_attention_reference.h"],
+    tags = ["manual"],
+)
+
+cc_test(
+    name = "quant_attention_test",
+    srcs = ["quant_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":quant_attention_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
 cc_test(
     name = "tiled_attention_test",
     srcs = ["tiled_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "quant_linear_benchmark_test",
+    srcs = ["quant_linear_benchmark_test.cc"],
     tags = [
         "exclusive",
         "manual",
@@ -352,6 +527,299 @@ cc_test(
     }),
     deps = [
         ":gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+# Qwen 4's sparse attention (QSA): the indexer and the sparse attention of
+# odml.qsa_indexer_update and odml.sparse_sdpa_transposed. Their own archive,
+# so the kernels above do not rebuild with them.
+cuda_library(
+    name = "qsa_kernels_cuda",
+    srcs = [
+        "general_attention.cu",
+        "qsa_indexer.cu",
+        "qsa_sparse_attention.cu",
+    ],
+    hdrs = [
+        "general_attention.h",
+        "qsa_common.cuh",
+        "qsa_indexer.h",
+        "qsa_sparse_attention.h",
+    ],
+    # copybara:uncomment_begin(google-only)
+    # copts = [
+    # "--no-cuda-gpu-arch=sm_60",
+    # "--no-cuda-gpu-arch=sm_70",
+    # "--cuda-gpu-arch=sm_120",
+    # ],
+    # copybara:uncomment_end
+    linkstatic = 1,
+    tags = ["manual"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_import(
+    name = "qsa_kernels_archive",
+    static_library = ":qsa_kernels_cuda",
+    tags = ["manual"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "qsa_kernels",
+    hdrs = [
+        "general_attention.h",
+        "qsa_indexer.h",
+        "qsa_sparse_attention.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":qsa_kernels_archive",
+        "@local_cuda//:cuda_headers",
+    ],
+)
+
+# Host references of the QSA kernels, for tests.
+cc_library(
+    name = "qsa_reference",
+    testonly = 1,
+    hdrs = [
+        "general_attention_reference.h",
+        "qsa_reference.h",
+    ],
+    tags = ["manual"],
+)
+
+cc_test(
+    name = "qsa_kernels_test",
+    srcs = ["qsa_kernels_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":qsa_kernels",
+        ":qsa_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "qsa_benchmark_test",
+    srcs = ["qsa_benchmark_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":qsa_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "general_attention_test",
+    srcs = ["general_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":qsa_kernels",
+        ":qsa_reference",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+# The decode step's kernels over several sequence slots in one launch (a
+# batched decode step), each slot's results those of its own launch. Their own
+# archive and their own copy of the device code (decode_attention_blocks.cuh):
+# the kernels above are not rebuilt or changed.
+cuda_library(
+    name = "slot_kernels_cuda",
+    srcs = [
+        "cache_write_slots.cu",
+        "decode_attention_slots.cu",
+        "qkv_norm_rope_slots.cu",
+    ],
+    hdrs = [
+        "block_sync.cuh",
+        "cache_write_slots.h",
+        "decode_attention.h",
+        "decode_attention_blocks.cuh",
+        "decode_attention_slots.h",
+        "qkv_norm_rope.h",
+        "qkv_norm_rope_slots.h",
+    ],
+    # copybara:uncomment_begin(google-only)
+    # copts = [
+    # "--no-cuda-gpu-arch=sm_60",
+    # "--no-cuda-gpu-arch=sm_70",
+    # "--cuda-gpu-arch=sm_120",
+    # ],
+    # copybara:uncomment_end
+    linkstatic = 1,
+    tags = ["manual"],
+    deps = [
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_import(
+    name = "slot_kernels_archive",
+    static_library = ":slot_kernels_cuda",
+    tags = ["manual"],
+    alwayslink = 1,
+)
+
+cc_library(
+    name = "slot_kernels",
+    hdrs = [
+        "cache_write_slots.h",
+        "decode_attention_slots.h",
+        "qkv_norm_rope_slots.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels_archive",
+        "@local_cuda//:cuda_headers",
+    ],
+)
+
+cc_test(
+    name = "decode_attention_slots_test",
+    srcs = ["decode_attention_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels",
+        ":slot_test_util",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_library(
+    name = "slot_test_util",
+    testonly = 1,
+    hdrs = ["slot_test_util.h"],
+    tags = ["manual"],
+    deps = [
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_slots_test",
+    srcs = ["qkv_norm_rope_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels",
+        ":slot_test_util",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "cache_write_slots_test",
+    srcs = ["cache_write_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":slot_kernels",
+        ":slot_test_util",
+        "//litert/vendors/nvidia/compiler:int8_cache_write_kernel",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "moe_slot_rows_test",
+    srcs = ["moe_slot_rows_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_test_util",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",

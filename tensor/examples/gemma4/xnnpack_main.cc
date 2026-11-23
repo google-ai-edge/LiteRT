@@ -29,6 +29,7 @@ limitations under the License.
 #include <numeric>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <vector>
@@ -158,8 +159,10 @@ class XnnpackWeightHooks final : public TensorMappingHooks {
     }
     LRT_TENSOR_ASSIGN_OR_RETURN(Buffer & buffer, weight.GetBuffer());
     auto locked = buffer.Lock();
-    const uint64_t identifier =
-        static_cast<uint64_t>(std::hash<absl::string_view>{}(model_name));
+    // `absl::string_view` isn't always `std::string_view` (e.g. on Android),
+    // and only the latter has a `std::hash` specialization.
+    const uint64_t identifier = static_cast<uint64_t>(
+        std::hash<std::string_view>{}(std::string_view(model_name)));
     if (!weight_cache_->MapBufferIdentifier(locked.data(), locked.size(),
                                             identifier)) {
       return absl::InternalError(
@@ -559,13 +562,13 @@ absl::StatusOr<BuiltGraphs> BuildModelGraphs(const Config& config, int seq_len,
                          /*kv_cache_len=*/0));
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Gemma4Outputs<XnnpackMixinTag> prefill_outputs,
-      BuildGemma4Graph(prefill_inputs, weights, config));
+      BuildGemma4MobileGraph(prefill_inputs, weights, config));
 
   LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Inputs<XnnpackMixinTag> decode_inputs,
                               CreateGemma4Inputs(config, /*input_seq_len=*/1,
                                                  /*kv_cache_len=*/seq_len));
   LRT_TENSOR_ASSIGN_OR_RETURN(Gemma4Outputs<XnnpackMixinTag> decode_outputs,
-                              BuildGemma4Graph(decode_inputs, weights, config));
+                              BuildGemma4MobileGraph(decode_inputs, weights, config));
 
   return BuiltGraphs{std::move(prefill_inputs), std::move(prefill_outputs),
                      std::move(decode_inputs), std::move(decode_outputs)};

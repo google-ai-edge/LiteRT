@@ -191,7 +191,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
   }
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = call_idx;
   return kLiteRtStatusOk;
 }
 
@@ -242,6 +242,11 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   litert::compiler::Subgraph graph(compiler_plugin->ctx(), subgraph);
 
   for (const auto& op : graph.Ops()) {
+    // Leave ops without a Samsung builder unselected so they fall back to
+    // another accelerator (e.g. CPU) instead of failing compilation.
+    if (!::litert::samsung::CreateOp(compiler_plugin->ctx(), op)) {
+      continue;
+    }
     LITERT_RETURN_IF_ERROR(
         compiler_plugin->ctx()->push_op(selected_ops, op.Get(), 0));
   }

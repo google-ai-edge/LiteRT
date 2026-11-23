@@ -83,6 +83,7 @@ struct ConstantTensor {
 struct CompiledPartition {
   bool requires_shader_int16 = false;
   bool requires_shader_int64 = false;
+  bool requires_float_fallback = false;
   std::vector<uint32_t> spirv;
   std::vector<ConstantTensor> constants;
   std::vector<TensorDescriptor> inputs;

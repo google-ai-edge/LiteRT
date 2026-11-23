@@ -16,8 +16,11 @@ limitations under the License.
 #include "tensor/backends/xnnpack/conversion.h"
 
 #include <cstddef>
+#include <cstdint>
 #include <cstring>
+#include <limits>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -184,6 +187,108 @@ TEST(XnnpackConversionTest, L2NormalizationReturnsUnimplemented) {
 
   EXPECT_THAT(BuildXnnpackGraph({output}),
               StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(XnnpackConversionTest, BlockwiseScalarZeroPointWithEmptyScales) {
+  XnnTensor weights(TensorInit{
+      .name = "weights",
+      .type = Type::kI4,
+      .shape = {0, 32},
+      .quantization = std::make_shared<BlockwiseQuantization>(
+          std::vector<float>{}, ZeroPoints::Int({8}),
+          /*block_size=*/32, /*quantized_dimension=*/0)});
+  XnnpackBuildContext ctx({}, {});
+  ASSERT_THAT(ctx.Init(), ::testing::tensor::IsOk());
+  EXPECT_THAT(ctx.DefineValue(weights.GetRaw()).status(),
+              ::testing::tensor::IsOk());
+}
+
+TEST(XnnpackConversionTest, BlockwiseEmptyScalesRejectsMultipleZeroPoints) {
+  XnnTensor weights(TensorInit{
+      .name = "weights",
+      .type = Type::kI4,
+      .shape = {0, 32},
+      .quantization = std::make_shared<BlockwiseQuantization>(
+          std::vector<float>{}, ZeroPoints::Int({8, 8}),
+          /*block_size=*/32, /*quantized_dimension=*/0)});
+  XnnpackBuildContext ctx({}, {});
+  ASSERT_THAT(ctx.Init(), ::testing::tensor::IsOk());
+  EXPECT_THAT(ctx.DefineValue(weights.GetRaw()).status(),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(XnnpackConversionTest, BlockwiseUniformAndNonUniformZeroPoints) {
+  auto build_fc = [&](ZeroPoints zero_points) {
+    XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 32}});
+    XnnTensor weights(TensorInit{
+        .name = "weights",
+        .type = Type::kI4,
+        .shape = {2, 32},
+        .buffer = std::vector<int8_t>(32, 0),
+        .quantization = std::make_shared<BlockwiseQuantization>(
+            std::vector<float>{0.5f, 0.25f}, std::move(zero_points),
+            /*block_size=*/32, /*quantized_dimension=*/0)});
+    XnnTensor output = FullyConnected(input, weights);
+    return BuildXnnpackGraph({output});
+  };
+
+  EXPECT_THAT(build_fc(ZeroPoints::Int({8, 8})), ::testing::tensor::IsOk());
+  EXPECT_THAT(build_fc(ZeroPoints::Int({8, 5})),
+              StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(XnnpackConversionTest,
+     DefinePerTensorQuantizedWeightsAsChannelwiseValidation) {
+  auto define_weights = [](ZeroPoints zero_points, bool with_buffer) {
+    TensorInit init{
+        .name = "weights",
+        .type = Type::kI8,
+        .shape = {2, 4},
+        .quantization = std::make_shared<PerChannelAffineQuantization>(
+            std::vector<float>{0.5f}, std::move(zero_points),
+            /*quantized_dimension=*/0)};
+    if (with_buffer) {
+      init.buffer = std::vector<int8_t>(8, 1);
+    }
+    XnnTensor weights(std::move(init));
+    XnnpackBuildContext ctx({}, {});
+    absl::Status init_status = ctx.Init();
+    if (!init_status.ok()) {
+      return absl::StatusOr<uint32_t>(init_status);
+    }
+    return ctx.DefinePerTensorQuantizedWeightsAsChannelwise(weights.GetRaw());
+  };
+
+  EXPECT_THAT(define_weights(ZeroPoints::Int({0}), /*with_buffer=*/true),
+              IsOk());
+  EXPECT_THAT(define_weights(ZeroPoints::Float({0.0f}), /*with_buffer=*/true),
+              IsOk());
+  EXPECT_THAT(define_weights(ZeroPoints::Float({-0.5f}), /*with_buffer=*/true),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(define_weights(ZeroPoints::Int({2, 2}), /*with_buffer=*/true),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  const int64_t overflow_zp =
+      static_cast<int64_t>(std::numeric_limits<int32_t>::max()) + 1;
+  EXPECT_THAT(
+      define_weights(ZeroPoints::Int({overflow_zp}), /*with_buffer=*/true),
+      StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(define_weights(ZeroPoints::Int({0}), /*with_buffer=*/false),
+              StatusIs(absl::StatusCode::kUnimplemented));
+}
+
+TEST(XnnpackConversionTest,
+     FullyConnectedPerTensorInt8WeightsWithFloatZeroPoints) {
+  XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 4}});
+  XnnTensor weights(
+      TensorInit{.name = "weights",
+                 .type = Type::kI8,
+                 .shape = {2, 4},
+                 .buffer = std::vector<int8_t>{1, 2, 3, 4, -1, -2, -3, -4},
+                 .quantization = std::make_shared<PerChannelAffineQuantization>(
+                     std::vector<float>{0.5f}, ZeroPoints::Float({-0.5f}),
+                     /*quantized_dimension=*/0)});
+  XnnTensor output = FullyConnected(input, weights);
+  EXPECT_THAT(BuildXnnpackGraph({output}), IsOk());
 }
 
 // This test is disabled because the lowering should not do implicit data

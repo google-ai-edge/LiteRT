@@ -18,7 +18,6 @@
 
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <cstring>
 #include <string>
 #include <vector>
@@ -91,16 +90,14 @@ std::string EscapeJsonString(const char* raw) {
 }  // namespace
 VulkanValidation::~VulkanValidation() { Close(); }
 bool VulkanValidation::Prepare(PFN_vkGetInstanceProcAddr get,
-                               VkInstanceCreateInfo& info, std::string& error) {
-  const char* mode = std::getenv("LITERT_ARM_VULKAN_ML_VALIDATION");
+                               VkInstanceCreateInfo& info, const char* mode,
+                               const char* directory, std::string& error) {
   if (!mode || !std::strcmp(mode, "off")) return true;
   if (std::strcmp(mode, "core") && std::strcmp(mode, "sync")) {
     error = "Invalid Vulkan validation mode";
     return false;
   }
-  const char* directory =
-      std::getenv("LITERT_ARM_VULKAN_ML_VALIDATION_LOG_DIR");
-  if (!directory) {
+  if (!directory || !*directory) {
     error = "Validation log directory missing";
     return false;
   }
@@ -212,7 +209,7 @@ VkBool32 VulkanValidation::Callback(
     VkDebugUtilsMessageTypeFlagsEXT type,
     const VkDebugUtilsMessengerCallbackDataEXT* data, void* user) {
   auto& self = *static_cast<VulkanValidation*>(user);
-  absl::MutexLock lock(&self.mutex_);
+  absl::MutexLock lock(self.mutex_);
   if (!self.file_ || self.messages_++ >= 4096) {
     self.lost_ = true;
     return VK_FALSE;
@@ -232,7 +229,7 @@ VkBool32 VulkanValidation::Callback(
 void VulkanValidation::Close() {
   if (messenger_ && destroy_) destroy_(instance_, messenger_, nullptr);
   messenger_ = VK_NULL_HANDLE;
-  absl::MutexLock lock(&mutex_);
+  absl::MutexLock lock(mutex_);
   if (file_) {
     std::string line = std::string("{\"event\":\"closed\",\"enabled\":") +
                        (enabled_ ? "true" : "false") +

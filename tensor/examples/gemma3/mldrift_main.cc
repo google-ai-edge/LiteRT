@@ -348,7 +348,6 @@ absl::Status CpuEmbeddingLookup(const std::vector<int32_t>& input_ids,
       auto quant,
       emb_weights.quantization->As<const PerChannelAffineQuantization>());
   const float* scales = quant.scales.data();
-  const auto* zero_points = quant.zero_points.data();
 
   int vocab_size = emb_weights.shape[0];
   int emb_dim = emb_weights.shape[1];
@@ -361,7 +360,8 @@ absl::Status CpuEmbeddingLookup(const std::vector<int32_t>& input_ids,
       id = 0;
     }
     float scale = scales[id];
-    float zp = static_cast<float>(zero_points[id]);
+    LRT_TENSOR_ASSIGN_OR_RETURN(const float zp,
+                                quant.zero_points.At<float>(id));
 
     const int8_t* row_packed = packed_data + id * (emb_dim / 2);
     float* row_out = output_data + t * emb_dim;

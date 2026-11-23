@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_SDPA_TRANSPOSED_KERNEL_H_
 
 #include <cstdint>
+#include <memory>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -23,6 +24,8 @@
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_support.h"  // IWYU pragma: export
 
@@ -61,6 +64,23 @@ absl::Status CreateSdpaTransposedFromIrOp(
     const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
     const ::ml_drift::ir::IrOp& node,
     ::ml_drift::GpuModelBuilder* model_builder);
+
+// Creates an operation that unpacks the packed INT4 K and V caches written by
+// `odml.cache_update` (`src_k` [1, H, S, D / 2] and `src_v` [1, H, D / 2, S]
+// kUint8 BUFFER tensors, two nibbles + 8 per byte) into INT8 caches (`dst_k`
+// [1, H, S, D] and `dst_v` [1, H, D, S] kUint8 BUFFER tensors, values + 128) in
+// the `kOSpatialIOGroupO4I4` / `kOSpatialIOGroupI4O4` layouts read by
+// `FullyConnectedInt8ExternalWeights`. If `params` is set, only the slots below
+// the number of valid slots `params[param_index]`, rounded up to
+// `ConvRuntimeCheckDesc::kChannelsAlignment`, are unpacked, or the first
+// `empty_end_tokens` slots if `params[param_index] <= 0`.
+std::unique_ptr<::ml_drift::GPUOperation> CreateUnpackInt4KvCacheToInt8(
+    const ::ml_drift::TensorDescriptor& src_k,
+    const ::ml_drift::TensorDescriptor& src_v,
+    const ::ml_drift::TensorDescriptor& dst_k,
+    const ::ml_drift::TensorDescriptor& dst_v,
+    const ::ml_drift::TensorDescriptor* params, int param_index,
+    int empty_end_tokens);
 
 }  // namespace litert::ml_drift
 

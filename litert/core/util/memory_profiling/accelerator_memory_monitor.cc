@@ -30,7 +30,7 @@
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 
-namespace litert::internal {
+namespace litert::profiling {
 
 namespace {
 
@@ -133,4 +133,4 @@ std::optional<AcceleratorMemoryUsage> AcceleratorMemoryMonitor::GetPeakUsage()
   return peak_;
 }
 
-}  // namespace litert::internal
+}  // namespace litert::profiling

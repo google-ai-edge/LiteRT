@@ -22,6 +22,7 @@ limitations under the License.
 #include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/base/call_once.h"  // from @com_google_absl
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
@@ -31,6 +32,7 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/conversion.h"
 #include "tensor/backends/common_nnpack/graph.h"
+#include "tensor/backends/xnnpack/dequantize.h"
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/backends/xnnpack/utils.h"
 #include "tensor/datatypes.h"
@@ -151,25 +153,69 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
                  info.quantization->As<PerChannelAffineQuantization>();
              maybe_pcq.ok()) {
     const auto& pcq = maybe_pcq.value();
-    if (pcq.scales.size() == 1) {
+    // The per-channel scales of a channelwise XNNPACK value: `pcq.scales`, or
+    // its single scale repeated for every channel.
+    const auto channel_scales = [&]() -> absl::StatusOr<const float*> {
+      if (pcq.quantized_dimension < 0 ||
+          static_cast<size_t>(pcq.quantized_dimension) >= dims.size()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat(info.name, ": invalid quantized dimension ",
+                         pcq.quantized_dimension));
+      }
+      const size_t channels = dims[pcq.quantized_dimension];
+      if (pcq.scales.size() == 1 && channels != 1) {
+        graph_->dequantized_buffers().push_back(
+            std::vector<float>(channels, pcq.scales[0]));
+        return graph_->dequantized_buffers().back().data();
+      }
+      if (pcq.scales.size() != channels) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            info.name, ": per-channel scale count (", pcq.scales.size(),
+            ") doesn't match the channel dimension size (", channels, ")"));
+      }
+      return pcq.scales.data();
+    };
+    if (info.type == Type::kI2) {
+      LRT_TENSOR_ASSIGN_OR_RETURN(const float* scales, channel_scales());
+      const size_t channels = dims[pcq.quantized_dimension];
+      const float* channelwise_zp_ptr = nullptr;
+      if (!pcq.zero_points.IsSymmetric()) {
+        LRT_TENSOR_ASSIGN_OR_RETURN(std::vector<float> channelwise_zps,
+                                    pcq.zero_points.CopyAs<float>(channels));
+        graph_->dequantized_buffers().push_back(std::move(channelwise_zps));
+        channelwise_zp_ptr = graph_->dequantized_buffers().back().data();
+      }
+      LRT_TENSOR_RETURN_IF_ERROR(
+          xnn_define_channelwise_quantized_tensor_value_v3(
+              sg, GetXnnpackType(value), /*zero_point=*/0, scales, dims.size(),
+              pcq.quantized_dimension, dims.empty() ? nullptr : dims.data(),
+              data_ptr, external_id, value.flags, &value.id,
+              channelwise_zp_ptr))
+          << "Could not define a new channelwise quantized int2 tensor value.";
+    } else if (const absl::StatusOr<int32_t> scalar_zp =
+                   pcq.zero_points.Scalar<int32_t>();
+               pcq.scales.size() == 1 && info.type != Type::kI4 &&
+               scalar_zp.ok()) {
+      // Single integer zero point (or symmetric). Non-integer float zero points
+      // and per-channel zero points are dequantized below.
       LRT_TENSOR_RETURN_IF_ERROR(xnn_define_quantized_tensor_value(
-          sg, GetXnnpackType(value),
-          pcq.zero_points.empty() ? 0 : pcq.zero_points[0], pcq.scales[0],
-          dims.size(), dims.empty() ? nullptr : dims.data(), data_ptr,
-          external_id, value.flags, &value.id))
+          sg, GetXnnpackType(value), *scalar_zp, pcq.scales[0], dims.size(),
+          dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
+          value.flags, &value.id))
           << "Could not define a new quantized tensor value.";
     } else {
-      bool all_zeros = true;
-      for (int64_t zp : pcq.zero_points) {
-        if (zp != 0) {
-          all_zeros = false;
-          break;
+      if (!pcq.zero_points.IsSymmetric()) {
+        // XNNPACK's channelwise quantized values have no zero points, so only
+        // constant weights can be run, by dequantizing them here.
+        if (!info.buffer || is_external) {
+          // Tensors computed by the graph, e.g. by a `Transpose`, are unnamed.
+          return absl::UnimplementedError(absl::StrCat(
+              info.name, info.name.empty() ? "" : ": ",
+              "XNNPACK only supports per-channel zero points of constants"));
         }
-      }
-      if (!all_zeros) {
         LRT_TENSOR_ASSIGN_OR_RETURN(
             std::vector<float> f32_data,
-            DequantizeInt8ConstantTensor(
+            DequantizeConstantTensor(
                 info, absl::MakeSpan(value.data.data(), value.data.size())));
         graph_->dequantized_buffers().push_back(std::move(f32_data));
         data_ptr = graph_->dequantized_buffers().back().data();
@@ -179,21 +225,10 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
             value.flags, &value.id))
             << "Could not define a new tensor value after dequantization.";
       } else {
-        if (pcq.quantized_dimension < 0 ||
-            static_cast<size_t>(pcq.quantized_dimension) >= dims.size() ||
-            pcq.scales.size() < dims[pcq.quantized_dimension]) {
-          return absl::InvalidArgumentError(absl::StrCat(
-              info.name, ": per-channel scale count (", pcq.scales.size(),
-              ") is smaller than the channel dimension size (",
-              pcq.quantized_dimension >= 0 &&
-                      static_cast<size_t>(pcq.quantized_dimension) < dims.size()
-                  ? dims[pcq.quantized_dimension]
-                  : static_cast<size_t>(0),
-              ")"));
-        }
+        LRT_TENSOR_ASSIGN_OR_RETURN(const float* scales, channel_scales());
         LRT_TENSOR_RETURN_IF_ERROR(
             xnn_define_channelwise_quantized_tensor_value_v3(
-                sg, GetXnnpackType(value), /*zero_point=*/0, pcq.scales.data(),
+                sg, GetXnnpackType(value), /*zero_point=*/0, scales,
                 dims.size(), pcq.quantized_dimension,
                 dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
                 value.flags, &value.id, /*channelwise_zero_point=*/nullptr))
@@ -218,9 +253,18 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           info.name, ": blockwise scale count (", bwq.scales.size(),
           ") is smaller than block_count (", expected_block_count, ")"));
     }
+    LRT_TENSOR_RETURN_IF_ERROR(
+        bwq.zero_points.Validate<int32_t>(bwq.scales.size()));
+    if (!bwq.zero_points.IsUniform()) {
+      return absl::UnimplementedError(absl::StrCat(
+          info.name,
+          ": XNNPACK doesn't support blockwise quantization with different "
+          "zero points"));
+    }
+    LRT_TENSOR_ASSIGN_OR_RETURN(const int32_t zero_point,
+                                bwq.zero_points.Scalar<int32_t>());
     graph_->fp16_buffers().emplace_back(bwq.scales.begin(), bwq.scales.end());
     const void* scale_ptr = graph_->fp16_buffers().back().data();
-    int32_t zero_point = bwq.zero_points.empty() ? 0 : bwq.zero_points[0];
     LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
         sg, GetXnnpackType(value), zero_point, scale_ptr, dims.size(),
         bwq.quantized_dimension, bwq.block_size,
@@ -231,6 +275,60 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     return absl::UnimplementedError("Unsupported quantization type.");
   }
   return absl::OkStatus();
+}
+
+absl::StatusOr<uint32_t>
+XnnpackBuildContext::DefinePerTensorQuantizedWeightsAsChannelwise(
+    const graph::Tensor& weights) {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& info,
+                              graph::GetInfo(weights));
+  NnpackValue value;
+  value.info = info;
+  if (value.info.quantization == nullptr) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(info.name, ": missing quantization parameters"));
+  }
+  LRT_TENSOR_ASSIGN_OR_RETURN(
+      const PerChannelAffineQuantization& pcq,
+      value.info.quantization->As<const PerChannelAffineQuantization>());
+  if (pcq.scales.size() != 1 || value.info.shape.empty()) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        info.name, ": expected per-tensor quantized weights with a rank > 0"));
+  }
+  if (value.info.type != Type::kI8) {
+    return absl::InvalidArgumentError(
+        absl::StrCat(info.name, ": expected int8 weights"));
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(
+      pcq.zero_points.Validate<int32_t>(pcq.scales.size()));
+  LRT_TENSOR_ASSIGN_OR_RETURN(const int32_t zero_point,
+                              pcq.zero_points.Scalar<int32_t>());
+  if (value.info.buffer == nullptr) {
+    return absl::UnimplementedError(absl::StrCat(
+        info.name,
+        ": XNNPACK only supports per-tensor quantized constant weights"));
+  }
+
+  if (absl::c_any_of(value.info.shape, [](int32_t v) { return v < 0; })) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        info.name,
+        ": negative dimensions are not supported in constant weights."));
+  }
+  std::vector<size_t> dims(value.info.shape.begin(), value.info.shape.end());
+  value.data = value.info.buffer->Lock();
+  graph_->keep_alive_buffers().push_back(value.info.buffer);
+  graph_->dequantized_buffers().emplace_back(dims[0], pcq.scales[0]);
+  const float* scales = graph_->dequantized_buffers().back().data();
+  LRT_TENSOR_RETURN_IF_ERROR(xnn_define_channelwise_quantized_tensor_value_v3(
+      subgraph(), xnn_datatype_qcint8, zero_point, scales, dims.size(),
+      /*channel_dim=*/0, dims.data(), value.data.data(), XNN_INVALID_VALUE_ID,
+      /*flags=*/0, &value.id, /*channelwise_zero_point=*/nullptr))
+      << "Could not define per-tensor quantized weights as channelwise "
+         "quantized weights.";
+  // The value isn't in the tensor index: the other consumers of `weights` get
+  // the per-tensor quantized value.
+  graph_->mutable_values().push_back(std::move(value));
+  return graph_->mutable_values().back().id;
 }
 
 absl::Status XnnpackBuildContext::DefineConstantTensor(

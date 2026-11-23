@@ -209,9 +209,48 @@ cc_library(
 )
 
 cc_library(
+    name = "quant_linear_plugin",
+    srcs = ["quant_linear_plugin.cc"],
+    hdrs = ["quant_linear_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
     name = "gated_delta_plugin",
     srcs = ["gated_delta_plugin.cc"],
     hdrs = ["gated_delta_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
+    name = "hyper_connection_plugin",
+    srcs = ["hyper_connection_plugin.cc"],
+    hdrs = ["hyper_connection_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
+    name = "ple_tail_plugin",
+    srcs = ["ple_tail_plugin.cc"],
+    hdrs = ["ple_tail_plugin.h"],
     tags = ["manual"],
     deps = [
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
@@ -232,6 +271,99 @@ cc_library(
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_test(
+    name = "moe_plugin_test",
+    srcs = ["moe_plugin_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":moe_plugin",
+        "//litert/vendors/nvidia:windows_compat",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_library(
+    name = "quant_attention_plugin",
+    srcs = ["quant_attention_plugin.cc"],
+    hdrs = ["quant_attention_plugin.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_library(
+    name = "quant_attention_test_graph",
+    testonly = True,
+    hdrs = ["quant_attention_test_graph.h"],
+    tags = ["manual"],
+    deps = [
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/core/model",
+        "//tflite/schema:schema_fbs",
+        "@flatbuffers",
+    ],
+)
+
+cc_test(
+    name = "quant_attention_graph_test",
+    srcs = ["quant_attention_graph_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quant_attention_test_graph",
+        ":tensorrt_graph_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:quant_attention_reference",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
     ],
 )
 
@@ -258,6 +390,7 @@ cc_test(
     ],
     deps = [
         ":decode_attention_plugin",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "@com_google_googletest//:gtest_main",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_stub",
@@ -334,16 +467,28 @@ cc_test(
 
 cc_library(
     name = "tensorrt_graph_builder",
-    srcs = ["tensorrt_graph_builder.cc"],
-    hdrs = ["tensorrt_graph_builder.h"],
+    srcs = [
+        "slot_network.cc",
+        "tensorrt_graph_builder.cc",
+    ],
+    hdrs = [
+        "slot_network.h",
+        "tensorrt_graph_builder.h",
+    ],
     tags = ["manual"],
     deps = [
         ":cache_update_plugin",
         ":decode_attention_plugin",
         ":gated_delta_plugin",
+        ":hyper_connection_plugin",
         ":int8_cache_write_plugin",
         ":moe_plugin",
+        ":ple_tail_plugin",
         ":qkv_norm_rope_plugin",
+        ":qsa_attention_plugin",
+        ":quant_attention_plugin",
+        ":quant_linear_plugin",
+        ":slot_plugins",
         ":subbyte_gemv_plugin",
         ":weight_store_builder",
         "//litert/c:litert_common",
@@ -361,7 +506,10 @@ cc_library(
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/experimental/megakernel:megakernel_lowering",
+        "//litert/vendors/nvidia/experimental/megakernel:megakernel_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:qsa_kernels",
         "@com_google_absl//absl/types:span",
         "@local_cuda//:cuda_headers",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",
@@ -394,6 +542,50 @@ cc_test(
     srcs = ["tensorrt_graph_builder_test.cc"],
     env = {
         "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS": "0",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":moe_plugin",
+        ":tensorrt_graph_builder",
+        ":weight_holder_calibration",
+        ":weight_store_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:cache_layout",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia:windows_compat",
+        "//tflite/schema:schema_fbs",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
+    name = "quant_linear_lowering_test",
+    srcs = ["quant_linear_lowering_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS": "0",
         "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
     },
     tags = [
@@ -409,16 +601,15 @@ cc_test(
     }),
     deps = [
         ":tensorrt_graph_builder",
-        ":weight_holder_calibration",
-        ":weight_store_builder",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/cc:litert_buffer_ref",
         "//litert/compiler/cc:litert_model",
         "//litert/core/model",
-        "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:quant_linear_reference",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
@@ -443,6 +634,7 @@ cc_test(
     env = {
         "LITERT_NVIDIA_GEMM_INT8_REAL_ROWS": "0",
         "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_PREDEQUANTIZE_FC_WEIGHTS": "0",
         "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
     },
     local_defines = ["LITERT_NVIDIA_TEST_REAL_ROWS_OFF"],
@@ -458,6 +650,7 @@ cc_test(
         "//conditions:default": ["@platforms//:incompatible"],
     }),
     deps = [
+        ":moe_plugin",
         ":tensorrt_graph_builder",
         ":weight_holder_calibration",
         ":weight_store_builder",
@@ -469,6 +662,7 @@ cc_test(
         "//litert/core/model",
         "//litert/vendors/nvidia:cache_layout",
         "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia:windows_compat",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
         "@flatbuffers",
@@ -510,6 +704,7 @@ cc_test(
         "//litert/vendors/c:litert_compiler_plugin_api",
         "//litert/vendors/nvidia:bytecode",
         "//litert/vendors/nvidia:cache_layout",
+        "//litert/vendors/nvidia:windows_compat",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest_main",
     ],
@@ -569,9 +764,154 @@ litert_dynamic_lib(
         "//litert/vendors/nvidia:cuda_vmm",
         "//litert/vendors/nvidia:memory_profile",
         "//litert/vendors/nvidia:windows_compat",
+        "//litert/vendors/nvidia/experimental/megakernel:megakernel_lowering",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/strings:string_view",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_library(
+    name = "qsa_attention_plugin",
+    srcs = [
+        "general_attention_plugin.cc",
+        "qsa_attention_plugin.cc",
+    ],
+    hdrs = [
+        "general_attention_plugin.h",
+        "plugin_fields.h",
+        "qsa_attention_plugin.h",
+    ],
+    tags = ["manual"],
+    deps = [
+        "//litert/vendors/nvidia/trtllm:qsa_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+)
+
+cc_test(
+    name = "qsa_graph_test",
+    srcs = ["qsa_graph_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quant_attention_test_graph",
+        ":tensorrt_graph_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:qsa_reference",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
+    name = "general_attention_graph_test",
+    srcs = ["general_attention_graph_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quant_attention_test_graph",
+        ":tensorrt_graph_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:qsa_reference",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+# The plugin layers of a batched decode step that serve every sequence slot
+# in one launch (the "slots twins" of the single-sequence step's plugins).
+cc_library(
+    name = "slot_plugins",
+    srcs = ["slot_plugins.cc"],
+    hdrs = ["slot_plugins.h"],
+    tags = ["manual"],
+    deps = [
+        ":moe_plugin",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:slot_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "slot_plugins_test",
+    srcs = ["slot_plugins_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":decode_attention_plugin",
+        ":int8_cache_write_plugin",
+        ":qkv_norm_rope_plugin",
+        ":slot_plugins",
+        ":subbyte_gemv_plugin",  # TensorRT-RTX addPluginV3 compatibility header.
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:slot_test_util",
+        "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
         "@local_tensorrt_rtx//:tensorrt_rtx_headers",

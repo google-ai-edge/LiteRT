@@ -16,7 +16,7 @@ load("@com_google_protobuf//bazel:cc_proto_library.bzl", "cc_proto_library")
 load("@com_google_protobuf//bazel:proto_library.bzl", "proto_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("@rules_shell//shell:sh_test.bzl", "sh_test")
-load("//litert/build_common:litert_build_defs.bzl", "litert_dynamic_lib")
+load("//litert/build_common:litert_build_defs.bzl", "if_oss", "litert_dynamic_lib")
 load("//litert/build_common:special_rule.bzl", "friends_of_google_tensor_compiler_plugin")
 
 package(
@@ -37,6 +37,19 @@ litert_dynamic_lib(
         "-fdata-sections",
     ],
     export_litert_only = True,
+    linkopts = if_oss(select({
+        "//litert:linux": [
+            # Statically link the GNU C++ and unwind runtimes in OSS Linux
+            # builds (@rules_ml_toolchain passes -nostdlib/-nodefaultlibs and
+            # appends -lstdc++/-lgcc_s) so the prebuilt plugin loads in minimal
+            # containers such as GRTE that omit libstdc++.so.6 and libgcc_s.so.1.
+            "-Wl,-l:libstdc++.a",
+            "-Wl,-l:libgcc_eh.a",
+            "-Wl,-l:libgcc.a",
+            "-Wl,--as-needed",
+        ],
+        "//conditions:default": [],
+    })),
     linkstatic = 1,
     shared_lib_name = "google_tensor_compiler_plugin_so",
     so_name = "libLiteRtCompilerPlugin_google_tensor.so",

@@ -57,6 +57,7 @@
 #include "litert/vendors/qualcomm/compiler/transformations/attention_chunk_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/entry_embedding_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/gqa_transformation.h"
+#include "litert/vendors/qualcomm/compiler/transformations/fold_const_dequantize.h"
 #include "litert/vendors/qualcomm/compiler/transformations/legalize_int32_ops_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/mlp_quant_transformation.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
@@ -798,6 +799,7 @@ struct GraphTransformFilter {
   bool attention_chunk = false;
   bool rope = false;
   bool gqa = false;
+  bool fold_const_dequantize = false;
 
   static GraphTransformFilter FromOptions(absl::string_view graph_transform) {
     GraphTransformFilter filter;
@@ -842,6 +844,8 @@ struct GraphTransformFilter {
         filter.rope = enable;
       } else if (token == "gqa") {
         filter.gqa = enable;
+      } else if (token == "fold_const_dequantize") {
+        filter.fold_const_dequantize = enable;
       }
     }
     return filter;
@@ -925,6 +929,13 @@ LiteRtStatus LiteRtCompilerPluginRegisterAllTransformations(
         &OrphanCleanupTransformation,
         "OrphanCleanupTransformation",
         80,
+    });
+  }
+  if (filter.fold_const_dequantize) {
+    compiler_plugin->Transformations().push_back({
+        &FoldConstDequantizeTransformation,
+        "FoldConstDequantizeTransformation",
+        100,
     });
   }
 

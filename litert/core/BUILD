@@ -32,11 +32,13 @@ cc_library(
     hdrs = [
         "options.h",
         "//litert/c:litert_custom_op_kernel.h",
+        "//litert/c:litert_op_resolver.h",
         "//litert/c:litert_options.h",
     ],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_layout",
+        "//litert/c:litert_op_resolver",
         "//litert/cc/internal:scoped_weight_source",
     ],
 )

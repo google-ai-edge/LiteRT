@@ -806,6 +806,11 @@ TEST(IsSupportedFlashSdpaTest, AssemblesCrossBackendAndVendorCode) {
   ::ml_drift::GpuInfo webgpu_info;
   ::ml_drift::GetGpuInfoFromDeviceDescription(
       "NVIDIA GeForce RTX 4090", ::ml_drift::GpuApi::kWebGpu, &webgpu_info);
+  // `GpuInfo` defaults to the minimum buffer limits that WebGPU guarantees,
+  // which are too small for the 388 MiB FP32 mask. Desktop GPUs allow larger
+  // buffers, so use 1 GiB limits.
+  webgpu_info.webgpu_info.max_buffer_size = uint64_t{1} << 30;
+  webgpu_info.webgpu_info.max_storage_buffer_binding_size = uint64_t{1} << 30;
   for (auto prec : {::ml_drift::CalculationsPrecision::kF32,
                     ::ml_drift::CalculationsPrecision::kF16}) {
     for (auto mask :

@@ -235,15 +235,22 @@ LiteRtStatus UnpackOp(FlatbufferContext& context, LiteRtSubgraphT& parent,
 
   // OPTIONS
 
-  if (tfl_op.large_custom_options_size() != 0) {
-    // TODO: b/365299994 - Support large custom options.
-    LITERT_LOG(LITERT_WARNING,
-               "Large custom options not yet supported in litert::Model.");
-  }
-
   const auto* custom_opts = tfl_op.custom_options();
   if (custom_opts) {
     litert_op.SetCustomOptions(custom_opts->data(), custom_opts->size());
+  } else if (tfl_op.large_custom_options_offset() > 1) {
+    const uint64_t offset = tfl_op.large_custom_options_offset();
+    const uint64_t size = tfl_op.large_custom_options_size();
+    const size_t alloc_size = context.AllocSize();
+    if (offset > alloc_size || size > alloc_size - offset) {
+      LITERT_LOG(LITERT_ERROR,
+                 "Custom option offset out of bounds: offset=%lu, size=%lu, "
+                 "alloc_size=%zu",
+                 static_cast<unsigned long>(offset),
+                 static_cast<unsigned long>(size), alloc_size);
+      return kLiteRtStatusErrorInvalidFlatbuffer;
+    }
+    litert_op.SetCustomOptions(context.AllocBase() + offset, size);
   }
 
   // TODO figure out how to parse builtins with the packed flatbuffer api.

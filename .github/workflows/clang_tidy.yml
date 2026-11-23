@@ -78,6 +78,7 @@ jobs:
           python3 <<'PY'
           import json
           import os
+          import re
           import subprocess
           from pathlib import Path
 
@@ -101,35 +102,61 @@ jobs:
           header_suffixes = {".h", ".inc"}
           all_suffixes = source_suffixes | header_suffixes
           changed = []
+          # Added or modified line ranges of each changed C/C++ file in the PR.
+          line_ranges = {}
           event_name = os.environ["GITHUB_EVENT_NAME"]
           if event_name == "pull_request":
-            event = json.loads(Path(os.environ["GITHUB_EVENT_PATH"]).read_text())
-            base_sha = event["pull_request"]["base"]["sha"]
-            head_sha = event["pull_request"]["head"]["sha"]
             subprocess.run(
                 ["git", "config", "--global", "--add", "safe.directory", str(repo)],
                 check=True,
             )
+            # The checkout is the PR merged into main, and HEAD^1 is main, so
+            # this diff is exactly the PR's changes, with line numbers that
+            # match the checked-out files.
             diff = subprocess.check_output(
                 [
                     "git",
                     "diff",
-                    "--name-only",
+                    "--unified=0",
+                    "--no-color",
                     "--diff-filter=ACMRT",
-                    base_sha,
-                    head_sha,
+                    "HEAD^1",
+                    "HEAD",
                 ],
                 text=True,
             )
-            changed = [
-                path for path in diff.splitlines()
-                if Path(path).suffix in all_suffixes
-            ]
+            path = None
+            in_header = False
+            for line in diff.splitlines():
+              if line.startswith("diff --git "):
+                path = None
+                in_header = True
+              elif in_header and line.startswith("+++ "):
+                # Only the first "+++ " line after "diff --git" names the file;
+                # later ones are added lines that start with "++".
+                in_header = False
+                path = line[6:] if line.startswith("+++ b/") else None
+                if path and Path(path).suffix not in all_suffixes:
+                  path = None
+              elif path and line.startswith("@@"):
+                match = re.match(r"@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@", line)
+                if match:
+                  start = int(match.group(1))
+                  count = int(match.group(2) or 1)
+                  if count > 0:
+                    line_ranges.setdefault(path, []).append(
+                        [start, start + count - 1])
+            # Only check files with added or modified lines; files that only
+            # lose lines have nothing to report.
+            changed = list(line_ranges)
           else:
             print(f"No pull request file list for {event_name}; running smoke source only.")
 
           selected = []
           missing = []
+          # Changed files that clang-tidy checks, directly or through the
+          # translation units that include them.
+          checked = []
           for source in changed:
             if not source.startswith("litert/"):
               continue
@@ -137,6 +164,7 @@ jobs:
               continue
             if source in compilable:
               selected.append(source)
+              checked.append(source)
             elif Path(source).suffix in header_suffixes:
               # For headers and .inc files, find compilable translation units that include them.
               including_sources = []
@@ -155,6 +183,7 @@ jobs:
               if including_sources:
                 print(f"Found translation units including {source}: {including_sources}")
                 selected.extend(including_sources)
+                checked.append(source)
               else:
                 missing.append(source)
             else:
@@ -179,13 +208,33 @@ jobs:
           print("Selected clang-tidy files:")
           for source in selected:
             print(f"  {source}")
+
+          # Only report diagnostics on lines the PR adds or modifies in the
+          # checked files, so that pre-existing findings in main do not block
+          # unrelated PRs. Limitations: clang-analyzer checks are
+          # path-sensitive, so a bug caused by a changed line (e.g. a removed
+          # null check) but reported at an unchanged line is suppressed, and
+          # deletion-only changes are not checked. No filter is needed when only
+          # the (empty) smoke source is checked.
+          line_filter = [
+              {"name": path, "lines": line_ranges[path]} for path in checked
+          ]
+          if line_filter:
+            line_filter_json = json.dumps(line_filter, separators=(",", ":"))
+            Path("/tmp/clang_tidy_line_filter.json").write_text(line_filter_json)
+            print(f"clang-tidy line filter: {line_filter_json}")
           PY
 
       - name: Run clang-tidy
         run: |
+          line_filter_args=()
+          if [[ -s /tmp/clang_tidy_line_filter.json ]]; then
+            line_filter_args=(--line-filter="$(cat /tmp/clang_tidy_line_filter.json)")
+          fi
           xargs \
             clang-tidy-18 \
             -p "${CMAKE_BUILD_DIR}" \
             --checks="${CLANG_TIDY_CHECKS}" \
             --header-filter='.*litert/[^.].*' \
+            "${line_filter_args[@]}" \
             < /tmp/clang_tidy_files.txt

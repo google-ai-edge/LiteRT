@@ -64,6 +64,14 @@ CUDA repository), the CLI in LiteRT-LM's. LiteRT-LM's `.bazelrc` builds on Windo
 and runfiles trees, which needs Developer Mode and `LongPathsEnabled` on the host (a build tool's
 path exceeds 260 characters); a host without them passes `--nowindows_enable_symlinks` and
 `--noenable_runfiles`, which works only with rules_python's manifest-only bootstrap patched in.
+The `litert_lm` step passes `--define=litert_webgpu_dawn_dynamic_loader=false`: LiteRT's Dawn
+rules link a dynamic loader by default, and LiteRT-LM's workspace also links its prebuilt Dawn
+into the CLI, so on Windows the linker finds every `wgpu` symbol twice (LNK2005) without it.
+The host needs a `python3` on PATH: LiteRT's genrule
+`ml_drift_delegate/delegate/serialization_weight_cache:generate_build_identifier` runs it from Git
+Bash, so a Python that installs only `python.exe` needs a shim (a shell script that execs
+`python.exe "$@"`) outside the directories Bazel reads as inputs (in the CUDA toolkit's `bin` it
+reruns the CUDA kernels' build).
 
 Host preparation stays outside the runners: on the 5080 the owner's `benchmark` shell
 preparation (High Performance, ASUS Profile 1, the cleanup allowlist) before a formal batch;
@@ -137,8 +145,10 @@ cell.
 17,408; 30k = 30,720 / 256 / 31,744; 128k = 128,001 / 128 / 130,048; 256k = 256,001 / 128 /
 262,144. The 12B and Qwen 3.8 27B add 128k; the 26B's 128k and 256k are real-text runs with
 context expansion of the 32k export and a 5,120 / 10,240 MiB device reserve for the experts.
-llama-bench sizes its own capacity per phase (prompt + generation + depth, rounded up), so
-the memory comparison includes different KV capacities.
+MTP is measured at 128k and 256k only where the platform's memory holds it (`platforms.json`'s
+`long_context_mtp`: the RTX Spark, not the 16 GB RTX 5080). llama-bench sizes its own
+capacity per phase (prompt + generation + depth, rounded up), so the memory comparison
+includes different KV capacities.
 
 **Decode and prefill speed** are the CLI's own rates (`Decode Speed`, `Prefill Speed`) over the
 measured iterations: 8 iterations with 2 discarded at 1k, 4 with 1 discarded above, because
@@ -151,7 +161,12 @@ against 5,865 after it). The speedup is TensorRT-RTX over llama.cpp.
 **MTP** rows use real text (the prompt files of LiteRT's benchmark, about 1k, 8k, 16k, 30k and
 128k tokens of documentation ending in a question) with stop tokens honored: three
 conversations with one discarded for plain decoding, four with two discarded under speculative
-decoding (the decode engine's capture falls in the second conversation). Acceptance is
+decoding (the decode engine's capture falls in the second conversation). At the 26B's 128k and
+256k (the 256k prompt is SKILL.md's, built from the 128k one), on a `long_context_mtp`
+platform, TensorRT-RTX's plain figure is the long-context run of the decode table (four
+conversations, one discarded) and its MTP run adds the drafter to that run's context
+expansion and device reserve; llama.cpp's server runs both as at the other workloads. A model
+file without an MTP drafter (the 26B's vision export) has no MTP cells. Acceptance is
 accepted drafted tokens over drafted tokens; it measures agreement, not correctness. E2B and
 E4B sample greedily; 12B, 26B and Qwen use top-k 64, top-p 0.95, temperature 1.0 (their
 files' policy); llama-server's completions use the same sampler with seeds 1, 2, ... in the
@@ -223,6 +238,25 @@ pass@1, temperature 0.6 with top-k 20 / top-p 0.95 and a fixed seed per question
 32,768 output tokens), scoring against the dataset's answer key. A 32k reasoning answer takes
 about 40 minutes at 13 tokens/s; LiteRT-LM's default 10-minute session wait must be raised for
 such runs.
+
+**One process, several engines** (Linux). `EVAL_ONE_PROCESS=1` (`run.sh`) or `--one-process`
+(`gpqa/run.tool`) loads the model once and runs every problem in one process
+(`eval/one_process.sh`, `eval/engine_runner.tool`, LiteRT-LM's C API through its Python package
+named by `LITERT_LM_PYTHON`), each problem in a fresh conversation configured as the CLI's, the
+answers the CLI's. `EVAL_ENGINES=N` / `--engines N` decodes N problems side by side, an engine
+each, the weights held once; `EVAL_BATCH=1` (or `--env LITERT_NVIDIA_DISPATCH_SLOTS=N`) runs
+their concurrent decode and MTP verify steps as batched launches, each answer the same as alone.
+`EVAL_ORDER_FROM` / `--order-from` takes the problems longest first by an earlier run's lengths,
+so that several engines do not end on one long answer.
+
+The Windows path needs, and does not have yet: (1) LiteRT-LM's C API library built as a DLL with
+MSVC (at LiteRT-LM 42531a01 `c/engine.cc` puts an `#if` inside `LITERT_LM_C_ASSIGN_OR_RETURN`'s
+arguments, which MSVC rejects; a 12-line fix hoists the `ScopedFile` into a variable first, not
+applied, as LiteRT-LM is not changed here), and the `litert_lm` Python package around it;
+(2) the shell steps of `one_process.sh` (it fills in the model, the dispatch library directory
+and the cache pool of the job list, sets the pool's environment and runs `engine_runner.tool`) on
+`windows/common.tool`'s paths instead of `env.sh`'s, and `run.sh`'s one-process branch without
+GNU `time`; `gpqa/run.tool --one-process` refuses to run on Windows until then.
 
 ## The merge into LiteRT
 

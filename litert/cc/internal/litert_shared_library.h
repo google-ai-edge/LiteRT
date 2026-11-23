@@ -158,6 +158,9 @@ inline void* DlOpen(const char* filename, int flags) {
 }
 
 inline void DlClose(void* handle) {
+  if (handle == nullptr) {
+    return;
+  }
 #if LITERT_WINDOWS_OS
   shared_library_windows::DlClose(handle);
 #else

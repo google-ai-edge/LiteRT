@@ -38,12 +38,17 @@ struct MoeExpertsAttributes {
     kInt8,
     kInt4,
   };
+  enum class Activation {
+    kGeluTanh,
+    kSilu,
+  };
 
   int num_experts = 0;
   int num_active_experts = 0;
   int model_dim = 0;
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
+  Activation activation = Activation::kGeluTanh;
   // Per-expert (blockwise) weight scales, shaped
   // [out_channels, experts, 1, blocks_per_row]. When a scale tensor is shared
   // across subgraphs it is converted to the GPU scale layout once by

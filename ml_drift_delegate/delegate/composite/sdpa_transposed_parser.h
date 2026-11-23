@@ -22,7 +22,6 @@
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
-#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
 #include "ml_drift_delegate/delegate/composite/runtime_batched_matmul_parser.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
@@ -47,45 +46,59 @@ struct SdpaTransposedAttributes {
   // SDPA or `is_causal` attribute is set). When false and `mask` is absent,
   // attention is full (non-causal) over `[0, active_tokens)`.
   bool is_causal = false;
-  // Dequantization scales of INT8 symmetric per-tensor quantized K and V
-  // caches, broadcast to one entry per output channel of the matmul that reads
-  // the cache (`scale_k`: one per cache slot, `scale_v`: one per head_dim
-  // element). Set, together with kUint8 `bmm1_weights` / `bmm2_weights`
-  // descriptors and `from_cache_update`, only when K and V are int8; absent
-  // for float caches. The cache bytes must be in the packed layout and
-  // encoding written by the GPU `AddValuesToCache` kernel, i.e. `int8 + 128`
-  // (offset binary), which `FullyConnectedInt8ExternalWeights` decodes as
-  // `(byte - 128) * scale` when no zero-point tensor is given.
-  std::optional<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>
-      scale_k;
-  std::optional<
-      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>>
-      scale_v;
+  // Element type of quantized K/V caches written by `odml.cache_update`: kInt8
+  // or packed kInt4. kUnknown for float caches.
+  ::ml_drift::DataType kv_cache_dtype = ::ml_drift::DataType::kUnknown;
+  // Dequantization scale of a symmetric per-tensor INT8 query (`in[0]`) when
+  // the query arrives at the GPU graph as raw `DataType::kInt8` (e.g., an
+  // external buffer input); absent when the query is float or already
+  // dequantized by ML Drift's tensor reader.
+  std::optional<float> scale_q;
+  // Dequantization scales of the symmetric per-tensor quantized K and V caches.
+  // Set, together with kUint8 `bmm1_weights` / `bmm2_weights` descriptors, a
+  // quantized `kv_cache_dtype`, and `from_cache_update`, only when K and V are
+  // quantized; absent for float caches.
+  std::optional<float> scale_k;
+  std::optional<float> scale_v;
 };
 
 // Returns true if `tensor` is an INT8 tensor with affine quantization.
 bool IsInt8Tensor(const TfLiteTensor& tensor);
 
+// Returns true if `tensor` is an INT4 tensor with affine quantization.
+bool IsInt4Tensor(const TfLiteTensor& tensor);
+
+// Returns the per-tensor scale of an affine quantized `tensor`.
+float GetAffineTensorScale(const TfLiteTensor& tensor);
+
+// Checks the query (input 0) and output (output 0) types of an
+// `odml.sdpa_transposed` node: query must be float or symmetric per-tensor
+// INT8, and output must be float. An INT8 query must be read by this node only,
+// since a query entering the GPU partition directly is retagged to raw INT8 in
+// place for all of its GPU consumers.
+absl::Status CheckSdpaTransposedQueryAndOutputTypes(
+    const TfLiteContext* context, const TfLiteNode* tflite_node);
+
 // Checks the K (input 1) and V (input 2) caches of an `odml.sdpa_transposed`
-// node: either both are float, or both are INT8 with symmetric per-tensor
-// quantization. Returns an Unavailable error otherwise so that the node is left
-// to the CPU decomposition.
+// node: both must have matching types and be float, symmetric per-tensor INT8,
+// or symmetric per-tensor INT4 (4D with head_dim % 8 == 0 and
+// cache_size % 4 == 0). Quantized caches must have batch size 1, matching K and
+// V heads, and be graph inputs or `odml.cache_update` outputs, i.e. hold the
+// packed layout written by `odml.cache_update`. Returns an Unavailable error
+// otherwise so that the node is left to the CPU decomposition.
 absl::Status CheckSdpaTransposedKvCacheTypes(const TfLiteContext* context,
                                              const TfLiteNode* tflite_node);
 
-// Fills the INT8 KV cache fields of `attr` for int8 `k_tensor` / `v_tensor`:
-// kUint8 external-weights descriptors of both matmuls and the broadcast
-// `scale_k` / `scale_v` tensors. Callers must also set `from_cache_update`, as
-// the int8 cache bytes are only meaningful in the layout written by
-// `odml.cache_update`. `k_shape` / `v_shape` are the BHWC shapes the kernel
-// consumes (after merging the model batch). The scales are taken from
-// `cache_update_attr` when the caches are produced by an `odml.cache_update`
-// node of the same graph (these are the scales the bytes were quantized with)
-// and from the tensors' quantization parameters otherwise.
-void SetSdpaTransposedInt8KvCacheWeights(
+// Fills the quantized KV cache fields of `attr` for INT8 or INT4 `k_tensor` /
+// `v_tensor` (`kv_cache_dtype` kInt8 or kInt4): `kv_cache_dtype`, kUint8
+// external-weights descriptors of both matmuls (over the logical unpacked cache
+// shapes), and `scale_k` / `scale_v`. `k_shape` / `v_shape` are the BHWC shapes
+// in the graph after merging the model batch (for kInt4, their head_dim axis is
+// already packed by half via `PackInt4KvCacheShape`).
+void SetSdpaTransposedQuantizedKvCacheWeights(
     const TfLiteTensor& k_tensor, const TfLiteTensor& v_tensor,
     const ::ml_drift::BHWC& k_shape, const ::ml_drift::BHWC& v_shape,
+    ::ml_drift::DataType kv_cache_dtype,
     const AddValuesToCacheAttributes* cache_update_attr,
     SdpaTransposedAttributes& attr);
 

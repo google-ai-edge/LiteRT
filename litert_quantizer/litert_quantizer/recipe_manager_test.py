@@ -1000,6 +1000,43 @@ class ConfiguratorTest(parameterized.TestCase):
     )
     self.assertTrue(self._recipe_manager.need_calibration())
 
+  def test_need_histogram_false_for_min_max_and_weight_only(self):
+    self._recipe_manager.add_static_config(
+        regex='.*/Dense_1/.*',
+        operation_name=_TFLOpName.FULLY_CONNECTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': 'min_max'},
+    )
+    self._recipe_manager.add_quantization_config(
+        regex='.*/Dense_2/.*',
+        operation_name=_TFLOpName.CONV_2D,
+        algorithm_key=_AlgorithmName.MIN_MAX_UNIFORM_QUANT,
+        op_config=qtyping.OpQuantizationConfig(
+            weight_tensor_config=_TensorQuantConfig(num_bits=8),
+            compute_precision=_ComputePrecision.FLOAT,  # WEIGHT_ONLY.
+            explicit_dequantize=True,
+        ),
+    )
+    self.assertFalse(self._recipe_manager.need_histogram())
+
+  @parameterized.parameters('histogram_mse', 'histogram_percentile')
+  def test_need_histogram_true(self, range_method):
+    self._recipe_manager.add_static_config(
+        regex='.*/Dense_1/.*',
+        operation_name=_TFLOpName.FULLY_CONNECTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+    )
+    self._recipe_manager.add_static_config(
+        regex='.*/Dense_2/.*',
+        operation_name=_TFLOpName.FULLY_CONNECTED,
+        activation_num_bits=8,
+        weight_num_bits=8,
+        activation_algorithm_params={'range_method': range_method},
+    )
+    self.assertTrue(self._recipe_manager.need_histogram())
+
   def test_get_hadamard_with_max_size(self):
     self._recipe_manager.add_quantization_config(
         regex='.*/Dense/.*',

@@ -33,8 +33,12 @@ class SingleOpInterpreterBuilder {
 
   void AddInput(TfLiteType type, const std::vector<int>& shape);
   void AddInputWithId(int tensor_id);
+  // Stores a non-owning pointer to `data.data()`; `data` must outlive the
+  // built `tflite::Interpreter`.
   void AddConstInput(TfLiteType type, const std::vector<int>& shape,
                      const std::vector<uint8_t>& data);
+  void AddConstInput(TfLiteType type, const std::vector<int>& shape,
+                     std::vector<uint8_t>&& data) = delete;
   void AddOutput(TfLiteType type, const std::vector<int>& shape);
 
   // Takes ownership of params, which must be allocated with malloc/calloc.

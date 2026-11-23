@@ -12,10 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +26,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -40,6 +43,7 @@
 #include "litert/vendors/c/litert_dispatch_api.h"
 #include "litert/vendors/nvidia/bytecode.h"
 #include "litert/vendors/nvidia/cache_layout.h"
+#include "litert/vendors/nvidia/dispatch/token_table_c_api.h"
 #include "NvInfer.h"
 
 namespace litert::nvidia {
@@ -170,6 +174,10 @@ class AotEngineResidencyTest : public ::testing::Test {
     }
     if (device_) {
       EXPECT_EQ(interface_->device_context_destroy(device_), kLiteRtStatusOk);
+    }
+    if (initialized_) {
+      EXPECT_EQ(interface_->initialize(nullptr, nullptr, nullptr),
+                kLiteRtStatusOk);
     }
     if (output_.device_ptr) {
       cudaFree(output_.device_ptr);
@@ -354,6 +362,71 @@ class AotEngineResidencyTest : public ::testing::Test {
     for (int i = 0; i < kElements; ++i) {
       EXPECT_FLOAT_EQ(output[i], input[i] + bias);
     }
+  }
+
+  // The plain plan "a" as a decode step that feeds itself (bytecode.h,
+  // TensorRtStepFeed) from a token table [kElements, dim] the runtime
+  // registers: its input stands for the embeddings, its output for the
+  // logits.
+  Expected<std::vector<uint8_t>> BuildStepBytecode(uint32_t dim) {
+    auto plain = BuildBytecode("a", 1.0f, false);
+    if (!plain) {
+      return plain.Error();
+    }
+    auto parsed = ParseTensorRtBytecode(plain->data(), plain->size(), "a");
+    if (!parsed) {
+      return parsed.Error();
+    }
+    TensorRtStepFeed feed;
+    feed.embeddings_port = 0;
+    feed.logits_output_port = 0;
+    feed.vocab = kElements;
+    feed.dim = dim;
+    feed.table_offset = kTensorRtStepFeedNoTable;
+    TensorRtBundleEntry entry{"a", parsed->input_names, parsed->output_names,
+                              parsed->engine_data, parsed->engine_size};
+    entry.step_feed = &feed;
+    return PackTensorRtSharedWeightShard({}, entry);
+  }
+
+  // An eager context of the step with a token table [kElements, dim] of
+  // `table` registered for it, as a runtime registers its model's: on the
+  // thread that created the device context, after the step's context.
+  void CreateStepAwaitingTable(uint32_t dim, const void* table,
+                               const std::vector<float>& scales) {
+    runtime_.get_environment_options = [](LiteRtEnvironment,
+                                          LiteRtEnvironmentOptions*) {
+      return kLiteRtStatusErrorNotFound;
+    };
+    ASSERT_EQ(interface_->initialize(&runtime_, nullptr, nullptr),
+              kLiteRtStatusOk);
+    initialized_ = true;
+    CreateDevice();
+    ASSERT_FALSE(HasFatalFailure());
+    auto bytes = BuildStepBytecode(dim);
+    ASSERT_TRUE(bytes) << bytes.Error().Message();
+    ASSERT_EQ(CreateContext(*bytes, "a", &a_), kLiteRtStatusOk);
+    Bind(a_);
+    ASSERT_FALSE(HasFatalFailure());
+    LiteRtDispatchNvidiaTokenTable record{};
+    record.vocab = kElements;
+    record.dim = dim;
+    record.bits = 4;
+    record.table = table;
+    record.table_bytes = static_cast<size_t>(kElements) * dim / 2;
+    record.table_fd = -1;
+    record.scales = scales.data();
+    record.scales_bytes = scales.size() * sizeof(float);
+    record.multiplier = 1.0f;
+    ASSERT_EQ(LiteRtDispatchNvidiaRegisterTokenTable(&record), kLiteRtStatusOk);
+  }
+
+  // The device memory in use beyond `free_before` free bytes.
+  int64_t DeviceBytesSince(size_t free_before) {
+    size_t free_bytes = 0;
+    size_t total = 0;
+    EXPECT_EQ(cudaMemGetInfo(&free_bytes, &total), cudaSuccess);
+    return static_cast<int64_t>(free_before) - static_cast<int64_t>(free_bytes);
   }
 
   void PreparePair() {
@@ -594,6 +667,9 @@ class AotEngineResidencyTest : public ::testing::Test {
   LiteRtTensorBufferHandle input_handle_ = 0, output_handle_ = 0;
   LiteRtDispatchInvocationContext a_ = nullptr, b_ = nullptr;
   std::vector<LiteRtDispatchInvocationContext> contexts_;
+  // The test initialized the dispatch with runtime_ (a token table's
+  // registration needs it): TearDown takes that back.
+  bool initialized_ = false;
   std::string directory_;
   std::vector<std::string> paths_;
   std::vector<uint8_t> a_bytes_;
@@ -735,6 +811,71 @@ TEST_F(AotEngineResidencyTest, UploadsHostWritesWhenAnInvocationReadsThem) {
   input_.device_ptr = output_.device_ptr = nullptr;
 }
 
+void CUDART_CB HoldTheStream(void*) {
+  std::this_thread::sleep_for(std::chrono::milliseconds(300));
+}
+
+// LiteRT-LM clears a CUDA tensor buffer and then writes it (the vision
+// encoder's input patches). The clear must have landed when the next
+// invocation uploads the write, whatever else the device is busy with: a
+// blocking stream's work holds the default stream back here.
+TEST_F(AotEngineResidencyTest, AClearLandsBeforeTheWriteThatFollowsIt) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  const auto* handlers = tensor_buffer_handlers_def_;
+  ASSERT_NE(handlers, nullptr);
+  ASSERT_EQ(cudaFree(input_.device_ptr), cudaSuccess);
+  ASSERT_EQ(cudaFree(output_.device_ptr), cudaSuccess);
+  input_.device_ptr = output_.device_ptr = nullptr;
+  auto type = TensorType();
+  HwMemoryInfoPtr input_info = nullptr;
+  HwMemoryInfoPtr output_info = nullptr;
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &input_info),
+            kLiteRtStatusOk);
+  ASSERT_EQ(handlers->create_func(nullptr, nullptr, &type, kCudaBufferType,
+                                  kBytes, kBytes, &output_info),
+            kLiteRtStatusOk);
+  input_.device_ptr = input_info->memory_handle;
+  output_.device_ptr = output_info->memory_handle;
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  ASSERT_EQ(CreateContext(*bytes, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+
+  cudaStream_t busy = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&busy), cudaSuccess);
+  ASSERT_EQ(cudaLaunchHostFunc(busy, HoldTheStream, nullptr), cudaSuccess);
+  ASSERT_EQ(handlers->clear_func(input_info), kLiteRtStatusOk);
+  void* host = nullptr;
+  ASSERT_EQ(
+      handlers->lock_func(input_info, kLiteRtTensorBufferLockModeWrite, &host),
+      kLiteRtStatusOk);
+  ASSERT_NE(host, nullptr);
+  for (int i = 0; i < kElements; ++i) {
+    static_cast<float*>(host)[i] = 5.0f + i;
+  }
+  ASSERT_EQ(handlers->unlock_func(input_info), kLiteRtStatusOk);
+  ASSERT_EQ(interface_->invoke(a_), kLiteRtStatusOk);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  ASSERT_EQ(cudaStreamDestroy(busy), cudaSuccess);
+  std::array<float, kElements> device;
+  ASSERT_EQ(cudaMemcpy(device.data(), input_.device_ptr, kBytes,
+                       cudaMemcpyDeviceToHost),
+            cudaSuccess);
+  for (int i = 0; i < kElements; ++i) {
+    EXPECT_FLOAT_EQ(device[i], 5.0f + i) << i;
+  }
+
+  EXPECT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  EXPECT_EQ(handlers->destroy_func(input_info), kLiteRtStatusOk);
+  EXPECT_EQ(handlers->destroy_func(output_info), kLiteRtStatusOk);
+  input_.device_ptr = output_.device_ptr = nullptr;
+}
+
 TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {
   ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
   PreparePair();
@@ -744,6 +885,99 @@ TEST_F(AotEngineResidencyTest, DefaultEagerModeDoesNotReopenArtifacts) {
   Run(a_, 0.0f, 1.0f);
   Run(b_, 0.0f, 2.0f);
   Run(a_, 10.0f, 1.0f);
+}
+
+TEST_F(AotEngineResidencyTest, KeepsOneVariantOfAPlanResident) {
+  // Two plans refitted with the same constants stand for a partition compiled
+  // for two input sizes (a vision encoder's signatures). Creating the second
+  // evicts the first (keeping its runtime cache); the first is reloaded from
+  // its artifact when it runs, and both then stay resident.
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  ScopedEnvironment cache("LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",
+                          directory_.c_str());
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  std::array<std::string, 2> paths;
+  std::array<std::string, 2> cache_paths;
+  std::array<LiteRtDispatchInvocationContext, 2> variants = {nullptr, nullptr};
+  for (int i = 0; i < 2; ++i) {
+    const char* name = i == 0 ? "a" : "b";
+    auto bytes = BuildBytecode(name, 3.0f, /*stripped=*/true);
+    ASSERT_TRUE(bytes) << bytes.Error().Message();
+    paths[i] = directory_ + "/" + name + ".bin";
+    ASSERT_TRUE(Write(paths[i], *bytes));
+    auto locator = Locator(paths[i], *bytes);
+    ASSERT_TRUE(locator) << locator.Error().Message();
+    const auto fingerprint =
+        FingerprintTensorRtAotArtifact(bytes->data(), bytes->size());
+    char key[33];
+    std::snprintf(key, sizeof(key), "%016llx%016llx",
+                  static_cast<unsigned long long>(fingerprint.low),
+                  static_cast<unsigned long long>(fingerprint.high));
+    cache_paths[i] =
+        directory_ + "/" + name + "_" + key + ".trt_rtx_runtime_cache";
+    paths_.push_back(cache_paths[i]);
+    ASSERT_EQ(CreateContext(*locator, name, &variants[i]), kLiteRtStatusOk);
+    Bind(variants[i]);
+    ASSERT_FALSE(HasFatalFailure());
+  }
+  // The evicted variant kept the runtime cache of its execution context,
+  // though it never ran, as an eager context does at its destruction.
+  struct stat status{};
+  EXPECT_EQ(stat(cache_paths[0].c_str(), &status), 0);
+  // The last variant created is resident: it runs without its artifact.
+  const std::string saved = directory_ + "/saved.bin";
+  paths_.push_back(saved);
+  ASSERT_EQ(rename(paths[1].c_str(), saved.c_str()), 0);
+  Run(variants[1], 0.0f, 3.0f);
+  ASSERT_EQ(rename(saved.c_str(), paths[1].c_str()), 0);
+  // The first was evicted: it needs its artifact.
+  ASSERT_EQ(rename(paths[0].c_str(), saved.c_str()), 0);
+  EXPECT_EQ(interface_->invoke(variants[0]), kLiteRtStatusErrorFileIO);
+  ASSERT_EQ(rename(saved.c_str(), paths[0].c_str()), 0);
+  Run(variants[0], 10.0f, 3.0f);
+  // Reloaded, it stays resident beside the other.
+  ASSERT_EQ(unlink(paths[0].c_str()), 0);
+  ASSERT_EQ(unlink(paths[1].c_str()), 0);
+  Run(variants[1], 20.0f, 3.0f);
+  Run(variants[0], 30.0f, 3.0f);
+  Run(variants[1], 40.0f, 3.0f);
+}
+
+TEST_F(AotEngineResidencyTest, NamesTheRuntimeCacheByTheArtifactFingerprint) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  ScopedEnvironment cache("LITERT_NVIDIA_DISPATCH_RUNTIME_CACHE_DIR",
+                          directory_.c_str());
+  CreateDevice();
+  ASSERT_FALSE(HasFatalFailure());
+  auto bytes = BuildBytecode("a", 1.0f, false);
+  ASSERT_TRUE(bytes) << bytes.Error().Message();
+  const std::string artifact = directory_ + "/a.bin";
+  ASSERT_TRUE(Write(artifact, *bytes));
+  auto locator = Locator(artifact, *bytes);
+  ASSERT_TRUE(locator) << locator.Error().Message();
+  // The cache is named as the artifact's writer names the artifact: by the
+  // fingerprint of the artifact's bytes, which the locator carries.
+  const auto fingerprint =
+      FingerprintTensorRtAotArtifact(bytes->data(), bytes->size());
+  char key[33];
+  std::snprintf(key, sizeof(key), "%016llx%016llx",
+                static_cast<unsigned long long>(fingerprint.low),
+                static_cast<unsigned long long>(fingerprint.high));
+  const std::string cache_path =
+      directory_ + "/a_" + key + ".trt_rtx_runtime_cache";
+  paths_.push_back(cache_path);
+  ASSERT_EQ(CreateContext(*locator, "a", &a_), kLiteRtStatusOk);
+  Bind(a_);
+  ASSERT_FALSE(HasFatalFailure());
+  Run(a_, 0.0f, 1.0f);
+  struct stat status{};
+  EXPECT_NE(stat(cache_path.c_str(), &status), 0);
+  // The engine's cache is written when its context goes.
+  ASSERT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  ASSERT_EQ(stat(cache_path.c_str(), &status), 0);
+  EXPECT_GT(status.st_size, 0);
 }
 
 TEST_F(AotEngineResidencyTest, RejectsNonAotBacking) {
@@ -808,6 +1042,79 @@ TEST_F(AotEngineResidencyTest,
   Run(b_, 10.0f, 2.0f);
   EXPECT_EQ(interface_->invoke(bad), kLiteRtStatusErrorInvalidArgument);
   Run(a_, 20.0f, 1.0f);
+}
+
+// A decode step that awaits the runtime's token table has it copied to the
+// device once it runs in a long loop (32 invocations in a row), by a thread
+// of the dispatch's: the steps go on meanwhile, one of them takes the table,
+// and the table stays on the device when the step's context goes.
+TEST_F(AotEngineResidencyTest, CopiesATokenTableBesideALongDecodeLoop) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  constexpr uint32_t kDim = 4 << 20;
+  const std::vector<uint8_t> table(static_cast<size_t>(kElements) * kDim / 2,
+                                   0x21);
+  const std::vector<float> scales(kElements, 0.5f);
+  size_t free_before = 0;
+  size_t total = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_before, &total), cudaSuccess);
+  CreateStepAwaitingTable(kDim, table.data(), scales);
+  ASSERT_FALSE(HasFatalFailure());
+  const int64_t registered = DeviceBytesSince(free_before);
+  // Most of the table's bytes: the device rounds its allocations.
+  const int64_t table_bytes = static_cast<int64_t>(table.size()) * 7 / 8;
+  for (int step = 0; step < 31; ++step) {
+    Run(a_, step, 1.0f);
+    ASSERT_FALSE(HasFatalFailure());
+  }
+  const int64_t before_copy = DeviceBytesSince(free_before);
+  EXPECT_LT(before_copy - registered, table_bytes / 2);
+  // The step says when its feed is set up over the table.
+  bool taken = false;
+  for (int step = 31; step < 6000 && !taken; ++step) {
+    testing::internal::CaptureStderr();
+    Run(a_, step, 1.0f);
+    const std::string log = testing::internal::GetCapturedStderr();
+    std::fputs(log.c_str(), stderr);
+    ASSERT_FALSE(HasFatalFailure());
+    taken = log.find("step feed ready") != std::string::npos;
+    if (!taken) usleep(10000);
+  }
+  EXPECT_TRUE(taken);
+  EXPECT_GE(DeviceBytesSince(free_before) - before_copy, table_bytes);
+  Run(a_, 0.0f, 1.0f);
+  ASSERT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  EXPECT_GE(DeviceBytesSince(free_before), table_bytes);
+}
+
+// A copy in flight when the step's context goes is stopped there: the
+// caller's table, which lives as long as its model, is not read afterwards,
+// and nothing of it stays on the device.
+TEST_F(AotEngineResidencyTest, StopsATokenTableCopyWhenItsContextGoes) {
+  ScopedEnvironment eager("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES", "0");
+  // A gigabyte: its copy takes a tenth of a second at least.
+  constexpr uint32_t kDim = 64 << 20;
+  const size_t table_bytes = static_cast<size_t>(kElements) * kDim / 2;
+  void* table = mmap(nullptr, table_bytes, PROT_READ | PROT_WRITE,
+                     MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+  ASSERT_NE(table, MAP_FAILED);
+  const std::vector<float> scales(kElements, 0.5f);
+  size_t free_before = 0;
+  size_t total = 0;
+  ASSERT_EQ(cudaMemGetInfo(&free_before, &total), cudaSuccess);
+  CreateStepAwaitingTable(kDim, table, scales);
+  ASSERT_FALSE(HasFatalFailure());
+  // The 32nd step starts the copy, and the context goes while it runs.
+  for (int step = 0; step < 32; ++step) {
+    Run(a_, step, 1.0f);
+    ASSERT_FALSE(HasFatalFailure());
+  }
+  ASSERT_EQ(interface_->invocation_context_destroy(a_), kLiteRtStatusOk);
+  contexts_.clear();
+  // A read of the table from here on faults.
+  ASSERT_EQ(munmap(table, table_bytes), 0);
+  EXPECT_LT(DeviceBytesSince(free_before),
+            static_cast<int64_t>(table_bytes / 2));
 }
 
 }  // namespace

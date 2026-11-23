@@ -497,6 +497,79 @@ TEST(ModelLoadTest, RejectsDispatchBytecodePastAllocation) {
   EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
 }
 
+TEST(ModelLoadTest, LoadsValidLargeCustomOptionsOffset) {
+  static constexpr absl::string_view kCustomPayload = "appended_custom_opts";
+
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflCustom);
+  op.SetCustomCode("test_custom_op");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->subgraphs[0]->operators[0]->custom_options.clear();
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = 1;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_size =
+      kCustomPayload.size();
+
+  auto packed = SerializeFlatbuffer(*tfl_model);
+  const uint64_t offset = (packed.Size() + 15) / 16 * 16;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = offset;
+  packed = SerializeFlatbuffer(*tfl_model);
+  ASSERT_LE(packed.Size(), offset);
+
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) / "large_custom_opts.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(packed.Data()), packed.Size());
+  std::string padding(offset - packed.Size(), '\0');
+  output.write(padding.data(), padding.size());
+  output.write(kCustomPayload.data(), kCustomPayload.size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_TRUE(litert_model);
+  const auto loaded_opts = (*litert_model)->Subgraph(0).Op(0).CustomOptions();
+  EXPECT_EQ(absl::string_view(reinterpret_cast<const char*>(loaded_opts.Data()),
+                              loaded_opts.Size()),
+            kCustomPayload);
+}
+
+TEST(ModelLoadTest, RejectsOutOfBoundsLargeCustomOptionsOffset) {
+  LiteRtModelT root;
+  auto& sg = root.EmplaceSubgraph();
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflCustom);
+  op.SetCustomCode("test_custom_op");
+
+  auto serialized = SerializeModel(std::move(root));
+  ASSERT_TRUE(serialized);
+
+  auto flatbuffer = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(flatbuffer);
+  auto tfl_model = flatbuffer->get()->Unpack();
+  tfl_model->subgraphs[0]->operators[0]->custom_options.clear();
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_offset = 1000000;
+  tfl_model->subgraphs[0]->operators[0]->large_custom_options_size = 32;
+
+  auto mutated = SerializeFlatbuffer(*tfl_model);
+  const std::filesystem::path test_file_path =
+      std::filesystem::path(::testing::TempDir()) /
+      "oob_large_custom_opts.tflite";
+  std::ofstream output(test_file_path, std::ios::binary);
+  output.write(reinterpret_cast<const char*>(mutated.Data()), mutated.Size());
+  output.close();
+
+  auto litert_model = LoadModelFromFile(test_file_path.string());
+  ASSERT_FALSE(litert_model);
+  EXPECT_EQ(litert_model.Error().Status(), kLiteRtStatusErrorInvalidFlatbuffer);
+}
+
 TEST(ModelTestCApi, Int2) {
   auto model = LoadModelThroughRoundTrip("FFW-2-bit.tflite");
   ASSERT_TRUE(model);
@@ -2637,6 +2710,125 @@ TEST(ModelSerializeTest, MixedInlineAndExternalConstantTensors) {
   EXPECT_EQ(out_ext_tensor.external_buffer, 1u);
   ASSERT_EQ(unpacked->external_buffers.size(), 1u);
   EXPECT_EQ(unpacked->external_buffers[0]->id, 1u);
+}
+
+// Appends a new op (with no TFL op code index, as if created by a graph
+// transformation after loading) consuming the first subgraph input.
+LiteRtOpT& AppendOpAfterLoad(LiteRtSubgraphT& sg, LiteRtOpCode code) {
+  auto& in = sg.Input(0);
+  auto& out = sg.EmplaceTensor();
+  out.SetType(in.Type());
+  auto& op = sg.EmplaceOp();
+  op.SetOpCode(code);
+  AttachInput(&in, op);
+  AttachOutput(&out, op);
+  return op;
+}
+
+TEST(ModelSerializeTest, BuiltinOpCreatedAfterLoadGetsBuiltinOpCode) {
+  auto model = litert::testing::LoadTestFileModel(kAddSimple);
+  ASSERT_TRUE(model);
+  auto litert_model = std::move(*model.Get());
+  auto& sg = *litert_model.MainSubgraph();
+  ASSERT_EQ(sg.Ops().size(), 1);
+  const int32_t loaded_add_ind = GetTflOpCodeInd(*sg.Ops().front());
+  ASSERT_NE(loaded_add_ind, kDispatchOpCodeTflInd);
+  const size_t num_loaded_op_codes = GetTflOpCodes(litert_model).size();
+
+  auto& add = AppendOpAfterLoad(sg, kLiteRtOpCodeTflAdd);
+  auto& gather0 = AppendOpAfterLoad(sg, kLiteRtOpCodeTflGather);
+  auto& gather1 = AppendOpAfterLoad(sg, kLiteRtOpCodeTflGather);
+  auto& gelu = AppendOpAfterLoad(sg, kLiteRtOpCodeTflGelu);
+  auto& dispatch = AppendOpAfterLoad(sg, kLiteRtOpCodeTflAdd);
+  MakeDispatchOp(dispatch);
+  for (auto* op : {&add, &gather0, &gather1, &gelu, &dispatch}) {
+    ASSERT_EQ(GetTflOpCodeInd(*op), kDispatchOpCodeTflInd);
+  }
+
+  auto serialized = SerializeModel(std::move(litert_model));
+  ASSERT_TRUE(serialized);
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+  auto tfl = fb->get()->Unpack();
+  const auto& codes = tfl->operator_codes;
+  const auto& ops = tfl->subgraphs[0]->operators;
+  ASSERT_EQ(ops.size(), 6);
+
+  // Loaded op codes + DISPATCH_OP + GATHER + GELU.
+  EXPECT_EQ(codes.size(), num_loaded_op_codes + 3);
+
+  // The new ADD reuses the existing ADD entry.
+  EXPECT_EQ(ops[0]->opcode_index, loaded_add_ind);
+  EXPECT_EQ(ops[1]->opcode_index, loaded_add_ind);
+
+  // Both GATHERs share one appended builtin (version 1) entry.
+  EXPECT_EQ(ops[2]->opcode_index, ops[3]->opcode_index);
+  const auto& gather_code = *codes.at(ops[2]->opcode_index);
+  EXPECT_EQ(gather_code.builtin_code, tflite::BuiltinOperator_GATHER);
+  EXPECT_EQ(gather_code.deprecated_builtin_code,
+            tflite::BuiltinOperator_GATHER);
+  EXPECT_TRUE(gather_code.custom_code.empty());
+  EXPECT_EQ(gather_code.version, 1);
+
+  // Builtins > 127 use the placeholder deprecated code.
+  const auto& gelu_code = *codes.at(ops[4]->opcode_index);
+  EXPECT_EQ(gelu_code.builtin_code, tflite::BuiltinOperator_GELU);
+  EXPECT_EQ(gelu_code.deprecated_builtin_code,
+            tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES);
+  EXPECT_TRUE(gelu_code.custom_code.empty());
+
+  // The dispatch op is still serialized as the DISPATCH_OP custom op.
+  const auto& dispatch_code = *codes.at(ops[5]->opcode_index);
+  EXPECT_EQ(dispatch_code.builtin_code, tflite::BuiltinOperator_CUSTOM);
+  EXPECT_EQ(dispatch_code.custom_code, "DISPATCH_OP");
+
+  // Round trip: op codes are recovered on load.
+  auto re_loaded = LoadModelFromBuffer(*serialized);
+  ASSERT_TRUE(re_loaded);
+  const auto& re_ops = (*re_loaded)->MainSubgraph()->Ops();
+  ASSERT_EQ(re_ops.size(), 6);
+  EXPECT_EQ(re_ops[0]->OpCode(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(re_ops[1]->OpCode(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(re_ops[2]->OpCode(), kLiteRtOpCodeTflGather);
+  EXPECT_EQ(re_ops[3]->OpCode(), kLiteRtOpCodeTflGather);
+  EXPECT_EQ(re_ops[4]->OpCode(), kLiteRtOpCodeTflGelu);
+  EXPECT_EQ(re_ops[5]->OpCode(), kLiteRtOpCodeTflCustom);
+  auto custom_code = GetCustomOpCode(**re_loaded, *re_ops[5]);
+  ASSERT_TRUE(custom_code.has_value());
+  EXPECT_EQ(*custom_code, "DISPATCH_OP");
+}
+
+TEST(ModelSerializeTest, BuiltinOpCreatedAfterLoadReusesDeprecatedOpCode) {
+  auto model = litert::testing::LoadTestFileModel(kAddSimple);
+  ASSERT_TRUE(model);
+  auto litert_model = std::move(*model.Get());
+
+  // Old-schema style entry: only deprecated_builtin_code carries GATHER.
+  LiteRtModelT::TflOpCodes op_codes = TakeTflOpCodes(litert_model);
+  auto old_gather = std::make_unique<TflOpCode>();
+  old_gather->builtin_code = tflite::BuiltinOperator_ADD;
+  old_gather->deprecated_builtin_code =
+      static_cast<int8_t>(tflite::BuiltinOperator_GATHER);
+  old_gather->version = 2;
+  op_codes.push_back(std::move(old_gather));
+  const int32_t old_gather_ind = op_codes.size() - 1;
+  const size_t num_op_codes = op_codes.size();
+  SetTflOpCodes(litert_model, std::move(op_codes));
+
+  auto& sg = *litert_model.MainSubgraph();
+  AppendOpAfterLoad(sg, kLiteRtOpCodeTflGather);
+
+  auto serialized = SerializeModel(std::move(litert_model));
+  ASSERT_TRUE(serialized);
+  auto fb = FlatbufferWrapper::CreateFromBuffer(*serialized);
+  ASSERT_TRUE(fb);
+  auto tfl = fb->get()->Unpack();
+
+  // Only DISPATCH_OP is appended; the GATHER op reuses the existing entry.
+  EXPECT_EQ(tfl->operator_codes.size(), num_op_codes + 1);
+  const auto& ops = tfl->subgraphs[0]->operators;
+  ASSERT_EQ(ops.size(), 2);
+  EXPECT_EQ(ops[1]->opcode_index, old_gather_ind);
 }
 
 }  // namespace

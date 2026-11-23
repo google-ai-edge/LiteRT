@@ -15,7 +15,6 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_WEBGPU_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_DELEGATE_WEBGPU_H_
 
-#include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "ml_drift_delegate/delegate/delegate_options.h"
 #include "ml_drift_delegate/delegate/delegate_types.h"
@@ -49,11 +48,6 @@ namespace litert::ml_drift {
 //
 //   // Run inference.
 //   QCHECK_EQ(interpreter->Invoke(), kTfLiteOk);
-
-// Returns true if the WebGPU Dawn runtime is available (or can be loaded from
-// `kLiteRtEnvOptionTagRuntimeLibraryDir` in `env`).
-bool IsWebGpuSupported(const LiteRtRuntimeContext* runtime_context,
-                       LiteRtEnvironment env);
 
 // Returns default options for ML Drift WebGpu delegate.
 //

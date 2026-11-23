@@ -332,6 +332,35 @@ class Options {
   }
 #endif  // LITERT_NO_ABSL
 
+  /// Sets the uploader of the model's external weights to WebGPU buffers on the
+  /// web, for the weights that are not in host memory (e.g. because they are
+  /// streamed). Without one, the process-wide callback registered with
+  /// `weight_loader::RegisterWebWeightUploadCallback()` is used.
+  ///
+  /// The compiled model shares ownership of the uploader for as long as it
+  /// lives. Weights are normally uploaded while the model is being created, but
+  /// the delegate may be re-applied later (e.g. when an input is resized), so
+  /// an uploader that can only upload once should fail gracefully afterwards.
+  /// The uploader is ignored if a weight loader is set with
+  /// `SetWeightLoader()`, or unless built for the web with WebGPU support.
+  /// @param uploader The uploader of the model's external weights.
+  /// @return An `Expected` object that is empty on success, or contains an
+  /// error.
+  Expected<void> SetWebWeightUploader(
+      std::shared_ptr<weight_loader::WebWeightUploader> uploader) {
+    build_actions_.push_back(
+        [uploader = std::move(uploader)](internal::RuntimeProxy* runtime,
+                                         LiteRtOptions options) {
+          auto* options_impl = reinterpret_cast<LiteRtOptionsT*>(options);
+          if (!options_impl) {
+            return kLiteRtStatusErrorRuntimeFailure;
+          }
+          options_impl->web_weight_uploader = uploader;
+          return kLiteRtStatusOk;
+        });
+    return {};
+  }
+
   /// Registers a `ScopedFile` that contains all external buffer groups.
   /// @param scoped_file The file containing the external weights.
   /// @param sections A map from group names to their respective sections in the

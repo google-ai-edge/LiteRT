@@ -12,8 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#if defined(__ANDROID__) && __ANDROID_API__ >= 28
+#if defined(__ANDROID__)
 #include <malloc.h>
+
+extern "C" int mallopt(int param, int value) __attribute__((weak));
 #endif
 
 #include <cstdio>
@@ -53,14 +55,20 @@ namespace {
 using ::litert::qnn::QnnManager;
 
 void PurgeNativeHeap() {
-#if defined(__ANDROID__) && __ANDROID_API__ >= 28
+#if defined(__ANDROID__)
+  // Check runtime Android API availability so builds with default NDK minSdk
+  // (__ANDROID_API__ == 24) still purge Scudo arenas on Android 28+ devices.
 #ifndef M_PURGE
-#define M_PURGE -101
+#define M_PURGE (-101)
 #endif
 #ifndef M_PURGE_ALL
-#define M_PURGE_ALL -104
+#define M_PURGE_ALL (-104)
 #endif
-  if (mallopt(M_PURGE_ALL, 0) == 0) {
+  if (__builtin_available(android 34, *)) {
+    if (mallopt(M_PURGE_ALL, 0) == 0) {
+      mallopt(M_PURGE, 0);
+    }
+  } else if (__builtin_available(android 28, *)) {
     mallopt(M_PURGE, 0);
   }
 #endif

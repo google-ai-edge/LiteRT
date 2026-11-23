@@ -57,6 +57,11 @@ jobs:
           sed -i "s/\"ai-edge-litert[^\"]*\"/\"ai-edge-litert==${LITERT_VERSION}\"/" pyproject.toml
           grep -qF "\"ai-edge-litert==${LITERT_VERSION}\"" pyproject.toml
 
+      - name: Depend on stable litert-lm-builder
+        run: |
+          sed -i 's/"litert-lm-builder-nightly"/"litert-lm-builder"/' pyproject.toml
+          grep -q '"litert-lm-builder"' pyproject.toml
+
       - name: Run tests
         run: uv run --python ${{ matrix.python-version }} pytest
 
@@ -89,6 +94,11 @@ jobs:
           echo "version=$(cat VERSION | xargs)" >> "$GITHUB_OUTPUT"
 
           echo "Building litert-quantizer version $(cat VERSION) with ai-edge-litert==${LITERT_VERSION}"
+
+      - name: Depend on stable litert-lm-builder
+        run: |
+          sed -i 's/"litert-lm-builder-nightly"/"litert-lm-builder"/' pyproject.toml
+          grep -q '"litert-lm-builder"' pyproject.toml
 
       - name: Build Stable Package
         run: |

@@ -69,12 +69,13 @@ MoeScaleTensor MakeMoeScale(int out_channels, int num_experts, int num_blocks) {
   return scale;
 }
 
-void BuildAndVerifyMoeGpuModel(int sequence_size, int num_experts,
-                               int num_active_experts, int model_dim,
-                               int hidden_dim,
-                               ir::MoeExpertsAttributes::WeightType weight_type,
-                               int num_blocks, ::ml_drift::GpuModel* gpu_model,
-                               const ::ml_drift::GpuInfo& gpu_info) {
+void BuildAndVerifyMoeGpuModel(
+    int sequence_size, int num_experts, int num_active_experts, int model_dim,
+    int hidden_dim, ir::MoeExpertsAttributes::WeightType weight_type,
+    int num_blocks, ::ml_drift::GpuModel* gpu_model,
+    const ::ml_drift::GpuInfo& gpu_info,
+    ir::MoeExpertsAttributes::Activation activation =
+        ir::MoeExpertsAttributes::Activation::kGeluTanh) {
   ::ml_drift::CreateGpuModelInfo create_info;
   create_info.precision = ::ml_drift::CalculationsPrecision::kF32;
   ::ml_drift::GpuModelBuilder model_builder(gpu_info, {});
@@ -123,6 +124,7 @@ void BuildAndVerifyMoeGpuModel(int sequence_size, int num_experts,
   attr.model_dim = model_dim;
   attr.hidden_dim = hidden_dim;
   attr.weight_type = weight_type;
+  attr.activation = activation;
   if (weight_type != ir::MoeExpertsAttributes::WeightType::kFp32) {
     attr.ff_gate_scale = MakeMoeScale(hidden_dim, num_experts, num_blocks);
     attr.ff1_scale = MakeMoeScale(hidden_dim, num_experts, num_blocks);
@@ -348,6 +350,17 @@ TEST(MoeExpertsKernelTest,
         ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2,
         &gpu_model, gpu_info);
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "experts_remap"));
+    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+  }
+
+  // 4. Int4 blockwise SwiGLU (activation = silu) decode and prefill.
+  for (int seq_len : {1, 8}) {
+    ::ml_drift::GpuModel gpu_model;
+    BuildAndVerifyMoeGpuModel(
+        /*sequence_size=*/seq_len, /*num_experts=*/4, /*num_active_experts=*/2,
+        /*model_dim=*/16, /*hidden_dim=*/32,
+        ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2,
+        &gpu_model, gpu_info, ir::MoeExpertsAttributes::Activation::kSilu);
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
   }
 }

@@ -39,6 +39,9 @@ inline constexpr uint32_t kTensorRtBytecodeVersionWithStepFeed = 6;
 // Version 6 plus, in the step feed, the per-layer embeddings: a second input
 // the feed writes, from the per-layer embedder's tables the runtime registers.
 inline constexpr uint32_t kTensorRtBytecodeVersionWithPerLayerFeed = 7;
+// Version 7 plus, in the step feed, the token table's element width and zero
+// point: a table of centered INT2 weights (TensorRtStepFeed::table_bits).
+inline constexpr uint32_t kTensorRtBytecodeVersionWithFeedTableFormat = 8;
 
 // Versioned POD payload behind LiteRtJitExecutable. The compiler plugin owns
 // the bytecode for the lifetime of the compiled result; dispatch reads it
@@ -179,14 +182,19 @@ struct TensorRtStepFeed {
   // The local mask's keys, and the sliding window the host fills it with.
   uint32_t ring = 0;
   uint32_t window = 0;
-  // The token table in the weight store's source file: INT4 row-major
-  // [vocab, dim], the low nibble first, one FP32 scale per row. Or no table
-  // and no scales (kTensorRtStepFeedNoTable): the runtime registers the
-  // embedder's table, scales and multiplier.
+  // The token table in the weight store's source file: row-major
+  // [vocab, dim] elements of table_bits bits (4 or 2), the low bits first,
+  // two's complement, one FP32 scale per row: a value is
+  // (element - table_zero_point) * scale (0 for an INT4 per-channel head,
+  // -0.5 for centered INT2 weights). Or no table and no scales
+  // (kTensorRtStepFeedNoTable): the runtime registers the embedder's table,
+  // scales and multiplier.
   uint64_t table_offset = 0;
   float multiplier = 1.0f;
   const uint8_t* row_scales = nullptr;  // vocab little-endian FP32 values
   size_t row_scales_size = 0;
+  uint32_t table_bits = 4;
+  float table_zero_point = 0.0f;
 };
 
 // TensorRT weight types are kept independent of NvInfer headers so the
@@ -359,9 +367,24 @@ TensorRtArtifactFingerprint FingerprintTensorRtAotArtifact(const void* data,
 Expected<std::vector<uint8_t>> PackTensorRtAotLocator(
     const TensorRtAotLocator& locator);
 
+// A locator as the compiler plugin hands it to LiteRT ends in zero bytes up
+// to a multiple of this. LiteRT writes the locators behind the rewritten
+// model and the model's constants right behind them, one after the other: a
+// locator is as long as its artifact's path, so with some cache directories
+// the constants landed on addresses their types cannot be read at (an odd
+// one for FP16 scales), and the runtime copied each of them to the heap
+// (234 MiB for Gemma 4 26B-A4B with its drafter). The alignment is that of
+// the model before them, so the constants lie as they do behind no locator.
+inline constexpr size_t kTensorRtAotLocatorAlignment = 16;
+
+// Appends that padding to a packed locator. The AOT index keeps its locators
+// as they were packed.
+void PadTensorRtAotLocator(std::vector<uint8_t>& locator);
+
 // Returns nullopt when data is ordinary TensorRT bytecode. Once the AOT magic
 // is present, malformed locator data is reported as an error rather than being
-// reinterpreted as engine bytecode.
+// reinterpreted as engine bytecode. A locator is read with or without its
+// padding.
 Expected<std::optional<TensorRtAotLocator>> TryParseTensorRtAotLocator(
     const void* data, size_t size);
 

@@ -15,8 +15,11 @@
 
 This FlatBuffer-level tool moves only large constants that LiteRT-LM's scoped
 external-weight path can consume: weights at input 1 of FullyConnected, Conv2D,
-DepthwiseConv2D with depth multiplier 1, and EmbeddingLookup. Other constants
-remain embedded so they do not become delegate partition inputs.
+DepthwiseConv2D with depth multiplier 1, and EmbeddingLookup. With
+`externalize_moe_weights`, it also moves the quantized expert weights and block
+scales (inputs 3..8) of the 10-input CUSTOM "moe" op; this is only supported by
+the CPU (XNNPACK) path for now. Other constants remain embedded so they do not
+become delegate partition inputs.
 
 After externalization, a model can additionally be made to reference payloads
 stored in *another* model's weight blob instead of its own copy (see
@@ -63,6 +66,13 @@ def _builtin_code(operator_code) -> int:
   if builtin == 0 and int(operator_code.deprecatedBuiltinCode) != 0:
     return int(operator_code.deprecatedBuiltinCode)
   return builtin
+
+
+def _custom_code(operator_code) -> str:
+  code = operator_code.customCode
+  if isinstance(code, bytes):
+    return code.decode("utf-8", errors="ignore")
+  return code or ""
 
 
 def _tensor_element_count(tensor) -> int:
@@ -151,6 +161,69 @@ def _materialize_appended_buffer_data(model, input_bytes: bytes) -> set[int]:
   return appended_buffers
 
 
+def _custom_options_bytes(op) -> memoryview[int] | None:
+  if op.customOptions is None:
+    return None
+  try:
+    data = memoryview(op.customOptions)
+  except TypeError:
+    data = memoryview(bytes(op.customOptions))
+  if data.nbytes == 0:
+    return None
+  if data.format != "B" or data.ndim != 1:
+    data = data.cast("B")
+  return data
+
+
+def _materialize_appended_custom_options(
+    model, input_bytes: bytes
+) -> set[tuple[int, int]]:
+  """Moves appended `Operator.largeCustomOptions` payloads into `customOptions`."""
+  input_size = len(input_bytes)
+  appended_ops: set[tuple[int, int]] = set()
+  for sg_idx, subgraph in enumerate(model.subgraphs or []):
+    for op_idx, op in enumerate(subgraph.operators or []):
+      offset = int(op.largeCustomOptionsOffset or 0)
+      size = int(op.largeCustomOptionsSize or 0)
+      if offset == 0 and size == 0:
+        continue
+      if size == 0:
+        if op.customOptions is None and offset > 1:
+          op.customOptions = (
+              np.empty(0, dtype=np.uint8) if np is not None else b""
+          )
+        op.largeCustomOptionsOffset = 0
+        op.largeCustomOptionsSize = 0
+        continue
+      if offset <= 1 or size < 0:
+        raise ValueError(
+            f"TFLite operator ({sg_idx}, {op_idx}) has invalid external custom"
+            f" options range: offset={offset}, size={size}"
+        )
+      if _custom_options_bytes(op) is not None:
+        raise ValueError(
+            f"TFLite operator ({sg_idx}, {op_idx}) has both inline and appended"
+            " custom options"
+        )
+      end = offset + size
+      if end > input_size:
+        raise ValueError(
+            f"TFLite operator ({sg_idx}, {op_idx}) custom options range exceeds"
+            f" the model file: offset={offset}, size={size},"
+            f" file_size={input_size}"
+        )
+      if np is not None:
+        op.customOptions = np.frombuffer(
+            input_bytes, dtype=np.uint8, count=size, offset=offset
+        )
+      else:
+        op.customOptions = memoryview(input_bytes)[offset:end]
+      op.largeCustomOptionsOffset = 0
+      op.largeCustomOptionsSize = 0
+      appended_ops.add((sg_idx, op_idx))
+  return appended_ops
+
+
 def _bias_tensor_indices(model) -> set[tuple[int, int]]:
   """Returns `(subgraph_index, tensor_index)` pairs of bias tensors."""
   bias_ops = {
@@ -171,9 +244,18 @@ def _bias_tensor_indices(model) -> set[tuple[int, int]]:
   return bias_tensors
 
 
-def _shareable_weight_tensor_indices(model) -> set[tuple[int, int]]:
-  """Returns `(subgraph_index, tensor_index)` pairs of externalizable weights."""
+def _shareable_weight_tensor_indices(
+    model, externalize_moe_weights: bool = False
+) -> set[tuple[int, int]]:
+  """Returns `(subgraph_index, tensor_index)` pairs of externalizable weights.
+
+  Args:
+    model: The `schema.ModelT` to inspect.
+    externalize_moe_weights: Whether to include the quantized expert weights and
+      block scales of CUSTOM "moe" ops. See `externalize`.
+  """
   depthwise_conv = _enum_value(schema.BuiltinOperator, "DEPTHWISE_CONV_2D")
+  custom_op = _enum_value(schema.BuiltinOperator, "CUSTOM")
   weight_ops = {
       _enum_value(schema.BuiltinOperator, "EMBEDDING_LOOKUP"),
       _enum_value(schema.BuiltinOperator, "FULLY_CONNECTED"),
@@ -197,6 +279,32 @@ def _shareable_weight_tensor_indices(model) -> set[tuple[int, int]]:
           ) != 1:
             # The GPU parser transposes these weights on the CPU. Keep them
             # inline even if another supported operator shares the tensor.
+            inline_weight_tensors.add((sg_idx, weight_idx))
+      elif builtin_code == custom_op and _custom_code(opcode) == "moe":
+        # The `moe` custom op takes activations in inputs 0..2. The GraphFloat32
+        # ML Drift GPU parser (`MoeExpertsOperationParser::Parse`) binds only
+        # the quantized expert weights and block scales of the 10-input
+        # int8/int4 op (inputs 3..8) to shared or external buffers, while
+        # copying the weights and scales of the 7-input fp32 op (inputs 3..6)
+        # and the per-expert scale of the 10-input op (input 9) on the CPU.
+        # (On the ML Drift IR path, `ir::MoeExpertsConvert` still copies block
+        # scales 4, 6, 8 on the CPU; see b/481055324.) Keep the CPU-copied
+        # inputs inline even when `externalize_moe_weights=False` or another
+        # supported operator shares the tensor.
+        if len(op.inputs) == 10:
+          external_inputs, inline_inputs = op.inputs[3:9], op.inputs[9:]
+        elif len(op.inputs) == 7:
+          external_inputs, inline_inputs = (), op.inputs[3:]
+        else:
+          external_inputs, inline_inputs = (), ()
+        if externalize_moe_weights:
+          for input_idx in external_inputs:
+            weight_idx = int(input_idx)
+            if weight_idx >= 0:
+              weight_tensors.add((sg_idx, weight_idx))
+        for input_idx in inline_inputs:
+          weight_idx = int(input_idx)
+          if weight_idx >= 0:
             inline_weight_tensors.add((sg_idx, weight_idx))
   return weight_tensors - inline_weight_tensors
 
@@ -249,26 +357,40 @@ def _make_external_buffer_id(model) -> int:
   return (1 << 31) | len(model.externalBuffers or [])
 
 
+def _inline_payload_bytes(model) -> int:
+  """Returns total inline bytes across buffers and operator custom options."""
+  total = sum(len(b.data) for b in model.buffers or [] if b.data is not None)
+  for sg in model.subgraphs or []:
+    for op in sg.operators or []:
+      if op.customOptions is not None:
+        total += len(op.customOptions)
+  return total
+
+
 def _write_model(
-    model, appended_buffers: set[int], output_model: pathlib.Path
+    model,
+    appended_buffers: set[int],
+    output_model: pathlib.Path,
+    appended_custom_options: set[tuple[int, int]] | None = None,
 ) -> None:
   """Serializes `model` to `output_model`.
 
-  Buffers that were appended in the input file are appended again (instead of
-  being packed into the FlatBuffer) when the inline payload would otherwise
-  approach the FlatBuffer size limit.
+  Buffers and custom options that were appended in the input file are appended
+  again (instead of being packed into the FlatBuffer) when the inline payload
+  would otherwise approach the FlatBuffer size limit.
 
   Args:
-    model: The `ModelT` to serialize. Appended buffers must already be
-      materialized (see `_materialize_appended_buffer_data`).
+    model: The `ModelT` to serialize. Appended buffers and custom options must
+      already be materialized.
     appended_buffers: Indices of buffers whose payloads were appended in the
       input file.
     output_model: Destination `.tflite` path.
+    appended_custom_options: Optional `(subgraph_index, op_index)` pairs whose
+      custom options were appended in the input file.
   """
-  remaining_inline_bytes = sum(
-      len(b.data) for b in model.buffers or [] if b.data is not None
-  )
+  remaining_inline_bytes = _inline_payload_bytes(model)
   reappend_payloads: list[tuple[int, memoryview[int]]] = []
+  reappend_custom_options: list[tuple[int, int, memoryview[int]]] = []
   if remaining_inline_bytes >= _MAX_INLINE_BUFFER_BYTES:
     for buf_idx in sorted(appended_buffers):
       buf = model.buffers[buf_idx]
@@ -278,6 +400,14 @@ def _write_model(
         buf.data = None
         buf.offset = 1
         buf.size = len(data)
+    for sg_idx, op_idx in sorted(appended_custom_options or ()):
+      op = model.subgraphs[sg_idx].operators[op_idx]
+      data = _custom_options_bytes(op)
+      if data is not None:
+        reappend_custom_options.append((sg_idx, op_idx, data))
+        op.customOptions = None
+        op.largeCustomOptionsOffset = 1
+        op.largeCustomOptionsSize = len(data)
 
   def _pack_flatbuffer() -> bytes:
     builder = flatbuffers.Builder(1024)
@@ -286,7 +416,7 @@ def _write_model(
     return bytes(builder.Output())
 
   packed_fb = _pack_flatbuffer()
-  if reappend_payloads:
+  if reappend_payloads or reappend_custom_options:
     cursor = len(packed_fb)
     for buf_idx, data in reappend_payloads:
       cursor = (
@@ -296,11 +426,29 @@ def _write_model(
       )
       model.buffers[buf_idx].offset = cursor
       cursor += len(data)
+    for sg_idx, op_idx, data in reappend_custom_options:
+      cursor = (
+          (cursor + _TFLITE_BUFFER_ALIGNMENT - 1)
+          // _TFLITE_BUFFER_ALIGNMENT
+          * _TFLITE_BUFFER_ALIGNMENT
+      )
+      model.subgraphs[sg_idx].operators[
+          op_idx
+      ].largeCustomOptionsOffset = cursor
+      cursor += len(data)
     packed_fb = _pack_flatbuffer()
     with output_model.open("wb") as out_f:
       out_f.write(packed_fb)
       for buf_idx, data in reappend_payloads:
         pad = model.buffers[buf_idx].offset - out_f.tell()
+        if pad > 0:
+          out_f.write(b"\0" * pad)
+        out_f.write(data)
+      for sg_idx, op_idx, data in reappend_custom_options:
+        pad = (
+            model.subgraphs[sg_idx].operators[op_idx].largeCustomOptionsOffset
+            - out_f.tell()
+        )
         if pad > 0:
           out_f.write(b"\0" * pad)
         out_f.write(data)
@@ -314,8 +462,33 @@ def externalize(
     group_name: str,
     num_elements_threshold: int,
     existing_weights: pathlib.Path | None = None,
+    externalize_moe_weights: bool = False,
 ) -> None:
-  """Externalizes eligible weight buffers of `input_model` into `output_dir`."""
+  """Externalizes eligible weight buffers of `input_model` into `output_dir`.
+
+  Args:
+    input_model: The TFLite model to read.
+    output_dir: The directory to write `model.tflite` and the weight file to.
+    group_name: The name of the external buffer group and of the weight file.
+    num_elements_threshold: Tensors with at most this many elements stay inline.
+    existing_weights: An optional weight file whose content is copied to the
+      start of the output weight file.
+    externalize_moe_weights: Whether to also externalize the quantized expert
+      weights and block scales (inputs 3..8) of 10-input CUSTOM "moe" ops. Only
+      the CPU (XNNPACK) path can run such models: without
+      `RestoreExternalWeightsForCpu()` (e.g. GPU-only compilation), the
+      externalized tensors are not constant and the ML Drift GPU "moe" parser
+      rejects the op.
+  """
+  # TODO(b/585390762, b/481055324): Enable `externalize_moe_weights` by default
+  # once the ML Drift "moe" parsers (`MoeExpertsOperationParser::IsSupported`
+  # and `ir::MoeExpertsIsSupported`) accept inputs 3..8 that have an external
+  # buffer id (`Subgraph::GetExternalTensorBufferIdentifiers()`), like the
+  # FULLY_CONNECTED parser does, and `ir::MoeExpertsConvert` (`ReadScaleTensor`
+  # in
+  # `third_party/odml/litert/ml_drift/delegate/composite/ir/moe_experts_parser.cc`)
+  # shares block scales (inputs 4, 6, 8) via `SharedMemoryManager` instead of
+  # copying them on the CPU (b/481055324).
   output_dir.mkdir(parents=True, exist_ok=True)
   output_model = output_dir / "model.tflite"
   output_weights = output_dir / group_name
@@ -323,12 +496,17 @@ def externalize(
   input_bytes = input_model.read_bytes()
   model = schema.ModelT.InitFromPackedBuf(input_bytes, 0)
   appended_buffers = _materialize_appended_buffer_data(model, input_bytes)
+  appended_custom_options = _materialize_appended_custom_options(
+      model, input_bytes
+  )
   if model.externalBuffers is None:
     model.externalBuffers = []
 
   group_idx = None
   bias_tensors = _bias_tensor_indices(model)
-  shareable_weight_tensors = _shareable_weight_tensor_indices(model)
+  shareable_weight_tensors = _shareable_weight_tensor_indices(
+      model, externalize_moe_weights
+  )
   input_tensors = _subgraph_input_indices(model)
   externalized_tensors: set[tuple[int, int]] = set()
   candidate_buffers: set[int] = set()
@@ -409,7 +587,7 @@ def externalize(
     # data) byte-for-byte instead of repacking it.
     output_model.write_bytes(input_bytes)
   else:
-    _write_model(model, appended_buffers, output_model)
+    _write_model(model, appended_buffers, output_model, appended_custom_options)
 
   print(f"Reading model from {input_model}")
   print(f"Writing model to {output_model}")
@@ -563,6 +741,9 @@ def redirect_external_weights(
     shutil.copyfile(input_weights, output_weights)
     return RedirectResult(redirected_buffers=0, removed_bytes=0)
   appended_buffers = _materialize_appended_buffer_data(model, input_bytes)
+  appended_custom_options = _materialize_appended_custom_options(
+      model, input_bytes
+  )
 
   with _map_weights(input_weights) as blob:
     kept = []
@@ -608,7 +789,7 @@ def redirect_external_weights(
           weights_file.write(blob[key[0] : key[0] + key[1]])
         external_buffer.offset = new_offsets[key]
 
-  _write_model(model, appended_buffers, output_model)
+  _write_model(model, appended_buffers, output_model, appended_custom_options)
   removed_bytes = input_weights.stat().st_size - output_weights.stat().st_size
   print(
       f"Redirected {redirected} external buffer(s) of {input_model}; weight"
@@ -626,12 +807,22 @@ def main() -> None:
   parser.add_argument("--output_dir", type=pathlib.Path, required=True)
   parser.add_argument("--group_name", default="tflite_weights")
   parser.add_argument("--num_elements_threshold", type=int, default=256)
+  parser.add_argument(
+      "--externalize_moe_weights",
+      action="store_true",
+      help=(
+          "Also externalize the quantized expert weights and block scales of"
+          ' CUSTOM "moe" ops. CPU (XNNPACK) only: the GPU delegate does not'
+          " accept externalized moe inputs yet."
+      ),
+  )
   args = parser.parse_args()
   externalize(
       input_model=args.input_model,
       output_dir=args.output_dir,
       group_name=args.group_name,
       num_elements_threshold=args.num_elements_threshold,
+      externalize_moe_weights=args.externalize_moe_weights,
   )
 
 

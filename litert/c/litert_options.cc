@@ -12,9 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include "litert/c/litert_options.h"
+
+#include <cstddef>
+
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_custom_op_kernel.h"
+#include "litert/c/litert_op_resolver.h"
 #include "litert/c/litert_opaque_options.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/options.h"
@@ -88,6 +93,24 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtSetOpResolverOption(
+    [[maybe_unused]] LiteRtOptions options,
+    [[maybe_unused]] LiteRtFindBuiltinOpFunc find_builtin_op,
+    [[maybe_unused]] LiteRtFindCustomOpFunc find_custom_op,
+    [[maybe_unused]] void* user_data) {
+#if defined(LITERT_DISABLE_CPU)
+  return kLiteRtStatusErrorUnsupported;
+#else
+  LRT_CHECK_NON_NULL(options);
+  options->op_resolver_callbacks = LiteRtOptionsT::OpResolverCallbacks{
+      .find_builtin_op = find_builtin_op,
+      .find_custom_op = find_custom_op,
+      .user_data = user_data,
+  };
+  return kLiteRtStatusOk;
+#endif  // defined(LITERT_DISABLE_CPU)
+}
+
 LiteRtStatus LiteRtAddCustomOpKernelOption(
     LiteRtOptions options, const char* custom_op_name, int custom_op_version,
     const LiteRtCustomOpKernel* custom_op_kernel,
@@ -108,7 +131,7 @@ LiteRtStatus LiteRtAddCustomOpKernelOption(
 LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
                                             const char* signature_name,
                                             const char* tensor_name, void* data,
-                                            size_t size_bytes) {
+                                            int size_bytes) {
   LRT_CHECK_NON_NULL(options);
   LRT_CHECK_NON_NULL(signature_name);
   LRT_CHECK_NON_NULL(tensor_name);
@@ -117,7 +140,7 @@ LiteRtStatus LiteRtAddExternalTensorBinding(LiteRtOptions options,
       {/*.signature_name =*/signature_name,
        /*.tensor_name =*/tensor_name,
        /*.data =*/data,
-       /*.size_bytes =*/size_bytes});
+       /*.size_bytes =*/static_cast<size_t>(size_bytes)});
   return kLiteRtStatusOk;
 }
 

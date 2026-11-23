@@ -43,31 +43,19 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-// Returns the zero points of `quantization`, as stored in it.
-absl::Span<const int64_t> GetRawZeroPoints(const Quantization& quantization) {
+absl::StatusOr<const ZeroPoints&> GetZeroPointsObject(
+    const Quantization& quantization) {
   if (absl::StatusOr<const BlockwiseQuantization&> bwq =
           quantization.As<const BlockwiseQuantization>();
       bwq.ok()) {
     return bwq->zero_points;
   }
   if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
-          quantization.As<const PerChannelAffineQuantization>();
-      pcq.ok()) {
+                 quantization.As<const PerChannelAffineQuantization>();
+             pcq.ok()) {
     return pcq->zero_points;
   }
-  return {};
-}
-
-// Quantization parameters may omit the zero points (symmetric quantization) or
-// give a single one for all the scales. Otherwise there must be one per scale.
-absl::Status CheckZeroPointCount(size_t num_zero_points, size_t num_scales,
-                                 absl::string_view name) {
-  if (num_zero_points > 1 && num_zero_points != num_scales) {
-    return absl::InvalidArgumentError(
-        absl::StrCat(name, ": zero point count (", num_zero_points,
-                     ") doesn't match the scale count (", num_scales, ")."));
-  }
-  return absl::OkStatus();
+  return absl::NotFoundError("No zero points in quantization.");
 }
 
 // Appends `values` to the graph's constant buffers and returns a stable pointer
@@ -176,24 +164,21 @@ absl::Span<const float> YnnpackBuildContext::GetScales(
   return {};
 }
 
-std::vector<int32_t> YnnpackBuildContext::GetZeroPoints(
+absl::StatusOr<std::vector<int32_t>> YnnpackBuildContext::GetZeroPoints(
     const Quantization& quantization) {
   const size_t num_scales = GetScales(quantization).size();
-  const absl::Span<const int64_t> zero_points = GetRawZeroPoints(quantization);
-  if (zero_points.empty()) {
-    return std::vector<int32_t>(num_scales, 0);
+  if (absl::StatusOr<const ZeroPoints&> zp_obj =
+          GetZeroPointsObject(quantization);
+      zp_obj.ok()) {
+    return zp_obj->CopyAs<int32_t>(num_scales);
   }
-  if (zero_points.size() == 1) {
-    return std::vector<int32_t>(num_scales,
-                                static_cast<int32_t>(zero_points[0]));
-  }
-  return std::vector<int32_t>(zero_points.begin(), zero_points.end());
+  return std::vector<int32_t>(num_scales, 0);
 }
 
 bool YnnpackBuildContext::IsSymmetric(const Quantization& quantization) {
-  const absl::Span<const int64_t> zero_points = GetRawZeroPoints(quantization);
-  return std::all_of(zero_points.begin(), zero_points.end(),
-                     [](int64_t zp) { return zp == 0; });
+  absl::StatusOr<const ZeroPoints&> zp_obj =
+      GetZeroPointsObject(quantization);
+  return !zp_obj.ok() || zp_obj->IsSymmetric();
 }
 
 size_t YnnpackBuildContext::ElementsPerByte(ynn_type type) {
@@ -255,8 +240,7 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
           ") doesn't match the expected block count (", channels * num_blocks,
           ")."));
     }
-    return CheckZeroPointCount(bwq->zero_points.size(), bwq->scales.size(),
-                               info.name);
+    return bwq->zero_points.Validate<int32_t>(bwq->scales.size());
   }
 
   if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
@@ -278,8 +262,7 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
             dims[quantized_dimension], ")."));
       }
     }
-    return CheckZeroPointCount(pcq->zero_points.size(), pcq->scales.size(),
-                               info.name);
+    return pcq->zero_points.Validate<int32_t>(pcq->scales.size());
   }
 
   return absl::UnimplementedError(
@@ -441,7 +424,8 @@ absl::StatusOr<uint32_t> YnnpackBuildContext::DefinePerChannelDequantize(
     const graph::TensorInformation& info, uint32_t data_id, uint32_t fp32_id) {
   const Quantization& quantization = *info.quantization;
   const absl::Span<const float> scales = GetScales(quantization);
-  const std::vector<int32_t> zero_points = GetZeroPoints(quantization);
+  LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<int32_t> zero_points,
+                              GetZeroPoints(quantization));
 
   // The scales apply along the quantized dimension; every other dimension is
   // declared with extent 1, which makes it a broadcast dimension, so the scale
@@ -477,7 +461,8 @@ absl::StatusOr<uint32_t> YnnpackBuildContext::DefineBlockwiseDequantize(
   const size_t channels = info.shape[quantized_dimension];
   const size_t num_blocks = info.shape[1 - quantized_dimension] / block_size;
   const absl::Span<const float> scales = GetScales(quantization);
-  const std::vector<int32_t> zero_points = GetZeroPoints(quantization);
+  LRT_TENSOR_ASSIGN_OR_RETURN(const std::vector<int32_t> zero_points,
+                              GetZeroPoints(quantization));
   const absl::string_view name = info.name;
   ynn_subgraph_t sg = subgraph();
 

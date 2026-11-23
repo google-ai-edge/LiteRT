@@ -89,6 +89,39 @@ bazel build -c opt \
 > local `ml-drift` source tree instead of downloading the pinned archive from
 > GitHub.
 
+## Optional: Building the WebGPU Accelerator with Dawn from Source
+
+The WebGPU accelerator loads [Dawn](https://dawn.googlesource.com/dawn) at run
+time (`libwebgpu_dawn.so`, `webgpu_dawn.dll`). To use your own Dawn, for example
+a local checkout with your changes, add `--config=dawn_from_source`.
+
+```bash
+bazel build -c opt --config=dawn_from_source \
+  //litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so
+```
+
+On Windows, build `//litert/runtime/accelerators/gpu:libLiteRtWebGpuAccelerator`
+instead. Building Dawn (Dawn's dependencies are fetched automatically) takes a
+few minutes the first time. To build a local Dawn checkout, or pass Dawn CMake
+options:
+
+```bash
+bazel build -c opt --config=dawn_from_source \
+  --repo_env=LITERT_DAWN_SRC_DIR=$HOME/workspace/dawn \
+  --repo_env=LITERT_DAWN_CMAKE_ARGS="-DDAWN_USE_X11=ON" \
+  //litert/runtime/accelerators/gpu:ml_drift_webgpu_accelerator_so
+```
+
+A local checkout is compiled as C++20, so on Linux also pass
+`--cxxopt=-std=c++20 --host_cxxopt=-std=c++20`. Dawn is always built in
+Release, so use `-c opt`.
+
+The Dawn library is built in the Bazel output base, in
+`<output_base>/external/dawn/_litert_dawn_build/` (see `bazel info
+output_base`); the build prints its path when it builds Dawn. Copy it next to
+the accelerator library and use that directory as the LiteRT runtime library
+directory, so that both are found.
+
 ## Troubleshooting
 
 | Error | Cause | Solution |

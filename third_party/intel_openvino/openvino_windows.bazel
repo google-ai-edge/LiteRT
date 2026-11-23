@@ -1,0 +1,33 @@
+# BUILD content for the @intel_openvino_windows repository.
+
+# cc_import keeps the import libraries out of /WHOLEARCHIVE.
+cc_import(
+    name = "openvino_lib",
+    interface_library = "openvino/runtime/lib/intel64/Release/openvino.lib",
+    shared_library = "openvino/runtime/bin/intel64/Release/openvino.dll",
+)
+
+cc_import(
+    name = "openvino_tflite_frontend_lib",
+    interface_library = "openvino/runtime/lib/intel64/Release/openvino_tensorflow_lite_frontend.lib",
+    shared_library = "openvino/runtime/bin/intel64/Release/openvino_tensorflow_lite_frontend.dll",
+)
+
+cc_library(
+    name = "openvino",
+    hdrs = glob([
+        "openvino/runtime/include/**/*.h",
+        "openvino/runtime/include/**/*.hpp",
+    ]),
+    includes = [
+        "openvino/runtime/include/ie/cpp",
+        "openvino/runtime/include/ie",
+        "openvino/runtime/include",
+    ],
+    strip_include_prefix = "openvino/runtime/include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":openvino_lib",
+        ":openvino_tflite_frontend_lib",
+    ],
+)

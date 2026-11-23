@@ -16,7 +16,6 @@
 
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -25,14 +24,25 @@
 
 struct LiteRtOpaqueOptionsT {
   std::string payload_identifier;
-  std::unique_ptr<void, void (*)(void*)> payload_data;
+  void* payload_data = nullptr;
+  void (*payload_destructor)(void*) = nullptr;
   LiteRtOpaqueOptionsT* next = nullptr;
   LiteRtOpaqueOptionsHashFunc payload_hash_func = nullptr;
 
   LiteRtOpaqueOptionsT(std::string payload_identifier_, void* payload_data_,
                        void (*payload_destructor_)(void*))
       : payload_identifier(std::move(payload_identifier_)),
-        payload_data(payload_data_, payload_destructor_) {}
+        payload_data(payload_data_),
+        payload_destructor(payload_destructor_) {}
+
+  LITERT_NO_CFI_CHECK ~LiteRtOpaqueOptionsT() {
+    if (payload_destructor) {
+      payload_destructor(payload_data);
+    }
+  }
+
+  LiteRtOpaqueOptionsT(const LiteRtOpaqueOptionsT&) = delete;
+  LiteRtOpaqueOptionsT& operator=(const LiteRtOpaqueOptionsT&) = delete;
 };
 
 LiteRtStatus LiteRtCreateOpaqueOptions(const char* payload_identifier,
@@ -69,7 +79,7 @@ LiteRtStatus LiteRtGetOpaqueOptionsData(LiteRtOpaqueOptions options,
   if (!options || !payload_data) {
     return kLiteRtStatusErrorInvalidArgument;
   }
-  *payload_data = options->payload_data.get();
+  *payload_data = options->payload_data;
   return kLiteRtStatusOk;
 }
 
@@ -81,7 +91,7 @@ LiteRtStatus LiteRtFindOpaqueOptionsData(LiteRtOpaqueOptions options,
   }
   while (options) {
     if (options->payload_identifier == payload_identifier) {
-      *payload_data = options->payload_data.get();
+      *payload_data = options->payload_data;
       return kLiteRtStatusOk;
     } else {
       options = options->next;
@@ -146,18 +156,18 @@ uint64_t HashCStringPayload(void* payload_data) {
 }
 }  // namespace
 
-LiteRtStatus LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options,
-                                        uint64_t* hash) {
+LITERT_NO_CFI_CHECK LiteRtStatus
+LiteRtGetOpaqueOptionsHash(LiteRtOpaqueOptions options, uint64_t* hash) {
   if (!options || !hash) {
     return kLiteRtStatusErrorInvalidArgument;
   }
   if (options->payload_hash_func) {
-    *hash = options->payload_hash_func(options->payload_data.get());
+    *hash = options->payload_hash_func(options->payload_data);
     return kLiteRtStatusOk;
   }
   // If no hash function is provided, default to `HashCStringPayload`.
   // HashCStringPayload assumes a nul-terminated string and is unsafe for
   // other types.
-  *hash = HashCStringPayload(options->payload_data.get());
+  *hash = HashCStringPayload(options->payload_data);
   return kLiteRtStatusOk;
 }

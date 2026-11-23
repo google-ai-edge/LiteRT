@@ -1115,6 +1115,9 @@ def materialize_op_with_output_activation_constraint(
     )
     tensor_name_to_qsv[output_tensor_params.tensor_name]["min"] = min_val
     tensor_name_to_qsv[output_tensor_params.tensor_name]["max"] = max_val
+    # The output range is fixed, so consumers must not derive a different
+    # range from the calibration histogram.
+    tensor_name_to_qsv[output_tensor_params.tensor_name].pop("histogram", None)
 
   return tensor_params
 

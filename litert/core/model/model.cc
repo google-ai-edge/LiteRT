@@ -417,7 +417,34 @@ void LiteRtBuilderT::EraseOp(LiteRtOp opToErase) {
   erases_.insert(opToErase);
 }
 
+void LiteRtBuilderT::SetOpInput(LiteRtOp op, LiteRtParamIndex input_index,
+                                LiteRtTensor new_tensor) {
+  ABSL_DCHECK(op != nullptr) << "Op is null";
+  ABSL_DCHECK(new_tensor != nullptr) << "New tensor is null";
+  input_updates_.push_back({op, input_index, new_tensor});
+}
+
 void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
+  // Apply staged input updates in call order, before erased ops are dropped.
+  for (const auto& [op, input_index, new_tensor] : input_updates_) {
+    if (erases_.contains(op) || input_index >= op->Inputs().size()) {
+      continue;
+    }
+    LiteRtTensor old_tensor = op->Inputs()[input_index];
+    if (old_tensor != nullptr) {
+      for (LiteRtParamIndex i = 0; i < old_tensor->NumUses(); ++i) {
+        auto [user, arg_ind] = old_tensor->GetUse(i);
+        if (user == op && arg_ind == input_index) {
+          old_tensor->RemoveUse(i);
+          break;
+        }
+      }
+    }
+    op->Inputs()[input_index] = new_tensor;
+    new_tensor->Users().push_back(op);
+    new_tensor->UserArgInds().push_back(input_index);
+  }
+
   // Remove all ops that are marked for erases.
   for (LiteRtOp op : erases_) {
     Drop(*op);
@@ -490,6 +517,7 @@ void LiteRtBuilderT::ApplyChanges(LiteRtSubgraphT* subgraph_to_apply) {
   subgraph_to_apply->TransferTensorsFrom(subgraph_.TensorsAllocation());
 
   erases_.clear();
+  input_updates_.clear();
   allocated_ops_.clear();
   allocated_tensors_.clear();
 }
@@ -808,6 +836,11 @@ bool DCE(LiteRtSubgraphT& subgraph) {
 
   absl::flat_hash_set<const LiteRtTensorT*> referenced_tensors;
   for (const auto* tensor : subgraph.Tensors()) {
+    // A tensor this pass removes keeps nothing alive: the scales of a dead
+    // blockwise-quantized constant go with it.
+    if (IsTensorDead(*tensor) && !IsIO(subgraph, *tensor)) {
+      continue;
+    }
     if (tensor->Qparams().first == kLiteRtQuantizationBlockWise) {
       const auto& block_wise = tensor->Qparams().second.block_wise;
       if (block_wise.scales) {

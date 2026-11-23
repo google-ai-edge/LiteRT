@@ -46,9 +46,20 @@
 
 namespace litert::testing {
 
-template <typename T>
+// Generates test graphs for the `odml.qkv_norm_rope` StableHLO composite op.
+//
+// Template parameters:
+// - `T`: Activation and weight element type (`float` or `tflite::half`).
+// - `ConstantWeights`:
+//   - `std::false_type`: `q_weight` and `k_weight` are dynamic runtime subgraph
+//     inputs.
+//   - `std::true_type`: `q_weight` and `k_weight` are static constant tensors
+//     baked into the flatbuffer (matching production LLM exports).
+template <typename T, typename ConstantWeights = std::false_type>
 class QkvNormRope : public TestGraph {
  public:
+  static constexpr bool kConstantWeights = ConstantWeights::value;
+
   struct Params {
     size_t batch = 1;
     size_t seq_len = 1;
@@ -150,7 +161,7 @@ class QkvNormRope : public TestGraph {
       DefaultDevice& device,
       const RandomTensorDataBuilder& data_builder) const override {
     VarBuffers inputs;
-    inputs.reserve(4);
+    inputs.reserve(kConstantWeights ? 2 : 4);
 
     size_t total_dim =
         (params_.num_heads + 2 * params_.num_kv_heads) * params_.head_dim;
@@ -180,22 +191,24 @@ class QkvNormRope : public TestGraph {
     }
     inputs.push_back(std::move(pos));
 
-    std::array<Layout::Dim, 1> weight_shape = {
-        static_cast<Layout::Dim>(params_.head_dim)};
-    auto weight_builder = data_builder;
-    if (!weight_builder.IsFloatDummy()) {
-      weight_builder.SetFloatRange(0.5f, 1.5f);
+    if constexpr (!kConstantWeights) {
+      std::array<Layout::Dim, 1> weight_shape = {
+          static_cast<Layout::Dim>(params_.head_dim)};
+      auto weight_builder = data_builder;
+      if (!weight_builder.IsFloatDummy()) {
+        weight_builder.SetFloatRange(0.5f, 1.5f);
+      }
+
+      LITERT_ASSIGN_OR_RETURN(auto q_w, SimpleBuffer::Create<T>(weight_shape));
+      LITERT_RETURN_IF_ERROR(
+          (q_w.template WriteRandom<T>(weight_builder, device)));
+      inputs.push_back(std::move(q_w));
+
+      LITERT_ASSIGN_OR_RETURN(auto k_w, SimpleBuffer::Create<T>(weight_shape));
+      LITERT_RETURN_IF_ERROR(
+          (k_w.template WriteRandom<T>(weight_builder, device)));
+      inputs.push_back(std::move(k_w));
     }
-
-    LITERT_ASSIGN_OR_RETURN(auto q_w, SimpleBuffer::Create<T>(weight_shape));
-    LITERT_RETURN_IF_ERROR(
-        (q_w.template WriteRandom<T>(weight_builder, device)));
-    inputs.push_back(std::move(q_w));
-
-    LITERT_ASSIGN_OR_RETURN(auto k_w, SimpleBuffer::Create<T>(weight_shape));
-    LITERT_RETURN_IF_ERROR(
-        (k_w.template WriteRandom<T>(weight_builder, device)));
-    inputs.push_back(std::move(k_w));
 
     return inputs;
   }
@@ -224,10 +237,29 @@ class QkvNormRope : public TestGraph {
         "qkv", litert::tensor::ApiType<T>::value, {b, 1, s, total_dim});
     TensorTf position = litert::tensor::Create(
         "position", litert::tensor::ApiType<int32_t>::value, {b, s});
-    TensorTf q_weight = litert::tensor::Create(
-        "q_weight", litert::tensor::ApiType<T>::value, {head_dim});
-    TensorTf k_weight = litert::tensor::Create(
-        "k_weight", litert::tensor::ApiType<T>::value, {head_dim});
+    TensorTf q_weight;
+    TensorTf k_weight;
+    if constexpr (kConstantWeights) {
+      std::vector<float> q_weight_data(head_dim);
+      std::vector<float> k_weight_data(head_dim);
+      for (int i = 0; i < head_dim; ++i) {
+        q_weight_data[i] = 0.5f + static_cast<float>(i % 17) / 16.0f;
+        k_weight_data[i] = 0.5f + static_cast<float>((i + 5) % 17) / 16.0f;
+      }
+      q_weight = litert::tensor::Create(
+          "q_weight", litert::tensor::ApiType<T>::value, {head_dim},
+          litert::tensor::OwningCpuBuffer::CopyAs(
+              litert::tensor::ApiType<T>::value, q_weight_data));
+      k_weight = litert::tensor::Create(
+          "k_weight", litert::tensor::ApiType<T>::value, {head_dim},
+          litert::tensor::OwningCpuBuffer::CopyAs(
+              litert::tensor::ApiType<T>::value, k_weight_data));
+    } else {
+      q_weight = litert::tensor::Create(
+          "q_weight", litert::tensor::ApiType<T>::value, {head_dim});
+      k_weight = litert::tensor::Create(
+          "k_weight", litert::tensor::ApiType<T>::value, {head_dim});
+    }
 
     flexbuffers::Builder fbb;
     fbb.Map([&]() {

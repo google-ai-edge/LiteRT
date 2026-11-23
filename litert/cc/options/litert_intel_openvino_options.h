@@ -73,6 +73,18 @@ class IntelOpenVinoOptions : public ConcreteOptionsBase {
     return enable_weight_sharing;
   }
 
+  void SetDumpOvirDir(const std::string& dump_ovir_dir) {
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsSetDumpOvirDir(Get(), dump_ovir_dir.c_str()));
+  }
+
+  std::string GetDumpOvirDir() const {
+    const char* dump_ovir_dir = nullptr;
+    LITERT_ABORT_IF_ERROR(
+        LrtIntelOpenVinoOptionsGetDumpOvirDir(Get(), &dump_ovir_dir));
+    return dump_ovir_dir;
+  }
+
   void SetConfigsMapOption(const char* key, const char* value) {
     LITERT_ABORT_IF_ERROR(
         LrtIntelOpenVinoOptionsSetConfigsMapOption(Get(), key, value));

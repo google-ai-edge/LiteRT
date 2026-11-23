@@ -24,7 +24,7 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
-namespace litert::internal {
+namespace litert::profiling {
 namespace {
 
 using ::testing::Ge;
@@ -52,4 +52,4 @@ TEST(GetHostMemoryUsageTest, ReportsThisProcess) {
 }
 
 }  // namespace
-}  // namespace litert::internal
+}  // namespace litert::profiling

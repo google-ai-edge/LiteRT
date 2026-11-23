@@ -479,7 +479,8 @@ TEST(QuantizedEmbeddingTest, RejectsInvalidBlockwiseMetadata) {
       {{1, 1, 1}, {0}, 2, 0},           // Scale count not divisible by rows.
       {{1, 1}, {0}, 2, 0},              // Too few scales for the logical width.
       {{1, 1, 1, 1}, {0, 0, 0}, 2, 0},  // Wrong zero-point count.
-      {{1, 1, 1, 1}, {}, 2, 0},         // Missing zero points.
+      {{1, 1, 1, 1},
+       ZeroPoints::Float({std::numeric_limits<float>::quiet_NaN()}), 2, 0},
       {{1, 1, 1, 1}, {0}, 2, 1},        // Wrong quantization axis.
       {{1, 0, 1, 1}, {0}, 2, 0},        // Nonpositive scale.
       {{1, std::numeric_limits<float>::quiet_NaN(), 1, 1}, {0}, 2, 0},
@@ -512,6 +513,20 @@ TEST(QuantizedEmbeddingTest, RejectsInvalidPerChannelMetadata) {
     EXPECT_EQ(GemmaEmbeddingTable::Create(tensor).status().code(),
               absl::StatusCode::kInvalidArgument);
   }
+}
+
+TEST(QuantizedEmbeddingTest, EmptyZeroPointsMeanSymmetricBlockwiseLookup) {
+  TensorHandle tensor(
+      {.type = Type::kI8,
+       .shape = {2, 2},
+       .buffer = std::vector<int8_t>{2, -4, 1, -3},
+       .quantization = std::make_shared<BlockwiseQuantization>(
+           std::vector<float>{0.5f, 2.0f}, ZeroPoints{}, /*block_size=*/2,
+           /*quantized_dimension=*/0)});
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::unique_ptr<GemmaEmbeddingTable> table,
+                                  GemmaEmbeddingTable::Create(tensor));
+  EXPECT_THAT(table->Lookup(0), IsOkAndHolds(ElementsAre(1.0f, -2.0f)));
+  EXPECT_THAT(table->Lookup(1), IsOkAndHolds(ElementsAre(2.0f, -6.0f)));
 }
 
 TEST(QuantizedEmbeddingTest, RejectsOddPackedInt4Rows) {

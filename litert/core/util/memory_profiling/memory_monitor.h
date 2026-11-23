@@ -30,7 +30,7 @@
 #include "litert/core/util/memory_profiling/accelerator_memory_monitor.h"
 #include "litert/core/util/memory_profiling/memory_snapshot.h"
 
-namespace litert::internal {
+namespace litert::profiling {
 
 // The peaks a MemoryMonitor has seen since it was started.
 //
@@ -185,6 +185,6 @@ class MemoryMonitor {
   std::optional<MemorySnapshot> latest_ ABSL_GUARDED_BY(mutex_);
 };
 
-}  // namespace litert::internal
+}  // namespace litert::profiling
 
 #endif  // THIRD_PARTY_ODML_LITERT_LITERT_CORE_UTIL_MEMORY_PROFILING_MEMORY_MONITOR_H_

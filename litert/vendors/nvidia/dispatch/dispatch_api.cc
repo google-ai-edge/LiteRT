@@ -25,6 +25,7 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -33,12 +34,15 @@
 #include <filesystem>
 #include <functional>
 #include <limits>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
 #include <string>
 #include <system_error>
+#include <thread>
+#include <tuple>
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
@@ -70,10 +74,17 @@
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
+#include "litert/vendors/nvidia/compiler/hyper_connection_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
+#include "litert/vendors/nvidia/compiler/ple_tail_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
+#include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
+#include "litert/vendors/nvidia/compiler/slot_plugins.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
+#include "litert/vendors/nvidia/decode_slots.h"
 #include "litert/vendors/nvidia/dispatch/aot_artifact.h"
 #include "litert/vendors/nvidia/dispatch/dispatch_profiler.h"
 #include "litert/vendors/nvidia/dispatch/greedy_sampler_c_api.h"
@@ -88,6 +99,7 @@
 #include "litert/vendors/nvidia/dispatch/topk_candidates_c_api.h"
 #include "litert/vendors/nvidia/dispatch/topk_candidates_kernel.h"
 #include "litert/vendors/nvidia/dispatch/weight_store.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_plugin.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -179,12 +191,37 @@ struct TokenTableWaiter {
   bool failed = false;
 };
 
+// A copy of a step feed's registrations to the device, on a thread of its
+// own: the step feed's context goes on decoding without steps ahead and takes
+// the tables at its first invocation after the thread has published them.
+// The thread reads the registrations' memory, which is the caller's for as
+// long as the step feed's model: the copy is stopped and waited for when the
+// step feed's context goes (ForgetTokenTableWaiter).
+struct TokenTableUpload {
+  // Waits for the thread, which takes the registry's lock to publish: an
+  // upload is let go of outside that lock.
+  ~TokenTableUpload() {
+    if (thread.joinable()) thread.join();
+  }
+
+  const void* context = nullptr;  // the step feed the copy is for
+  int device = 0;                 // that step feed's CUDA device
+  std::vector<AwaitedTokenTable> keys;
+  // The registration to copy, by key (null: the table is on the device).
+  std::vector<std::shared_ptr<const TokenTableSource>> sources;
+  std::atomic<bool> cancelled{false};  // the step feed went: nothing is kept
+  bool done = false;  // under the registry's lock: the thread is past it
+  std::thread thread;
+};
+
 // The tables on the device (the first copy of a kind, vocab and dim serves
-// every step feed that awaits one) and the step feeds that await one.
+// every step feed that awaits one), the step feeds that await one, and the
+// copy to the device in flight (one at a time).
 struct TokenTableRegistry {
   std::mutex mutex;
   std::vector<RegisteredTokenTable> tables;
   std::vector<TokenTableWaiter> waiters;
+  std::unique_ptr<TokenTableUpload> upload;
 };
 
 TokenTableRegistry& GetTokenTableRegistry() {
@@ -209,8 +246,9 @@ uint64_t NextDeviceContextSerial() {
 // the context window (the drafter's steps plus one or two in a row) or, when
 // adaptive, for a bootstrap of 16 plain steps and the priming step after it,
 // none of which should take the tables' device memory for the rest of the
-// process; plain decoding runs its first response's first steps without
-// steps ahead, once per process.
+// process (the drafter's chained steps take the token table, DraftFeed);
+// plain decoding runs its first response's first steps without steps ahead,
+// once per process.
 constexpr uint64_t kTokenTableUploadInvocations = 32;
 
 // How the session samples, for the steps run ahead (step_sampler_c_api.h):
@@ -225,9 +263,13 @@ struct StepSamplerState {
   int32_t count = 0;
 };
 
+// One per thread: a runtime samples and invokes an engine's decode steps on one
+// thread, and a process with several engines (an evaluation decoding several
+// prompts side by side) gives each its own; one engine's draws must not steer
+// another's steps ahead.
 StepSamplerState& GetStepSamplerState() {
-  static auto* state = new StepSamplerState;
-  return *state;
+  thread_local StepSamplerState state;
+  return state;
 }
 
 // The local attention's sliding window the runtime told (token_table_c_api.h),
@@ -240,9 +282,10 @@ std::atomic<uint32_t>& StepFeedLocalWindow() {
 // The decode invocations the host will still make after its next one
 // (step_sampler_c_api.h, StepFeedSetBudget): the steps ahead stop there. A
 // budget is for the invocation it was told before: a step feed's invocation
-// takes it when it starts (UINT32_MAX, no bound, stays for one not told).
+// takes it when it starts (UINT32_MAX, no bound, stays for one not told). Per
+// thread, as the sampler's state above.
 std::atomic<uint32_t>& StepFeedBudget() {
-  static std::atomic<uint32_t> budget{UINT32_MAX};
+  thread_local std::atomic<uint32_t> budget{UINT32_MAX};
   return budget;
 }
 
@@ -290,48 +333,63 @@ class StepHandoffRegistry {
   std::unordered_map<const void*, StepHandoff> handoffs_;
 };
 
-// Copies a registration to the device, under the registry's lock: the table
-// on the device, or failed. A failed copy is not tried again (a decode step
-// would otherwise try at every invocation) and leaves no CUDA error behind:
-// the decode step's own launches check for one.
-RegisteredTokenTable UploadTokenTable(const TokenTableSource& source) {
+// Copies a registration to the device on `stream`, on the upload's thread:
+// the table on the device, or failed (without a word when `cancelled`
+// stopped the copy). The registration's memory is pageable (the model file,
+// mapped), so the copies go through page-locked buffers (weight_store.h): a
+// synchronous copy of it from the decode loop that asked for the table held
+// that loop up, for 0.3 s with the E2B's 1.2 GB of per-layer tables in the
+// page cache and for 2.5 s without.
+RegisteredTokenTable UploadTokenTable(const TokenTableSource& source,
+                                      cudaStream_t stream,
+                                      const std::atomic<bool>& cancelled) {
   const auto start = std::chrono::steady_clock::now();
   RegisteredTokenTable table = source.table;
   const size_t table_bytes =
       source.table_part_bytes * source.table_parts.size();
   const size_t scales_bytes =
       source.scale_part_bytes * source.scale_parts.size();
+  std::string error;
   cudaError_t status = cudaMalloc(&table.table, table_bytes);
-  for (size_t i = 0; status == cudaSuccess && i < source.table_parts.size();
-       ++i) {
-    status = cudaMemcpy(
-        static_cast<uint8_t*>(table.table) + i * source.table_part_bytes,
-        source.table_parts[i], source.table_part_bytes, cudaMemcpyHostToDevice);
-  }
   if (status == cudaSuccess) status = cudaMalloc(&table.scales, scales_bytes);
-  for (size_t i = 0; status == cudaSuccess && i < source.scale_parts.size();
-       ++i) {
-    status = cudaMemcpy(
-        static_cast<uint8_t*>(table.scales) + i * source.scale_part_bytes,
-        source.scale_parts[i], source.scale_part_bytes, cudaMemcpyHostToDevice);
-  }
   if (status != cudaSuccess) {
-    static_cast<void>(cudaGetLastError());
+    error = cudaGetErrorString(status);
+  } else {
+    std::vector<litert::nvidia::HostToDeviceCopy> copies;
+    copies.reserve(source.table_parts.size() + source.scale_parts.size());
+    for (size_t i = 0; i < source.table_parts.size(); ++i) {
+      copies.push_back(
+          {source.table_parts[i], source.table_part_bytes,
+           static_cast<uint8_t*>(table.table) + i * source.table_part_bytes});
+    }
+    for (size_t i = 0; i < source.scale_parts.size(); ++i) {
+      copies.push_back(
+          {source.scale_parts[i], source.scale_part_bytes,
+           static_cast<uint8_t*>(table.scales) + i * source.scale_part_bytes});
+    }
+    if (auto copied = litert::nvidia::CopyToDevice(copies, stream, &cancelled);
+        !copied) {
+      error = copied.Error().Message();
+    }
+  }
+  if (!error.empty() || cancelled.load()) {
     if (table.scales != nullptr) cudaFree(table.scales);
     if (table.table != nullptr) cudaFree(table.table);
     table.table = nullptr;
     table.scales = nullptr;
     table.upload_failed = true;
-    LITERT_LOG(LITERT_WARNING,
-               "NVIDIA dispatch: the registered table [%u, %u]%s cannot be "
-               "copied to the device (%zu bytes): %s; no step feed takes it",
-               table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
-               table_bytes + scales_bytes, cudaGetErrorString(status));
+    if (!error.empty()) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch: the registered table [%u, %u]%s cannot be "
+                 "copied to the device (%zu bytes): %s; no step feed takes it",
+                 table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
+                 table_bytes + scales_bytes, error.c_str());
+    }
     return table;
   }
   LITERT_LOG(LITERT_INFO,
              "NVIDIA dispatch: the registered table [%u, %u]%s copied to the "
-             "device for a decode loop (%zu bytes, %.1f ms)",
+             "device beside its decode loop (%zu bytes, %.1f ms)",
              table.vocab, table.dim, table.kind == 0 ? "" : " (per-layer)",
              table_bytes + scales_bytes,
              std::chrono::duration<double, std::milli>(
@@ -367,100 +425,144 @@ TokenTableWaiter* FindWaiter(TokenTableRegistry& registry, const void* context,
   return nullptr;
 }
 
+// The upload's thread: copies the registrations of `upload` to the device
+// and publishes the tables, all or none. A copy that fails is its step
+// feed's own failure and is not tried again (a decode step would otherwise
+// start one at every invocation): another model's registration of the same
+// table may still be copied.
+void RunTokenTableUpload(TokenTableUpload* upload) {
+  std::vector<RegisteredTokenTable> copies(upload->keys.size());
+  cudaStream_t stream = nullptr;
+  cudaError_t status = cudaSetDevice(upload->device);
+  if (status == cudaSuccess) {
+    status = cudaStreamCreateWithFlags(&stream, cudaStreamNonBlocking);
+  }
+  bool copied = status == cudaSuccess;
+  if (!copied) {
+    LITERT_LOG(LITERT_WARNING,
+               "NVIDIA dispatch: the registered tables cannot be copied to "
+               "the device: %s; no step feed takes them",
+               cudaGetErrorString(status));
+  }
+  for (size_t i = 0; copied && i < copies.size(); ++i) {
+    if (upload->sources[i] == nullptr) continue;
+    copies[i] =
+        UploadTokenTable(*upload->sources[i], stream, upload->cancelled);
+    copied = !copies[i].upload_failed;
+  }
+  if (stream != nullptr) cudaStreamDestroy(stream);
+  auto& registry = GetTokenTableRegistry();
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  // Under the lock the step feed is either still there, and its tables are
+  // published, or it went, and stopped the copy before it let go of the lock.
+  const bool publish = copied && !upload->cancelled.load();
+  for (size_t i = 0; i < copies.size(); ++i) {
+    if (upload->sources[i] == nullptr) continue;
+    if (publish) {
+      registry.tables.push_back(copies[i]);
+      // Every step feed that awaits such a table takes this copy.
+      for (auto& w : registry.waiters) {
+        if (w.key == upload->keys[i]) w.source.reset();
+      }
+      continue;
+    }
+    if (copies[i].scales != nullptr) cudaFree(copies[i].scales);
+    if (copies[i].table != nullptr) cudaFree(copies[i].table);
+    if (TokenTableWaiter* waiter =
+            FindWaiter(registry, upload->context, upload->keys[i])) {
+      waiter->failed = true;
+      waiter->source.reset();
+    }
+  }
+  upload->done = true;
+}
+
 // The tables step feed `context` (set up in the device context of serial
 // `device_context`) awaits, one state per key; a wait not noted yet is noted.
 // With `upload`, once every table is on the device or registered for it and
-// none failed, its registrations go to the device: all or none, copied
-// outside the registry's lock (a copy from a cold page cache takes a second
-// or two), and published unless another step feed published the same table
-// meanwhile. A failure is the step feed's own: another model's registration
-// of the same table may still be copied.
+// none failed, a thread starts to copy its registrations to the device
+// (TokenTableUpload; a copy from a cold page cache takes a second or two),
+// unless another step feed's copy is in flight: the states of this call
+// still lack those tables, and a later call finds them on the device, or
+// the step feed failed.
+// With `adopt`, a step feed with no registration of its own takes another
+// step feed's registration of such a table: an MTP drafter embeds its tokens
+// with the base model's embedder, whose registration is for the base model's
+// decode step.
 std::vector<TokenTableState> FindTokenTables(
     const void* context, uint64_t device_context,
-    const std::vector<AwaitedTokenTable>& keys, bool upload) {
+    const std::vector<AwaitedTokenTable>& keys, bool upload,
+    bool adopt = false) {
   auto& registry = GetTokenTableRegistry();
   std::vector<TokenTableState> states(keys.size());
   std::vector<std::shared_ptr<const TokenTableSource>> sources(keys.size());
-  {
-    std::lock_guard<std::mutex> lock(registry.mutex);
-    bool ready = true;
-    for (size_t i = 0; i < keys.size(); ++i) {
-      if (const RegisteredTokenTable* table =
-              TableOnDevice(registry, keys[i])) {
-        states[i] = {*table, true, false};
-        continue;
-      }
-      TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i]);
-      if (waiter == nullptr) {
-        registry.waiters.push_back(
-            {context, device_context, keys[i], nullptr, false});
+  std::unique_ptr<TokenTableUpload> finished;  // let go of after the lock
+  std::lock_guard<std::mutex> lock(registry.mutex);
+  if (registry.upload != nullptr && registry.upload->done) {
+    finished = std::move(registry.upload);
+  }
+  bool ready = true;
+  bool on_device = true;
+  for (size_t i = 0; i < keys.size(); ++i) {
+    if (const RegisteredTokenTable* table = TableOnDevice(registry, keys[i])) {
+      states[i] = {*table, true, false};
+      continue;
+    }
+    on_device = false;
+    TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i]);
+    if (waiter == nullptr) {
+      registry.waiters.push_back(
+          {context, device_context, keys[i], nullptr, false});
+      if (!adopt) {
         ready = false;
         continue;
       }
-      states[i] = {std::nullopt, waiter->source != nullptr, waiter->failed};
-      ready = ready && states[i].registered && !states[i].failed;
-      sources[i] = waiter->source;
+      waiter = &registry.waiters.back();
     }
-    if (!upload || !ready) return states;
-  }
-  std::vector<RegisteredTokenTable> copies(keys.size());
-  bool copied = true;
-  for (size_t i = 0; copied && i < keys.size(); ++i) {
-    if (sources[i] == nullptr) continue;
-    copies[i] = UploadTokenTable(*sources[i]);
-    copied = !copies[i].upload_failed;
-  }
-  std::lock_guard<std::mutex> lock(registry.mutex);
-  if (!copied) {
-    // Another step feed published every table this one copied meanwhile (its
-    // own copy failed for want of the memory theirs took): those serve it.
-    copied = true;
-    for (size_t i = 0; i < keys.size(); ++i) {
-      if (sources[i] != nullptr &&
-          TableOnDevice(registry, keys[i]) == nullptr) {
-        copied = false;
+    if (adopt && waiter->source == nullptr && !waiter->failed) {
+      for (const auto& other : registry.waiters) {
+        if (other.key == keys[i] && other.source != nullptr) {
+          waiter->source = other.source;
+          break;
+        }
       }
     }
+    states[i] = {std::nullopt, waiter->source != nullptr, waiter->failed};
+    ready = ready && states[i].registered && !states[i].failed;
+    sources[i] = waiter->source;
   }
-  for (size_t i = 0; i < keys.size(); ++i) {
-    if (sources[i] == nullptr) continue;
-    const RegisteredTokenTable* existing = TableOnDevice(registry, keys[i]);
-    if (!copied || existing != nullptr) {
-      // Not published: all or none, or another step feed's copy stands.
-      if (copies[i].scales != nullptr) cudaFree(copies[i].scales);
-      if (copies[i].table != nullptr) cudaFree(copies[i].table);
-    }
-    if (!copied) {
-      if (TokenTableWaiter* waiter = FindWaiter(registry, context, keys[i])) {
-        waiter->failed = true;
-        waiter->source.reset();
-      }
-      states[i].registered = false;
-      states[i].failed = true;
-      continue;
-    }
-    if (existing == nullptr) {
-      registry.tables.push_back(copies[i]);
-      existing = &registry.tables.back();
-    }
-    states[i].table = *existing;
-    // Every step feed that awaits such a table takes this copy.
-    for (auto& w : registry.waiters) {
-      if (w.key == keys[i]) w.source.reset();
-    }
+  if (!upload || !ready || on_device || registry.upload != nullptr) {
+    return states;
   }
+  registry.upload = std::make_unique<TokenTableUpload>();
+  registry.upload->context = context;
+  if (cudaGetDevice(&registry.upload->device) != cudaSuccess) {
+    registry.upload->device = -1;  // the thread fails the copy and says so
+  }
+  registry.upload->keys = keys;
+  registry.upload->sources = std::move(sources);
+  registry.upload->thread =
+      std::thread(RunTokenTableUpload, registry.upload.get());
   return states;
 }
 
-// Forgets what a step feed awaits, when its context goes.
+// Forgets what a step feed awaits, when its context goes, and stops a copy
+// made for it: once this returns, nothing reads the memory of that step
+// feed's registrations any more.
 void ForgetTokenTableWaiter(const void* context) {
   auto& registry = GetTokenTableRegistry();
+  std::unique_ptr<TokenTableUpload> stopped;  // let go of after the lock
   std::lock_guard<std::mutex> lock(registry.mutex);
   registry.waiters.erase(
       std::remove_if(
           registry.waiters.begin(), registry.waiters.end(),
           [&](const TokenTableWaiter& w) { return w.context == context; }),
       registry.waiters.end());
+  if (registry.upload != nullptr &&
+      (registry.upload->done || registry.upload->context == context)) {
+    registry.upload->cancelled = true;
+    stopped = std::move(registry.upload);
+  }
 }
 
 // The step feeds a registration of such a table on this thread is for: those
@@ -487,12 +589,12 @@ bool TokenTableWanted(const AwaitedTokenTable& key) {
 }
 
 // Takes a registration for the step feeds it is for (RegistrationWanted,
-// checked again under the lock). Nothing is copied now: one of them copies it
-// to the device in a long decode loop (kTokenTableUploadInvocations; under
-// speculative decoding the table never takes device memory). Only those step
-// feeds read the caller's memory, from their own model's decode invocations:
-// the caller's model resources outlive them. The first copy of a kind, vocab
-// and dim serves every step feed that awaits one.
+// checked again under the lock). Nothing is copied now: one of them has it
+// copied to the device in a long decode loop (kTokenTableUploadInvocations),
+// or an MTP drafter whose steps chain (DraftFeed, under speculative decoding).
+// Only that copy reads the caller's memory, no longer than the step feed's
+// context is there: the caller's model resources outlive it. The first copy
+// of a kind, vocab and dim serves every step feed that awaits one.
 LiteRtStatus TakeTokenTable(RegisteredTokenTable registered,
                             const std::vector<const void*>& table_parts,
                             size_t part_bytes,
@@ -810,6 +912,20 @@ class CudaTensorBufferRegistry {
     return nullptr;
   }
 
+  // Whether the buffers at `handle` have pinned host copies that hold the
+  // device copy (a read lock needs no download), and there is a buffer.
+  bool PinnedHostCurrent(void* handle) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    auto range = buffers_.equal_range(handle);
+    if (range.first == range.second) return false;
+    for (auto it = range.first; it != range.second; ++it) {
+      if (!it->second->host_current || !it->second->host_cache_pinned) {
+        return false;
+      }
+    }
+    return true;
+  }
+
   // The host copy of the buffer at `handle` holds the device copy.
   void MarkHostCurrent(void* handle) {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -1082,6 +1198,56 @@ class FusedGreedyRegistry {
   std::unordered_map<const void*, FusedGreedyEntry> entries_;
 };
 
+// The MTP drafter's steps chained on the device (the invocation context's
+// DraftFeed): once a greedy sampler took a step's token from the argmax the
+// step ran on the device (FusedGreedyRegistry, or a step ahead's handoff),
+// the drafter that wrote those logits runs its round's next step. By the
+// logits' device pointer; LiteRT-LM samples a drafter step on the thread that
+// invoked it.
+class DraftFeedRegistry {
+ public:
+  using Launch = std::function<void(const NvidiaGreedySamplerContext*)>;
+  static DraftFeedRegistry& Get() {
+    static auto* registry = new DraftFeedRegistry;
+    return *registry;
+  }
+  void Set(const void* logits, Launch launch) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    launches_[logits] = std::move(launch);
+  }
+  void Clear(const void* logits) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    launches_.erase(logits);
+  }
+  // `context` took the token of the step that wrote `logits`; its argmax is
+  // the context's device result.
+  void Taken(const void* logits, const NvidiaGreedySamplerContext* context) {
+    Launch launch;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      auto it = launches_.find(logits);
+      if (it == launches_.end()) return;
+      launch = it->second;
+    }
+    launch(context);
+  }
+  // A device allocation is going away: no drafter writes logits there.
+  void ForgetRange(const void* begin, size_t bytes) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const uintptr_t first = reinterpret_cast<uintptr_t>(begin);
+    for (auto it = launches_.begin(); it != launches_.end();) {
+      const uintptr_t address = reinterpret_cast<uintptr_t>(it->first);
+      it = address >= first && address - first < std::max<size_t>(bytes, 1)
+               ? launches_.erase(it)
+               : std::next(it);
+    }
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, Launch> launches_;
+};
+
 LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   if (device_ptr == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1110,12 +1276,121 @@ LiteRtStatus ValidateCudaDevicePointer(void* device_ptr) {
   return kLiteRtStatusOk;
 }
 
+// Several LiteRT-LM engines in one process each call into the dispatch from
+// their own thread, and TensorRT-RTX captures a context's CUDA graph in the
+// default (global) capture mode: while one thread captures, another thread's
+// allocation, copy, clear or device synchronization would fail and invalidate
+// that capture. The tensor buffer calls run with this thread's interaction
+// mode relaxed: they touch none of the capturing streams (non-blocking ones).
+// The streams of the invocation contexts, by the host thread that last
+// invoked each: a runtime's steps all run on one thread (each LiteRT-LM
+// engine's own), so what a clear on that thread must wait for is on these.
+class InvocationStreams {
+ public:
+  static InvocationStreams& Get() {
+    static auto* streams = new InvocationStreams();
+    return *streams;
+  }
+
+  void Note(const void* context, cudaStream_t stream) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_[context] = {std::this_thread::get_id(), stream};
+    for (const auto& [other, entry] : entries_) {
+      if (entry.first != std::this_thread::get_id()) {
+        several_threads_.store(true, std::memory_order_relaxed);
+      }
+    }
+  }
+
+  // Whether contexts were ever invoked from two threads (several engines in
+  // the process).
+  bool SeveralThreads() const {
+    return several_threads_.load(std::memory_order_relaxed);
+  }
+
+  void Forget(const void* context) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    entries_.erase(context);
+  }
+
+  // Waits for the steps the contexts may still run: those of the calling
+  // thread's contexts when other threads invoke contexts too (several
+  // engines in a process: each engine's steps run on its own thread), else
+  // those of every context. Never a device synchronization: while another
+  // thread captures a CUDA graph, one fails and spoils that capture. A
+  // stream being captured runs nothing, and is left alone.
+  cudaError_t SynchronizeInvocations() {
+    std::vector<cudaStream_t> mine, all;
+    bool other_threads = false;
+    {
+      std::lock_guard<std::mutex> lock(mutex_);
+      for (const auto& [context, entry] : entries_) {
+        all.push_back(entry.second);
+        if (entry.first == std::this_thread::get_id()) {
+          mine.push_back(entry.second);
+        } else {
+          other_threads = true;
+        }
+      }
+    }
+    for (cudaStream_t stream : !mine.empty() && other_threads ? mine : all) {
+      cudaStreamCaptureStatus capture = cudaStreamCaptureStatusNone;
+      if (cudaError_t status = cudaStreamIsCapturing(stream, &capture);
+          status != cudaSuccess) {
+        return status;
+      }
+      if (capture != cudaStreamCaptureStatusNone) continue;
+      if (cudaError_t status = cudaStreamSynchronize(stream);
+          status != cudaSuccess) {
+        return status;
+      }
+    }
+    return cudaSuccess;
+  }
+
+ private:
+  std::mutex mutex_;
+  std::unordered_map<const void*, std::pair<std::thread::id, cudaStream_t>>
+      entries_;
+  std::atomic<bool> several_threads_{false};
+};
+
+// Only once contexts run on several threads: one engine's calls stay as they
+// were.
+class RelaxedCaptureScope {
+ public:
+  explicit RelaxedCaptureScope(bool always = false)
+      : active_(always || InvocationStreams::Get().SeveralThreads() ||
+                DispatchSlotsSet()) {
+    if (active_) cudaThreadExchangeStreamCaptureMode(&mode_);
+  }
+  ~RelaxedCaptureScope() {
+    if (active_) cudaThreadExchangeStreamCaptureMode(&mode_);
+  }
+  RelaxedCaptureScope(const RelaxedCaptureScope&) = delete;
+  RelaxedCaptureScope& operator=(const RelaxedCaptureScope&) = delete;
+
+ private:
+  // LITERT_NVIDIA_DISPATCH_SLOTS is set (DispatchSlots reads it too).
+  static bool DispatchSlotsSet() {
+    static const bool set = [] {
+      const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
+      return value != nullptr && value[0] != '\0';
+    }();
+    return set;
+  }
+
+  const bool active_;
+  cudaStreamCaptureMode mode_ = cudaStreamCaptureModeRelaxed;
+};
+
 LiteRtStatus CreateCudaTensorBuffer(LiteRtGpuDeviceId device_id,
                                     LiteRtGpuQueueId queue_id,
                                     const LiteRtRankedTensorType* tensor_type,
                                     LiteRtTensorBufferType buffer_type,
                                     size_t bytes, size_t packed_bytes,
                                     HwMemoryInfoPtr* hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   (void)device_id;
   (void)queue_id;
   (void)tensor_type;
@@ -1156,6 +1431,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
                                     HwMemoryHandle hw_buffer_handle,
                                     size_t bytes, size_t packed_bytes,
                                     HwMemoryInfoPtr* hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   (void)device_id;
   (void)queue_id;
   (void)tensor_type;
@@ -1181,6 +1457,7 @@ LiteRtStatus ImportCudaTensorBuffer(LiteRtGpuDeviceId device_id,
 }
 
 LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusOk;
@@ -1190,6 +1467,7 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
     // A sampler that still reads another view of the allocation registers
     // again on its next call.
     FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
+    DraftFeedRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
   }
   LiteRtStatus status = kLiteRtStatusOk;
   if (info->host_cache != nullptr) {
@@ -1217,6 +1495,7 @@ LiteRtStatus DestroyCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
                                   LiteRtTensorBufferLockMode mode,
                                   void** host_memory_ptr) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr || host_memory_ptr == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1250,6 +1529,7 @@ LiteRtStatus LockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info,
 }
 
 LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  RelaxedCaptureScope relaxed_capture;
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1279,6 +1559,9 @@ LiteRtStatus UnlockCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
 }
 
 LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
+  // Always relaxed: a clear can come while another engine captures, before
+  // that engine is known to run on a thread of its own.
+  RelaxedCaptureScope relaxed_capture(/*always=*/true);
   auto* info = AsCudaTensorBufferInfo(hw_memory_info);
   if (info == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
@@ -1291,8 +1574,23 @@ LiteRtStatus ClearCudaTensorBuffer(HwMemoryInfoPtr hw_memory_info) {
   // The device contents change without an invocation: no fused argmax of them
   // can be fresh.
   FusedGreedyRegistry::Get().ForgetRange(info->memory_handle, info->bytes);
-  return CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
-                    "cudaMemset CUDA tensor buffer");
+  // A runtime clears its states when a conversation starts over, while a
+  // step the previous one ran ahead may still be writing them on its own
+  // (non-blocking) stream: the zeros go in after every such write, or a
+  // state rewritten in place (a gated-DeltaNet layer's) starts the next
+  // conversation dirty. The runtime's steps ran on this thread's contexts.
+  LITERT_RETURN_IF_ERROR(
+      CudaStatus(InvocationStreams::Get().SynchronizeInvocations(),
+                 "synchronizing the invocations before a clear"));
+  LITERT_RETURN_IF_ERROR(
+      CudaStatus(cudaMemset(info->memory_handle, 0, copy_bytes),
+                 "cudaMemset CUDA tensor buffer"));
+  // The memset runs on the default stream, which the invocations' streams
+  // (non-blocking) do not wait for: the upload of what the host writes next
+  // could land before it and be zeroed (native Windows, the 26B's vision
+  // encoder read an image's patches as zeros, all or a prefix of them).
+  return CudaStatus(cudaStreamSynchronize(nullptr),
+                    "cudaStreamSynchronize CUDA tensor buffer clear");
 }
 
 Expected<size_t> TensorBufferPackedSize(
@@ -1977,16 +2275,19 @@ LiteRtStatus SampleNvidiaGreedy(NvidiaGreedySamplerContext* context,
     std::copy_n(context->host_result, rows, token_ids);
     ++context->calls;
     ++context->fused_calls;
+    DraftFeedRegistry::Get().Taken(device_logits, context);
     return kLiteRtStatusOk;
   }
   StepHandoff handoff;
   const bool fed = StepHandoffRegistry::Get().Find(device_logits, &handoff);
   if (fed && rows == 1 &&
       !CudaTensorBufferRegistry::Get().AnyHostNewer(handle) && handoff.k == 1) {
-    // The decode step that feeds itself argmaxed the step's logits already.
+    // The decode step that feeds itself, or the drafter's step ahead,
+    // argmaxed the step's logits already.
     token_ids[0] = handoff.ids[0];
     ++context->calls;
     ++context->fused_calls;
+    DraftFeedRegistry::Get().Taken(device_logits, context);
     return kLiteRtStatusOk;
   }
 
@@ -2284,11 +2585,57 @@ class ScopedHostBufferLocks {
 struct AotEngineResidency {
   std::mutex mutex;
   LiteRtDispatchInvocationContext active = nullptr;
+  // The opt-in mode keeps one engine of the device context resident: a
+  // reload evicts the active engine. The variants of a plan (PlanVariantKey)
+  // evict only when one is created; a variant reloaded later stays resident.
+  bool evicts_on_reload = true;
 };
 
 bool LazyAotEnginesEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_LAZY_AOT_ENGINES");
   return value != nullptr && value[0] != '\0' && std::strcmp(value, "0") != 0;
+}
+
+// Plans that hold all their weights (no weight store) and are refitted with
+// the same constants are one partition compiled for several input sizes: the
+// Gemma 4 vision encoder's signatures vision_70 ... vision_1120, of which
+// LiteRT-LM runs one per image, each plan with its own copy of the encoder's
+// 545 MB of weights. Returns the key of such a plan's variants: its IO counts
+// and its refit constants (names, types, counts and sizes, and the first and
+// last bytes of each, which tell different constants apart).
+std::optional<uint64_t> PlanVariantKey(
+    const litert::nvidia::TensorRtBytecode& bytecode) {
+  if (bytecode.weight_store.has_value() || bytecode.trtllm_head.has_value() ||
+      bytecode.step_feed.has_value() || bytecode.refit_weights.empty()) {
+    return std::nullopt;
+  }
+  uint64_t key = 14695981039346656037ull;  // FNV-1a
+  const auto mix = [&key](const void* data, size_t size) {
+    const auto* bytes = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+      key = (key ^ bytes[i]) * 1099511628211ull;
+    }
+  };
+  const uint64_t io[2] = {bytecode.input_names.size(),
+                          bytecode.output_names.size()};
+  mix(io, sizeof(io));
+  constexpr size_t kSampleBytes = 2048;
+  for (const auto& weight : bytecode.refit_weights) {
+    mix(weight.name.data(), weight.name.size());
+    const uint64_t shape[3] = {static_cast<uint64_t>(weight.data_type),
+                               weight.count, weight.size};
+    mix(shape, sizeof(shape));
+    if (weight.data == nullptr) {
+      continue;
+    }
+    const size_t head = std::min(weight.size, kSampleBytes);
+    mix(weight.data, head);
+    if (weight.size > head) {
+      const size_t tail = std::min(weight.size - head, kSampleBytes);
+      mix(weight.data + weight.size - tail, tail);
+    }
+  }
+  return key;
 }
 
 }  // namespace
@@ -2501,6 +2848,7 @@ class LiteRtDispatchDeviceContextT {
   // holding its own. Contexts re-bind when the arena is reallocated (grown).
   Expected<std::pair<void*, uint64_t>> EnsureSharedActivationArena(
       size_t bytes) {
+    RelaxedCaptureScope relaxed_capture;
     if (bytes > arena_size_) {
       if (arena_ptr_ != nullptr) {
         // cudaFree synchronizes the device, so no in-flight work can still
@@ -2535,6 +2883,16 @@ class LiteRtDispatchDeviceContextT {
 
   const std::shared_ptr<AotEngineResidency>& aot_residency() const {
     return aot_residency_;
+  }
+
+  // The residency of the variants of a plan (PlanVariantKey).
+  std::shared_ptr<AotEngineResidency> VariantResidency(uint64_t key) {
+    auto& residency = variant_residencies_[key];
+    if (!residency) {
+      residency = std::make_shared<AotEngineResidency>();
+      residency->evicts_on_reload = false;
+    }
+    return residency;
   }
 
   // The step a decode context ran ahead of the host (StepFeed): the streams
@@ -2582,6 +2940,8 @@ class LiteRtDispatchDeviceContextT {
   const uint64_t serial_;
   const LiteRtRuntimeContext* runtime_context_;
   std::shared_ptr<AotEngineResidency> aot_residency_;
+  std::unordered_map<uint64_t, std::shared_ptr<AotEngineResidency>>
+      variant_residencies_;
   const void* step_ahead_owner_ = nullptr;
   const void* last_invoker_ = nullptr;
   cudaEvent_t step_ahead_done_ = nullptr;
@@ -2591,6 +2951,699 @@ class LiteRtDispatchDeviceContextT {
   void* arena_ptr_ = nullptr;
   size_t arena_size_ = 0;
   uint64_t arena_version_ = 0;
+};
+
+// --- Batched decode steps (LITERT_NVIDIA_DISPATCH_SLOTS) --------------------
+//
+// Several LiteRT-LM engines of one model in a process (an evaluation decoding
+// several prompts side by side) each invoke their own decode engine. With the
+// switch set, the compiler built beside each decode engine a batched engine of
+// n slots for n from 2 up (compiler/slot_network.h: every layer of the step
+// once per slot, the blockwise projections read once for every slot's row),
+// at `<decode artifact>.slots<n>`. The decode contexts of one artifact meet
+// here at every step: the steps that arrive together run as one launch of the
+// batched engine over their own buffers (each slot's caches and states are its
+// engine's), and a step that arrives alone runs its own engine.
+
+// The most slots a batched step takes (0: none, the default).
+int DispatchSlots() {
+  static const int slots = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
+    if (value == nullptr || value[0] == '\0') return 0;
+    const int parsed = std::atoi(value);
+    return parsed < 2 ? 0 : std::min(parsed, 8);
+  }();
+  return slots;
+}
+
+// How long the first step of a batch waits for the others (microseconds).
+int64_t DispatchSlotsWaitUs() {
+  static const int64_t wait = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_WAIT_US");
+    return value != nullptr && value[0] != '\0' ? std::atoll(value) : 4000;
+  }();
+  return wait;
+}
+
+// The same for a verify step (speculative decoding's): the engines reach
+// their verifies at different times (each drafts as many steps as it
+// accepted), so a verify waits briefly and otherwise runs alone.
+int64_t DispatchSlotsVerifyWaitUs() {
+  static const int64_t wait = [] {
+    const char* value =
+        std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_VERIFY_WAIT_US");
+    return value != nullptr && value[0] != '\0' ? std::atoll(value) : 1000;
+  }();
+  return wait;
+}
+
+// LITERT_NVIDIA_DISPATCH_SLOTS_PROBE=0: a slot group always batches. By
+// default it measures its contexts' steps per second batched and alone, now
+// and then, and keeps the faster (DecodeSlotGroup::Batching).
+bool DispatchSlotsProbe() {
+  static const bool probe = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_PROBE");
+    return value == nullptr || std::strcmp(value, "0") != 0;
+  }();
+  return probe;
+}
+
+// With batched decode steps, the contexts that are no decode step (a
+// prefill's) of every engine in the process share one activation arena
+// instead of one per engine: each engine's own would hold a prefill's
+// activations (the 26B's: 475 MB) for every slot. Its users run one after
+// the other on the device (each stream waits for the previous user's work),
+// the host does not wait.
+class ProcessActivationArena {
+ public:
+  static ProcessActivationArena& Get() {
+    static auto* arena = new ProcessActivationArena();
+    return *arena;
+  }
+
+  std::unique_lock<std::mutex> Lock() {
+    return std::unique_lock<std::mutex>(mutex_);
+  }
+
+  // Under Lock(): the arena of at least `bytes`, its version, and its size;
+  // `stream` waits for the previous user.
+  Expected<std::tuple<void*, uint64_t, size_t>> Acquire(size_t bytes,
+                                                        cudaStream_t stream) {
+    RelaxedCaptureScope relaxed_capture;
+    if (event_ == nullptr) {
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaEventCreateWithFlags(&event_, cudaEventDisableTiming),
+                 "cudaEventCreate process arena"));
+    }
+    if (bytes > size_) {
+      if (ptr_ != nullptr) {
+        LITERT_RETURN_IF_ERROR(CudaOk(cudaEventSynchronize(event_),
+                                      "cudaEventSynchronize process arena"));
+        LITERT_RETURN_IF_ERROR(
+            CudaOk(cudaFree(ptr_), "cudaFree process arena"));
+        ptr_ = nullptr;
+        size_ = 0;
+      }
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaMalloc(&ptr_, bytes), "cudaMalloc process arena"));
+      size_ = bytes;
+      ++version_;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch: one activation arena of %zu bytes for the "
+                 "prefills of every engine",
+                 bytes);
+    }
+    LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamWaitEvent(stream, event_, 0),
+                                  "cudaStreamWaitEvent process arena"));
+    return std::make_tuple(ptr_, version_, size_);
+  }
+
+  // Under Lock(): the work `stream` enqueued is the arena's last user.
+  Expected<void> Release(cudaStream_t stream) {
+    return CudaOk(cudaEventRecord(event_, stream),
+                  "cudaEventRecord process arena");
+  }
+
+ private:
+  std::mutex mutex_;
+  void* ptr_ = nullptr;
+  size_t size_ = 0;
+  uint64_t version_ = 0;
+  cudaEvent_t event_ = nullptr;
+};
+
+// One batched engine of n slots, its weights mapped from the store the decode
+// engines share.
+class SlotEngine {
+ public:
+  static Expected<std::unique_ptr<SlotEngine>> Open(const std::string& path,
+                                                    int slots) {
+    RelaxedCaptureScope relaxed_capture;
+    auto engine = std::unique_ptr<SlotEngine>(new SlotEngine());
+    engine->slots_ = slots;
+    if (!ReadBinaryFile(path, &engine->file_) || engine->file_.empty()) {
+      return Error(kLiteRtStatusErrorNotFound,
+                   "No batched decode engine at " + path);
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        engine->bytecode_,
+        litert::nvidia::ParseTensorRtBytecode(engine->file_.data(),
+                                              engine->file_.size(), nullptr));
+    LITERT_RETURN_IF_ERROR(CudaOk(
+        cudaStreamCreateWithFlags(&engine->stream_, cudaStreamNonBlocking),
+        "cudaStreamCreateWithFlags slots"));
+    LITERT_RETURN_IF_ERROR(
+        CudaOk(cudaEventCreateWithFlags(&engine->done_, cudaEventDisableTiming),
+               "cudaEventCreate slots"));
+    engine->runtime_.reset(nvinfer1::createInferRuntime(engine->logger_));
+    if (!engine->runtime_) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to create the batched engine's runtime");
+    }
+    engine->engine_.reset(engine->runtime_->deserializeCudaEngine(
+        engine->bytecode_.engine_data, engine->bytecode_.engine_size));
+    if (!engine->engine_) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to deserialize the batched decode engine");
+    }
+    if (engine->bytecode_.weight_store.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(
+          engine->weight_memory_,
+          litert::nvidia::EngineWeightMemory::Create(
+              *engine->bytecode_.weight_store, engine->stream_));
+      LITERT_ASSIGN_OR_RETURN(
+          engine->weight_mapping_,
+          litert::nvidia::EngineWeightMapping::Create(
+              *engine->engine_, *engine->weight_memory_, engine->stream_));
+    }
+    engine->runtime_config_.reset(engine->engine_->createRuntimeConfig());
+    if (engine->runtime_config_) {
+      // Layer profiling times each layer: no graph then.
+      engine->runtime_config_->setCudaGraphStrategy(
+          litert::nvidia::DispatchLayerProfilingEnabled()
+              ? nvinfer1::CudaGraphStrategy::kDISABLED
+              : nvinfer1::CudaGraphStrategy::kWHOLE_GRAPH_CAPTURE);
+      const std::string dir = RuntimeCacheDir();
+      if (!dir.empty()) {
+        engine->cache_path_ =
+            JoinPath(dir, "slots" + std::to_string(slots) + "_" +
+                              Hex64(Fnv1a64(engine->bytecode_.engine_data,
+                                            engine->bytecode_.engine_size)) +
+                              ".trt_rtx_runtime_cache");
+        engine->cache_.reset(engine->runtime_config_->createRuntimeCache());
+        std::vector<uint8_t> serialized;
+        if (engine->cache_ &&
+            ReadBinaryFile(engine->cache_path_, &serialized) &&
+            !serialized.empty()) {
+          engine->cache_->deserialize(serialized.data(), serialized.size());
+        }
+        if (engine->cache_ &&
+            !engine->runtime_config_->setRuntimeCache(*engine->cache_)) {
+          engine->cache_.reset();
+        }
+      }
+      engine->context_.reset(engine->engine_->createExecutionContext(
+          engine->runtime_config_.get()));
+    }
+    if (!engine->context_) {
+      engine->context_.reset(engine->engine_->createExecutionContext());
+    }
+    if (!engine->context_) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Failed to create the batched engine's context");
+    }
+    if (litert::nvidia::DispatchLayerProfilingEnabled()) {
+      engine->layer_profiler_ =
+          std::make_unique<litert::nvidia::TensorRtLayerProfiler>();
+      engine->context_->setProfiler(engine->layer_profiler_.get());
+    }
+    for (int32_t i = 0; i < engine->engine_->getNbAuxStreams(); ++i) {
+      cudaStream_t aux = nullptr;
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaStreamCreateWithFlags(&aux, cudaStreamNonBlocking),
+                 "cudaStreamCreateWithFlags slots auxiliary"));
+      engine->aux_streams_.push_back(aux);
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch loaded the batched decode engine of %d slots "
+               "(%s, engine_bytes=%zu, device_memory_bytes=%lld, "
+               "aux_streams=%d)",
+               slots, path.c_str(), engine->bytecode_.engine_size,
+               static_cast<long long>(engine->engine_->getDeviceMemorySizeV2()),
+               engine->engine_->getNbAuxStreams());
+    return engine;
+  }
+
+  ~SlotEngine() {
+    if (stream_ != nullptr) cudaStreamSynchronize(stream_);
+    if (profile_device_steps_ > 0 && profile_periods_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch slots profile: %d slots, %llu steps, device "
+                 "%.3f ms per step, host period %.3f ms per step",
+                 slots_, static_cast<unsigned long long>(profile_device_steps_),
+                 profile_device_ms_ / profile_device_steps_,
+                 profile_period_ms_ / profile_periods_);
+    }
+    if (layer_profiler_) {
+      layer_profiler_->Dump("slots" + std::to_string(slots_));
+    }
+    if (profile_begin_ != nullptr) cudaEventDestroy(profile_begin_);
+    if (profile_end_ != nullptr) cudaEventDestroy(profile_end_);
+    if (cache_ && !cache_path_.empty()) {
+      TrtPtr<nvinfer1::IHostMemory> serialized(cache_->serialize());
+      if (serialized && serialized->size() > 0) {
+        static_cast<void>(litert::nvidia::PersistValidatedRuntimeCache(
+            *runtime_config_, serialized->data(), serialized->size(),
+            cache_path_));
+      }
+    }
+    context_.reset();
+    weight_mapping_.reset();
+    engine_.reset();
+    runtime_config_.reset();
+    runtime_.reset();
+    for (cudaStream_t aux : aux_streams_) cudaStreamDestroy(aux);
+    if (done_ != nullptr) cudaEventDestroy(done_);
+    if (stream_ != nullptr) cudaStreamDestroy(stream_);
+  }
+
+  // Runs the slots' steps: slot s reads and writes the buffers of steps[s]
+  // (the decode engine's I/O, in its order), after the events `ready`.
+  // Returns the event the slots' streams wait for.
+  Expected<cudaEvent_t> Run(
+      const std::vector<std::string>& input_names,
+      const std::vector<std::string>& output_names,
+      const std::vector<const std::vector<void*>*>& inputs,
+      const std::vector<const std::vector<void*>*>& outputs,
+      const std::vector<cudaEvent_t>& ready) {
+    for (cudaEvent_t event : ready) {
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamWaitEvent(stream_, event, 0),
+                                    "cudaStreamWaitEvent slot step"));
+    }
+    // Only the addresses that changed: setting one invalidates the captured
+    // CUDA graph, and a capture per step would cost more than the step.
+    const size_t per_slot = input_names.size() + output_names.size();
+    if (bound_.size() != per_slot * slots_) {
+      bound_.assign(per_slot * slots_, nullptr);
+      names_.clear();
+      for (int s = 0; s < slots_; ++s) {
+        for (const auto& name : input_names) {
+          names_.push_back(litert::nvidia::SlotTensorName(name, s));
+        }
+        for (const auto& name : output_names) {
+          names_.push_back(name.empty()
+                               ? std::string()
+                               : litert::nvidia::SlotTensorName(name, s));
+        }
+      }
+    }
+    for (int s = 0; s < slots_; ++s) {
+      for (size_t i = 0; i < per_slot; ++i) {
+        const size_t at = s * per_slot + i;
+        void* address = i < input_names.size()
+                            ? (*inputs[s])[i]
+                            : (*outputs[s])[i - input_names.size()];
+        if (names_[at].empty() || bound_[at] == address) continue;
+        if (!context_->setTensorAddress(names_[at].c_str(), address)) {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "Batched decode engine: a tensor address");
+        }
+        bound_[at] = address;
+      }
+    }
+    if (!aux_streams_.empty() && !aux_streams_set_) {
+      context_->setAuxStreams(aux_streams_.data(),
+                              static_cast<int32_t>(aux_streams_.size()));
+      aux_streams_set_ = true;
+    }
+    if (Profiled()) ProfileBegin();
+    if (!context_->enqueueV3(stream_)) {
+      return Error(kLiteRtStatusErrorRuntimeFailure,
+                   "Batched decode engine: enqueueV3 failed");
+    }
+    LITERT_RETURN_IF_ERROR(
+        CudaOk(cudaEventRecord(done_, stream_), "cudaEventRecord slots"));
+    if (Profiled()) cudaEventRecord(profile_end_, stream_);
+    ++launches_;
+    return done_;
+  }
+
+  // LITERT_NVIDIA_DISPATCH_SLOTS_PROFILE: the batched steps' device time and
+  // the host's time from one batched step to the next, logged at the end.
+  static bool Profiled() {
+    static const bool on =
+        std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS_PROFILE") != nullptr;
+    return on;
+  }
+
+  void ProfileBegin() {
+    const auto now = std::chrono::steady_clock::now();
+    if (profile_begin_ == nullptr) {
+      cudaEventCreate(&profile_begin_);
+      cudaEventCreate(&profile_end_);
+    } else if (profile_pending_) {
+      // The previous step's device time (it ended before this one starts).
+      float ms = 0.0f;
+      if (cudaEventSynchronize(profile_end_) == cudaSuccess &&
+          cudaEventElapsedTime(&ms, profile_begin_, profile_end_) ==
+              cudaSuccess) {
+        profile_device_ms_ += ms;
+        ++profile_device_steps_;
+      }
+      profile_period_ms_ +=
+          std::chrono::duration<double, std::milli>(now - profile_last_)
+              .count();
+      ++profile_periods_;
+    }
+    profile_last_ = now;
+    cudaEventRecord(profile_begin_, stream_);
+    profile_pending_ = true;
+  }
+
+  int slots() const { return slots_; }
+  uint64_t launches() const { return launches_; }
+
+ private:
+  SlotEngine() = default;
+
+  int slots_ = 0;
+  uint64_t launches_ = 0;
+  // The tensors' names and the addresses bound to them, slot by slot.
+  std::vector<std::string> names_;
+  std::vector<void*> bound_;
+  bool aux_streams_set_ = false;
+  std::unique_ptr<litert::nvidia::TensorRtLayerProfiler> layer_profiler_;
+  cudaEvent_t profile_begin_ = nullptr;
+  cudaEvent_t profile_end_ = nullptr;
+  bool profile_pending_ = false;
+  std::chrono::steady_clock::time_point profile_last_;
+  double profile_device_ms_ = 0.0;
+  double profile_period_ms_ = 0.0;
+  uint64_t profile_device_steps_ = 0;
+  uint64_t profile_periods_ = 0;
+  std::vector<uint8_t> file_;
+  litert::nvidia::TensorRtBytecode bytecode_;
+  litert::nvidia::TensorRtLogger logger_;
+  TrtPtr<nvinfer1::IRuntime> runtime_;
+  TrtPtr<nvinfer1::ICudaEngine> engine_;
+  std::unique_ptr<litert::nvidia::EngineWeightMemory> weight_memory_;
+  std::unique_ptr<litert::nvidia::EngineWeightMapping> weight_mapping_;
+  TrtPtr<nvinfer1::IRuntimeConfig> runtime_config_;
+  TrtPtr<nvinfer1::IRuntimeCache> cache_;
+  std::string cache_path_;
+  TrtPtr<nvinfer1::IExecutionContext> context_;
+  std::vector<cudaStream_t> aux_streams_;
+  cudaStream_t stream_ = nullptr;
+  cudaEvent_t done_ = nullptr;
+};
+
+// The decode contexts of one decode artifact, and where their steps meet.
+class DecodeSlotGroup {
+ public:
+  // One step of a context: the device addresses of its inputs and outputs,
+  // and an event recorded on its stream after its inputs.
+  struct Arrival {
+    const void* participant = nullptr;
+    const std::vector<void*>* inputs = nullptr;
+    const std::vector<void*>* outputs = nullptr;
+    cudaEvent_t ready = nullptr;
+    // Set under the group's lock by the step that ran the batch: 1 batched
+    // (wait for `done`), 2 alone.
+    int outcome = 0;
+    cudaEvent_t done = nullptr;
+  };
+
+  static std::shared_ptr<DecodeSlotGroup> Join(
+      const std::string& artifact, const std::vector<std::string>& inputs,
+      const std::vector<std::string>& outputs, bool decode,
+      const void* participant) {
+    static std::mutex mutex;
+    static auto* groups =
+        new std::unordered_map<std::string, std::weak_ptr<DecodeSlotGroup>>();
+    std::lock_guard<std::mutex> lock(mutex);
+    auto group = (*groups)[artifact].lock();
+    if (!group) {
+      group = std::make_shared<DecodeSlotGroup>();
+      group->artifact_ = artifact;
+      group->input_names_ = inputs;
+      group->output_names_ = outputs;
+      group->decode_ = decode;
+      (*groups)[artifact] = group;
+    }
+    std::lock_guard<std::mutex> group_lock(group->mutex_);
+    group->last_seen_[participant] = Clock::time_point{};
+    return group;
+  }
+
+  // Whether no other context of the group stepped lately.
+  bool Alone(const void* participant) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = Clock::now();
+    for (const auto& [other, seen] : last_seen_) {
+      if (other != participant && now - seen < std::chrono::milliseconds(50)) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  void Leave(const void* participant) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    last_seen_.erase(participant);
+    interval_.erase(participant);
+    cv_.notify_all();
+  }
+
+  ~DecodeSlotGroup() {
+    if (loader_.joinable()) loader_.join();
+    if (decisions_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch: the slot group of %s ran alone after %llu "
+                 "of %llu measurements",
+                 artifact_.c_str(),
+                 static_cast<unsigned long long>(alone_decisions_),
+                 static_cast<unsigned long long>(decisions_));
+    }
+    if (waits_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch slots profile: %llu batches waited %.3f ms "
+                 "on average from the first step's arrival to the launch",
+                 static_cast<unsigned long long>(waits_), wait_ms_ / waits_);
+    }
+    for (auto& [slots, engine] : engines_) {
+      if (engine) {
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch: %llu batched decode steps of %d slots",
+                   static_cast<unsigned long long>(engine->launches()), slots);
+      }
+    }
+  }
+
+  // Runs `arrival` with the other contexts' steps that arrive with it, as
+  // one launch. True when it did (the caller's stream waits for
+  // arrival.done); false when the step is to run alone.
+  Expected<bool> Step(Arrival& arrival) {
+    std::unique_lock<std::mutex> lock(mutex_);
+    const auto now = Clock::now();
+    if (auto seen = last_seen_.find(arrival.participant);
+        seen != last_seen_.end() && seen->second != Clock::time_point{}) {
+      // The context's time from one step of this group to the next.
+      const auto gap = now - seen->second;
+      auto& interval = interval_[arrival.participant];
+      interval = gap < std::chrono::milliseconds(100) &&
+                         interval != Clock::duration::zero()
+                     ? (interval + gap) / 2
+                     : gap;
+    }
+    last_seen_[arrival.participant] = now;
+    if (!Batching(now)) return false;
+    pending_.push_back(&arrival);
+    if (pending_.size() == 1) first_arrival_ = now;
+    cv_.notify_all();
+    const auto deadline =
+        first_arrival_ +
+        std::chrono::microseconds(decode_ ? DispatchSlotsWaitUs()
+                                          : DispatchSlotsVerifyWaitUs());
+    while (arrival.outcome == 0 &&
+           pending_.size() < ExpectedParticipants(Clock::now()) &&
+           static_cast<int>(pending_.size()) < DispatchSlots()) {
+      if (cv_.wait_until(lock, deadline) == std::cv_status::timeout) break;
+    }
+    if (arrival.outcome != 0) return arrival.outcome == 1;
+    // This step runs the batch of the steps that arrived.
+    if (SlotEngine::Profiled()) {
+      wait_ms_ += std::chrono::duration<double, std::milli>(Clock::now() -
+                                                            first_arrival_)
+                      .count();
+      ++waits_;
+    }
+    std::vector<Arrival*> batch;
+    batch.swap(pending_);
+    std::sort(batch.begin(), batch.end(), [](Arrival* a, Arrival* b) {
+      return a->participant < b->participant;
+    });
+    SlotEngine* engine = nullptr;
+    if (batch.size() >= 2) engine = EngineFor(static_cast<int>(batch.size()));
+    if (engine == nullptr) {
+      for (Arrival* other : batch) other->outcome = 2;
+      cv_.notify_all();
+      return false;
+    }
+    std::vector<const std::vector<void*>*> inputs, outputs;
+    std::vector<cudaEvent_t> ready;
+    for (Arrival* other : batch) {
+      inputs.push_back(other->inputs);
+      outputs.push_back(other->outputs);
+      ready.push_back(other->ready);
+    }
+    auto done =
+        engine->Run(input_names_, output_names_, inputs, outputs, ready);
+    for (Arrival* other : batch) {
+      other->outcome = done ? 1 : 2;
+      other->done = done ? *done : nullptr;
+    }
+    cv_.notify_all();
+    if (!done) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch: a batched decode step failed (%s); the "
+                 "steps run alone",
+                 done.Error().Message().c_str());
+      return false;
+    }
+    return true;
+  }
+
+ private:
+  using Clock = std::chrono::steady_clock;
+
+  // Whether this arrival is batched (under the lock). Batched steps win
+  // where the device bounds the step; where each context's host work does
+  // (E2B: a step's device time is below the host's work per token), the
+  // contexts wait for the slowest one and their own steps, overlapping on the
+  // device, go faster. So the group measures: the steps per second of all
+  // its contexts batched, then alone, each over a second after 0.3 s to
+  // settle, keeps the faster (batched unless alone is 3% faster) for 30 s,
+  // and measures again (and at once when the number of contexts stepping
+  // changes). Either way every step's outputs are the same.
+  bool Batching(Clock::time_point now) {
+    // Once the batched engines are loaded (they load in the background and
+    // the steps run alone meanwhile).
+    if (!DispatchSlotsProbe() || !loaded_) return true;
+    const size_t active = ActiveParticipants(now);
+    if (active < 2) return true;
+    if (active != probe_active_) {
+      probe_active_ = active;
+      StartPhase(Phase::kMeasureBatched, now);
+    }
+    constexpr auto kSettle = std::chrono::milliseconds(300);
+    constexpr auto kMeasure = std::chrono::milliseconds(1300);
+    constexpr auto kHold = std::chrono::seconds(30);
+    const auto elapsed = now - phase_start_;
+    if (phase_ != Phase::kHold && elapsed >= kSettle) ++phase_steps_;
+    const double rate =
+        elapsed > kSettle
+            ? phase_steps_ /
+                  std::chrono::duration<double>(elapsed - kSettle).count()
+            : 0.0;
+    switch (phase_) {
+      case Phase::kMeasureBatched:
+        if (elapsed < kMeasure) return true;
+        batched_rate_ = rate;
+        StartPhase(Phase::kMeasureAlone, now);
+        return false;
+      case Phase::kMeasureAlone:
+        if (elapsed < kMeasure) return false;
+        alone_ = rate > batched_rate_ * 1.03;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch: %zu contexts step %.0f times per second "
+                   "batched, %.0f alone: %s",
+                   active, batched_rate_, rate, alone_ ? "alone" : "batched");
+        ++decisions_;
+        alone_decisions_ += alone_ ? 1 : 0;
+        StartPhase(Phase::kHold, now);
+        return !alone_;
+      case Phase::kHold:
+        if (elapsed < kHold) return !alone_;
+        StartPhase(Phase::kMeasureBatched, now);
+        return true;
+    }
+    return true;
+  }
+
+  enum class Phase { kMeasureBatched, kMeasureAlone, kHold };
+
+  void StartPhase(Phase phase, Clock::time_point now) {
+    phase_ = phase;
+    phase_start_ = now;
+    phase_steps_ = 0;
+  }
+
+  // The contexts that stepped in the last 50 ms: the ones a batch waits for.
+  // The contexts a batch waits for: those whose next step of this group is
+  // due, by their time from step to step (within twice it since their last
+  // one). A context that steps here now and then (speculative decoding's
+  // plain steps between its rounds, or one prefilling) is not waited for.
+  size_t ExpectedParticipants(Clock::time_point now) const {
+    size_t expected = 0;
+    for (const auto& [participant, seen] : last_seen_) {
+      const auto it = interval_.find(participant);
+      if (it == interval_.end()) continue;
+      const auto since = now - seen;
+      if (since < std::chrono::milliseconds(50) && since < 2 * it->second) {
+        ++expected;
+      }
+    }
+    return expected;
+  }
+
+  size_t ActiveParticipants(Clock::time_point now) const {
+    size_t active = 0;
+    for (const auto& [participant, seen] : last_seen_) {
+      if (now - seen < std::chrono::milliseconds(50)) ++active;
+    }
+    return active;
+  }
+
+  // The batched engine of `slots` slots, under the lock; null while the
+  // engines load (the steps run alone meanwhile). The first call starts a
+  // thread that loads the engines of every count, 2 to DispatchSlots(), so
+  // that no step waits for one to load and the measurements (Batching) see
+  // them all loaded.
+  SlotEngine* EngineFor(int slots) {
+    if (!loader_.joinable()) {
+      int device = 0;
+      cudaGetDevice(&device);
+      loader_ = std::thread([this, device] { LoadEngines(device); });
+    }
+    if (!loaded_) return nullptr;
+    auto it = engines_.find(slots);
+    return it == engines_.end() ? nullptr : it->second.get();
+  }
+
+  void LoadEngines(int device) {
+    cudaSetDevice(device);
+    std::map<int, std::unique_ptr<SlotEngine>> engines;
+    for (int slots = 2; slots <= DispatchSlots(); ++slots) {
+      auto opened = SlotEngine::Open(
+          litert::nvidia::SlotArtifactPath(artifact_, slots), slots);
+      if (opened) {
+        engines[slots] = std::move(*opened);
+      } else {
+        LITERT_LOG(LITERT_WARNING,
+                   "NVIDIA dispatch: no batched engine of %d slots: %s", slots,
+                   opened.Error().Message().c_str());
+      }
+    }
+    std::lock_guard<std::mutex> lock(mutex_);
+    engines_ = std::move(engines);
+    loaded_ = true;
+    StartPhase(Phase::kMeasureBatched, Clock::now());
+  }
+
+  std::mutex mutex_;
+  std::condition_variable cv_;
+  std::string artifact_;
+  std::vector<std::string> input_names_;
+  std::vector<std::string> output_names_;
+  std::unordered_map<const void*, Clock::time_point> last_seen_;
+  std::unordered_map<const void*, Clock::duration> interval_;
+  std::vector<Arrival*> pending_;
+  Clock::time_point first_arrival_;
+  std::map<int, std::unique_ptr<SlotEngine>> engines_;
+  std::thread loader_;
+  bool loaded_ = false;  // under mutex_
+  double wait_ms_ = 0.0;
+  uint64_t waits_ = 0;
+  bool decode_ = true;
+  // Batching(): the measurements.
+  Phase phase_ = Phase::kMeasureBatched;
+  Clock::time_point phase_start_;
+  uint64_t phase_steps_ = 0;
+  size_t probe_active_ = 0;
+  double batched_rate_ = 0.0;
+  bool alone_ = false;
+  uint64_t decisions_ = 0;
+  uint64_t alone_decisions_ = 0;
 };
 
 class LiteRtDispatchInvocationContextT {
@@ -2690,10 +3743,22 @@ class LiteRtDispatchInvocationContextT {
                    "LiteRT dispatch IO count does not match TensorRT engine");
     }
 
+    const std::optional<uint64_t> variant_key =
+        device_context->aot_residency() == nullptr && aot_locator.has_value()
+            ? PlanVariantKey(bytecode)
+            : std::nullopt;
     auto context = std::unique_ptr<LiteRtDispatchInvocationContextT>(
         new LiteRtDispatchInvocationContextT(runtime_context, device_context,
                                              std::move(bytecode)));
-    if (context->aot_residency_) {
+    if (aot_locator.has_value()) {
+      context->aot_fingerprint_ = aot_locator->fingerprint;
+      context->aot_path_ = aot_locator->path;
+    }
+    if (variant_key.has_value()) {
+      LITERT_RETURN_IF_ERROR(context->InitializeVariant(
+          device_context->VariantResidency(*variant_key),
+          std::move(*aot_locator)));
+    } else if (context->aot_residency_) {
       context->aot_locator_ = std::move(aot_locator);
       std::lock_guard<std::mutex> lock(context->aot_residency_->mutex);
       if (auto* active = context->aot_residency_->active) {
@@ -2726,13 +3791,19 @@ class LiteRtDispatchInvocationContextT {
 
   ~LiteRtDispatchInvocationContextT() {
     ForgetTokenTableWaiter(this);
+    InvocationStreams::Get().Forget(this);
+    if (slot_group_) {
+      slot_group_->Leave(this);
+      slot_group_.reset();
+    }
+    if (slot_ready_ != nullptr) cudaEventDestroy(slot_ready_);
     if (aot_residency_) {
       std::lock_guard<std::mutex> lock(aot_residency_->mutex);
       if (aot_residency_->active == this) {
         aot_residency_->active = nullptr;
       }
       SynchronizeForCleanup();
-      ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+      ReleaseExecutionResources(/*save_runtime_cache=*/SavesRuntimeCache());
       if (layer_profiler_) {
         layer_profiler_->Dump(bytecode_.function_name);
       }
@@ -2752,6 +3823,7 @@ class LiteRtDispatchInvocationContextT {
     SaveRuntimeCache();
     LogOwnGraphUse();
     DestroyStepFeed();
+    DestroyDraftFeed();
     DestroyOwnGraphs();
     DestroyExternalHeadResources();
     for (cudaStream_t aux_stream : aux_streams_) {
@@ -2895,6 +3967,12 @@ class LiteRtDispatchInvocationContextT {
       residency_lock = std::unique_lock<std::mutex>(aot_residency_->mutex);
       LITERT_RETURN_IF_ERROR(EnsureAotEngineResident());
     }
+    if (noted_thread_ != std::this_thread::get_id() ||
+        noted_stream_ != stream_) {
+      noted_thread_ = std::this_thread::get_id();
+      noted_stream_ = stream_;
+      InvocationStreams::Get().Note(this, stream_);
+    }
     const bool memory_profile =
         memory_profiler_.enabled() && invocation_count_ == 0;
     ++invocation_count_;
@@ -2973,6 +4051,33 @@ class LiteRtDispatchInvocationContextT {
                    static_cast<unsigned long long>(feed_.misses),
                    static_cast<unsigned long long>(steps));
       }
+    }
+    if (draft_.in_flight) {
+      // The drafter's next step ran ahead (DraftFeed): this is it when the
+      // host's input is the one it used.
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventSynchronize(draft_.slot.feed_done),
+                                    "cudaEventSynchronize draft feed"));
+      LITERT_ASSIGN_OR_RETURN(const bool matched, VerifyDraftInputs());
+      if (matched) {
+        DispatchCpuTimer take_timer(profile);
+        LITERT_RETURN_IF_ERROR(TakeDraftStep());
+        if (profile) {
+          LITERT_LOG(LITERT_INFO,
+                     "NVIDIA dispatch profile function=%s draft_ahead=1 "
+                     "cpu_sync_ms=%.3f",
+                     bytecode_.function_name.c_str(), take_timer.ElapsedMs());
+        }
+        return {};
+      }
+      LITERT_RETURN_IF_ERROR(DropDraftStep());
+    }
+    if (draft_.enabled) {
+      // The host runs this step: its token is the invocation's own argmax,
+      // and the round counts it.
+      if (draft_.logits != nullptr) {
+        StepHandoffRegistry::Get().Clear(draft_.logits);
+      }
+      if (!draft_.stopped) LITERT_RETURN_IF_ERROR(CountDraftRound());
     }
     LITERT_RETURN_IF_ERROR(device_context_->WaitStepAhead(this, stream_));
 
@@ -3115,9 +4220,24 @@ class LiteRtDispatchInvocationContextT {
       execution_context_->setAuxStreams(
           aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
     }
-    LITERT_RETURN_IF_ERROR(EnqueueStep());
-    if (invocation_count_ == 1 && whole_graph_capture_ &&
-        bytecode_.step_feed.has_value() &&
+    LITERT_ASSIGN_OR_RETURN(const bool batched, StepWithSlots());
+    std::unique_lock<std::mutex> process_arena_lock;
+    if (UsesProcessArena()) {
+      process_arena_lock = ProcessActivationArena::Get().Lock();
+      LITERT_ASSIGN_OR_RETURN(
+          auto arena, ProcessActivationArena::Get().Acquire(
+                          static_cast<size_t>(device_memory_bytes_), stream_));
+      if (std::get<0>(arena) != bound_arena_ptr_ ||
+          std::get<1>(arena) != bound_arena_version_) {
+        execution_context_->setDeviceMemoryV2(
+            std::get<0>(arena), static_cast<int64_t>(std::get<2>(arena)));
+        bound_arena_ptr_ = std::get<0>(arena);
+        bound_arena_version_ = std::get<1>(arena);
+      }
+    }
+    if (!batched) LITERT_RETURN_IF_ERROR(EnqueueStep());
+    if (invocation_count_ == 1 && whole_graph_capture_ && !slot_group_ &&
+        bytecode_.step_feed.has_value() && !UpdatesStateInPlace() &&
         execution_context_->isStreamCapturable(stream_)) {
       // TensorRT-RTX captures an engine's CUDA graph at its second
       // execution. A decode engine (the bytecode's step-feed record marks
@@ -3128,11 +4248,17 @@ class LiteRtDispatchInvocationContextT {
       // costs about 0.3 s at 30K (12B). The same inputs give the same
       // outputs and cache rows, so the first step runs twice, where
       // TensorRT-RTX can capture it, with the aux streams the enqueue takes.
+      // Not when the step rewrites a state in place (UpdatesStateInPlace):
+      // a second run would advance it twice.
       if (!aux_streams_.empty()) {
         execution_context_->setAuxStreams(
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
       }
       LITERT_RETURN_IF_ERROR(EnqueueStep());
+    }
+    if (process_arena_lock) {
+      LITERT_RETURN_IF_ERROR(ProcessActivationArena::Get().Release(stream_));
+      process_arena_lock.unlock();
     }
     profile_metrics.cpu_enqueue_call_ms = enqueue_call_timer.ElapsedMs();
     if (profile) {
@@ -3184,6 +4310,11 @@ class LiteRtDispatchInvocationContextT {
     // not at the speculation after it (the first speculating step of a
     // session read the live buffer otherwise).
     EnsureFeedLogitsPinned();
+    if (draft_.enabled && !draft_.stopped) {
+      // The drafter's projected activations are read by the host after the
+      // round's next step ran ahead: from their host copy, prefetched here.
+      LITERT_RETURN_IF_ERROR(RegisterDraftLogits());
+    }
     LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(nullptr));
     DispatchCpuTimer sync_timer(profile);
     const char* sync_context =
@@ -3326,12 +4457,9 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
-  Expected<void> ProbeAotIoMetadata() {
-    DispatchCpuTimer probe_timer(/*enabled=*/true);
-    memory_profiler_.Log("engine_metadata_probe_begin",
-                         bytecode_.function_name.c_str());
-    LITERT_RETURN_IF_ERROR(DeserializeEngine());
-    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+  // The locations and types of the engine's IO tensors, which a context of
+  // a residency answers from while its engine is not loaded.
+  void RecordIoMetadata() {
     for (const auto& name : bytecode_.input_names) {
       tensor_locations_.emplace(name, engine_->getTensorLocation(name.c_str()));
       tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
@@ -3343,6 +4471,40 @@ class LiteRtDispatchInvocationContextT {
         tensor_types_.emplace(name, engine_->getTensorDataType(name.c_str()));
       }
     }
+  }
+
+  // A variant of a plan (PlanVariantKey) is created resident and evicts the
+  // variant created before it: LiteRT-LM creates a vision encoder's selected
+  // signatures in order of size and runs the largest (the last) for every
+  // image its token budget allows. A variant that runs later is reloaded
+  // from its artifact and then stays resident (EnsureAotEngineResident).
+  Expected<void> InitializeVariant(
+      std::shared_ptr<AotEngineResidency> residency,
+      litert::nvidia::TensorRtAotLocator locator) {
+    std::lock_guard<std::mutex> lock(residency->mutex);
+    if (auto* resident = residency->active) {
+      LITERT_RETURN_IF_ERROR(resident->EvictAotEngine());
+      residency->active = nullptr;
+    }
+    aot_residency_ = std::move(residency);
+    aot_locator_ = std::move(locator);
+    LITERT_RETURN_IF_ERROR(Initialize());
+    RecordIoMetadata();
+    aot_residency_->active = this;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s is a variant of a plan of other input "
+               "sizes: one variant stays resident",
+               bytecode_.function_name.c_str());
+    return {};
+  }
+
+  Expected<void> ProbeAotIoMetadata() {
+    DispatchCpuTimer probe_timer(/*enabled=*/true);
+    memory_profiler_.Log("engine_metadata_probe_begin",
+                         bytecode_.function_name.c_str());
+    LITERT_RETURN_IF_ERROR(DeserializeEngine());
+    LITERT_RETURN_IF_ERROR(RecordAliasedOutputs());
+    RecordIoMetadata();
     engine_.reset();
     runtime_.reset();
     memory_profiler_.Log("engine_metadata_probe_end",
@@ -3386,6 +4548,8 @@ class LiteRtDispatchInvocationContextT {
     }
     aux_streams_.clear();
     if (stream_ != nullptr) {
+      InvocationStreams::Get().Forget(this);
+      noted_stream_ = nullptr;
       cudaStreamDestroy(stream_);
       stream_ = nullptr;
     }
@@ -3402,6 +4566,16 @@ class LiteRtDispatchInvocationContextT {
     resident_has_run_ = false;
   }
 
+  // Whether releasing the engine keeps its runtime cache. A variant of a plan
+  // is created resident, like an eager context, and the kernels compiled for
+  // its execution context then are worth keeping whether it ran or not (an
+  // eager context saves at its destruction): otherwise every process compiles
+  // the evicted variants' kernels again (2 s per vision transformer on the
+  // Spark).
+  bool SavesRuntimeCache() const {
+    return resident_has_run_ || !aot_residency_->evicts_on_reload;
+  }
+
   Expected<void> EvictAotEngine() {
     DispatchCpuTimer eviction_timer(/*enabled=*/true);
     memory_profiler_.Log("engine_eviction_begin",
@@ -3410,7 +4584,7 @@ class LiteRtDispatchInvocationContextT {
       LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamSynchronize(stream_),
                                     "cudaStreamSynchronize AOT eviction"));
     }
-    ReleaseExecutionResources(/*save_runtime_cache=*/resident_has_run_);
+    ReleaseExecutionResources(/*save_runtime_cache=*/SavesRuntimeCache());
     memory_profiler_.Log("engine_evicted", bytecode_.function_name.c_str());
     LITERT_LOG(LITERT_INFO, "NVIDIA AOT engine evicted: %s elapsed_ms=%.3f",
                bytecode_.function_name.c_str(), eviction_timer.ElapsedMs());
@@ -3421,7 +4595,11 @@ class LiteRtDispatchInvocationContextT {
     if (aot_residency_->active == this) {
       return {};
     }
-    if (auto* active = aot_residency_->active) {
+    if (!aot_residency_->evicts_on_reload) {
+      if (execution_context_ != nullptr) {
+        return {};
+      }
+    } else if (auto* active = aot_residency_->active) {
       LITERT_RETURN_IF_ERROR(active->EvictAotEngine());
       aot_residency_->active = nullptr;
     }
@@ -3460,12 +4638,21 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> DeserializeEngine() {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
+    // Experimental: only an engine compiled with LITERT_NVIDIA_MEGAKERNEL set
+    // holds this plugin.
+    litert::nvidia::EnsureMegakernelPluginRegistered();
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
     litert::nvidia::EnsureGatedDeltaPluginsRegistered();
+    litert::nvidia::EnsureHyperConnectionPluginRegistered();
+    litert::nvidia::EnsurePleTailPluginRegistered();
     litert::nvidia::EnsureInt8CacheWritePluginRegistered();
     litert::nvidia::EnsureMoePluginRegistered();
     litert::nvidia::EnsureQkvNormRopePluginRegistered();
+    litert::nvidia::EnsureQsaPluginsRegistered();
+    litert::nvidia::EnsureQuantAttentionPluginRegistered();
+    litert::nvidia::EnsureQuantLinearPluginRegistered();
+    litert::nvidia::EnsureSlotPluginsRegistered();
     // Execution contexts of this process load their expert arenas.
     litert::nvidia::SetMoeArenaLoadingEnabled(true);
     LITERT_LOG(LITERT_INFO,
@@ -3502,6 +4689,7 @@ class LiteRtDispatchInvocationContextT {
     LITERT_RETURN_IF_ERROR(MapEngineWeights());
     LITERT_RETURN_IF_ERROR(RefitEngine());
     LITERT_RETURN_IF_ERROR(InitStepFeed());
+    LITERT_RETURN_IF_ERROR(InitDraftFeed());
     DumpEngineInfo();
     const bool own_graph = OwnCudaGraph(&own_graph_mode_);
     if (UseCudaGraph() || own_graph) {
@@ -3606,6 +4794,83 @@ class LiteRtDispatchInvocationContextT {
     return {};
   }
 
+  // The step as one slot of a batched decode step (DecodeSlotGroup), when
+  // LITERT_NVIDIA_DISPATCH_SLOTS is set and this is a decode engine of an AOT
+  // artifact: true when the batch ran it (this stream then waits for it),
+  // false when it is to run alone.
+  Expected<bool> StepWithSlots() {
+    if (!slot_group_ && !slot_group_tried_) {
+      slot_group_tried_ = true;
+      // A decode step, or another step the compiler built batched engines
+      // for (an MTP verify).
+      std::error_code exists_error;
+      if (DispatchSlots() >= 2 && !bytecode_.trtllm_head.has_value() &&
+          !aot_path_.empty() && !own_graph_enabled_ &&
+          (bytecode_.step_feed.has_value() ||
+           std::filesystem::exists(
+               litert::nvidia::SlotArtifactPath(aot_path_, 2), exists_error))) {
+        slot_group_ = DecodeSlotGroup::Join(
+            aot_path_, bytecode_.input_names, bytecode_.output_names,
+            bytecode_.step_feed.has_value(), this);
+        LITERT_RETURN_IF_ERROR(CudaOk(
+            cudaEventCreateWithFlags(&slot_ready_, cudaEventDisableTiming),
+            "cudaEventCreate slot ready"));
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s takes part in batched decode steps of "
+                   "up to %d slots",
+                   bytecode_.function_name.c_str(), DispatchSlots());
+      }
+    }
+    if (!slot_group_) return false;
+    LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot_ready_, stream_),
+                                  "cudaEventRecord slot ready"));
+    DecodeSlotGroup::Arrival arrival;
+    arrival.participant = this;
+    arrival.inputs = &bound_input_ptrs_;
+    arrival.outputs = &bound_output_ptrs_;
+    arrival.ready = slot_ready_;
+    LITERT_ASSIGN_OR_RETURN(const bool batched, slot_group_->Step(arrival));
+    if (batched) {
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(cudaStreamWaitEvent(stream_, arrival.done, 0),
+                 "cudaStreamWaitEvent batched step"));
+    }
+    return batched;
+  }
+
+  // Whether the step rewrites a state it reads in place, other than a KV
+  // cache: an FP32 output that the runtime bound to the memory of one of the
+  // step's inputs, where the engine does not alias the two (Qwen 3.8's
+  // gated-DeltaNet conv and recurrent states; the engine's own in-place
+  // outputs are its caches). A cache step writes the same row whatever ran
+  // before it, so running it again changes nothing; such a state moves on
+  // at every run. Decided at the first invocation, from its bindings.
+  bool UpdatesStateInPlace() {
+    if (states_in_place_known_) return states_in_place_ > 0;
+    states_in_place_known_ = true;
+    for (size_t i = 0; i < bound_output_ptrs_.size(); ++i) {
+      if (bound_output_ptrs_[i] == nullptr ||
+          bytecode_.output_names[i].empty() ||
+          (i < aliased_input_of_output_.size() &&
+           aliased_input_of_output_[i] >= 0) ||
+          engine_->getTensorDataType(bytecode_.output_names[i].c_str()) !=
+              nvinfer1::DataType::kFLOAT) {
+        continue;
+      }
+      if (std::find(bound_input_ptrs_.begin(), bound_input_ptrs_.end(),
+                    bound_output_ptrs_[i]) != bound_input_ptrs_.end()) {
+        ++states_in_place_;
+      }
+    }
+    if (states_in_place_ > 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s rewrites %zu states in place: each step "
+                 "runs once",
+                 bytecode_.function_name.c_str(), states_in_place_);
+    }
+    return states_in_place_ > 0;
+  }
+
   // The step feed (bytecode.h, TensorRtStepFeed): the decode steps run on
   // the device ahead of the host, kStepFeedDepth at most.
   static constexpr int kStepFeedDepth = 2;
@@ -3650,12 +4915,15 @@ class LiteRtDispatchInvocationContextT {
     bool pending = false;
     bool owns_table = false;   // the table is this context's allocation
     bool owns_scales = false;  // the row scales are this context's allocation
-    void* table = nullptr;     // device INT4 [vocab, dim]
+    void* table = nullptr;     // device INT4 or INT2 [vocab, dim]
     float* row_scales = nullptr;             // device [vocab], or null
     const uint16_t* block_scales = nullptr;  // device FP16 per block, or null
     uint32_t scale_block = 0;
     float multiplier = 1.0f;
     uint32_t bits = 4;  // the table's elements: INT4 or INT2
+    // What an element is taken from before its scale: -0.5 for a table of
+    // centered INT2 weights (the bytecode's), 0 otherwise.
+    float zero_point = 0.0f;
     // The per-layer embedder's tables (registered), when the feed writes the
     // per-layer embeddings.
     const uint8_t* per_layer_table = nullptr;
@@ -3727,6 +4995,54 @@ class LiteRtDispatchInvocationContextT {
   };
   StepFeed feed_;
 
+  // An MTP drafter's steps chained on the device. LiteRT-LM drafts a round of
+  // steps (llm_litert_mtp_drafter.cc, RunDraftingLoop) that share the
+  // position, the masks and the base model's caches it writes once per round;
+  // between two steps the host takes the step's greedy token, looks its
+  // embedding up and writes it, followed by the step's projected activations,
+  // as the next step's input. Once the sampler took a step's token from the
+  // argmax the step ran on the device (DraftFeedRegistry), the round's next
+  // step runs: the feed kernel writes that input from the token table (the
+  // embedder's, registered for the base model) and the activations, with a
+  // host-mapped mirror, then the step and its argmax. When the host asks for
+  // that step, its input must be the mirror and no other input rewritten, as
+  // for a decode step (StepFeed); otherwise the step runs as asked. The
+  // round's length is learned from the host's writes of the position, so no
+  // step runs past a round's end. LITERT_NVIDIA_DISPATCH_STEP_FEED=0 turns it
+  // off with the decode feed.
+  struct DraftFeed {
+    bool enabled = false;      // a drafter's engine, set up
+    bool stopped = false;      // too many misses, or the table cannot be had
+    size_t input_port = 0;     // FP32 [1, 1, 2 * dim]: embedding, activations
+    size_t position_port = 0;  // INT32 [1]
+    size_t activations_port = 0;  // output FP32 [1, 1, dim]
+    size_t logits_port = 0;       // output FP32 [1, 1, vocab]
+    uint32_t vocab = 0;
+    uint32_t dim = 0;
+    std::optional<RegisteredTokenTable> table;  // on the device
+    // The step ahead: its input's mirror (the token, then the 2 * dim
+    // floats), its events, its staged outputs.
+    StepFeedSlot slot;
+    // The step ahead's argmax for the host's sampler (StepHandoff), pinned.
+    int32_t* handoff_ids = nullptr;
+    float* handoff_values = nullptr;
+    int32_t* handoff_flags = nullptr;
+    const void* logits = nullptr;  // the device pointer it is registered by
+    bool in_flight = false;
+    bool token_enqueued = false;  // the step ahead's argmax is enqueued
+    // The steps of the round under way (the host's write of the position
+    // starts one), the length of the last round, the length learned from
+    // two equal rounds in a row (0: none).
+    uint32_t round_steps = 0;
+    uint32_t last_round = 0;
+    uint32_t round_length = 0;
+    bool logged_ready = false;
+    uint64_t speculated = 0;
+    uint64_t hits = 0;
+    uint64_t misses = 0;
+  };
+  DraftFeed draft_;
+
   // The step feed's token table, slots and sampler (bytecode.h,
   // TensorRtStepFeed). Nothing to set up when the bytecode has no feed, the
   // feed is off (StepFeedEnabled), the engines are swapped in and out
@@ -3749,7 +5065,8 @@ class LiteRtDispatchInvocationContextT {
       return {};
     }
     const auto& feed = *bytecode_.step_feed;
-    const size_t table_bytes = static_cast<size_t>(feed.vocab) * feed.dim / 2;
+    const size_t table_bytes =
+        static_cast<size_t>(feed.vocab) * feed.dim * feed.table_bits / 8;
     const auto fail = [&](const char* what, cudaError_t status) {
       LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch %s: the step feed's %s: %s",
                  bytecode_.function_name.c_str(), what,
@@ -3775,7 +5092,8 @@ class LiteRtDispatchInvocationContextT {
           {1, feed.vocab, feed.per_layer_width, feed.per_layer_count});
     }
     // The registrations go to the device in a long decode loop, the only
-    // place this context's steps ahead pay for the tables' memory.
+    // place this context's steps ahead pay for the tables' memory: copied
+    // beside the loop, they are found here at a later invocation.
     const std::vector<TokenTableState> states = FindTokenTables(
         this, device_context_->serial(), keys,
         consecutive_invocations_ >= kTokenTableUploadInvocations);
@@ -3844,7 +5162,8 @@ class LiteRtDispatchInvocationContextT {
       feed_.owns_table = false;
       feed_.owns_scales = true;
       feed_.table = const_cast<void*>(weight_memory_table_);
-      feed_.bits = 4;
+      feed_.bits = feed.table_bits;
+      feed_.zero_point = feed.table_zero_point;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(reinterpret_cast<void**>(&feed_.row_scales),
                           feed.row_scales_size);
@@ -3891,7 +5210,8 @@ class LiteRtDispatchInvocationContextT {
       }
       feed_.owns_table = true;
       feed_.owns_scales = true;
-      feed_.bits = 4;
+      feed_.bits = feed.table_bits;
+      feed_.zero_point = feed.table_zero_point;
       feed_.multiplier = feed.multiplier;
       status = cudaMalloc(&feed_.table, table_bytes);
       if (status != cudaSuccess) return fail("table", status);
@@ -4004,20 +5324,33 @@ class LiteRtDispatchInvocationContextT {
   // The in-place cache outputs with a ring-sized axis, their row within a
   // slab and the slabs (K [1, ring, heads, dim]: one slab of heads * dim; the
   // transposed value cache, logical [1, heads, dim, ring] stored as
-  // [1, heads, ring, dim]: heads slabs of dim), from the records bound now.
+  // [1, heads, ring, dim]: heads slabs of dim; a value cache stored as
+  // [1, heads, dim, ring]: heads * dim slabs of one value), from the records
+  // bound now.
   Expected<void> FindCacheRows() {
     const auto& feed = *bytecode_.step_feed;
     feed_.cache_rows.clear();
     feed_.backup_bytes = 0;
     for (size_t i = 0; i < output_handles_.size(); ++i) {
-      if (output_handles_[i] == 0 || i >= aliased_input_of_output_.size() ||
-          aliased_input_of_output_[i] < 0) {
+      if (output_handles_[i] == 0) {
         continue;
       }
       LITERT_ASSIGN_OR_RETURN(auto* record,
                               device_context_->GetRecord(output_handles_[i]));
       if (!record->direct_cuda_buffer || record->device_ptr == nullptr ||
           record->size == 0) {
+        continue;
+      }
+      // A cache updated in place: the engine aliases the output to an input,
+      // or the runtime bound the output to an input's buffer, which a plugin
+      // that takes its caches as they are bound then updates (the quantized
+      // caches).
+      bool in_place = i < aliased_input_of_output_.size() &&
+                      aliased_input_of_output_[i] >= 0;
+      for (size_t j = 0; j < bound_input_ptrs_.size() && !in_place; ++j) {
+        in_place = bound_input_ptrs_[j] == record->device_ptr;
+      }
+      if (!in_place) {
         continue;
       }
       LiteRtRankedTensorType type;
@@ -4052,11 +5385,6 @@ class LiteRtDispatchInvocationContextT {
       feed_.cache_rows.push_back(row);
     }
     feed_.rows_vectorized = true;
-    for (const StepFeed::CacheRow& cache : feed_.cache_rows) {
-      if (cache.inner_bytes % 16 != 0 || cache.backup_offset % 16 != 0) {
-        feed_.rows_vectorized = false;
-      }
-    }
     for (StepFeedSlot& slot : feed_.slots) {
       if (slot.backup != nullptr) cudaFree(slot.backup);
       slot.backup = nullptr;
@@ -4079,8 +5407,8 @@ class LiteRtDispatchInvocationContextT {
 
   // The rows a step ahead at `slot.position` overwrites, to the slot's
   // backup; and back, after a drop. Both on the stream, in order: one launch
-  // (LiteRtNvidiaLaunchRowCopies) when the rows are 16-byte aligned, a
-  // cudaMemcpy2DAsync per row otherwise.
+  // per 32 caches (LiteRtNvidiaLaunchRowCopies), or a cudaMemcpy2DAsync per
+  // cache once that launch refused the rows.
   Expected<void> CopyCacheRows(StepFeedSlot& slot, bool restore) {
     const auto& feed = *bytecode_.step_feed;
     const size_t ring = feed.ring;
@@ -4756,6 +6084,19 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> SpeculateNextStep() {
     if (!feed_.enabled || feed_.stopped || !feed_.argmax_ready) return {};
+    if (UpdatesStateInPlace()) {
+      // A step ahead advances such a state, and a dropped one (a miss, the
+      // end of the response) cannot be undone as the ring rows are: the
+      // whole state changes every step. Saving it before each step ahead
+      // would cost more than the steps ahead save (Qwen 3.8 27B: 150 MB per
+      // step against 1% of the decode time), so the feed stays off.
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: no steps ahead: the step rewrites %zu "
+                 "states in place",
+                 bytecode_.function_name.c_str(), states_in_place_);
+      feed_.stopped = true;
+      return {};
+    }
     {
       // The session's sampler says how it samples at its first sample, after
       // the first step: until then, or past the second step, the argmax.
@@ -4918,6 +6259,7 @@ class LiteRtDispatchInvocationContextT {
       params.token = feed_.sampler.device_result;
       params.table = static_cast<const uint8_t*>(feed_.table);
       params.bits = static_cast<int32_t>(feed_.bits);
+      params.zero_point = feed_.zero_point;
       params.row_scales = feed_.row_scales;
       params.block_scales = feed_.block_scales;
       params.scale_block = static_cast<int32_t>(feed_.scale_block);
@@ -4967,7 +6309,10 @@ class LiteRtDispatchInvocationContextT {
         execution_context_->setAuxStreams(
             aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
       }
-      LITERT_RETURN_IF_ERROR(EnqueueStep());
+      // A step ahead of a context of a slot group is a slot of a batched
+      // step too: the contexts' steps ahead meet as their steps do.
+      LITERT_ASSIGN_OR_RETURN(const bool batched, StepWithSlots());
+      if (!batched) LITERT_RETURN_IF_ERROR(EnqueueStep());
       LITERT_RETURN_IF_ERROR(EnqueueFeedToken(feed_.in_flight + 1, &slot));
       slot.prefetched.clear();
       LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(&slot));
@@ -5057,6 +6402,420 @@ class LiteRtDispatchInvocationContextT {
     return {};
   }
 
+  // The drafter's engine (DraftFeed): two float outputs [1, 1, n], the
+  // smaller one's width doubled being an input's [1, 1, 2 * dim], one INT32
+  // [1] input (the position), no cache written. Nothing else is fed.
+  Expected<void> InitDraftFeed() {
+    if (bytecode_.step_feed.has_value() || !StepFeedEnabled() ||
+        aot_residency_ || DispatchDumpIoEnabled() ||
+        DumpOutputsSpec() != nullptr || !PrefetchOutputsEnabled() ||
+        !FusedSamplingEnabled() || bytecode_.output_names.size() != 2 ||
+        engine_ == nullptr) {
+      return {};
+    }
+    for (const int aliased : aliased_input_of_output_) {
+      if (aliased >= 0) return {};
+    }
+    const auto width = [&](const std::string& name) -> int64_t {
+      if (name.empty() || engine_->getTensorDataType(name.c_str()) !=
+                              nvinfer1::DataType::kFLOAT) {
+        return 0;
+      }
+      const nvinfer1::Dims dims = engine_->getTensorShape(name.c_str());
+      if (dims.nbDims != 3 || dims.d[0] != 1 || dims.d[1] != 1 ||
+          dims.d[2] <= 0) {
+        return 0;
+      }
+      return dims.d[2];
+    };
+    const int64_t first = width(bytecode_.output_names[0]);
+    const int64_t second = width(bytecode_.output_names[1]);
+    if (first == 0 || second == 0 || first == second) return {};
+    const int64_t dim = std::min(first, second);
+    int input_port = -1;
+    int position_port = -1;
+    for (size_t i = 0; i < bytecode_.input_names.size(); ++i) {
+      const std::string& name = bytecode_.input_names[i];
+      if (width(name) == 2 * dim) {
+        if (input_port >= 0) return {};
+        input_port = static_cast<int>(i);
+        continue;
+      }
+      const nvinfer1::Dims dims = engine_->getTensorShape(name.c_str());
+      if (engine_->getTensorDataType(name.c_str()) ==
+              nvinfer1::DataType::kINT32 &&
+          dims.nbDims == 1 && dims.d[0] == 1) {
+        if (position_port >= 0) return {};
+        position_port = static_cast<int>(i);
+      }
+    }
+    if (input_port < 0 || position_port < 0) return {};
+    draft_.input_port = static_cast<size_t>(input_port);
+    draft_.position_port = static_cast<size_t>(position_port);
+    draft_.activations_port = first < second ? 0 : 1;
+    draft_.logits_port = first < second ? 1 : 0;
+    draft_.dim = static_cast<uint32_t>(dim);
+    draft_.vocab = static_cast<uint32_t>(std::max(first, second));
+    const auto fail = [&](const char* what, cudaError_t status) {
+      LITERT_LOG(LITERT_WARNING, "NVIDIA dispatch %s: the draft feed's %s: %s",
+                 bytecode_.function_name.c_str(), what,
+                 cudaGetErrorString(status));
+      DestroyDraftFeed();
+      static_cast<void>(cudaGetLastError());
+      return Expected<void>();
+    };
+    StepFeedSlot& slot = draft_.slot;
+    const size_t mirror_bytes =
+        16 + 2 * static_cast<size_t>(dim) * sizeof(float);
+    cudaError_t status =
+        cudaHostAlloc(&slot.mirror, mirror_bytes,
+                      cudaHostAllocMapped | cudaHostAllocPortable);
+    if (status != cudaSuccess) return fail("mirror", status);
+    std::memset(slot.mirror, 0, mirror_bytes);
+    slot.token_mirror = static_cast<int32_t*>(slot.mirror);
+    slot.embeddings_mirror =
+        reinterpret_cast<float*>(static_cast<uint8_t*>(slot.mirror) + 16);
+    status = cudaEventCreateWithFlags(&slot.feed_done, cudaEventDisableTiming);
+    if (status != cudaSuccess) return fail("event", status);
+    status = cudaEventCreateWithFlags(&slot.step_done, cudaEventDisableTiming);
+    if (status != cudaSuccess) return fail("event", status);
+    slot.staging.assign(output_handles_.size(), nullptr);
+    slot.staging_bytes.assign(output_handles_.size(), 0);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_ids),
+                           sizeof(int32_t), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_values),
+                           sizeof(float), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    status = cudaHostAlloc(reinterpret_cast<void**>(&draft_.handoff_flags),
+                           sizeof(int32_t), cudaHostAllocDefault);
+    if (status != cudaSuccess) return fail("handoff", status);
+    // An argmax, not a selection: a top-k reader makes its own.
+    draft_.handoff_values[0] = 0.0f;
+    draft_.handoff_flags[0] = kLiteRtNvidiaTopKCandidatesInconsistent;
+    draft_.enabled = true;
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch %s: an MTP drafter's step (input port %d "
+               "[1, 1, %lld], position port %d, vocabulary %u): its steps "
+               "chain on the device once a round's length is learned",
+               bytecode_.function_name.c_str(), input_port,
+               static_cast<long long>(2 * dim), position_port, draft_.vocab);
+    return {};
+  }
+
+  void DestroyDraftFeed() {
+    if (draft_.in_flight) cudaEventSynchronize(draft_.slot.step_done);
+    if (draft_.logits != nullptr) {
+      DraftFeedRegistry::Get().Clear(draft_.logits);
+      StepHandoffRegistry::Get().Clear(draft_.logits);
+    }
+    if (draft_.enabled || draft_.speculated != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter ran %llu steps ahead: %llu "
+                 "taken, %llu missed%s",
+                 bytecode_.function_name.c_str(),
+                 static_cast<unsigned long long>(draft_.speculated),
+                 static_cast<unsigned long long>(draft_.hits),
+                 static_cast<unsigned long long>(draft_.misses),
+                 draft_.stopped ? " (stopped)" : "");
+    }
+    StepFeedSlot& slot = draft_.slot;
+    if (slot.feed_done != nullptr) cudaEventDestroy(slot.feed_done);
+    if (slot.step_done != nullptr) cudaEventDestroy(slot.step_done);
+    if (slot.mirror != nullptr) cudaFreeHost(slot.mirror);
+    for (void* staging : slot.staging) {
+      if (staging != nullptr) cudaFreeHost(staging);
+    }
+    if (draft_.handoff_ids != nullptr) cudaFreeHost(draft_.handoff_ids);
+    if (draft_.handoff_values != nullptr) cudaFreeHost(draft_.handoff_values);
+    if (draft_.handoff_flags != nullptr) cudaFreeHost(draft_.handoff_flags);
+    draft_ = DraftFeed();
+  }
+
+  // At an invocation the host made itself: a write of the position starts a
+  // round. Two rounds in a row of one length teach it; another length
+  // unlearns it.
+  Expected<void> CountDraftRound() {
+    auto* position = DraftRecord(false, draft_.position_port);
+    if (position == nullptr) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's position is not a device "
+                 "buffer: its steps do not chain",
+                 bytecode_.function_name.c_str());
+      return {};
+    }
+    if (!CudaTensorBufferRegistry::Get().AnyHostNewer(position->cuda_handle)) {
+      ++draft_.round_steps;
+      return {};
+    }
+    const uint32_t steps = draft_.round_steps;
+    if (steps != 0) {
+      draft_.round_length =
+          steps >= 2 && steps == draft_.last_round ? steps : 0;
+      draft_.last_round = steps;
+    }
+    draft_.round_steps = 1;
+    return {};
+  }
+
+  // Before a step's prefetch: the projected activations get a pinned host
+  // copy, which the prefetch then keeps current, and the sampler of the
+  // step's logits is told where the next step runs (DraftFeedRegistry).
+  Expected<void> RegisterDraftLogits() {
+    auto* activations = DraftRecord(true, draft_.activations_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    if (activations == nullptr || logits == nullptr ||
+        !CudaTensorBufferRegistry::Get().EnsurePinnedHostCache(
+            activations->cuda_handle)) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's outputs have no device "
+                 "buffers with pinned host copies: its steps do not chain",
+                 bytecode_.function_name.c_str());
+      return {};
+    }
+    if (logits->device_ptr != draft_.logits && draft_.logits != nullptr) {
+      DraftFeedRegistry::Get().Clear(draft_.logits);
+      StepHandoffRegistry::Get().Clear(draft_.logits);
+    }
+    // Every time: a release of the buffer forgets it (DestroyCudaTensorBuffer)
+    // and another may take its address.
+    draft_.logits = logits->device_ptr;
+    DraftFeedRegistry::Get().Set(
+        draft_.logits, [this](const NvidiaGreedySamplerContext* sampler) {
+          LaunchDraftStep(sampler);
+        });
+    return {};
+  }
+
+  // The drafter's own records, when every input and output is a device
+  // buffer the step ahead can use as bound (nothing staged from the host,
+  // nothing transient), or null.
+  LiteRtDispatchDeviceContextT::Record* DraftRecord(bool output, size_t port) {
+    const auto& handles = output ? output_handles_ : input_handles_;
+    if (port >= handles.size() || handles[port] == 0) return nullptr;
+    auto record = device_context_->GetRecord(handles[port]);
+    if (!record.HasValue() || !(*record)->direct_cuda_buffer ||
+        (*record)->transient_device_ptr || (*record)->device_ptr == nullptr) {
+      return nullptr;
+    }
+    return *record;
+  }
+
+  // The sampler took the token of the step this context ran last, from its
+  // argmax on the device (`sampler`'s device result): the round's next step
+  // runs now, ahead of the host. A failure stops the feed; the host's step
+  // then runs as asked.
+  void LaunchDraftStep(const NvidiaGreedySamplerContext* sampler) {
+    if (!draft_.enabled || draft_.stopped || draft_.in_flight ||
+        draft_.round_length == 0 || draft_.round_steps >= draft_.round_length ||
+        sampler == nullptr || sampler->device_result == nullptr) {
+      return;
+    }
+    if (!draft_.table.has_value()) {
+      const std::vector<TokenTableState> states = FindTokenTables(
+          this, device_context_->serial(), {{0, draft_.vocab, draft_.dim, 0}},
+          /*upload=*/true, /*adopt=*/true);
+      if (states[0].failed) {
+        draft_.stopped = true;
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: the drafter's token table [%u, %u] "
+                   "cannot be had: its steps do not chain",
+                   bytecode_.function_name.c_str(), draft_.vocab, draft_.dim);
+        return;
+      }
+      if (!states[0].table.has_value()) return;  // on its way to the device
+      draft_.table = *states[0].table;
+    }
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      if (DraftRecord(false, i) == nullptr) return;
+    }
+    auto* input = DraftRecord(false, draft_.input_port);
+    auto* activations = DraftRecord(true, draft_.activations_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    auto& registry = CudaTensorBufferRegistry::Get();
+    const size_t dim_bytes = static_cast<size_t>(draft_.dim) * sizeof(float);
+    if (activations == nullptr || logits == nullptr ||
+        input->size < 2 * dim_bytes || activations->size < dim_bytes ||
+        logits->size < static_cast<size_t>(draft_.vocab) * sizeof(float) ||
+        logits->device_ptr != draft_.logits ||
+        registry.AnyHostNewer(logits->cuda_handle) ||
+        // The host reads the step's activations from the host copy the step
+        // prefetched, not from the device's the step ahead overwrites.
+        !registry.PinnedHostCurrent(activations->cuda_handle)) {
+      return;
+    }
+    if (!draft_.logged_ready) {
+      draft_.logged_ready = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's steps chain on the device "
+                 "(rounds of %u steps, token table [%u, %u] INT%u)",
+                 bytecode_.function_name.c_str(), draft_.round_length,
+                 draft_.table->vocab, draft_.table->dim, draft_.table->bits);
+    }
+    const auto launched = [&]() -> Expected<void> {
+      StepFeedSlot& slot = draft_.slot;
+      const RegisteredTokenTable& table = *draft_.table;
+      LiteRtNvidiaStepFeedParams params{};
+      params.token = sampler->device_result;
+      params.table = static_cast<const uint8_t*>(table.table);
+      params.bits = static_cast<int32_t>(table.bits);
+      if (table.scale_block == 0) {
+        params.row_scales = static_cast<const float*>(table.scales);
+      } else {
+        params.block_scales = static_cast<const uint16_t*>(table.scales);
+        params.scale_block = static_cast<int32_t>(table.scale_block);
+      }
+      params.multiplier = table.multiplier;
+      params.vocab = static_cast<int32_t>(draft_.vocab);
+      params.dim = static_cast<int32_t>(draft_.dim);
+      params.embeddings = static_cast<float*>(input->device_ptr);
+      params.token_mirror = slot.token_mirror;
+      params.embeddings_mirror = slot.embeddings_mirror;
+      params.tail = static_cast<const float*>(activations->device_ptr);
+      params.tail_count = static_cast<int32_t>(draft_.dim);
+      LITERT_RETURN_IF_ERROR(
+          CudaOk(LiteRtNvidiaLaunchStepFeed(&params, stream_),
+                 "LaunchStepFeed draft"));
+      // From here on the input on the device is the step ahead's.
+      draft_.in_flight = true;
+      draft_.token_enqueued = false;
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot.feed_done, stream_),
+                                    "cudaEventRecord draft feed"));
+      if (!aux_streams_.empty()) {
+        execution_context_->setAuxStreams(
+            aux_streams_.data(), static_cast<int32_t>(aux_streams_.size()));
+      }
+      LITERT_RETURN_IF_ERROR(EnqueueStep());
+      std::vector<const void*> enqueued;
+      LITERT_RETURN_IF_ERROR(EnqueueFusedGreedy(logits->device_ptr, stream_,
+                                                &enqueued, draft_.handoff_ids,
+                                                /*keep_fresh=*/true));
+      draft_.token_enqueued = !enqueued.empty();
+      slot.prefetched.clear();
+      LITERT_RETURN_IF_ERROR(PrefetchReadOutputs(&slot));
+      LITERT_RETURN_IF_ERROR(CudaOk(cudaEventRecord(slot.step_done, stream_),
+                                    "cudaEventRecord draft step"));
+      ++draft_.speculated;
+      // The launches reach the device now, not at the next synchronization.
+      static_cast<void>(cudaStreamQuery(stream_));
+      return {};
+    }();
+    if (!launched) {
+      LITERT_LOG(LITERT_WARNING,
+                 "NVIDIA dispatch %s: the drafter's step ahead: %s; its steps "
+                 "no longer chain",
+                 bytecode_.function_name.c_str(),
+                 launched.Error().Message().c_str());
+      static_cast<void>(cudaGetLastError());
+      draft_.stopped = true;
+    }
+  }
+
+  // Whether the host's inputs for this step are the step ahead's: the
+  // bindings, no host write to the logits, the host's write of the input
+  // matching the mirror, no other input written.
+  Expected<bool> VerifyDraftInputs() {
+    if (!draft_.token_enqueued) return false;
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      auto* record = DraftRecord(false, i);
+      if (record == nullptr || record->device_ptr != bound_input_ptrs_[i]) {
+        return false;
+      }
+    }
+    for (size_t i = 0; i < output_handles_.size(); ++i) {
+      auto* record = DraftRecord(true, i);
+      if (record == nullptr || record->device_ptr != bound_output_ptrs_[i]) {
+        return false;
+      }
+    }
+    auto& registry = CudaTensorBufferRegistry::Get();
+    auto* input = DraftRecord(false, draft_.input_port);
+    auto* logits = DraftRecord(true, draft_.logits_port);
+    if (registry.AnyHostNewer(logits->cuda_handle)) return false;
+    const size_t bytes = 2 * static_cast<size_t>(draft_.dim) * sizeof(float);
+    if (!registry.AnyHostNewer(input->cuda_handle) ||
+        !registry.VerifyHostWrite(input->cuda_handle,
+                                  draft_.slot.embeddings_mirror, bytes)) {
+      if (draft_.misses < 4) {
+        std::vector<float> host(bytes / sizeof(float));
+        size_t at = host.size();
+        if (registry.ReadHostCopy(input->cuda_handle, host.data(), bytes)) {
+          for (size_t i = 0; i < host.size(); ++i) {
+            if (std::memcmp(&host[i], &draft_.slot.embeddings_mirror[i],
+                            sizeof(float)) != 0) {
+              at = i;
+              break;
+            }
+          }
+        }
+        LITERT_LOG(LITERT_INFO,
+                   "NVIDIA dispatch %s: the drafter's step ahead (token %d) "
+                   "is not the host's: its input differs at float %zu of %zu",
+                   bytecode_.function_name.c_str(), draft_.slot.token_mirror[0],
+                   at, host.size());
+      }
+      return false;
+    }
+    for (size_t i = 0; i < input_handles_.size(); ++i) {
+      if (i == draft_.input_port) continue;
+      if (registry.AnyHostNewer(DraftRecord(false, i)->cuda_handle)) {
+        return false;
+      }
+    }
+    registry.ConfirmHostWrite(input->cuda_handle);
+    return true;
+  }
+
+  // The host asks for the step ahead: its outputs are in place, the staged
+  // one goes to its host copy (the others' are stale), its token to the
+  // sampler.
+  Expected<void> TakeDraftStep() {
+    StepFeedSlot& slot = draft_.slot;
+    LITERT_RETURN_IF_ERROR(WaitStepAheadDone(slot.step_done));
+    auto& registry = CudaTensorBufferRegistry::Get();
+    for (size_t i = 0; i < output_handles_.size(); ++i) {
+      registry.Discard(DraftRecord(true, i)->cuda_handle);
+    }
+    TakePrefetched(slot);
+    draft_.in_flight = false;
+    ++draft_.hits;
+    ++draft_.round_steps;
+    StepHandoffRegistry::Get().Set(
+        draft_.logits, StepHandoff{draft_.handoff_ids, draft_.handoff_values,
+                                   draft_.handoff_flags, 1, nullptr});
+    return {};
+  }
+
+  // The host's inputs are not the step ahead's: it ran for nothing. Its input
+  // on the device goes back to the host's copy before the host's step, which
+  // overwrites its outputs.
+  Expected<void> DropDraftStep() {
+    LITERT_RETURN_IF_ERROR(WaitStepAheadDone(draft_.slot.step_done));
+    draft_.slot.prefetched.clear();
+    draft_.in_flight = false;
+    if (auto* input = DraftRecord(false, draft_.input_port)) {
+      CudaTensorBufferRegistry::Get().MarkHostStale(input->cuda_handle);
+    }
+    ++draft_.misses;
+    // A round shorter than learned is learned again.
+    draft_.round_length = 0;
+    const uint64_t steps = draft_.hits + draft_.misses;
+    if ((draft_.misses >= kStepFeedMaxMisses && draft_.hits < draft_.misses) ||
+        (steps >= kStepFeedMissWindow &&
+         draft_.misses * 100 > steps * kStepFeedMissPercent)) {
+      draft_.stopped = true;
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA dispatch %s: the drafter's steps stop chaining after "
+                 "%llu of %llu steps ahead the host did not confirm",
+                 bytecode_.function_name.c_str(),
+                 static_cast<unsigned long long>(draft_.misses),
+                 static_cast<unsigned long long>(steps));
+    }
+    return {};
+  }
+
   // A plan built without its packed plugin weights (bytecode.h,
   // TensorRtWeightStore) gets them mapped in from device memory that is filled
   // from the model file and shared by the engines of the process.
@@ -5097,7 +6856,8 @@ class LiteRtDispatchInvocationContextT {
             litert::nvidia::kTensorRtStepFeedNoTable) {
       const auto& feed = *bytecode_.step_feed;
       weight_memory_table_ = WeightMemoryAddressOf(
-          feed.table_offset, static_cast<uint64_t>(feed.vocab) * feed.dim / 2);
+          feed.table_offset,
+          static_cast<uint64_t>(feed.vocab) * feed.dim * feed.table_bits / 8);
     }
     return {};
   }
@@ -5982,13 +7742,23 @@ class LiteRtDispatchInvocationContextT {
     }
   }
 
+  // The runtime cache file of this engine, by its function and its content.
+  // An engine from an AOT artifact is named by the artifact's fingerprint:
+  // the locator's, which the artifact was checked against when it was opened
+  // (its bytes, or the identity of the file its writer fingerprinted), and
+  // which stands in the artifact's own file name. Hashing the plan instead
+  // read all of it at every start (the E2B's four plans are 223 MB and took
+  // 0.34 s, the E4B's 402 MB and 0.61 s). An engine without an artifact is
+  // named by a hash of its plan.
   std::string RuntimeCachePath(const std::string& dir) const {
     const std::string function_name =
         SanitizeCacheComponent(bytecode_.function_name);
-    const uint64_t engine_hash =
-        Fnv1a64(bytecode_.engine_data, bytecode_.engine_size);
-    return JoinPath(dir, function_name + "_" + Hex64(engine_hash) +
-                             ".trt_rtx_runtime_cache");
+    const std::string engine_key =
+        aot_fingerprint_.has_value()
+            ? Hex64(aot_fingerprint_->low) + Hex64(aot_fingerprint_->high)
+            : Hex64(Fnv1a64(bytecode_.engine_data, bytecode_.engine_size));
+    return JoinPath(
+        dir, function_name + "_" + engine_key + ".trt_rtx_runtime_cache");
   }
 
   Expected<void> ConfigureRuntimeCache() {
@@ -5996,11 +7766,7 @@ class LiteRtDispatchInvocationContextT {
     if (cache_dir.empty() || runtime_config_ == nullptr) {
       return {};
     }
-    // A lazy engine always reloads the same validated AOT artifact. Reuse its
-    // cache key rather than rescan a multi-GiB plan at every phase transition.
-    if (!aot_residency_ || runtime_cache_path_.empty()) {
-      runtime_cache_path_ = RuntimeCachePath(cache_dir);
-    }
+    runtime_cache_path_ = RuntimeCachePath(cache_dir);
     runtime_cache_.reset(runtime_config_->createRuntimeCache());
     if (!runtime_cache_) {
       LITERT_LOG(LITERT_WARNING,
@@ -6473,7 +8239,28 @@ class LiteRtDispatchInvocationContextT {
                values[1], values[2], values[3], checksum);
   }
 
+  // A context that is no decode step, with batched decode steps on: it binds
+  // the process's arena (ProcessActivationArena) when it enqueues.
+  // Not a step that runs outside an invocation or batched: a decode step
+  // (steps ahead), an MTP drafter's (DraftFeed: its steps ahead are launched
+  // from the sampler, without the arena's order), a step with batched
+  // engines (an MTP verify): those keep their engine's arena.
+  bool UsesProcessArena() {
+    if (!process_arena_decided_) {
+      process_arena_decided_ = true;
+      std::error_code exists_error;
+      process_arena_ =
+          DispatchSlots() >= 2 && !bytecode_.step_feed.has_value() &&
+          !draft_.enabled && !aot_residency_ &&
+          (aot_path_.empty() ||
+           !std::filesystem::exists(
+               litert::nvidia::SlotArtifactPath(aot_path_, 2), exists_error));
+    }
+    return process_arena_ && device_memory_bytes_ > 0;
+  }
+
   Expected<void> BindSharedActivationArena() {
+    if (UsesProcessArena()) return {};
     if (device_memory_bytes_ <= 0) {
       // Nothing to bind: the engine has no activation memory (or the context
       // owns its own allocation).
@@ -6586,6 +8373,9 @@ class LiteRtDispatchInvocationContextT {
   LiteRtDispatchDeviceContext device_context_;
   std::shared_ptr<AotEngineResidency> aot_residency_;
   std::optional<litert::nvidia::TensorRtAotLocator> aot_locator_;
+  // The content fingerprint of the AOT artifact the engine came from, if it
+  // came from one (RuntimeCachePath).
+  std::optional<litert::nvidia::TensorRtArtifactFingerprint> aot_fingerprint_;
   std::unordered_map<std::string, nvinfer1::TensorLocation> tensor_locations_;
   std::unordered_map<std::string, nvinfer1::DataType> tensor_types_;
   bool resident_has_run_ = false;
@@ -6634,6 +8424,20 @@ class LiteRtDispatchInvocationContextT {
   void* bound_arena_ptr_ = nullptr;
   uint64_t bound_arena_version_ = 0;
   uint64_t invocation_count_ = 0;
+  // UsesProcessArena(): decided once.
+  bool process_arena_decided_ = false;
+  bool process_arena_ = false;
+  // The thread and stream InvocationStreams knows this context by.
+  std::thread::id noted_thread_;
+  cudaStream_t noted_stream_ = nullptr;
+  // The batched decode steps this context takes part in (StepWithSlots).
+  std::string aot_path_;
+  std::shared_ptr<DecodeSlotGroup> slot_group_;
+  bool slot_group_tried_ = false;
+  cudaEvent_t slot_ready_ = nullptr;
+  // UpdatesStateInPlace: decided, and the states it found.
+  bool states_in_place_known_ = false;
+  size_t states_in_place_ = 0;
   uint64_t consecutive_invocations_ = 0;
   // The decode budget this invocation took (StepFeedBudget).
   uint32_t step_budget_ = UINT32_MAX;
@@ -6813,6 +8617,7 @@ LiteRtStatus InvocationContextCreate(
   if (invocation_context == nullptr) {
     return kLiteRtStatusErrorInvalidArgument;
   }
+  RelaxedCaptureScope relaxed_capture;
   auto context = LiteRtDispatchInvocationContextT::Create(
       runtime_context, device_context, exec_type, exec_bytecode_buffer,
       function_name, num_inputs, num_outputs);
@@ -6832,6 +8637,7 @@ LiteRtStatus InvocationContextCreate(
 
 LiteRtStatus InvocationContextDestroy(
     LiteRtDispatchInvocationContext invocation_context) {
+  RelaxedCaptureScope relaxed_capture;
   delete invocation_context;
   return kLiteRtStatusOk;
 }

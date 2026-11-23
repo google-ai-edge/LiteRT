@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
@@ -125,7 +126,7 @@ class CompilerPlugin {
   // Get the manufacturer associated with this plugin. NOTE: SocManufacturer
   // string returned by the underlying plugin are expected to have static
   // lifetime.
-  absl::string_view SocManufacturer() const {
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::string_view SocManufacturer() const {
     if (!LITERT_ABI_HAS_API(plugin_api_v1_, /*req_major=*/1,
                             get_compiler_plugin_soc_manufacturer)) {
       return "";
@@ -200,9 +201,11 @@ class CompilerPlugin {
   const LiteRtCompilerPluginInterface_V1* plugin_api_v1_ = nullptr;
   LiteRtCompilerPlugin plugin_handle_ = nullptr;
   std::vector<LiteRtTransformation> transformations_;
-  // Default 200 iterations provide adequate headroom while protecting against
-  // runaway transformation loops.
-  size_t max_transformation_iterations_ = 200;
+  // Every successful rewrite restarts the scan and counts as one iteration, so
+  // this bounds the total number of rewrites per subgraph. Transformer models
+  // with per-layer rewrites (e.g. 16 layers x several patterns) easily exceed
+  // a few hundred rewrites.
+  size_t max_transformation_iterations_ = 1000;
   LiteRtApiVersion negotiated_version_ = {0, 0, 0};
 
   // Internal LiteRtCompiledResult wrapper.

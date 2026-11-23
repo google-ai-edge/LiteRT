@@ -102,11 +102,11 @@ absl::Status ValidateFloatActivationFullyConnected(
           "FloatActivationFullyConnected requires finite positive scales");
     }
   }
-  for (int64_t zero_point : quantization.zero_points) {
-    if (zero_point != 0) {
-      return absl::InvalidArgumentError(
-          "FloatActivationFullyConnected requires zero points equal to 0");
-    }
+  LRT_TENSOR_RETURN_IF_ERROR(
+      quantization.zero_points.Validate<int64_t>(rows));
+  if (!quantization.zero_points.IsSymmetric()) {
+    return absl::InvalidArgumentError(
+        "FloatActivationFullyConnected requires zero points equal to 0");
   }
   return absl::OkStatus();
 }
