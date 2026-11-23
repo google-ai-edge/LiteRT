@@ -177,6 +177,10 @@ def main():
                       help='the main model signatures to load (default: bench.sh\'s rule)')
   parser.add_argument('--engines', type=int, default=1,
                       help='with --one-process: questions decoded side by side, an engine each')
+  parser.add_argument('--order-from', action='append', default=[], metavar='LABEL_DIR',
+                      help='with --one-process: earlier runs\' directories (repeatable); the questions '
+                           'go longest answer first by their output tokens there (unknown first), so '
+                           'that several engines do not end the run on one long answer')
   args = parser.parse_args()
   if not DATA.exists():
     raise SystemExit(f'{DATA} is missing: run eval/gpqa/fetch.sh')
@@ -248,6 +252,18 @@ def main():
     result = subprocess.run(bench_command(args, label, prompt_file, out, context, n), stdin=subprocess.DEVNULL)
     results = record(args, results, results_path, out, n, row, correct, label, result.returncode,
                      round(time.time() - started, 1))
+  if pending and args.order_from:
+    known = {}
+    for directory in args.order_from:
+      try:
+        earlier = json.loads((pathlib.Path(directory) / 'results.json').read_text())
+      except (OSError, ValueError):
+        continue
+      for entry in earlier:
+        tokens = entry.get('output_tokens')
+        if isinstance(tokens, int):
+          known[entry.get('record_id')] = max(known.get(entry.get('record_id'), 0), tokens)
+    pending.sort(key=lambda item: -known.get(item[3]['Record ID'], float('inf')))
   if pending:
     timings = run_one_process(args, pending, out, context)
     for n, label, _, row, correct in pending:
