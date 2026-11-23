@@ -1478,6 +1478,15 @@ Expected<void> Run() {
   const auto steps = Script(absl::GetFlag(FLAGS_decode_steps));
   const std::vector<int32_t> sequence = Tokens(kPrompt + 64);
   const std::string out_dir = absl::GetFlag(FLAGS_out_dir);
+  // A signature's buffers, made once and used for each of its steps, as
+  // LiteRT-LM keeps them: with new buffers every step the engine's bindings
+  // move from step to step, and TensorRT-RTX captures its CUDA graph again
+  // instead of replaying it (a decode step then takes about twice its time).
+  struct Buffers {
+    std::vector<litert::TensorBuffer> inputs;
+    std::vector<litert::TensorBuffer> outputs;
+  };
+  std::map<std::string, Buffers> signature_buffers;
   int index = 0;
   for (const Step& step : steps) {
     const bool draft = step.kind == Kind::kDraft;
@@ -1489,10 +1498,18 @@ Expected<void> Run() {
                             compiled.GetSignatureInputNames(signature));
     LITERT_ASSIGN_OR_RETURN(auto output_names,
                             compiled.GetSignatureOutputNames(signature));
-    LITERT_ASSIGN_OR_RETURN(auto inputs,
-                            compiled.CreateInputBuffers(signature));
-    LITERT_ASSIGN_OR_RETURN(auto outputs,
-                            compiled.CreateOutputBuffers(signature));
+    const std::string buffers_key =
+        absl::StrCat(draft ? "draft:" : "", step.signature());
+    if (signature_buffers.count(buffers_key) == 0) {
+      Buffers made;
+      LITERT_ASSIGN_OR_RETURN(made.inputs,
+                              compiled.CreateInputBuffers(signature));
+      LITERT_ASSIGN_OR_RETURN(made.outputs,
+                              compiled.CreateOutputBuffers(signature));
+      signature_buffers.emplace(buffers_key, std::move(made));
+    }
+    auto& inputs = signature_buffers.at(buffers_key).inputs;
+    auto& outputs = signature_buffers.at(buffers_key).outputs;
     const auto input = [&](const std::string& name) -> litert::TensorBuffer& {
       for (size_t i = 0; i < input_names.size(); ++i) {
         if (input_names[i] == name) return inputs[i];
