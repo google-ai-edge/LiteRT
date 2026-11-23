@@ -656,7 +656,7 @@ int32_t DecodeSlotsRequested() {
   char* end = nullptr;
   const long parsed = std::strtol(value, &end, 10);
   if (end == value || *end != '\0' || parsed < 2) return 0;
-  return parsed > 4 ? 4 : static_cast<int32_t>(parsed);
+  return parsed > 8 ? 8 : static_cast<int32_t>(parsed);
 }
 
 Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(

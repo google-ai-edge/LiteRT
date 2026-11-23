@@ -47,8 +47,9 @@ Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(
     std::vector<std::unique_ptr<nvinfer1::IPluginV3>>* plugins);
 
 // LITERT_NVIDIA_DISPATCH_SLOTS: the most sequence slots a batched decode step
-// takes (0 or unset: no batched decode, the default). The compiler builds a
-// batched engine of each count from 2 to it beside every decode engine.
+// takes, 2 to 8 (0 or unset: no batched decode, the default). The compiler
+// builds a batched engine of each count from 2 to it beside every decode
+// engine.
 int32_t DecodeSlotsRequested();
 
 }  // namespace litert::nvidia

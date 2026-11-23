@@ -2969,7 +2969,7 @@ int DispatchSlots() {
     const char* value = std::getenv("LITERT_NVIDIA_DISPATCH_SLOTS");
     if (value == nullptr || value[0] == '\0') return 0;
     const int parsed = std::atoi(value);
-    return parsed < 2 ? 0 : std::min(parsed, 4);
+    return parsed < 2 ? 0 : std::min(parsed, 8);
   }();
   return slots;
 }
