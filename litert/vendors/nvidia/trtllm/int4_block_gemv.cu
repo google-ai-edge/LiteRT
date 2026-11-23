@@ -209,13 +209,18 @@ cudaError_t LaunchDense(const __nv_bfloat16* activation,
                               norm.multiplier, output, input_size, output_size,
                               trigger);
   };
-  if (output_size >= kDenseMinCtas * kTileRows) {
-    return launch(std::integral_constant<int, kTileRows>());
+  if constexpr (Threads >= 512) {
+    // The long narrow rows' CTAs (LaunchDenseRowsAnyThreads): one row each.
+    return launch(std::integral_constant<int, 1>());
+  } else {
+    if (output_size >= kDenseMinCtas * kTileRows) {
+      return launch(std::integral_constant<int, kTileRows>());
+    }
+    if (output_size >= kDenseMinCtas * 4) {
+      return launch(std::integral_constant<int, 4>());
+    }
+    return launch(std::integral_constant<int, 2>());
   }
-  if (output_size >= kDenseMinCtas * 4) {
-    return launch(std::integral_constant<int, 4>());
-  }
-  return launch(std::integral_constant<int, 2>());
 }
 
 template <int Rows, int Threads>
@@ -427,6 +432,16 @@ cudaError_t LaunchDenseFp32(const __nv_bfloat16* activation,
   // expert's down projection) one warp, 66 (the dense down projection)
   // three, 88 and more four.
   const int blocks = input_size / kBlock;
+  // Few outputs of long rows (Qwen 4's hyper-connection down projection,
+  // [320 x 10240]): their 2 rows per CTA leave most of the GPU idle at four
+  // warps (93 GB/s); sixteen warps per CTA read the row at once. Only rows of
+  // 10240 inputs and more into at most 512 outputs, which no other model's
+  // projections are (Gemma 4 26B's drafter has [1024 x 8192]: their sums keep
+  // their order).
+  if (blocks >= 320 && output_size <= 512) {
+    return LaunchDenseRows<512>(activation, weights, scales, norm, output,
+                                rows, input_size, output_size, gate, stream);
+  }
   if (blocks <= 32) {
     return LaunchDenseRows<32>(activation, weights, scales, norm, output, rows,
                                input_size, output_size, gate, stream);

@@ -162,9 +162,11 @@ float Reference(const std::vector<uint16_t>& activation,
 TEST(Int4BlockGemvTest, MatchesCpuReference) {
   // Every row count, over the input sizes of the 26B model's projections
   // (the expert down projection of 22 blocks runs on one warp) and a short
-  // odd case; 44 channels end in a partial tile of 4.
+  // odd case; 44 channels end in a partial tile of 4. 10240 inputs run 44
+  // CTAs of sixteen warps, a row each (Qwen 4's hyper-connection down
+  // projection's form).
   constexpr int kN = 44;
-  for (const int k : {64, 704, 2112, 2816}) {
+  for (const int k : {64, 704, 2112, 2816, 10240}) {
     const std::vector<uint8_t> weights = MakeInt4Weights(kN, k, 1);
     const std::vector<uint16_t> scales = MakeScales(kN, k, 1);
     for (int rows = 1; rows <= kLiteRtNvidiaInt4BlockGemvMaxRows; ++rows) {
@@ -1049,6 +1051,15 @@ TEST(Int4BlockGemvTest, TimesDecodeShapes) {
       {"gate+up, 5 rows", 5, 4224, 2816, 0},
       {"down, 5 rows", 5, 2816, 2112, 0},
       {"head, 5 rows", 5, 262144, 2816, 0},
+      // Qwen 4 at its widths (hidden 2560, hc 4, low rank 320): a
+      // hyper-connection mix's two projections, a PLE layer's key and value,
+      // a Gated DeltaNet layer's in and out projections.
+      {"Qwen 4 HC down [320 x 10240]", 1, 320, 10240, 0},
+      {"Qwen 4 HC up [10240 x 320]", 1, 10240, 320, 0},
+      {"Qwen 4 PLE key [10240 x 2560]", 1, 10240, 2560, 0},
+      {"Qwen 4 PLE value [2560 x 2560]", 1, 2560, 2560, 0},
+      {"Qwen 4 GDN qkvz [12288 x 2560]", 1, 12288, 2560, 0},
+      {"Qwen 4 GDN out [2560 x 4096]", 1, 2560, 4096, 0},
   };
   cudaEvent_t start, stop;
   cudaEventCreate(&start);
