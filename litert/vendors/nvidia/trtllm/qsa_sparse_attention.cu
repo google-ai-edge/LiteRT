@@ -41,8 +41,13 @@ constexpr int kListThreads = 1024;
 // quarter of it for a single row).
 constexpr int kWarps = 4;
 constexpr int kThreads = kWarps * 32;
-// CTAs a launch aims for, and the fewest blocks a chunk of a list holds.
+// CTAs a launch aims for, and the fewest blocks a chunk of a list holds. The
+// tensor-core path's CTAs (two per multiprocessor) aim for one wave of a
+// desktop GPU's: a second wave of a few CTAs costs more than the splits save
+// (verify of 4 to 8 rows: 57 -> 39 us at 144 instead of 256). Constants, so
+// that how a row's keys are split does not depend on the device.
 constexpr int kTargetCtas = 256;
+constexpr int kTileTargetCtas = 144;
 constexpr int kMinBlocksPerSplit = 16;
 
 // Which of a block's four keys row `row` sees, as bits 0..3.
@@ -962,7 +967,8 @@ Plan MakePlan(const LiteRtNvidiaQsaAttentionParams& p) {
     base = int64_t{p.kv_heads} * plan.head_chunks * plan.row_groups;
     useful = std::max<int64_t>(1, plan.capacity / kMinBlocksPerSplit);
   }
-  const int64_t wanted = (kTargetCtas + base - 1) / base;
+  const int64_t target = plan.tiled ? kTileTargetCtas : kTargetCtas;
+  const int64_t wanted = (target + base - 1) / base;
   plan.splits = static_cast<int32_t>(
       std::max<int64_t>(1, std::min<int64_t>({wanted, useful, 64})));
   return plan;
