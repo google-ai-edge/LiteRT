@@ -1530,10 +1530,12 @@ std::optional<QuantFusedSdpa> ParseQuantFusedSdpa(const Op& op) {
 // keys and values into INT8, INT4 and UINT8 caches, and UINT8 caches. Off
 // unless LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION=1: models whose composites
 // the specialized kernels or the decompositions run today build the same
-// engines without it.
+// engines without it. Like those kernels, the plugin takes the float tensors
+// behind the graphs' QUANTIZE ops, so it needs 16-bit activations.
 bool GeneralAttentionEnabled() {
   const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION");
-  return value != nullptr && std::strcmp(value, "1") == 0;
+  return value != nullptr && std::strcmp(value, "1") == 0 &&
+         QuantAttentionEnabled();
 }
 
 // A cache tensor of the general forms: INT8 or INT4 with a zero point of 0,

@@ -54,6 +54,7 @@
 #include <fstream>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -85,6 +86,10 @@ ABSL_FLAG(int, decode_steps, 12, "Decode steps after the prompt.");
 ABSL_FLAG(bool, compare, false, "Compare the outputs of two runs.");
 ABSL_FLAG(std::string, cpu_dir, "", "The CPU run's outputs.");
 ABSL_FLAG(std::string, npu_dir, "", "The NPU run's outputs.");
+ABSL_FLAG(std::string, quant_layer, "",
+          "Adds a third layer of attention over quantized KV caches (int4, "
+          "uint8, int8 or fused_int4; see QuantLayerSpec) when writing the "
+          "model; when comparing, the form of the model's layer.");
 ABSL_FLAG(double, tolerance, 2e-2,
           "Largest error allowed, relative to the largest magnitude of an "
           "output.");
@@ -170,6 +175,16 @@ class Builder {
   }
   int32_t Bool(const std::string& name, const Shape& shape) {
     return Tensor(name, tflite::TensorType_BOOL, shape);
+  }
+  // A tensor quantized per tensor.
+  int32_t Quantized(const std::string& name, tflite::TensorType type,
+                    const Shape& shape, float scale, int64_t zero_point) {
+    const int32_t tensor = Tensor(name, type, shape);
+    auto quantization = std::make_unique<tflite::QuantizationParametersT>();
+    quantization->scale = {scale};
+    quantization->zero_point = {zero_point};
+    graph().tensors[tensor]->quantization = std::move(quantization);
+    return tensor;
   }
   int32_t Input(int32_t tensor) {
     graph().inputs.push_back(tensor);
@@ -261,6 +276,11 @@ class Builder {
       }
       case tflite::BuiltinOperator_MUL: {
         tflite::MulOptionsT options;
+        op.builtin_options.Set(options);
+        break;
+      }
+      case tflite::BuiltinOperator_DIV: {
+        tflite::DivOptionsT options;
         op.builtin_options.Set(options);
         break;
       }
@@ -404,6 +424,36 @@ class Builder {
     tflite::FullyConnectedOptionsT options;
     op.builtin_options.Set(options);
     return out;
+  }
+  // QUANTIZE of a float `x` into a new tensor quantized like that.
+  int32_t Quantize(int32_t x, tflite::TensorType type, float scale,
+                   int64_t zero_point) {
+    const int32_t out =
+        Quantized(Name(), type, graph().tensors[x]->shape, scale, zero_point);
+    Op(tflite::BuiltinOperator_QUANTIZE, {x}, {out});
+    return out;
+  }
+  int32_t Dequantize(int32_t x) {
+    const int32_t out = F32(Name(), graph().tensors[x]->shape);
+    Op(tflite::BuiltinOperator_DEQUANTIZE, {x}, {out});
+    return out;
+  }
+  int32_t Softmax(int32_t x) {
+    const int32_t out = F32(Name(), graph().tensors[x]->shape);
+    auto& op = Op(tflite::BuiltinOperator_SOFTMAX, {x}, {out});
+    tflite::SoftmaxOptionsT options;
+    options.beta = 1.0f;
+    op.builtin_options.Set(options);
+    return out;
+  }
+  // c * tanh(x / c).
+  int32_t Softcap(int32_t x, float cap, const Shape& s) {
+    const int32_t divided =
+        Binary(tflite::BuiltinOperator_DIV, x, ConstF32(Name(), {1}, {cap}),
+               tflite::TensorType_FLOAT32, s);
+    const int32_t tanh = Unary(tflite::BuiltinOperator_TANH, divided,
+                               tflite::TensorType_FLOAT32, s);
+    return MulF(tanh, ConstF32(Name(), {1}, {cap}), s);
   }
   int32_t Tile(int32_t x, const std::vector<int32_t>& multiples,
                const Shape& shape) {
@@ -794,13 +844,249 @@ int32_t AddSparseDecomposition(Builder& b, int rows, float scale) {
   return graph;
 }
 
+// ---------------------------------------------------------------------------
+// The quantized attention layer (--quant_layer)
+// ---------------------------------------------------------------------------
+
+// A third layer of full attention over quantized KV caches, in one of the
+// forms the general attention plugin takes
+// (compiler/general_attention_plugin.h,
+// LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION=1):
+//   int4: float keys and values into packed INT4 caches (odml.cache_update),
+//         odml.sdpa_transposed with a float query, an additive float mask, a
+//         scale and a soft cap;
+//   uint8: keys and values quantized to INT8 of their own scale into UINT8
+//         caches, an INT8 query and a bool mask;
+//   int8: the form of Gemma 4's local layers (INT8 query, keys and values on
+//         the caches' INT8 grid, a bool mask) at depth 64 instead of 256;
+//   fused_int4: odml.fused_sdpa_cache_update over packed INT4 ring caches of
+//         32 slots with a float chunk, a float mask and a soft cap.
+// The decompositions are TFLite builtin ops (QUANTIZE, DEQUANTIZE,
+// DYNAMIC_UPDATE_SLICE, BATCH_MATMUL, SOFTMAX), which LiteRT's CPU runs.
+constexpr int kQuantLayer = kLayers;  // its index
+constexpr int kRing = 32;
+constexpr float kQueryPrescale = 0.125f;  // 1 / sqrt(kDepth)
+constexpr float kQueryScale = 0.0016f;
+constexpr float kRowScale = 0.017f;
+constexpr float kQuantSoftcap = 20.0f;
+
+struct QuantSpec {
+  std::string kind;
+  tflite::TensorType cache_type = tflite::TensorType_INT8;
+  int64_t zero_point = 0;
+  float k_scale = 0.0f;
+  float v_scale = 0.0f;
+  int cache_len = kCacheLen;
+  bool fused() const { return kind == "fused_int4"; }
+};
+
+std::optional<QuantSpec> QuantLayerSpec(const std::string& kind) {
+  QuantSpec spec;
+  spec.kind = kind;
+  if (kind == "int4" || kind == "fused_int4") {
+    spec.cache_type = tflite::TensorType_INT4;
+    spec.k_scale = 0.25f;
+    spec.v_scale = 0.25f;
+    if (kind == "fused_int4") spec.cache_len = kRing;
+  } else if (kind == "uint8") {
+    spec.cache_type = tflite::TensorType_UINT8;
+    spec.zero_point = 128;
+    spec.k_scale = 0.02f;
+    spec.v_scale = 0.025f;
+  } else if (kind == "int8") {
+    spec.k_scale = 0.02f;
+    spec.v_scale = 0.025f;
+  } else {
+    return std::nullopt;
+  }
+  return spec;
+}
+
+int32_t QuantCache(Builder& b, const std::string& name, const QuantSpec& spec,
+                   bool value) {
+  const Shape shape = value ? Shape{1, kKvHeads, kDepth, spec.cache_len}
+                            : Shape{1, kKvHeads, spec.cache_len, kDepth};
+  return b.Quantized(name, spec.cache_type, shape,
+                     value ? spec.v_scale : spec.k_scale, spec.zero_point);
+}
+
+// odml.cache_update into the quantized caches. The keys and values are float
+// (int4) or INT8 (uint8: kRowScale; int8: the caches' scales).
+int32_t AddQuantCacheUpdateDecomposition(Builder& b, int rows,
+                                         const QuantSpec& spec) {
+  const int32_t graph =
+      b.NewSubgraph(absl::StrCat("odml.cache_update.quant_impl_", rows));
+  const Shape row_shape = {1, kKvHeads, rows, kDepth};
+  const auto update = [&](const char* name, float cache_scale) {
+    if (spec.kind == "int4") return b.Input(b.F32(name, row_shape));
+    return b.Input(b.Quantized(name, tflite::TensorType_INT8, row_shape,
+                               spec.kind == "uint8" ? kRowScale : cache_scale,
+                               0));
+  };
+  const int32_t k = update("k", spec.k_scale);
+  const int32_t v = update("v", spec.v_scale);
+  b.Input(b.I32("param_tensor", {1, 1, 1, 7}));
+  const int32_t k_cache = b.Input(QuantCache(b, "k_cache", spec, false));
+  const int32_t v_cache = b.Input(QuantCache(b, "v_cache", spec, true));
+  const int32_t k_start = b.Input(b.I32("k_start", {4}));
+  const int32_t v_start = b.Input(b.I32("v_start", {4}));
+  // The rows on the caches' grid: as they are when they already are on it.
+  int32_t k_rows = k;
+  int32_t v_columns = 0;
+  if (spec.kind == "int8") {
+    v_columns = b.Quantized("v_columns", tflite::TensorType_INT8,
+                            {1, kKvHeads, kDepth, rows}, spec.v_scale, 0);
+    b.Op(tflite::BuiltinOperator_TRANSPOSE,
+         {v, b.ConstI32("perm", {4}, {0, 1, 3, 2})}, {v_columns});
+  } else {
+    const int32_t k_float = spec.kind == "int4" ? k : b.Dequantize(k);
+    const int32_t v_float = spec.kind == "int4" ? v : b.Dequantize(v);
+    k_rows =
+        b.Quantize(k_float, spec.cache_type, spec.k_scale, spec.zero_point);
+    v_columns = b.Quantize(
+        b.Transpose(v_float, {0, 1, 3, 2}, {1, kKvHeads, kDepth, rows}),
+        spec.cache_type, spec.v_scale, spec.zero_point);
+  }
+  const int32_t k_out = QuantCache(b, "k_cache_out", spec, false);
+  b.Op(tflite::BuiltinOperator_DYNAMIC_UPDATE_SLICE, {k_cache, k_rows, k_start},
+       {k_out});
+  const int32_t v_out = QuantCache(b, "v_cache_out", spec, true);
+  b.Op(tflite::BuiltinOperator_DYNAMIC_UPDATE_SLICE,
+       {v_cache, v_columns, v_start}, {v_out});
+  b.Output(k_out);
+  b.Output(v_out);
+  return graph;
+}
+
+// odml.sdpa_transposed over the quantized caches: q [1, Hq, n, D] float
+// (int4) or INT8 (kQueryScale), the mask float (int4, additive) or bool
+// (fill -10000), the scale and soft cap of int4.
+int32_t AddQuantSdpaDecomposition(Builder& b, int rows, const QuantSpec& spec) {
+  const int32_t graph =
+      b.NewSubgraph(absl::StrCat("odml.sdpa_transposed.quant_impl_", rows));
+  const int n = rows, L = spec.cache_len, R = kGroup * rows;
+  const bool float_forms = spec.kind == "int4";
+  const Shape q_shape = {1, kQueryHeads, n, kDepth};
+  const int32_t q =
+      b.Input(float_forms ? b.F32("query", q_shape)
+                          : b.Quantized("query", tflite::TensorType_INT8,
+                                        q_shape, kQueryScale, 0));
+  const int32_t k = b.Input(QuantCache(b, "key_cache", spec, false));
+  const int32_t v = b.Input(QuantCache(b, "value_cache", spec, true));
+  const int32_t mask = b.Input(float_forms ? b.F32("mask", {1, 1, n, L})
+                                           : b.Bool("mask", {1, 1, n, L}));
+  b.Input(b.I32("param_tensor", {1, 1, 1, 7}));
+  const int32_t q_float = float_forms ? q : b.Dequantize(q);
+  int32_t logits = b.BatchMatMul(b.Reshape(q_float, {1, kKvHeads, R, kDepth}),
+                                 b.Dequantize(k), true, {1, kKvHeads, R, L});
+  if (float_forms) {
+    logits =
+        b.Softcap(b.MulF(logits, b.ConstF32("scale", {1}, {kQueryPrescale}),
+                         {1, kKvHeads, R, L}),
+                  kQuantSoftcap, {1, kKvHeads, R, L});
+  }
+  const int32_t per_head = b.Reshape(logits, {1, kQueryHeads, n, L});
+  const int32_t masked =
+      float_forms
+          ? b.AddF(per_head, mask, {1, kQueryHeads, n, L})
+          : b.Select(mask, per_head, b.ConstF32("fill", {1}, {-10000.0f}),
+                     TensorType_FLOAT32, {1, kQueryHeads, n, L});
+  const int32_t probs = b.Reshape(b.Softmax(masked), {1, kKvHeads, R, L});
+  const int32_t out =
+      b.BatchMatMul(probs, b.Dequantize(v), true, {1, kKvHeads, R, kDepth});
+  b.Output(b.Reshape(out, q_shape));
+  return graph;
+}
+
+// odml.fused_sdpa_cache_update over the INT4 ring: attention over the ring
+// followed by the chunk (on the ring's grid), soft-capped, with the additive
+// mask [1, 1, n, W + n] (row r of a KV head reads mask row r % n); then the
+// valid tokens t >= max(0, valid - W) go to slots (p0 + t) % W.
+int32_t AddQuantFusedDecomposition(Builder& b, int rows,
+                                   const QuantSpec& spec) {
+  const int32_t graph = b.NewSubgraph(
+      absl::StrCat("odml.fused_sdpa_cache_update.quant_impl_", rows));
+  const int n = rows, W = spec.cache_len, R = kGroup * rows, H = kKvHeads;
+  const int32_t q = b.Input(b.F32("query", {1, H, R, kDepth}));
+  const int32_t k_cache = b.Input(QuantCache(b, "k_cache", spec, false));
+  const int32_t v_cache = b.Input(QuantCache(b, "v_cache", spec, true));
+  const int32_t k_new = b.Input(b.F32("k", {1, H, n, kDepth}));
+  const int32_t v_new = b.Input(b.F32("v", {1, H, kDepth, n}));
+  const int32_t mask = b.Input(b.F32("mask", {1, 1, n, W + n}));
+  const int32_t param = b.Input(b.I32("param_tensor", {1, 1, 1, 7}));
+  const int32_t k_grid = b.Dequantize(
+      b.Quantize(k_new, spec.cache_type, spec.k_scale, spec.zero_point));
+  const int32_t v_grid = b.Dequantize(
+      b.Quantize(v_new, spec.cache_type, spec.v_scale, spec.zero_point));
+  const int32_t k_old = b.Dequantize(k_cache);
+  const int32_t v_old = b.Dequantize(v_cache);
+  const int32_t keys = b.Concat({k_old, k_grid}, 2, {1, H, W + n, kDepth});
+  const int32_t values = b.Concat({v_old, v_grid}, 3, {1, H, kDepth, W + n});
+  const int32_t logits =
+      b.Softcap(b.BatchMatMul(q, keys, true, {1, H, R, W + n}), kQuantSoftcap,
+                {1, H, R, W + n});
+  const int32_t masked =
+      b.AddF(b.Reshape(logits, {H * kGroup, n, W + n}),
+             b.Reshape(mask, {1, n, W + n}), {H * kGroup, n, W + n});
+  const int32_t probs = b.Reshape(b.Softmax(masked), {1, H, R, W + n});
+  b.Output(b.BatchMatMul(probs, values, true, {1, H, R, kDepth}));
+  // The ring write as a product with a one-hot scatter matrix [n, W].
+  const int32_t params = b.Reshape(param, {7});
+  const int32_t p0 = b.Slice(params, {0}, {1});
+  const int32_t p1 = b.Slice(params, {1}, {1});
+  const int32_t zero = b.OneI32("zero", 0);
+  const int32_t valid =
+      b.MinI(b.MaxI(b.SubI(p1, p0, {1}), zero, {1}), b.OneI32("rows", n), {1});
+  const int32_t first =
+      b.MaxI(b.SubI(valid, b.OneI32("ring", W), {1}), zero, {1});
+  const int32_t t = b.Iota("t", n);
+  const int32_t written_rows =
+      b.And(b.And(b.Compare(BuiltinOperator_GREATER_EQUAL, t, first, {n}),
+                  b.Compare(BuiltinOperator_LESS, t, valid, {n}), {n}),
+            b.Compare(BuiltinOperator_GREATER_EQUAL, p0, zero, {1}), {n});
+  const int32_t slot =
+      b.Binary(tflite::BuiltinOperator_FLOOR_MOD, b.AddI(p0, t, {n}),
+               b.OneI32("ring2", W), TensorType_INT32, {n});
+  const int32_t hot = b.F32("slot_hot", {n, W});
+  {
+    auto& op = b.Op(tflite::BuiltinOperator_ONE_HOT,
+                    {slot, b.ScalarI32("depth", W), b.ScalarF32("on", 1.0f),
+                     b.ScalarF32("off", 0.0f)},
+                    {hot});
+    tflite::OneHotOptionsT options;
+    options.axis = -1;
+    op.builtin_options.Set(options);
+  }
+  const int32_t scatter = b.MulF(
+      hot, b.Reshape(b.Cast(written_rows, TensorType_FLOAT32), {n, 1}), {n, W});
+  const int32_t written =
+      b.Reduce(tflite::BuiltinOperator_REDUCE_MAX, scatter, {0}, false, {W});
+  const int32_t keep =
+      b.AddF(b.MulF(written, b.ConstF32("minus_one", {1}, {-1.0f}), {W}),
+             b.ConstF32("one", {1}, {1.0f}), {W});
+  const int32_t k_ring =
+      b.AddF(b.MulF(k_old, b.Reshape(keep, {1, 1, W, 1}), {1, H, W, kDepth}),
+             b.BatchMatMul(
+                 b.Reshape(b.Transpose(scatter, {1, 0}, {W, n}), {1, 1, W, n}),
+                 k_grid, false, {1, H, W, kDepth}),
+             {1, H, W, kDepth});
+  const int32_t v_ring =
+      b.AddF(b.MulF(v_old, b.Reshape(keep, {1, 1, 1, W}), {1, H, kDepth, W}),
+             b.BatchMatMul(v_grid, b.Reshape(scatter, {1, 1, n, W}), false,
+                           {1, H, kDepth, W}),
+             {1, H, kDepth, W});
+  b.Output(b.Quantize(k_ring, spec.cache_type, spec.k_scale, spec.zero_point));
+  b.Output(b.Quantize(v_ring, spec.cache_type, spec.v_scale, spec.zero_point));
+  return graph;
+}
+
 struct LayerWeights {
   std::vector<float> norm, projection, output, k_norm, cos, sin;
 };
 
 std::vector<LayerWeights> MakeWeights() {
-  std::vector<LayerWeights> layers(kLayers);
-  for (int l = 0; l < kLayers; ++l) {
+  std::vector<LayerWeights> layers(kLayers + 1);
+  for (int l = 0; l < kLayers + 1; ++l) {
     Random random(100 + l);
     auto& w = layers[l];
     w.norm = random.Values(kHidden, 0.2f);
@@ -830,16 +1116,144 @@ std::string StateName(const char* kind, int layer) {
   return absl::StrCat("kv_cache_", kind, "_", layer);
 }
 
+// The quantized attention layer (QuantLayerSpec) on the hidden states x
+// [1, n, kHidden]: RMS norm, the projection to queries, keys and values,
+// the attention composites over the layer's caches (state_in's last two,
+// whose updates go to state_out), the output projection and the residual.
+int32_t AddQuantLayer(Builder& b, int32_t x, int n, const LayerWeights& w,
+                      const QuantSpec& spec,
+                      const std::vector<int32_t>& state_in,
+                      std::vector<int32_t>& state_out, int32_t mask,
+                      int32_t param, int32_t k_start, int32_t v_start,
+                      int32_t fused_mask, int32_t update_graph,
+                      int32_t sdpa_graph, int32_t fused_graph) {
+  const int32_t k_cache = state_in[state_in.size() - 2];
+  const int32_t v_cache = state_in[state_in.size() - 1];
+  const int32_t square =
+      b.Reduce(tflite::BuiltinOperator_MEAN, b.MulF(x, x, {1, n, kHidden}), {2},
+               true, {1, n, 1});
+  const int32_t inv =
+      b.Unary(tflite::BuiltinOperator_RSQRT,
+              b.AddF(square, b.ConstF32("quant_eps", {1}, {kEps}), {1, n, 1}),
+              TensorType_FLOAT32, {1, n, 1});
+  const int32_t normed =
+      b.MulF(b.MulF(x, inv, {1, n, kHidden}),
+             b.ConstF32("quant_norm", {kHidden}, w.norm), {1, n, kHidden});
+  const int32_t projected = b.FullyConnected(
+      b.Reshape(normed, {n, kHidden}),
+      b.ConstF32("quant_projection", {kProjection, kHidden}, w.projection),
+      {n, kProjection});
+  int offset = 0;
+  const auto heads = [&](int count) {
+    const int32_t slice = b.Slice(projected, {0, offset}, {n, count * kDepth});
+    offset += count * kDepth;
+    return b.Reshape(b.Transpose(b.Reshape(slice, {n, count, kDepth}),
+                                 {1, 0, 2}, {count, n, kDepth}),
+                     {1, count, n, kDepth});
+  };
+  const int32_t q = heads(kQueryHeads);
+  const int32_t k = heads(kKvHeads);
+  const int32_t v = heads(kKvHeads);
+  const std::string k_name = StateName("k", kQuantLayer);
+  const std::string v_name = StateName("v", kQuantLayer);
+  const int32_t k_out = QuantCache(b, k_name + "_out", spec, false);
+  const int32_t v_out = QuantCache(b, v_name + "_out", spec, true);
+  int32_t attention = 0;  // [1, Hq, n, D]
+  if (spec.fused()) {
+    const int R = kGroup * n;
+    const int32_t grouped =
+        b.Reshape(b.MulF(q, b.ConstF32("quant_prescale", {1}, {kQueryPrescale}),
+                         {1, kQueryHeads, n, kDepth}),
+                  {1, kKvHeads, R, kDepth});
+    const int32_t fused_out =
+        b.F32("quant_attention", {1, kKvHeads, R, kDepth});
+    b.Composite(
+        "odml.fused_sdpa_cache_update", fused_graph,
+        [&](flexbuffers::Builder* a) { a->Float("softcap", kQuantSoftcap); },
+        {grouped, k_cache, v_cache, k,
+         b.Transpose(v, {0, 1, 3, 2}, {1, kKvHeads, kDepth, n}), fused_mask,
+         param},
+        {fused_out, k_out, v_out});
+    attention = b.Reshape(fused_out, {1, kQueryHeads, n, kDepth});
+  } else {
+    int32_t q_in = q, k_in = k, v_in = v, mask_in = mask;
+    if (spec.kind == "int4") {
+      // The additive form of the bool mask: 0 seen, -30000 hidden (a fill
+      // FP16 holds: with FP16 activations the engine computes this mask in
+      // FP16, where -1e9 would be infinite and its products undefined).
+      mask_in =
+          b.MulF(b.AddF(b.Cast(mask, TensorType_FLOAT32),
+                        b.ConstF32("quant_minus_one", {1}, {-1.0f}),
+                        {1, 1, n, kCacheLen}),
+                 b.ConstF32("quant_hidden", {1}, {3e4f}), {1, 1, n, kCacheLen});
+    } else {
+      q_in = b.Quantize(
+          b.MulF(q, b.ConstF32("quant_prescale", {1}, {kQueryPrescale}),
+                 {1, kQueryHeads, n, kDepth}),
+          tflite::TensorType_INT8, kQueryScale, 0);
+      const bool own = spec.kind == "uint8";
+      k_in = b.Quantize(k, tflite::TensorType_INT8,
+                        own ? kRowScale : spec.k_scale, 0);
+      v_in = b.Quantize(v, tflite::TensorType_INT8,
+                        own ? kRowScale : spec.v_scale, 0);
+    }
+    b.Composite("odml.cache_update", update_graph,
+                [&](flexbuffers::Builder* a) {
+                  a->Int("cache_size", kCacheLen);
+                  a->Int("head_size", kDepth);
+                  a->Int("k_cache_ts_idx", 2);
+                  a->Int("k_update_ts_idx", 2);
+                  a->Int("kv_cache_batch_size", kKvHeads);
+                  a->Float("scale_k", spec.k_scale);
+                  a->Float("scale_v", spec.v_scale);
+                  a->Int("v_cache_ts_idx", 3);
+                  a->Int("v_update_ts_idx", 2);
+                },
+                {k_in, v_in, param, k_cache, v_cache, k_start, v_start},
+                {k_out, v_out});
+    attention = b.F32("quant_attention", {1, kQueryHeads, n, kDepth});
+    b.Composite("odml.sdpa_transposed", sdpa_graph,
+                [&](flexbuffers::Builder* a) {
+                  a->Bool("from_cache_update", true);
+                  a->Int("k_ts_idx", 2);
+                  if (spec.kind == "int4") {
+                    a->Float("scale", kQueryPrescale);
+                    a->Float("softcap", kQuantSoftcap);
+                  }
+                  a->Int("v_ts_idx", 3);
+                },
+                {q_in, k_out, v_out, mask_in, param}, {attention});
+  }
+  state_out.push_back(k_out);
+  state_out.push_back(v_out);
+  const int32_t rows = b.Reshape(
+      b.Transpose(attention, {0, 2, 1, 3}, {1, n, kQueryHeads, kDepth}),
+      {n, kQueryHeads * kDepth});
+  const int32_t projected_out = b.FullyConnected(
+      rows,
+      b.ConstF32("quant_output", {kHidden, kQueryHeads * kDepth}, w.output),
+      {n, kHidden});
+  return b.AddF(x, b.Reshape(projected_out, {1, n, kHidden}), {1, n, kHidden});
+}
+
 // One signature over `rows` tokens: inputs embeddings, start_pos, mask,
 // param_tensor, k_start, v_start, then each layer's states (ring, pool, key
 // cache, value cache); outputs hidden, each layer's topk, then the states.
 void AddSignature(Builder& b, const std::string& key, int rows,
-                  const std::vector<LayerWeights>& weights) {
+                  const std::vector<LayerWeights>& weights,
+                  const std::optional<QuantSpec>& quant) {
   const float index_scale = 1.0f / std::sqrt(static_cast<float>(kIndexDim));
   const float attention_scale = 1.0f / std::sqrt(static_cast<float>(kDepth));
   const int32_t indexer = AddIndexerDecomposition(b, rows, index_scale);
   const int32_t cache_update = AddCacheUpdateDecomposition(b, rows);
   const int32_t sparse = AddSparseDecomposition(b, rows, attention_scale);
+  int32_t quant_update = -1, quant_sdpa = -1, quant_fused = -1;
+  if (quant.has_value() && quant->fused()) {
+    quant_fused = AddQuantFusedDecomposition(b, rows, *quant);
+  } else if (quant.has_value()) {
+    quant_update = AddQuantCacheUpdateDecomposition(b, rows, *quant);
+    quant_sdpa = AddQuantSdpaDecomposition(b, rows, *quant);
+  }
   const int32_t graph = b.NewSubgraph(key);
   const int n = rows;
   std::vector<std::pair<std::string, int32_t>> inputs, outputs;
@@ -863,6 +1277,17 @@ void AddSignature(Builder& b, const std::string& key, int rows,
              {"v", {1, kKvHeads, kDepth, kCacheLen}}}) {
       const std::string name = StateName(kind, l);
       state_in.push_back(input(name, b.F32(name, shape)));
+    }
+  }
+  int32_t fused_mask = -1;
+  if (quant.has_value()) {
+    for (bool value : {false, true}) {
+      const std::string name = StateName(value ? "v" : "k", kQuantLayer);
+      state_in.push_back(input(name, QuantCache(b, name, *quant, value)));
+    }
+    if (quant->fused()) {
+      fused_mask =
+          input("fused_mask", b.F32("fused_mask", {1, 1, n, kRing + n}));
     }
   }
   std::vector<int32_t> topks;
@@ -969,6 +1394,11 @@ void AddSignature(Builder& b, const std::string& key, int rows,
     topks.push_back(topk);
     state_out.insert(state_out.end(), {ring_out, pool_out, k_out, v_out});
   }
+  if (quant.has_value()) {
+    x = AddQuantLayer(b, x, n, weights[kQuantLayer], *quant, state_in,
+                      state_out, mask, param, k_start, v_start, fused_mask,
+                      quant_update, quant_sdpa, quant_fused);
+  }
   const auto output = [&](const std::string& name, int32_t tensor) {
     b.Output(tensor);
     outputs.push_back({name, tensor});
@@ -981,14 +1411,27 @@ void AddSignature(Builder& b, const std::string& key, int rows,
     output(StateName("k", l), state_out[4 * l + 2]);
     output(StateName("v", l), state_out[4 * l + 3]);
   }
+  if (quant.has_value()) {
+    output(StateName("k", kQuantLayer), state_out[4 * kLayers]);
+    output(StateName("v", kQuantLayer), state_out[4 * kLayers + 1]);
+  }
   b.Signature(key, graph, inputs, outputs);
 }
 
-std::string BuildModel() {
+Expected<std::string> BuildModel() {
   const auto weights = MakeWeights();
+  std::optional<QuantSpec> quant;
+  if (const std::string kind = absl::GetFlag(FLAGS_quant_layer);
+      !kind.empty()) {
+    quant = QuantLayerSpec(kind);
+    if (!quant.has_value()) {
+      return Error(kLiteRtStatusErrorInvalidArgument,
+                   "Unknown --quant_layer " + kind);
+    }
+  }
   Builder b;
-  AddSignature(b, "prefill_16", kPrefill, weights);
-  AddSignature(b, "decode", 1, weights);
+  AddSignature(b, "prefill_16", kPrefill, weights, quant);
+  AddSignature(b, "decode", 1, weights, quant);
   return b.Pack();
 }
 
@@ -1082,11 +1525,14 @@ Expected<void> Run() {
   // The states, one buffer each, shared by both signatures; on the NPU also
   // their outputs (in place, as LiteRT-LM binds caches).
   std::vector<std::string> state_names;
-  for (int l = 0; l < kLayers; ++l) {
-    for (const char* kind : {"qsa_ring", "qsa_pool", "k", "v"}) {
-      state_names.push_back(StateName(kind, l));
-    }
+  LITERT_ASSIGN_OR_RETURN(auto prefill_inputs,
+                          model.GetSignatureInputNames(prefill));
+  for (const auto& name : prefill_inputs) {
+    if (name.rfind("kv_cache_", 0) == 0)
+      state_names.push_back(std::string(name));
   }
+  const std::string quant_k = StateName("k", kQuantLayer);
+  const std::string quant_v = StateName("v", kQuantLayer);
   std::vector<litert::TensorBuffer> states;
   for (const auto& name : state_names) {
     LITERT_ASSIGN_OR_RETURN(auto buffer,
@@ -1107,6 +1553,12 @@ Expected<void> Run() {
     LITERT_ASSIGN_OR_RETURN(auto inputs, model.CreateInputBuffers(signature));
     LITERT_ASSIGN_OR_RETURN(auto outputs, model.CreateOutputBuffers(signature));
     // The buffers by name (the signature's order is the runtime's).
+    const auto has_input = [&](const std::string& name) {
+      for (const auto& have : input_names) {
+        if (have == name) return true;
+      }
+      return false;
+    };
     const auto input = [&](const std::string& name) -> litert::TensorBuffer& {
       for (size_t i = 0; i < input_names.size(); ++i) {
         if (input_names[i] == name) return inputs[i];
@@ -1130,6 +1582,24 @@ Expected<void> Run() {
       for (int c = 0; c <= step.start + t; ++c) mask[t * kCacheLen + c] = 1;
     }
     LITERT_RETURN_IF_ERROR(Fill(input("mask"), mask));
+    if (has_input("fused_mask")) {
+      // The ring holds the kRing positions before the step; a row sees
+      // those within kRing of its own and the step's tokens up to its own.
+      const int width = kRing + n;
+      std::vector<float> ring_mask(static_cast<size_t>(n) * width, -1e9f);
+      for (int t = 0; t < step.valid; ++t) {
+        const int position = step.start + t;
+        for (int j = 0; j < kRing; ++j) {
+          const int held =
+              step.start - 1 - ((step.start - 1 - j) % kRing + kRing) % kRing;
+          if (step.start > 0 && held >= 0 && held > position - kRing) {
+            ring_mask[t * width + j] = 0.0f;
+          }
+        }
+        for (int u = 0; u <= t; ++u) ring_mask[t * width + kRing + u] = 0.0f;
+      }
+      LITERT_RETURN_IF_ERROR(Fill(input("fused_mask"), ring_mask));
+    }
     LITERT_RETURN_IF_ERROR(
         Fill(input("param_tensor"),
              std::vector<int32_t>{step.start, step.start + step.valid, 0, 0, 0,
@@ -1167,7 +1637,8 @@ Expected<void> Run() {
         LITERT_RETURN_IF_ERROR(
             Fill(states[s], std::vector<uint8_t>(bytes.begin(), bytes.end())));
       }
-      if (state_names[s].find("qsa") != std::string::npos) {
+      if (state_names[s].find("qsa") != std::string::npos ||
+          state_names[s] == quant_k || state_names[s] == quant_v) {
         LITERT_ASSIGN_OR_RETURN(const std::string bytes, Bytes(states[s]));
         LITERT_RETURN_IF_ERROR(
             WriteFile(absl::StrCat(prefix, ".", state_names[s], ".raw"),
@@ -1258,6 +1729,50 @@ Expected<bool> Compare() {
       ok &= differing == 0;
       absl::StrAppend(&line, " ", name, " rows differing ", differing);
     }
+    if (const std::string kind = absl::GetFlag(FLAGS_quant_layer);
+        !kind.empty()) {
+      const auto spec = QuantLayerSpec(kind);
+      if (!spec.has_value()) {
+        return Error(kLiteRtStatusErrorInvalidArgument,
+                     "Unknown --quant_layer");
+      }
+      // The caches' integers: equal, or one apart where the two backends'
+      // values of a key straddle a rounding boundary.
+      for (const char* kind_name : {"k", "v"}) {
+        const std::string name = StateName(kind_name, kQuantLayer);
+        LITERT_ASSIGN_OR_RETURN(const std::string a,
+                                ReadFile(cpu + prefix + name + ".raw"));
+        LITERT_ASSIGN_OR_RETURN(const std::string c,
+                                ReadFile(npu + prefix + name + ".raw"));
+        const auto values = [&](const std::string& bytes) {
+          std::vector<int> out;
+          for (unsigned char byte : bytes) {
+            if (spec->cache_type == tflite::TensorType_INT4) {
+              for (int nibble : {byte & 0xF, byte >> 4}) {
+                out.push_back(nibble >= 8 ? nibble - 16 : nibble);
+              }
+            } else if (spec->cache_type == tflite::TensorType_UINT8) {
+              out.push_back(static_cast<int>(byte) - 128);
+            } else {
+              out.push_back(static_cast<int>(static_cast<signed char>(byte)));
+            }
+          }
+          return out;
+        };
+        const auto x = values(a);
+        const auto y = values(c);
+        int one_apart = 0, further = 0;
+        for (size_t i = 0; i < std::min(x.size(), y.size()); ++i) {
+          const int difference = std::abs(x[i] - y[i]);
+          one_apart += difference == 1;
+          further += difference > 1;
+        }
+        const bool fine = x.size() == y.size() && further == 0;
+        ok &= fine;
+        absl::StrAppend(&line, " ", name, " one apart ", one_apart, "/",
+                        x.size(), " further ", further, fine ? "" : " (!)");
+      }
+    }
     std::printf("%s\n", line.c_str());
   }
   std::printf("%s\n", ok ? "MATCH" : "MISMATCH");
@@ -1269,9 +1784,9 @@ Expected<bool> Compare() {
 int main(int argc, char** argv) {
   absl::ParseCommandLine(argc, argv);
   if (!absl::GetFlag(FLAGS_write_model).empty()) {
-    const std::string bytes = BuildModel();
-    if (!WriteFile(absl::GetFlag(FLAGS_write_model), bytes.data(),
-                   bytes.size())) {
+    const auto bytes = BuildModel();
+    if (!bytes || !WriteFile(absl::GetFlag(FLAGS_write_model), bytes->data(),
+                             bytes->size())) {
       return EXIT_FAILURE;
     }
     return EXIT_SUCCESS;
