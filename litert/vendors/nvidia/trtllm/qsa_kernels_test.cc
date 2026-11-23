@@ -738,7 +738,7 @@ TEST(QsaAttentionTest, RandomCasesMatchTheReference) {
       shape.kv_heads = std::vector<int>{1, 2, 4}[seed % 3];
       shape.q_heads = shape.kv_heads * group;
       shape.head_dim = dim;
-      shape.cache_len = std::vector<int>{64, 1024, 4096}[(seed / 3) % 3];
+      shape.cache_len = std::vector<int>{64, 1027, 4096}[(seed / 3) % 3];
       shape.block_topk = std::vector<int>{1, 8, 64, 512}[seed % 4];
       shape.scale = 1.0f / std::sqrt(static_cast<float>(dim));
       shape.value_columns = seed % 2 == 1;
@@ -769,8 +769,10 @@ TEST(QsaAttentionTest, ModelShapesMatchTheReference) {
     int cache_len;
     int rows;
   };
+  // 32,771 keys: the Qwen 3.8 export's cache, past a multiple of 4.
   for (const Case& shape_case :
-       {Case{32768, 1}, Case{32768, 4}, Case{32768, 8}, Case{131072, 1}}) {
+       {Case{32768, 1}, Case{32768, 4}, Case{32768, 8}, Case{131072, 1},
+        Case{32771, 1}, Case{32771, 8}}) {
     ref::AttentionShape shape;
     shape.rows = shape_case.rows;
     shape.q_heads = 24;

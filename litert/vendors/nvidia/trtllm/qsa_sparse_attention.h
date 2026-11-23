@@ -44,8 +44,9 @@ struct LiteRtNvidiaQsaRows {
 // with softmax(scale * q . k) over the keys of its selected blocks (topk
 // [rows, block_topk]: block b holds keys 4b .. 4b + 3, entries outside
 // [0, cache_len / 4) are ignored, a repeated entry counts once) and of every
-// block it sees some but not all keys of (the incomplete block at its end),
-// restricted to the keys it sees. A row that sees none outputs zero.
+// block it sees some but not all keys of (the incomplete block at its end,
+// and the cache_len % 4 keys past the last whole block), restricted to the
+// keys it sees. A row that sees none outputs zero.
 //
 // q is [q_heads, rows, head_dim] and out [rows, q_heads, head_dim], both in
 // q_type; k is [kv_heads, cache_len, head_dim] and v the same, or
@@ -68,8 +69,8 @@ struct LiteRtNvidiaQsaAttentionParams {
   int32_t rows;
   int32_t q_heads;
   int32_t kv_heads;
-  int32_t head_dim;    // 64, 128 or 256
-  int32_t cache_len;   // a multiple of 4
+  int32_t head_dim;  // 64, 128 or 256
+  int32_t cache_len;
   int32_t block_topk;  // at most 4096
   int32_t q_type;      // LiteRtNvidiaQsaType of q and out
   int32_t cache_type;  // of k and v: float32 or float16

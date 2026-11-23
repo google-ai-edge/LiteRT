@@ -76,8 +76,8 @@ struct Visibility {
 
   __device__ uint32_t Block(int32_t row, int32_t block) const {
     const int64_t at = int64_t{row} * cache_len + int64_t{4} * block;
-    if (type == kLiteRtNvidiaQsaMaskBool) {
-      // cache_len % 4 == 0 keeps the four bytes aligned.
+    // Whole blocks of a cache of a multiple of 4 keys are aligned: one load.
+    if (cache_len % 4 == 0 && type == kLiteRtNvidiaQsaMaskBool) {
       const uint32_t bytes =
           *reinterpret_cast<const uint32_t*>(
               static_cast<const uint8_t*>(mask) + at);
@@ -86,15 +86,26 @@ struct Visibility {
              ((bytes & 0xFF0000u) != 0 ? 4u : 0u) |
              ((bytes & 0xFF000000u) != 0 ? 8u : 0u);
     }
-    if (type == kLiteRtNvidiaQsaMaskFloat) {
+    if (cache_len % 4 == 0 && type == kLiteRtNvidiaQsaMaskFloat) {
       const float4 m =
           *reinterpret_cast<const float4*>(static_cast<const float*>(mask) + at);
       return (m.x == 0.0f ? 1u : 0u) | (m.y == 0.0f ? 2u : 0u) |
              (m.z == 0.0f ? 4u : 0u) | (m.w == 0.0f ? 8u : 0u);
     }
+    // Keys past the cache (the short last block) are not seen.
     uint32_t bits = 0;
     for (int t = 0; t < 4; ++t) {
-      if (Token(row, 4 * block + t)) bits |= 1u << t;
+      const int32_t token = 4 * block + t;
+      if (token >= cache_len) break;
+      bool seen;
+      if (type == kLiteRtNvidiaQsaMaskBool) {
+        seen = static_cast<const uint8_t*>(mask)[at + t] != 0;
+      } else if (type == kLiteRtNvidiaQsaMaskFloat) {
+        seen = static_cast<const float*>(mask)[at + t] == 0.0f;
+      } else {
+        seen = Token(row, token);
+      }
+      if (seen) bits |= 1u << t;
     }
     return bits;
   }
@@ -163,11 +174,14 @@ __global__ void __launch_bounds__(kListThreads) QsaListKernel(
   extern __shared__ uint32_t bitmap[];
   __shared__ int32_t warp_sums[32];
   const int32_t row = blockIdx.x;
+  // Selectable blocks; a short last block (cache_len % 4 keys) is seen
+  // partly whenever any of its keys is.
   const int32_t blocks = p.cache_len / 4;
-  const int32_t words = (blocks + 31) / 32;
+  const int32_t all_blocks = (p.cache_len + 3) / 4;
+  const int32_t words = (all_blocks + 31) / 32;
   for (int32_t w = threadIdx.x; w < words; w += blockDim.x) bitmap[w] = 0;
   __syncthreads();
-  for (int32_t b = threadIdx.x; b < blocks; b += blockDim.x) {
+  for (int32_t b = threadIdx.x; b < all_blocks; b += blockDim.x) {
     const uint32_t seen = visibility.Block(row, b);
     if (seen != 0 && seen != 0xFu) {
       atomicOr(&bitmap[b / 32], 1u << (b % 32));
@@ -201,7 +215,7 @@ __global__ void __launch_bounds__(kListThreads) QsaTileListKernel(
   const int32_t tile = blockIdx.x;
   const int32_t row0 = tile * tile_rows;
   const int32_t rows = min(tile_rows, p.rows - row0);
-  const int32_t words = (p.cache_len / 4 + 31) / 32;
+  const int32_t words = ((p.cache_len + 3) / 4 + 31) / 32;
   for (int32_t w = threadIdx.x; w < words; w += blockDim.x) {
     uint32_t any = 0;
     for (int32_t r = 0; r < rows; ++r) {
@@ -370,25 +384,29 @@ __global__ void __launch_bounds__(kThreads) QsaAttendKernel(
     const uint32_t seen = visibility.Block(row, block);
     if (seen == 0) continue;
     const int32_t token0 = 4 * block;
+    // Every load at once; a short last block reads its last key again for
+    // the keys past the cache, which the row does not see.
+    int32_t tokens[4];
+#pragma unroll
+    for (int t = 0; t < 4; ++t) tokens[t] = min(token0 + t, p.cache_len - 1);
     float key[4][kPerLane];
     float value[4][kPerLane];
 #pragma unroll
     for (int t = 0; t < 4; ++t) {
-      Vec<Cache>::Load(kh + int64_t{token0 + t} * kDim + lane * kPerLane,
+      Vec<Cache>::Load(kh + int64_t{tokens[t]} * kDim + lane * kPerLane,
                        key[t]);
     }
     if (p.value_columns) {
 #pragma unroll
       for (int j = 0; j < kPerLane; ++j) {
-        const Cache* column =
-            vh + int64_t{lane * kPerLane + j} * p.cache_len + token0;
+        const Cache* column = vh + int64_t{lane * kPerLane + j} * p.cache_len;
 #pragma unroll
-        for (int t = 0; t < 4; ++t) value[t][j] = ToFloat(column[t]);
+        for (int t = 0; t < 4; ++t) value[t][j] = ToFloat(column[tokens[t]]);
       }
     } else {
 #pragma unroll
       for (int t = 0; t < 4; ++t) {
-        Vec<Cache>::Load(vh + int64_t{token0 + t} * kDim + lane * kPerLane,
+        Vec<Cache>::Load(vh + int64_t{tokens[t]} * kDim + lane * kPerLane,
                          value[t]);
       }
     }
@@ -619,7 +637,7 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
       const int32_t block = chunk_blocks[t / 4];
       uint4 key = make_uint4(0, 0, 0, 0);
       uint4 value = make_uint4(0, 0, 0, 0);
-      if (block >= 0) {
+      if (block >= 0 && block * 4 + t % 4 < p.cache_len) {
         const int64_t at = head + (int64_t{block} * 4 + t % 4) * kDim + d8 * 8;
         key = *reinterpret_cast<const uint4*>(k + at);
         if (with_values) value = *reinterpret_cast<const uint4*>(v + at);
@@ -824,7 +842,7 @@ __global__ void QsaCombineKernel(LiteRtNvidiaQsaAttentionParams p,
 }
 
 int32_t Capacity(const LiteRtNvidiaQsaAttentionParams& p) {
-  return std::min(p.cache_len / 4, p.block_topk + kMaxExtraBlocks);
+  return std::min((p.cache_len + 3) / 4, p.block_topk + kMaxExtraBlocks);
 }
 
 int32_t HeadsPerCta(int32_t group) { return group <= 2 ? 2 : (group <= 4 ? 4 : 8); }
@@ -862,7 +880,7 @@ Plan MakePlan(const LiteRtNvidiaQsaAttentionParams& p) {
                                std::max(1, kMaxTileVectors / group)});
     plan.tiles = (p.rows + plan.tile_rows - 1) / plan.tile_rows;
     plan.tile_capacity = static_cast<int32_t>(std::min<int64_t>(
-        p.cache_len / 4, int64_t{plan.tile_rows} * plan.capacity));
+        (p.cache_len + 3) / 4, int64_t{plan.tile_rows} * plan.capacity));
     plan.m_pad = (plan.tile_rows * group + 15) / 16 * 16;
     base = int64_t{p.kv_heads} * plan.tiles;
     // As little as two chunks of four blocks per split.
@@ -882,7 +900,7 @@ Plan MakePlan(const LiteRtNvidiaQsaAttentionParams& p) {
 }
 
 int32_t Words(const LiteRtNvidiaQsaAttentionParams& p) {
-  return (p.cache_len / 4 + 31) / 32;
+  return ((p.cache_len + 3) / 4 + 31) / 32;
 }
 
 // The lists (or bitmaps and tile lists) of the workspace, 256-byte aligned.
@@ -1010,8 +1028,8 @@ extern "C" bool LiteRtNvidiaQsaAttentionSupports(
   return p.rows >= 1 && p.kv_heads >= 1 && p.q_heads >= p.kv_heads &&
          p.q_heads % p.kv_heads == 0 &&
          (p.head_dim == 64 || p.head_dim == 128 || p.head_dim == 256) &&
-         p.cache_len >= 4 && p.cache_len % 4 == 0 &&
-         p.cache_len <= kMaxCacheLen && p.block_topk >= 1 &&
+         p.cache_len >= 1 && p.cache_len <= kMaxCacheLen &&
+         p.block_topk >= 1 &&
          p.block_topk <= kMaxTopk &&
          (p.q_type == kLiteRtNvidiaQsaFloat32 ||
           p.q_type == kLiteRtNvidiaQsaFloat16 ||

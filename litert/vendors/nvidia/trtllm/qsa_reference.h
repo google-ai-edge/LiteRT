@@ -378,6 +378,9 @@ inline std::vector<float> SparseAttention(
           keep[b * kBlockTokens + t] = true;
       }
     }
+    // The keys past the last whole block (LiteRT's CPU kernels keep them
+    // when seen).
+    for (int t = blocks * kBlockTokens; t < len; ++t) keep[t] = true;
     std::vector<int> tokens;
     for (int t = 0; t < len; ++t) {
       if (keep[t] && visible(r, t)) tokens.push_back(t);
