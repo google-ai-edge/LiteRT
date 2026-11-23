@@ -51,6 +51,12 @@ class TestLogger final : public nvinfer1::ILogger {
   }
 };
 
+// TensorRT keeps the first logger it is given.
+TestLogger& Logger() {
+  static auto* const logger = new TestLogger();
+  return *logger;
+}
+
 struct Tensor {
   nvinfer1::Dims dims;
   nvinfer1::DataType type;
@@ -93,7 +99,6 @@ nvinfer1::IPluginV3OneRuntime* Runtime(nvinfer1::IPluginV3* plugin) {
 
 // A plugin layer of a network over inputs of the given shapes and types.
 struct Layer {
-  TestLogger logger;
   std::unique_ptr<nvinfer1::IBuilder> builder;
   std::unique_ptr<nvinfer1::INetworkDefinition> network;
   std::unique_ptr<nvinfer1::IPluginV3> plugin;
@@ -107,7 +112,7 @@ std::unique_ptr<Layer> MakeLayer(nvinfer1::IPluginV3* plugin,
   result->plugin.reset(plugin);
   if (plugin == nullptr) return nullptr;
   result->inputs = inputs;
-  result->builder.reset(nvinfer1::createInferBuilder(result->logger));
+  result->builder.reset(nvinfer1::createInferBuilder(Logger()));
   if (!result->builder) return nullptr;
   result->network.reset(result->builder->createNetworkV2(0));
   if (!result->network) return nullptr;
@@ -145,6 +150,104 @@ std::vector<nvinfer1::PluginTensorDesc> Repeated(
     for (const Tensor& tensor : tensors) descs.push_back(DescOf(tensor));
   }
   return descs;
+}
+
+// The outputs of `plugin` as the one layer of an engine: built (TensorRT
+// asks the plugin for its formats, shapes and workspace), deserialized (which
+// makes the plugin again from its serialized fields) and run on `input_bytes`.
+// Output o is bound to the buffer of input in_place[o] where that is not -1,
+// as LiteRT-LM binds a cache. Empty after a failure.
+std::vector<std::vector<uint8_t>> RunInEngine(
+    nvinfer1::IPluginV3& plugin, const std::vector<Tensor>& inputs,
+    const std::vector<Tensor>& outputs,
+    const std::vector<std::vector<uint8_t>>& input_bytes,
+    const std::vector<int>& in_place) {
+  std::unique_ptr<nvinfer1::IBuilder> builder(
+      nvinfer1::createInferBuilder(Logger()));
+  std::unique_ptr<nvinfer1::INetworkDefinition> network(
+      builder != nullptr ? builder->createNetworkV2(0) : nullptr);
+  if (network == nullptr) {
+    ADD_FAILURE() << "no network";
+    return {};
+  }
+  std::vector<nvinfer1::ITensor*> tensors;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    tensors.push_back(network->addInput(("in" + std::to_string(i)).c_str(),
+                                        inputs[i].type, inputs[i].dims));
+  }
+  nvinfer1::IPluginV3Layer* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+      *network, tensors.data(), static_cast<int32_t>(tensors.size()), plugin);
+  if (layer == nullptr ||
+      layer->getNbOutputs() != static_cast<int32_t>(outputs.size())) {
+    ADD_FAILURE() << "no plugin layer with " << outputs.size() << " outputs";
+    return {};
+  }
+  for (size_t o = 0; o < outputs.size(); ++o) {
+    layer->getOutput(static_cast<int32_t>(o))
+        ->setName(("out" + std::to_string(o)).c_str());
+    network->markOutput(*layer->getOutput(static_cast<int32_t>(o)));
+  }
+  std::unique_ptr<nvinfer1::IBuilderConfig> config(
+      builder->createBuilderConfig());
+  std::unique_ptr<nvinfer1::IHostMemory> plan(
+      config != nullptr ? builder->buildSerializedNetwork(*network, *config)
+                        : nullptr);
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(Logger()));
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(
+      plan != nullptr && runtime != nullptr
+          ? runtime->deserializeCudaEngine(plan->data(), plan->size())
+          : nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine != nullptr ? engine->createExecutionContext() : nullptr);
+  if (context == nullptr) {
+    ADD_FAILURE() << "no engine";
+    return {};
+  }
+  std::vector<Device> buffers;
+  bool ok = true;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    buffers.push_back(Upload(input_bytes[i]));
+    ok = ok && buffers.back() != nullptr &&
+         context->setTensorAddress(("in" + std::to_string(i)).c_str(),
+                                   buffers.back().get());
+  }
+  std::vector<void*> results;
+  for (size_t o = 0; o < outputs.size(); ++o) {
+    if (in_place[o] >= 0) {
+      results.push_back(buffers[in_place[o]].get());
+    } else {
+      buffers.push_back(Upload(nullptr, BytesOf(outputs[o])));
+      ok = ok && buffers.back() != nullptr;
+      results.push_back(buffers.back().get());
+    }
+    ok = ok && context->setTensorAddress(("out" + std::to_string(o)).c_str(),
+                                         results.back());
+  }
+  cudaStream_t stream = nullptr;
+  ok = ok && cudaStreamCreate(&stream) == cudaSuccess &&
+       context->enqueueV3(stream) &&
+       cudaStreamSynchronize(stream) == cudaSuccess;
+  if (stream != nullptr) cudaStreamDestroy(stream);
+  if (!ok) {
+    ADD_FAILURE() << "the engine did not run";
+    return {};
+  }
+  std::vector<std::vector<uint8_t>> bytes;
+  for (size_t o = 0; o < outputs.size(); ++o) {
+    bytes.push_back(Download(results[o], BytesOf(outputs[o])));
+  }
+  return bytes;
+}
+
+// `tensors` once per slot.
+std::vector<Tensor> RepeatedTensors(const std::vector<Tensor>& tensors,
+                                    int slots) {
+  std::vector<Tensor> repeated;
+  for (int s = 0; s < slots; ++s) {
+    repeated.insert(repeated.end(), tensors.begin(), tensors.end());
+  }
+  return repeated;
 }
 
 // The twin's outputs for `slots` slots against the single-sequence plugin's
@@ -211,6 +314,7 @@ void CheckAttentionTwin(int slots, int heads, int rows, int depth,
   std::vector<const void*> twin_inputs;
   std::vector<void*> twin_outputs;
   std::vector<std::vector<uint8_t>> expected(slots);
+  std::vector<std::vector<uint8_t>> twin_bytes;
   Device single_workspace = Upload(nullptr, single_ws);
   Device twin_workspace = Upload(nullptr, slots * single_ws);
   ASSERT_TRUE(single_workspace && twin_workspace);
@@ -233,6 +337,7 @@ void CheckAttentionTwin(int slots, int heads, int rows, int depth,
       buffers.push_back(Upload(hosts[i]));
       ASSERT_NE(buffers.back(), nullptr);
       slot_inputs.push_back(buffers.back().get());
+      twin_bytes.push_back(hosts[i]);
     }
     buffers.push_back(Upload(nullptr, q_bytes));
     void* single_output = buffers.back().get();
@@ -257,6 +362,15 @@ void CheckAttentionTwin(int slots, int heads, int rows, int depth,
     EXPECT_NE(std::count(actual.begin(), actual.end(), 0),
               static_cast<ptrdiff_t>(actual.size()));
     EXPECT_EQ(actual, expected[s]) << "slot " << s;
+  }
+  if (slots != 3) return;
+  // And as a layer of an engine.
+  const std::vector<std::vector<uint8_t>> engine = RunInEngine(
+      *twin, RepeatedTensors(inputs, slots), RepeatedTensors(outputs, slots),
+      twin_bytes, std::vector<int>(slots, -1));
+  ASSERT_EQ(engine.size(), static_cast<size_t>(slots));
+  for (int s = 0; s < slots; ++s) {
+    EXPECT_EQ(engine[s], expected[s]) << "slot " << s << " in an engine";
   }
 }
 
@@ -385,6 +499,27 @@ void CheckTwin(Layer& layer, int slots, const std::vector<Tensor>& outputs,
       }
     }
   }
+  if (slots != 3) return;
+  // And as a layer of an engine, an in-place output bound to its input.
+  std::vector<std::vector<uint8_t>> twin_bytes;
+  std::vector<int> twin_in_place;
+  for (int s = 0; s < slots; ++s) {
+    twin_bytes.insert(twin_bytes.end(), per_slot[s].begin(), per_slot[s].end());
+    for (int o = 0; o < m; ++o) {
+      twin_in_place.push_back(in_place[o] >= 0 ? s * n + in_place[o] : -1);
+    }
+  }
+  const std::vector<std::vector<uint8_t>> engine =
+      RunInEngine(*twin, RepeatedTensors(layer.inputs, slots),
+                  RepeatedTensors(outputs, slots), twin_bytes, twin_in_place);
+  ASSERT_EQ(engine.size(), static_cast<size_t>(slots * m));
+  for (int s = 0; s < slots; ++s) {
+    for (int o = 0; o < m; ++o) {
+      EXPECT_EQ(engine[s * m + o],
+                Download(expected[s * m + o], BytesOf(outputs[o])))
+          << "slot " << s << " output " << o << " in an engine";
+    }
+  }
 }
 
 template <typename T>
@@ -509,9 +644,8 @@ TEST(SlotPluginsTest, CacheWritePluginMatchesTheNativeUpdate) {
   const Tensor update = {nvinfer1::Dims4{1, kHeads, 1, kDepth},
                          nvinfer1::DataType::kBF16};
   const Tensor position = {Dims1(1), nvinfer1::DataType::kINT32};
-  TestLogger logger;
   std::unique_ptr<nvinfer1::IBuilder> builder(
-      nvinfer1::createInferBuilder(logger));
+      nvinfer1::createInferBuilder(Logger()));
   ASSERT_NE(builder, nullptr);
   std::unique_ptr<nvinfer1::INetworkDefinition> network(
       builder->createNetworkV2(0));
@@ -537,7 +671,7 @@ TEST(SlotPluginsTest, CacheWritePluginMatchesTheNativeUpdate) {
       builder->buildSerializedNetwork(*network, *config));
   ASSERT_NE(plan, nullptr);
   std::unique_ptr<nvinfer1::IRuntime> runtime(
-      nvinfer1::createInferRuntime(logger));
+      nvinfer1::createInferRuntime(Logger()));
   ASSERT_NE(runtime, nullptr);
   std::unique_ptr<nvinfer1::ICudaEngine> engine(
       runtime->deserializeCudaEngine(plan->data(), plan->size()));
