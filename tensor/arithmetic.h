@@ -2545,6 +2545,15 @@ Tensor<Mixins...> Probe(
 }
 
 template <class... Mixins>
+Tensor<Mixins...> Identity(
+    Tensor<Mixins...> a,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  Tensor<Mixins...> output =
+      ElementwiseOp<graph::IdentityOperation, Mixins...>(loc, a);
+  return output;
+}
+
+template <class... Mixins>
 Tensor<Mixins...> ResizeBilinear(
     Tensor<Mixins...> input, Tensor<Mixins...> size, bool align_corners = false,
     bool half_pixel_centers = false,

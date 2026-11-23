@@ -1101,7 +1101,8 @@ using TfLiteOps = std::tuple<
     graph::ReshapeOperation, graph::SqueezeOperation,
     graph::ExpandDimsOperation, graph::QuantizeOperation,
     graph::ReduceMaxOperation, graph::MeanOperation, graph::ProbeOperation,
-    graph::ResizeBilinearOperation, graph::ResizeNearestNeighborOperation,
+    graph::IdentityOperation, graph::ResizeBilinearOperation,
+    graph::ResizeNearestNeighborOperation,
     graph::NonMaxSuppressionV5Operation>;
 
 void TfLiteMixinRegistrar::Register(std::shared_ptr<graph::Operation> op) {

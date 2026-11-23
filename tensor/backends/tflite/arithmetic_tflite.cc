@@ -848,6 +848,14 @@ OpMixin<ProbeOperation, TfLiteMixinTag>::ToTfLite(
 }
 
 absl::StatusOr<TfLiteOpBuildInfo>
+OpMixin<IdentityOperation, TfLiteMixinTag>::ToTfLite(
+    const graph::Operation& op) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(const auto& info, GetInfo(op.inputs[0]));
+  return TfLiteOpBuildInfo(::tflite::BuiltinOperator_RESHAPE,
+                           tflite::ReshapeOptionsT{.new_shape = info.shape});
+}
+
+absl::StatusOr<TfLiteOpBuildInfo>
 OpMixin<ResizeBilinearOperation, TfLiteMixinTag>::ToTfLite(
     const graph::Operation& op) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(const ResizeBilinearOperation& data,
