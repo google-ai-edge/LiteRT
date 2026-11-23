@@ -16,6 +16,7 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_VENDORS_NVIDIA_COMPILER_SLOT_NETWORK_H_
 
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -38,10 +39,12 @@ namespace litert::nvidia {
 // network built from the result computes, for each slot, what the
 // single-sequence engine computes for that slot's bindings, bit for bit as
 // long as TensorRT-RTX picks the same kernels for a repeated layer.
-// `merged` counts the projections read once for all the slots.
+// `merged` counts the projections read once for all the slots. The network's
+// plugin layers read the plugins in `plugins`, which must outlive its build.
 Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(
     nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& step,
-    int32_t slots, int32_t* merged);
+    int32_t slots, int32_t* merged,
+    std::vector<std::unique_ptr<nvinfer1::IPluginV3>>* plugins);
 
 // LITERT_NVIDIA_DISPATCH_SLOTS: the most sequence slots a batched decode step
 // takes (0 or unset: no batched decode, the default). The compiler builds a

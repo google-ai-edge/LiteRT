@@ -460,6 +460,7 @@ cc_library(
         ":qsa_attention_plugin",
         ":quant_attention_plugin",
         ":quant_linear_plugin",
+        ":slot_plugins",
         ":subbyte_gemv_plugin",
         ":weight_store_builder",
         "//litert/c:litert_common",

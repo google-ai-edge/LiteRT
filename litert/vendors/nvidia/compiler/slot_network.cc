@@ -22,9 +22,11 @@
 #include <utility>
 #include <vector>
 
+#include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/vendors/nvidia/compiler/slot_plugins.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "NvInfer.h"
@@ -44,8 +46,9 @@ struct PluginDeleter {
 class SlotNetworkBuilder {
  public:
   SlotNetworkBuilder(nvinfer1::INetworkDefinition& step,
-                     nvinfer1::INetworkDefinition& out, int32_t slots)
-      : step_(step), out_(out), slots_(slots) {}
+                     nvinfer1::INetworkDefinition& out, int32_t slots,
+                     std::vector<std::unique_ptr<nvinfer1::IPluginV3>>* plugins)
+      : step_(step), out_(out), slots_(slots), plugins_(plugins) {}
 
   Expected<int32_t> Build() {
     for (int32_t i = 0; i < step_.getNbInputs(); ++i) {
@@ -174,13 +177,21 @@ class SlotNetworkBuilder {
       // leaves out (a holder of the weight store, a refittable weight) is
       // found by that name.
       auto& constant = static_cast<nvinfer1::IConstantLayer&>(layer);
+      // A refittable weight of the step is a placeholder the plan leaves out
+      // (a holder of the weight store): it was added without values, and
+      // what the step's layer returns for them after its build is no host
+      // memory (TensorRT-RTX read hundreds of MB from there and faulted).
+      const bool placeholder =
+          step_.areWeightsMarkedRefittable(layer.getName());
+      nvinfer1::Weights weights = constant.getWeights();
+      if (placeholder) weights.values = nullptr;
       nvinfer1::IConstantLayer* copy =
-          out_.addConstant(constant.getDimensions(), constant.getWeights());
+          out_.addConstant(constant.getDimensions(), weights);
       if (copy == nullptr) return Fail("a constant");
       copy->setName(layer.getName());
       // The step names a constant's weights as its layer when it names them
       // at all (the weight holders); the name outlives this network's build.
-      if (step_.areWeightsMarkedRefittable(layer.getName())) {
+      if (placeholder) {
         if (!out_.setWeightsName(copy->getWeights(), layer.getName()) ||
             !out_.markWeightsRefittable(layer.getName())) {
           return Fail(std::string("weights ") + layer.getName());
@@ -191,8 +202,14 @@ class SlotNetworkBuilder {
       return {};
     }
     if (layer.getType() == nvinfer1::LayerType::kPLUGIN_V3) {
+      LITERT_ASSIGN_OR_RETURN(bool twinned, AddSlotsTwin(layer));
+      if (twinned) return {};
       LITERT_ASSIGN_OR_RETURN(bool merged, MergeProjection(layer));
       if (merged) return {};
+    }
+    if (layer.getType() == nvinfer1::LayerType::kKVCACHE_UPDATE) {
+      LITERT_ASSIGN_OR_RETURN(bool written, AddCacheWrites(layer));
+      if (written) return {};
     }
     if (OnlySharedInputs(layer)) {
       // Computed from the weights alone (a dequantization of a constant):
@@ -227,10 +244,95 @@ class SlotNetworkBuilder {
 
   // A blockwise INT4 GEMV whose weights every slot shares: one plugin over
   // the slots' activation rows, concatenated on the rows axis.
+  // A plugin layer with a state per slot (decode attention, QkvNormRope, an
+  // INT8 cache write) as one launch for every slot (slot_plugins.h's twin):
+  // its inputs slot-major, slot s's output o its output s * m + o.
+  Expected<bool> AddSlotsTwin(nvinfer1::ILayer& layer) {
+    auto& plugin_layer = static_cast<nvinfer1::IPluginV3Layer&>(layer);
+    std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> twin(
+        CreateSlotsTwin(plugin_layer, slots_));
+    if (twin == nullptr) return false;
+    const int32_t n = layer.getNbInputs();
+    const int32_t m = layer.getNbOutputs();
+    std::vector<nvinfer1::ITensor*> inputs(static_cast<size_t>(n) * slots_);
+    for (int32_t s = 0; s < slots_; ++s) {
+      for (int32_t i = 0; i < n; ++i) {
+        if (layer.getInput(i) == nullptr) return false;
+        LITERT_ASSIGN_OR_RETURN(inputs[s * n + i], Map(layer.getInput(i), s));
+      }
+    }
+    nvinfer1::IPluginV3Layer* added = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        out_, inputs.data(), static_cast<int32_t>(inputs.size()), *twin);
+    Keep(std::move(twin));
+    if (added == nullptr || added->getNbOutputs() != m * slots_) {
+      return Fail(std::string("the slots twin of ") + layer.getName());
+    }
+    added->setName((std::string(layer.getName()) + "#slots").c_str());
+    for (int32_t s = 0; s < slots_; ++s) {
+      for (int32_t o = 0; o < m; ++o) {
+        map_[Key(layer.getOutput(o), s)] = added->getOutput(s * m + o);
+      }
+    }
+    ++twinned_;
+    return true;
+  }
+
+  // A cache update of an FP16 cache the network takes and gives as itself (a
+  // network input updated into a network output) as one write launch for
+  // every slot (CreateCacheWriteSlotsPlugin), in place where the dispatch
+  // binds the output to the input's buffer.
+  Expected<bool> AddCacheWrites(nvinfer1::ILayer& layer) {
+    if (layer.getNbInputs() != 3 || layer.getNbOutputs() != 1) return false;
+    nvinfer1::ITensor* cache = layer.getInput(0);
+    nvinfer1::ITensor* rows = layer.getInput(1);
+    nvinfer1::ITensor* index = layer.getInput(2);
+    nvinfer1::ITensor* out = layer.getOutput(0);
+    if (cache == nullptr || rows == nullptr || index == nullptr ||
+        !cache->isNetworkInput() || !out->isNetworkOutput() ||
+        cache->getType() != nvinfer1::DataType::kHALF ||
+        (rows->getType() != nvinfer1::DataType::kHALF &&
+         rows->getType() != nvinfer1::DataType::kBF16 &&
+         rows->getType() != nvinfer1::DataType::kFLOAT) ||
+        index->getType() != nvinfer1::DataType::kINT32) {
+      return false;
+    }
+    const nvinfer1::Dims c = cache->getDimensions();
+    const nvinfer1::Dims r = rows->getDimensions();
+    const nvinfer1::Dims x = index->getDimensions();
+    if (c.nbDims != 4 || r.nbDims != 4 || c.d[0] != 1 || r.d[0] != 1 ||
+        r.d[1] != c.d[1] || r.d[3] != c.d[3] || r.d[2] > c.d[2] ||
+        x.nbDims != 1 || x.d[0] != 1) {
+      return false;
+    }
+    std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> plugin(
+        CreateCacheWriteSlotsPlugin(slots_, /*columns=*/false));
+    if (plugin == nullptr) return false;
+    std::vector<nvinfer1::ITensor*> inputs(3 * static_cast<size_t>(slots_));
+    for (int32_t s = 0; s < slots_; ++s) {
+      LITERT_ASSIGN_OR_RETURN(inputs[3 * s], Map(cache, s));
+      LITERT_ASSIGN_OR_RETURN(inputs[3 * s + 1], Map(rows, s));
+      LITERT_ASSIGN_OR_RETURN(inputs[3 * s + 2], Map(index, s));
+    }
+    nvinfer1::IPluginV3Layer* added = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        out_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    Keep(std::move(plugin));
+    if (added == nullptr || added->getNbOutputs() != slots_) {
+      return Fail(std::string("the slots' cache writes of ") + layer.getName());
+    }
+    added->setName((std::string(layer.getName()) + "#slots").c_str());
+    for (int32_t s = 0; s < slots_; ++s) {
+      map_[Key(out, s)] = added->getOutput(s);
+    }
+    ++cache_writes_;
+    return true;
+  }
+
   Expected<bool> MergeProjection(nvinfer1::ILayer& layer) {
     auto& plugin_layer = static_cast<nvinfer1::IPluginV3Layer&>(layer);
     std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> twin(
         SubbyteGemvSlotRowsPlugin(plugin_layer.getPlugin()));
+    if (twin == nullptr)
+      twin.reset(CreateSlotRowsPlugin(plugin_layer.getPlugin()));
     if (twin == nullptr || layer.getNbOutputs() != 1 ||
         layer.getNbInputs() < 2 || layer.getInput(0) == nullptr) {
       return false;
@@ -262,6 +364,7 @@ class SlotNetworkBuilder {
     }
     nvinfer1::IPluginV3Layer* merged = tensorrt_rtx_1_5_0_99::AddPluginV3(
         out_, inputs.data(), static_cast<int32_t>(inputs.size()), *twin);
+    Keep(std::move(twin));
     if (merged == nullptr) return Fail("a slot-rows projection");
     merged->setName((std::string(layer.getName()) + "#slots").c_str());
     const nvinfer1::Dims out_dims = layer.getOutput(0)->getDimensions();
@@ -505,6 +608,7 @@ class SlotNetworkBuilder {
         }
         copy = tensorrt_rtx_1_5_0_99::AddPluginV3(
             out_, in.data(), static_cast<int32_t>(in.size()), *plugin);
+        Keep(std::move(plugin));
         break;
       }
       default:
@@ -522,7 +626,22 @@ class SlotNetworkBuilder {
   nvinfer1::INetworkDefinition& step_;
   nvinfer1::INetworkDefinition& out_;
   const int32_t slots_;
+  // TensorRT-RTX reads a plugin layer's plugin until the network is built:
+  // the caller keeps them alive until then.
+  void Keep(std::unique_ptr<nvinfer1::IPluginV3, PluginDeleter> plugin) {
+    plugins_->push_back(std::unique_ptr<nvinfer1::IPluginV3>(plugin.release()));
+  }
+
+  std::vector<std::unique_ptr<nvinfer1::IPluginV3>>* plugins_;
   int32_t merged_ = 0;
+  int32_t twinned_ = 0;
+  int32_t cache_writes_ = 0;
+
+ public:
+  int32_t twinned() const { return twinned_; }
+  int32_t cache_writes() const { return cache_writes_; }
+
+ private:
   std::unordered_map<uint64_t, nvinfer1::ITensor*> map_;
   std::unordered_map<const nvinfer1::ITensor*, nvinfer1::ITensor*>
       shared_tensor_;
@@ -542,14 +661,21 @@ int32_t DecodeSlotsRequested() {
 
 Expected<nvinfer1::INetworkDefinition*> BuildSlotDecodeNetwork(
     nvinfer1::IBuilder& builder, nvinfer1::INetworkDefinition& step,
-    int32_t slots, int32_t* merged) {
+    int32_t slots, int32_t* merged,
+    std::vector<std::unique_ptr<nvinfer1::IPluginV3>>* plugins) {
   if (slots < 2) return Fail("fewer than two slots");
+  if (plugins == nullptr) return Fail("no place for the plugins");
   std::unique_ptr<nvinfer1::INetworkDefinition> out(
       builder.createNetworkV2(step.getFlags()));
   if (out == nullptr) return Fail("a network");
-  SlotNetworkBuilder slot_builder(step, *out, slots);
+  SlotNetworkBuilder slot_builder(step, *out, slots, plugins);
   LITERT_ASSIGN_OR_RETURN(const int32_t count, slot_builder.Build());
   if (merged != nullptr) *merged = count;
+  LITERT_LOG(LITERT_INFO,
+             "NVIDIA TensorRT-RTX batched decode network of %d slots: %d "
+             "row-wise plugins over the slots' rows, %d slot twins, %d cache "
+             "writes in one launch",
+             slots, count, slot_builder.twinned(), slot_builder.cache_writes());
   return out.release();
 }
 

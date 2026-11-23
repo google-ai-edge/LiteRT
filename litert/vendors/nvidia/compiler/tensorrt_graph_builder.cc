@@ -4521,9 +4521,10 @@ class TensorRtGraphBuilder {
   // (BuildSlotDecodeNetwork), with the step's builder configuration.
   Expected<TensorRtSlotPlanBuildData> BuildSlotPlan(int32_t slots) {
     int32_t merged = 0;
+    std::vector<std::unique_ptr<nvinfer1::IPluginV3>> plugins;
     LITERT_ASSIGN_OR_RETURN(
         nvinfer1::INetworkDefinition * network_ptr,
-        BuildSlotDecodeNetwork(*builder_, *network_, slots, &merged));
+        BuildSlotDecodeNetwork(*builder_, *network_, slots, &merged, &plugins));
     TrtPtr<nvinfer1::INetworkDefinition> network(network_ptr);
     TrtPtr<nvinfer1::IHostMemory> serialized(
         builder_->buildSerializedNetwork(*network, *config_));
