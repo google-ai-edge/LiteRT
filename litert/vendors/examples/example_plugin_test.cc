@@ -165,6 +165,73 @@ TEST(TestCallDummyPlugin, CompileMultiSubgraphWithSharedWeights) {
   plugin.Api()->destroy_compiled_result(compiled);
 }
 
+TEST(TestCallDummyPlugin, PartitionV2InspectsModelSubgraphs) {
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  ASSERT_TRUE(LITERT_ABI_HAS_API(plugin.Api(), /*req_major=*/1,
+                                 compiler_plugin_partition_v2));
+  auto model = testing::LoadTestFileModel("rms_norm_composite.tflite");
+
+  // Non-empty decomposition without nested refs is accepted.
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition_v2(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(), /*subgraph_index=*/0,
+      &selected_op_list));
+  const auto selected_ops = selected_op_list.Values();
+  ASSERT_EQ(selected_ops.size(), 1);
+  EXPECT_EQ(selected_ops[0].first->OpCode(), kLiteRtOpCodeShloComposite);
+
+  // Empty referenced decomposition is rejected by partition_v2 inspection.
+  model.Get()->Subgraph(1).RemoveOpIf([](const LiteRtOpT&) { return true; });
+  LiteRtOpListT rejected_op_list;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition_v2(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(), /*subgraph_index=*/0,
+      &rejected_op_list));
+  EXPECT_TRUE(rejected_op_list.Values().empty());
+}
+
+TEST(TestCallDummyPlugin, CompileV2CompilesOnlyLeadingEntrySubgraphs) {
+  auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  ASSERT_TRUE(LITERT_ABI_HAS_API(plugin.Api(), /*req_major=*/1,
+                                 compiler_plugin_compile_v2));
+  auto model = testing::LoadTestFileModel("cst_multi_subgraph.tflite");
+  ASSERT_EQ(model.Get()->NumSubgraphs(), 2);
+
+  LiteRtCompiledResult compiled = nullptr;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile_v2(
+      plugin.Get(), /*soc_model=*/nullptr, model.Get(),
+      /*num_entry_subgraphs=*/1, &compiled));
+
+  LiteRtParamIndex num_calls = 0;
+  LITERT_ASSERT_OK(
+      plugin.Api()->get_num_compiled_result_calls(compiled, &num_calls));
+  EXPECT_EQ(num_calls, 1);
+
+  const void* byte_code = nullptr;
+  size_t byte_code_size = 0;
+  LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_byte_code(
+      compiled, /*byte_code_idx=*/0, &byte_code, &byte_code_size));
+  absl::string_view byte_code_string(reinterpret_cast<const char*>(byte_code),
+                                     byte_code_size);
+  EXPECT_THAT(byte_code_string, ::testing::HasSubstr("SUBGRAPH partition_0"));
+  EXPECT_THAT(byte_code_string,
+              ::testing::Not(::testing::HasSubstr("SUBGRAPH partition_1")));
+
+  plugin.Api()->destroy_compiled_result(compiled);
+
+  // Entry count larger than the number of subgraphs is rejected.
+  LiteRtCompiledResult bad_result = nullptr;
+  EXPECT_EQ(plugin.Api()->compiler_plugin_compile_v2(
+                plugin.Get(), /*soc_model=*/nullptr, model.Get(),
+                /*num_entry_subgraphs=*/3, &bad_result),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(bad_result, nullptr);
+}
 TEST(TestCallDummyPlugin, CompileAoT) {
   auto plugin_or = StaticallyLinkedPlugin::Create(LrtGetCompilerContext());
   ASSERT_TRUE(plugin_or.HasValue());
@@ -222,12 +289,16 @@ TEST(TestCallDummyPlugin, CompileJitHandle) {
   plugin.Api()->destroy_compiled_result(result);
 }
 
-// Example V1.1 flat extension struct used to test minor version append-only
-// extensibility (abi_header at offset 0, new members appended at end).
+// Simulates a plugin built against a future minor version of the compiler
+// plugin ABI, one past LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR: the official
+// LiteRtCompilerPluginInterface_V1 members, in order, followed by a member
+// (`dummy`) that the current table does not have. Used to test minor version
+// append-only extensibility (abi_header at offset 0, new members appended at
+// the end).
 typedef LiteRtStatus (*LiteRtCompilerPluginDummyT)(
     LiteRtCompilerPlugin compiler_plugin);
 
-typedef struct LiteRtCompilerPluginInterface_V1_1 {
+typedef struct LiteRtCompilerPluginInterface_V1NextMinor {
   LiteRtAbiHeader abi_header;
 
   LiteRtGetCompilerPluginVersionT get_compiler_plugin_version;
@@ -255,33 +326,49 @@ typedef struct LiteRtCompilerPluginInterface_V1_1 {
   LiteRtGetCompilerPluginSDKVersionT get_compiler_plugin_sdk_version;
   LiteRtGetCompiledResultHandleT get_compiled_result_handle;
   LiteRtCompilerPluginCheckCompilerCompatibilityT check_compiler_compatibility;
+  LiteRtCompilerPluginPartitionV2T compiler_plugin_partition_v2;
+  LiteRtCompilerPluginCompileV2T compiler_plugin_compile_v2;
 
-  // Appended in V1.1:
+  // Appended in the next minor version:
   LiteRtCompilerPluginDummyT dummy;
-} LiteRtCompilerPluginInterface_V1_1;
+} LiteRtCompilerPluginInterface_V1NextMinor;
 
-TEST(TestCallDummyPlugin, VersionNegotiationV1_1) {
-  const LiteRtCompilerPluginInterface_V1_1* api_v1_1 = nullptr;
-  LiteRtApiVersion runtime_version = {1, 1, 0};
+// The extension must not overlap members of the official table.
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_partition_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_partition_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor,
+                       compiler_plugin_compile_v2) ==
+              offsetof(LiteRtCompilerPluginInterface_V1,
+                       compiler_plugin_compile_v2));
+static_assert(offsetof(LiteRtCompilerPluginInterface_V1NextMinor, dummy) ==
+              sizeof(LiteRtCompilerPluginInterface_V1));
+
+TEST(TestCallDummyPlugin, VersionNegotiationNextMinor) {
+  const LiteRtCompilerPluginInterface_V1NextMinor* api_next_minor = nullptr;
+  LiteRtApiVersion runtime_version = {
+      1, LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1, 0};
   LiteRtStatus status = LiteRtCompilerPluginQueryInterface(
       kLiteRtCompilerPluginInterfaceBasic, runtime_version,
-      reinterpret_cast<LiteRtInterface*>(&api_v1_1));
+      reinterpret_cast<LiteRtInterface*>(&api_next_minor));
 
   ASSERT_EQ(status, kLiteRtStatusOk);
-  ASSERT_NE(api_v1_1, nullptr);
-  EXPECT_EQ(api_v1_1->abi_header.major_version, 1);
-  EXPECT_EQ(api_v1_1->abi_header.minor_version, 1);
-  EXPECT_TRUE(LITERT_ABI_HAS_API(api_v1_1, /*req_major=*/1, dummy));
+  ASSERT_NE(api_next_minor, nullptr);
+  EXPECT_EQ(api_next_minor->abi_header.major_version, 1);
+  EXPECT_EQ(api_next_minor->abi_header.minor_version,
+            LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1);
+  EXPECT_TRUE(LITERT_ABI_HAS_API(api_next_minor, /*req_major=*/1, dummy));
 
   LiteRtCompilerPlugin plugin = nullptr;
-  LITERT_ASSERT_OK(api_v1_1->create_compiler_plugin(
+  LITERT_ASSERT_OK(api_next_minor->create_compiler_plugin(
       LrtGetCompilerContext(), &plugin, /*env=*/nullptr, /*options=*/nullptr));
   ASSERT_NE(plugin, nullptr);
 
-  LITERT_ASSERT_OK(api_v1_1->dummy(plugin));
-  EXPECT_EQ(api_v1_1->dummy(nullptr), kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(api_next_minor->dummy(plugin));
+  EXPECT_EQ(api_next_minor->dummy(nullptr), kLiteRtStatusErrorInvalidArgument);
 
-  api_v1_1->destroy_compiler_plugin(plugin);
+  api_next_minor->destroy_compiler_plugin(plugin);
 }
 
 }  // namespace

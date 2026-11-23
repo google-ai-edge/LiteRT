@@ -15,6 +15,7 @@
 #include "litert/compiler/plugin/compiler_plugin.h"
 
 #include <array>
+#include <cstddef>
 #include <cstdint>
 #include <filesystem>  // NOLINT
 #include <fstream>
@@ -49,6 +50,7 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/model_load.h"
 #include "litert/core/model/model_serialize.h"
+#include "litert/core/model/subgraph_refs.h"
 #include "litert/core/options.h"
 #include "litert/core/util/flatbuffer_tools.h"
 #include "litert/test/common.h"
@@ -56,6 +58,7 @@
 #include "litert/test/matchers.h"
 #include "litert/tools/dump.h"
 #include "litert/vendors/c/litert_compiler_plugin.h"
+#include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "tflite/converter/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -1492,9 +1495,14 @@ TEST(PartitionTest, MappedCompositeOp) {
 
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
-  // One new subgraph for the consumed composite op only, decomp not consumed.
-  ASSERT_EQ(partition_result->second.NumSubgraphs(), 1);
-  // Example plugin will select RMS norm composite op during partitioning. only
+  // One entry subgraph for the selected composite op plus its decomposition as
+  // a helper subgraph (the example plugin implements compile v2).
+  ASSERT_EQ(partition_result->first.size(), 1);
+  ASSERT_EQ(partition_result->second.NumSubgraphs(), 2);
+  EXPECT_EQ(CompositeDecompositionIndex(
+                partition_result->second.Subgraph(0).Op(0)),
+            1);
+  // Example plugin will select RMS norm composite op during partitioning. Only
   // 1 subgraph should remain in the model.
   ASSERT_EQ(model.NumSubgraphs(), 1);
 }
@@ -1556,16 +1564,19 @@ TEST(PartitionTest, SharedDecompositionSubgraphMultipleComposites) {
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
 
-  // Only the main subgraph remains in the model (shared decomp subgraph removed
-  // and outlined NPU partition yanked into partition_result).
+  // Only the main subgraph remains in the model (shared decomp subgraph moved
+  // to partition_result as a helper alongside the outlined NPU entry).
   EXPECT_EQ(model.NumSubgraphs(), 1);
   ASSERT_EQ(model.MainSubgraph()->Ops().size(), 1);
   EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflCustom);
 
   const auto& [ops, new_model] = *partition_result;
   EXPECT_EQ(ops.size(), 1);
-  ASSERT_EQ(new_model.NumSubgraphs(), 1);
-  EXPECT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+  ASSERT_EQ(new_model.NumSubgraphs(), 2);
+  ASSERT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+  for (LiteRtOp op : new_model.MainSubgraph()->Ops()) {
+    EXPECT_EQ(CompositeDecompositionIndex(*op), 1);
+  }
 }
 
 TEST(PartitionTest, MappedCompositeOpsSharedDecompositionSubgraph) {
@@ -1583,16 +1594,19 @@ TEST(PartitionTest, MappedCompositeOpsSharedDecompositionSubgraph) {
   auto partition_result = PartitionModel(plugins->front(), model);
   ASSERT_TRUE(partition_result);
 
-  // Only the main subgraph remains in the model (shared decomp subgraph removed
-  // and outlined NPU partition yanked into partition_result).
+  // Only the main subgraph remains in the model (shared decomp subgraph moved
+  // to partition_result as a helper alongside the outlined NPU entry).
   EXPECT_EQ(model.NumSubgraphs(), 1);
   ASSERT_EQ(model.MainSubgraph()->Ops().size(), 1);
   EXPECT_EQ(model.MainSubgraph()->Op(0).OpCode(), kLiteRtOpCodeTflCustom);
 
   const auto& [ops, new_model] = *partition_result;
   EXPECT_EQ(ops.size(), 1);
-  ASSERT_EQ(new_model.NumSubgraphs(), 1);
-  EXPECT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+  ASSERT_EQ(new_model.NumSubgraphs(), 2);
+  ASSERT_EQ(new_model.MainSubgraph()->Ops().size(), 3);
+  for (LiteRtOp op : new_model.MainSubgraph()->Ops()) {
+    EXPECT_EQ(CompositeDecompositionIndex(*op), 1);
+  }
 }
 
 TEST(PartitionTest, InlineDecomposition) {
@@ -1776,6 +1790,64 @@ TEST(PartitionTest, MultiNpuCallComposite) {
   }
 }
 
+// main: npu_call(decomp3) -> composite(decomp2) -> npu_call(decomp1), with the
+// middle composite renamed so that the example plugin selects it. Dispatch op
+// i must be the op whose body is entry subgraph i of the partitions model,
+// followed by decomp2 as a helper subgraph (example_plugin implements v2).
+TEST(PartitionTest, DispatchOpsMatchPartitionsWithNpuCallsAndSelections) {
+  auto model_wrap = testing::LoadTestFileModel("multi_composite.tflite");
+  ASSERT_TRUE(model_wrap);
+  auto& model = *model_wrap.Get();
+  auto plugins =
+      CompilerPlugin::LoadPlugins({GetLiteRtPath(kTestPluginSearchPath)});
+
+  ASSERT_EQ(model.NumSubgraphs(), 4);
+  auto& main = model.Subgraph(0);
+  ASSERT_EQ(main.Ops().size(), 3);
+  LiteRtOp npu_call_0 = main.Ops()[0];
+  LiteRtOp composite = main.Ops()[1];
+  LiteRtOp npu_call_1 = main.Ops()[2];
+  LiteRtSubgraph decomp1 = model.Subgraphs()[1];
+  LiteRtSubgraph decomp3 = model.Subgraphs()[3];
+  {
+    auto options = TakeTflOptions2(*composite);
+    options.AsStableHLOCompositeOptions()->name =
+        std::string(CompositeOptions::kRmsNorm);
+    SetTflOptions2(*composite, std::move(options));
+  }
+  // Swap the bodies of the two npu_calls so that the op order differs from the
+  // body index order.
+  for (auto [op, decomp_index] : {std::pair{npu_call_0, 3}, {npu_call_1, 1}}) {
+    auto options = TakeTflOptions2(*op);
+    options.AsStableHLOCompositeOptions()->decomposition_subgraph_index =
+        decomp_index;
+    SetTflOptions2(*op, std::move(options));
+  }
+
+  auto partition_result = PartitionModel(plugins->front(), model);
+  ASSERT_TRUE(partition_result);
+
+  const auto& dispatch_ops = partition_result->first;
+  const auto& partitions = partition_result->second;
+  ASSERT_EQ(dispatch_ops.size(), 3);
+  // 3 entry subgraphs + 1 helper subgraph (decomp2 for the selected composite).
+  ASSERT_EQ(partitions.NumSubgraphs(), 4);
+  for (size_t i = 0; i < dispatch_ops.size(); ++i) {
+    const LiteRtSubgraphT* body = partitions.Subgraphs()[i];
+    if (dispatch_ops[i] == npu_call_0) {
+      EXPECT_EQ(body, decomp3);
+    } else if (dispatch_ops[i] == npu_call_1) {
+      EXPECT_EQ(body, decomp1);
+    } else {
+      // The outlined partition holds the selected composite referencing helper
+      // subgraph 3.
+      ASSERT_EQ(body->Ops().size(), 1);
+      EXPECT_EQ(body->Ops().front()->OpCode(), kLiteRtOpCodeShloComposite);
+      EXPECT_EQ(CompositeDecompositionIndex(*body->Ops().front()), 3);
+    }
+  }
+}
+
 TEST(PartitionTest, NestedNpuCallComposite) {
   auto model_wrap = testing::LoadTestFileModel("nested_composite.tflite");
   ASSERT_TRUE(model_wrap);
@@ -1792,9 +1864,13 @@ TEST(PartitionTest, NestedNpuCallComposite) {
   ASSERT_EQ(ops.size(), 1);
   ASSERT_EQ(ops.front()->OpCode(), kLiteRtOpCodeTflCustom);
 
-  const auto& sgs = partition_result->second.Subgraphs();
-  ASSERT_EQ(sgs.size(), 1);
-  ASSERT_EQ(sgs.front()->Op(0).OpCode(), kLiteRtOpCodeShloComposite);
+  // The example plugin implements compile v2, so the decomposition of the
+  // composite nested in the npu_call body is passed along as a helper.
+  const auto& partitions = partition_result->second;
+  ASSERT_EQ(partitions.NumSubgraphs(), 2);
+  const auto& nested_composite = partitions.Subgraph(0).Op(0);
+  ASSERT_EQ(nested_composite.OpCode(), kLiteRtOpCodeShloComposite);
+  EXPECT_EQ(CompositeDecompositionIndex(nested_composite), 1);
 }
 
 TEST(PartitionModelTest, PartitionIsland) {
@@ -2316,14 +2392,17 @@ TEST_F(CompilerPluginFriend,
 }
 
 TEST(CompilerPluginTest, LoadPlugin_NewerVersionNegotiation) {
-  // Loads example_plugin.so (V1.1), verifies runtime (V1.0) successfully
-  // negotiates V1.1 ABI via forward compatibility.
+  // Loads example_plugin.so (which reports the next minor ABI version),
+  // verifying the runtime negotiates the newer minor ABI via forward
+  // compatibility.
   LITERT_ASSERT_OK_AND_ASSIGN(
       auto plugin,
       CompilerPlugin::FindPlugin(kTestManufacturer,
                                  {GetLiteRtPath(kTestPluginSearchPath)}));
-  EXPECT_EQ(plugin.NegotiatedVersion().major, 1);
-  EXPECT_EQ(plugin.NegotiatedVersion().minor, 1);
+  EXPECT_EQ(plugin.NegotiatedVersion().major,
+            LITERT_COMPILER_PLUGIN_ABI_VERSION_MAJOR);
+  EXPECT_EQ(plugin.NegotiatedVersion().minor,
+            LITERT_COMPILER_PLUGIN_ABI_VERSION_MINOR + 1);
   EXPECT_EQ(plugin.SocManufacturer(), kTestManufacturer);
   LITERT_ASSERT_OK_AND_ASSIGN(auto hw, plugin.SupportedHardware());
   EXPECT_EQ(hw, kLiteRtHwAcceleratorNpu);
