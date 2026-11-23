@@ -12,7 +12,9 @@
 #   EVAL_ONE_PROCESS=1 runs every problem in one process (../engine_runner.tool): the model loads
 #   once and each problem gets a fresh conversation configured as the CLI's, with the same files
 #   per problem. LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package (litert_lm,
-#   its library built from the LITERT_LM_DIR checkout the CLI comes from).
+#   its library built from the LITERT_LM_DIR checkout the CLI comes from). EVAL_ENGINES=N (with
+#   it) decodes N problems side by side, an engine each, the weights held once: faster where one
+#   engine leaves the GPU idle (Gemma 4 E2B, E4B), each response the same.
 # Output: $EVAL_RUNS/LABEL/<question_id>.{out,log,json} (LABEL defaults to MODEL_MODE); .out is
 # the model's response (the CLI's stdout), .log the CLI's log with the BenchmarkInfo block (the
 # prompt is real text and stop tokens end the turn: --benchmark with both token counts 0),
@@ -40,6 +42,9 @@ if [[ -n ${EVAL_TOP_K:-}${EVAL_TOP_P:-}${EVAL_TEMPERATURE:-}${EVAL_SEED:-} ]]; t
 fi
 one_process=${EVAL_ONE_PROCESS:-0}
 [[ $one_process == 0 || $one_process == 1 ]] || nb_die "EVAL_ONE_PROCESS must be 0 or 1"
+engines=${EVAL_ENGINES:-1}
+[[ $engines =~ ^[1-9][0-9]*$ ]] || nb_die "EVAL_ENGINES must be a positive integer"
+[[ $engines == 1 || $one_process == 1 ]] || nb_die "EVAL_ENGINES needs EVAL_ONE_PROCESS=1"
 if [[ $one_process == 1 ]]; then
   # LiteRT-LM's C API sets no advanced executor settings: the expansion is the CLI's alone.
   [[ $expansion == 0 ]] || nb_die "EVAL_ONE_PROCESS=1 cannot expand the context (LiteRT-LM's C API has no setting for it)"
@@ -164,9 +169,9 @@ if ((${#pending[@]})); then
   # One process for the pending problems: the CLI's settings above, as a job list.
   echo "$(date -Is) $label: ${#pending[@]} problems in one process"
   python3 - "$runs/jobs.json" "$model" "$NB_RUNTIME_LIBS" "$pool/compiler" "$context" "$max_tokens" \
-      "$spec" "$here/prompts" "$runs" "${selected[*]}" "${sampler_args[*]}" "${pending[@]}" <<'PY'
+      "$spec" "$here/prompts" "$runs" "${selected[*]}" "${sampler_args[*]}" "$engines" "${pending[@]}" <<'PY'
 import json, sys
-path, model, libs, cache, context, budget, spec, prompts, runs, selected, sampler, *qids = sys.argv[1:]
+path, model, libs, cache, context, budget, spec, prompts, runs, selected, sampler, engines, *qids = sys.argv[1:]
 flags = dict(a[2:].split('=', 1) for a in sampler.split())
 sampler = {'top_k': int(flags['sampler_top_k']), 'top_p': float(flags['sampler_top_p']),
            'temperature': float(flags['sampler_temperature']), 'seed': int(flags['sampler_seed'])} if flags else None
@@ -176,7 +181,7 @@ jobs = [{'name': q, 'prompt_file': f'{prompts}/{q}.txt', 'max_output_tokens': in
 json.dump({'engine': {'model': model, 'dispatch_lib_dir': libs, 'cache_dir': cache, 'max_num_tokens': int(context),
                       'selected_signatures': signatures, 'speculative_decoding': spec == 'true',
                       'min_log_severity': 0},
-           'jobs': jobs, 'summary': f'{runs}/one_process.json'}, open(path, 'w'), indent=1)
+           'jobs': jobs, 'engines': int(engines), 'summary': f'{runs}/one_process.json'}, open(path, 'w'), indent=1)
 PY
   (cd "$NB_LM" && /usr/bin/time -v -o "$runs/one_process.time" python3 "$here/../engine_runner.tool" "$runs/jobs.json") || status=1
   for qid in "${pending[@]}"; do

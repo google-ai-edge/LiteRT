@@ -6,7 +6,7 @@ taken, zero-shot pass@1, temperature 0.6 (a reasoning model), the model's output
 
 usage: run.tool --model PROFILE|FILE --label LABEL [--count N | --question ID|INDEX ...]
                 [--max-output-tokens 32768] [--runs DIR] [--rescore] [--one-process]
-                [--env NAME=VALUE ...] [--selected-signatures NAME,NAME]
+                [--env NAME=VALUE ...] [--selected-signatures NAME,NAME] [--engines N]
 
 The data: GPQA's official release (fetch.sh: data/gpqa_diamond.csv). Each question is one CLI
 run through the platform's bench runner (bench.sh on Linux, windows/bench.tool on Windows),
@@ -19,7 +19,8 @@ the letters, tokens, rates, wall time) and RUNS/LABEL/<n>-<record>/ (the CLI run
 --one-process (or EVAL_ONE_PROCESS=1; Linux) runs the pending questions in one process
 (../one_process.sh, ../engine_runner.tool): the model loads once and each question gets a fresh
 conversation configured as the CLI's, its cli.log and time.txt written as the CLI's run would
-have them; LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package. --env sets a
+have them; LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package; --engines N
+decodes N questions side by side there (an engine each, the weights held once). --env sets a
 runtime variable (a partition policy, say) in either mode; --selected-signatures the main
 model's signatures to load (default: bench.sh's rule, prefill_1024 and decode for 12b and 26b).
 """
@@ -142,7 +143,7 @@ def run_one_process(args, pending, out, context):
                  'sampler': dict(SAMPLER, seed=n), 'stdout': log, 'stderr': log, 'time': str(out / label / 'time.txt')})
   spec = {'engine': {'max_num_tokens': context, 'selected_signatures': selected, 'speculative_decoding': False,
                      'min_log_severity': 0},
-          'jobs': jobs, 'summary': str(out / 'one_process.json')}
+          'jobs': jobs, 'engines': args.engines, 'summary': str(out / 'one_process.json')}
   (out / 'jobs.json').write_text(json.dumps(spec, indent=1) + '\n')
   command = ['bash', str(HERE.parent / 'one_process.sh'), args.model, str(out / 'jobs.json')]
   for assignment in args.env:
@@ -174,6 +175,8 @@ def main():
                       help='a runtime environment variable (bench.sh --env; repeatable)')
   parser.add_argument('--selected-signatures', metavar='NAME,NAME',
                       help='the main model signatures to load (default: bench.sh\'s rule)')
+  parser.add_argument('--engines', type=int, default=1,
+                      help='with --one-process: questions decoded side by side, an engine each')
   args = parser.parse_args()
   if not DATA.exists():
     raise SystemExit(f'{DATA} is missing: run eval/gpqa/fetch.sh')
@@ -197,6 +200,8 @@ def main():
   results = json.loads(results_path.read_text()) if results_path.exists() else []
   if args.one_process and os.name == 'nt':
     raise SystemExit('--one-process runs on Linux (one_process.sh); on Windows, run the CLI per question')
+  if args.engines < 1 or (args.engines != 1 and not args.one_process):
+    raise SystemExit('--engines is a positive number and needs --one-process')
   config = {'model': args.model, 'max_output_tokens': args.max_output_tokens, 'context': context,
             'sampler': {'top_k': 20, 'top_p': 0.95, 'temperature': 0.6, 'seed': 'the question number'},
             'method': 'Artificial Analysis intelligence-benchmarking methodology (GPQA prompt, extraction, pass@1)',
@@ -207,6 +212,8 @@ def main():
     config['selected_signatures'] = args.selected_signatures
   if args.one_process:
     config['one_process'] = True
+  if args.engines != 1:
+    config['engines'] = args.engines
   (out / 'run.json').write_text(json.dumps(config, indent=1) + '\n')
   if args.rescore:
     for entry in results:

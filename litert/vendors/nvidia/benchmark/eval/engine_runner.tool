@@ -20,8 +20,18 @@ JOBS.json: {"engine": {"model": FILE, "dispatch_lib_dir": DIR, "cache_dir": DIR,
             "jobs": [{"name": ID, "prompt_file": FILE, "max_output_tokens": N,
                       "sampler": {"top_k": K, "top_p": P, "temperature": T, "seed": S} | null,
                       "stdout": FILE, "stderr": FILE, "time": FILE}, ...],
-            "summary": FILE}
+            "summary": FILE, "engines": N}
 A job whose stdout and stderr name the same file gets both there, as `> cli.log 2>&1` does.
+"engines" (default 1) loads that many engines of the model, each decoding its own job on a
+thread of its own: the weights are held once (the dispatch shares them between the engines of a
+process), each engine adds its caches and activations. A job's response and report are the
+same; with more than one engine its log holds the runner's lines only (the engines' own logs go
+to the runner's stderr). Each engine still reads all the weights for its own step, so it pays
+where one engine leaves the GPU idle: while every engine decodes, Gemma 4 E2B makes 1.8x the
+tokens of one engine (3 engines), E4B 1.6x (3), 26B-A4B 1.25x (2) at a context of 10,240; a model
+that fills the card (Qwen 3.8 27B on 16 GB) has room for one. The engines must fit in the GPU's
+memory: past it, Windows and WSL move device memory to the host without an error, and decoding
+slows several times (two 26B engines at a context of 32,768: 34 and 86 tokens/s).
 The sampler entry follows the CLI's flags: null keeps the model's own sampler; otherwise
 missing fields take the CLI's defaults (top-k 40, top-p 1, temperature 1, no seed).
 The summary records the engine's load time, every job's wall time and exit status.
@@ -304,15 +314,9 @@ def redirect(path, fd, opened):
   return saved
 
 
-def run_job(engine, job, progress):
-  opened = {}
-  saved_out = redirect(job['stdout'], 1, opened)
-  saved_err = redirect(job['stderr'], 2, opened)
-  started = time.monotonic()
-  exit_code = 0
-  write_out = lambda text: os.write(1, text.encode('utf-8'))
-  write_err = lambda text: os.write(2, text.encode('utf-8'))
-  result = {'name': job['name']}
+def converse(engine, job, write_out, write_err, result):
+  """The job's conversation: its response to write_out, the CLI's log lines to write_err, its
+  decode figures into `result`. Returns the exit status the CLI would have."""
   try:
     with open(job['prompt_file'], 'rb') as f:
       prompt = f.read().decode('utf-8')
@@ -329,19 +333,16 @@ def run_job(engine, job, progress):
         result['decode_tokens_per_second'] = round(turns['decode'][-1][1], 2)
     finally:
       engine.lib.litert_lm_conversation_delete(conversation)
+    return 0
   except Exception as e:  # pylint: disable=broad-exception-caught
     # The CLI's failure line (litert_lm_advanced_main.cc) and a status of 13 (INTERNAL).
     write_err(f'E0000 00:00:{time.time():.6f} {os.getpid():7d} engine_runner.tool] '
               f'Failed to run litert_lm: {e}\n')
-    exit_code = 13
+    return 13
+
+
+def finish(job, started, exit_code, result, progress):
   wall = time.monotonic() - started
-  sys.stdout.flush()
-  os.dup2(saved_out, 1)
-  os.dup2(saved_err, 2)
-  os.close(saved_out)
-  os.close(saved_err)
-  for fd in opened.values():
-    os.close(fd)
   with open(job['time'], 'w') as f:
     f.write(f'\tCommand being timed: "engine_runner.tool {job["name"]}"\n'
             f'\tElapsed (wall clock) time (h:mm:ss or m:ss): {format_wall(wall)}\n'
@@ -351,29 +352,97 @@ def run_job(engine, job, progress):
   return result
 
 
+def run_job(engine, job, progress):
+  """One engine: the process's stdout and stderr are the job's files while it runs, so its log
+  also holds what the engine logs, as the CLI's does."""
+  opened = {}
+  saved_out = redirect(job['stdout'], 1, opened)
+  saved_err = redirect(job['stderr'], 2, opened)
+  started = time.monotonic()
+  result = {'name': job['name']}
+  exit_code = converse(engine, job, lambda text: os.write(1, text.encode('utf-8')),
+                       lambda text: os.write(2, text.encode('utf-8')), result)
+  sys.stdout.flush()
+  os.dup2(saved_out, 1)
+  os.dup2(saved_err, 2)
+  os.close(saved_out)
+  os.close(saved_err)
+  for fd in opened.values():
+    os.close(fd)
+  return finish(job, started, exit_code, result, progress)
+
+
+def run_job_alongside(engine, job, progress):
+  """Several engines at once: the job's files get its response and the CLI's report lines; what
+  the engines log goes to the runner's own stderr, since they share the process's."""
+  started = time.monotonic()
+  result = {'name': job['name']}
+  with open(job['stdout'], 'w', encoding='utf-8') as out:
+    if job['stderr'] == job['stdout']:
+      exit_code = converse(engine, job, out.write, out.write, result)
+    else:
+      with open(job['stderr'], 'w', encoding='utf-8') as err:
+        exit_code = converse(engine, job, out.write, err.write, result)
+  return finish(job, started, exit_code, result, progress)
+
+
 def main():
   if len(sys.argv) != 2:
     raise SystemExit(__doc__)
   spec = json.loads(open(sys.argv[1]).read())
-  summary = {'engine': spec['engine'], 'jobs': []}
+  count = int(spec.get('engines', 1))
+  summary = {'engine': spec['engine'], 'engines': count, 'jobs': []}
   started = time.monotonic()
-  report = lambda result: print(json.dumps(result), flush=True)
-  engine = Engine(spec['engine'])
-  summary['load_s'] = round(engine.load_s, 3)
-  report({'engine_load_s': summary['load_s']})
+  lock = threading.Lock()
+
+  def report(result):
+    with lock:
+      print(json.dumps(result), flush=True)
+
+  def save():
+    summary['total_s'] = round(time.monotonic() - started, 3)
+    if spec.get('summary'):
+      with open(spec['summary'], 'w') as f:
+        json.dump(summary, f, indent=1)
+
+  engines = []
   try:
-    for job in spec['jobs']:
-      summary['jobs'].append(run_job(engine, job, report))
-      summary['total_s'] = round(time.monotonic() - started, 3)
-      if spec.get('summary'):
-        with open(spec['summary'], 'w') as f:
-          json.dump(summary, f, indent=1)
+    for _ in range(count):
+      engines.append(Engine(spec['engine']))
+      report({'engine_load_s': round(engines[-1].load_s, 3)})
+    summary['load_s'] = round(sum(e.load_s for e in engines), 3)
+    if count == 1:
+      for job in spec['jobs']:
+        summary['jobs'].append(run_job(engines[0], job, report))
+        save()
+    else:
+      # Each engine, on a thread of its own (its tasks run on the thread that waits for them),
+      # takes the next job when it is done with one: the jobs' files are the same, their order
+      # in the summary is the order they finished.
+      pending = queue.Queue()
+      for job in spec['jobs']:
+        pending.put(job)
+
+      def work(engine):
+        while True:
+          try:
+            job = pending.get_nowait()
+          except queue.Empty:
+            return
+          result = run_job_alongside(engine, job, report)
+          with lock:
+            summary['jobs'].append(result)
+            save()
+
+      threads = [threading.Thread(target=work, args=(e,)) for e in engines]
+      for thread in threads:
+        thread.start()
+      for thread in threads:
+        thread.join()
   finally:
-    engine.close()
-  summary['total_s'] = round(time.monotonic() - started, 3)
-  if spec.get('summary'):
-    with open(spec['summary'], 'w') as f:
-      json.dump(summary, f, indent=1)
+    for engine in engines:
+      engine.close()
+  save()
   sys.exit(1 if any(j['exit_code'] for j in summary['jobs']) else 0)
 
 
