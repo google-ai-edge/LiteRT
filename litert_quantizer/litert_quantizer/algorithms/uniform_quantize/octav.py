@@ -16,7 +16,7 @@
 """Implements the OCTAV quantization."""
 
 import dataclasses
-from typing import Any, Optional
+from typing import Any
 import numpy as np
 from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
@@ -53,13 +53,14 @@ def _guess_clipping_with_octav(
       symmetric signed ints and 12.0 for asymmetric/unsigned ints.
     early_stop: If True, stop the iteration if the guess doesn't change.
     mid_riser: If True, symmetric mid-riser quantization without a zero level
-      (e.g. int2_in_int4 {-3, -1, 1, 3}) has step clip / 2^(bits-1), so [0,
-      clip] spans 2^(bits-1) step widths. If False (default), symmetric signed
-      quantization with zero_point=0 is mid-tread with step clip / (2^(bits-1) -
-      1), i.e. the positive half-range spans 2^(bits-1) - 1 step widths (for
-      bits < 8, uniform_quantize keeps the extra -2^(bits-1) negative level,
-      making the symmetric [-clip, clip] clipping model slightly approximate on
-      the negative tail while still using step clip / (2^(bits-1) - 1)).
+      (e.g. centered INT2 or int2_in_int4 {-3, -1, 1, 3}) has step clip /
+      2^(bits-1), so [0, clip] spans 2^(bits-1) step widths. If False (default),
+      symmetric signed quantization with zero_point=0 is mid-tread with step
+      clip / (2^(bits-1) - 1), i.e. the positive half-range spans 2^(bits-1) - 1
+      step widths (for bits < 8, uniform_quantize keeps the extra -2^(bits-1)
+      negative level, making the symmetric [-clip, clip] clipping model slightly
+      approximate on the negative tail while still using step clip / (2^(bits-1)
+      - 1)).
 
   Returns:
     A tensor of shape [num_channels] with clipping constant guesses.
@@ -143,8 +144,17 @@ def _guess_clipping_with_octav(
   return guess
 
 
-def _to_odd_int4_codes(data: np.ndarray, scale: np.ndarray) -> np.ndarray:
-  """Rounds `data` to the nearest of {-3, -1, 1, 3} * `scale` as int8."""
+def to_odd_int4_codes(data: np.ndarray, scale: np.ndarray) -> np.ndarray:
+  """Rounds `data` to the nearest of {-3, -1, 1, 3} * `scale` as int8.
+
+  Args:
+    data: Floating-point tensor values to quantize.
+    scale: Positive half-step scale (`clip / 4`, so levels are `2 * scale`
+      apart).
+
+  Returns:
+    Signed `np.int8` array containing odd INT4 codes in `{-3, -1, 1, 3}`.
+  """
   s_2bit = np.float32(2.0) * np.maximum(
       scale.astype(np.float32, copy=False), np.float32(1e-9)
   )
@@ -193,29 +203,32 @@ def _quantize_int2_in_int4(
     )
     for k in range(0, flat_data.shape[0], chunk_rows):
       end = min(k + chunk_rows, flat_data.shape[0])
-      ret[k:end, :] = _to_odd_int4_codes(
+      ret[k:end, :] = to_odd_int4_codes(
           flat_data[k:end, :], flat_scale[k:end, :]
       )
     return np.reshape(ret, output_shape)
 
-  return _to_odd_int4_codes(tensor_data, scales)
+  return to_odd_int4_codes(tensor_data, scales)
 
 
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Returns the quantization parameters for a tensor.
 
   Args:
     op_info: Aggregated information about the op (e.g., quantization config).
     tensor_quant_config: The quantization config for the tensor. Supports
-      `algorithm_params={'int2_in_int4': True}` when `num_bits=4` and
-      `symmetric=True` to quantize weights to the 4-level 2-bit mid-riser
-      codebook `{-3, -1, 1, 3} * scale` stored in signed INT4 (for evaluating or
-      executing 2-bit-quantized weights on INT4 kernels).
+      `algorithm_params={'centered': True}` (default `False`) when `num_bits=2`
+      and `symmetric=True` to quantize weights to the centered 2-bit mid-riser
+      grid `{-1.5, -0.5, 0.5, 1.5} * scale` (`{-2, -1, 0, 1}` with
+      `zero_point=-0.5`), as well as `algorithm_params={'int2_in_int4': True}`
+      when `num_bits=4` and `symmetric=True` to quantize weights to the 4-level
+      2-bit mid-riser codebook `{-3, -1, 1, 3} * scale` stored in signed INT4
+      (for evaluating or executing 2-bit-quantized weights on INT4 kernels).
     tensor_content: The content of the tensor. When None, it means the tensor is
       not a weight tensor (e.g. static quantization) so we fallback to using
       naive_min_max_quantize.
@@ -226,8 +239,8 @@ def get_tensor_quant_params(
 
   Raises:
     ValueError: If unsigned or asymmetric quantization is requested, if
-      `num_bits < 2`, if `int2_in_int4` is invalid, or if min/max values
-      cannot be determined from `tensor_qsv` or `tensor_content`.
+      `num_bits < 2`, if `int2_in_int4` or `centered` is invalid, or if min/max
+      values cannot be determined from `tensor_qsv` or `tensor_content`.
   """
   # Fallback to naive_min_max_quantize.py for non-weight tensors.
   if tensor_content is None:
@@ -258,6 +271,9 @@ def get_tensor_quant_params(
         "int2_in_int4 requires num_bits=4, got"
         f" num_bits={tensor_quant_config.num_bits}."
     )
+  centered = uniform_quantize_tensor.get_centered_int2_option(
+      tensor_quant_config
+  )
 
   # Use tensor_content if QSV lacks min/max (e.g., including GPTQ case).
   if not tensor_qsv or "min" not in tensor_qsv:
@@ -283,6 +299,7 @@ def get_tensor_quant_params(
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity
   )
+  is_multi_axis = isinstance(quantized_dim, (list, tuple))
   is_blockwise_quant = uniform_quantize_tensor.is_blockwise(
       tensor_quant_config.granularity
   )
@@ -292,6 +309,7 @@ def get_tensor_quant_params(
             tensor_content,
             op_info.op_name,
             tensor_quant_config.granularity,
+            quantized_dim=(tensor_content.ndim - 1 if is_multi_axis else None),
         )
     )
   else:
@@ -307,7 +325,7 @@ def get_tensor_quant_params(
       reduce_dims,  # pyrefly: ignore[bad-argument-type]
       max_iterations=10,
       exponent_divisor=3.0 if tensor_quant_config.symmetric else 12.0,
-      mid_riser=int2_in_int4,
+      mid_riser=int2_in_int4 or centered,
   )
   # We created a new dimension in order to reduce properly for blockwise
   # quantization, so we need to reshape the clipping constants back to the
@@ -318,7 +336,14 @@ def get_tensor_quant_params(
   min_val = tensor_min_max["min"]
   max_val = tensor_min_max["max"]
   clip_val = clipping_constants
-  if int2_in_int4:
+  if centered:
+    # OCTAV's mid-riser clip is the outer bin edge 2 * scale, while centered
+    # min-max puts the bound on the outer level 1.5 * scale. Pre-scaling by
+    # 0.75 in float64 lets tensor_zp_scale_from_min_max yield scale = bound / 2.
+    min_val, max_val, clip_val = (
+        v.astype(np.float64) * 0.75 for v in (min_val, max_val, clip_val)
+    )
+  elif int2_in_int4:
     # Pre-scale by 7 / 4 in float64 before tensor_zp_scale_from_min_max divides
     # by qmax=7 so the resulting scale is bound / 4 (adjacent levels in
     # {-3, -1, 1, 3} are 2 * scale apart, spanning half-range 4 * scale) and
@@ -336,6 +361,7 @@ def get_tensor_quant_params(
       tensor_quant_config.symmetric,
       tensor_quant_config.granularity,
       clip_val,
+      centered=centered,
   )
   if int2_in_int4 and not is_blockwise_quant:
     scale = scale.astype(np.float32)
@@ -345,7 +371,8 @@ def get_tensor_quant_params(
       zero_point=zp,
       num_bits=tensor_quant_config.num_bits,
       symmetric=tensor_quant_config.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=(quantized_dim if not is_multi_axis else None),
+      quantized_dimensions=(quantized_dim if is_multi_axis else None),
       block_size=uniform_quantize_tensor.extract_block_size_from_granularity(
           tensor_quant_config.granularity
       ),
