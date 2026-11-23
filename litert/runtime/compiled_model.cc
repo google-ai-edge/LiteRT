@@ -2754,6 +2754,13 @@ Expected<void> LiteRtCompiledModelT::Run(
   // to LiteRT TensorBuffers after execution, since TFLite does not support
   // custom allocations (zero-copy) for dynamic string tensors.
   std::vector<PendingCopy> pending_string_output_copies;
+  // The buffer bound to each tensor. A tensor listed more than once in a
+  // signature (a model that returns an input, or the same value twice) keeps
+  // its first buffer; its other output buffers are filled from it after invoke.
+  absl::flat_hash_map<const TfLiteTensor*, LiteRtTensorBuffer> bound_buffers;
+  bound_buffers.reserve(num_inputs + num_outputs);
+  // Output indices that are filled from the buffer that backs their tensor.
+  std::vector<std::pair<int, LiteRtTensorBuffer>> copied_outputs;
   auto unlock_buffers = absl::MakeCleanup([&locked_buffers]() {
     for (const auto& [locked_buffer, _] : locked_buffers) {
       if (LiteRtUnlockTensorBuffer(locked_buffer) != kLiteRtStatusOk) {
@@ -2785,6 +2792,7 @@ Expected<void> LiteRtCompiledModelT::Run(
                               GetBufferForUnboundInput(input_tensor));
       if (input_buffer == nullptr) continue;
     }
+    bound_buffers[input_tensor] = input_buffer;
 
     auto res = RegisterBuffer(runner, input_tensor, tensor_index, tensor_name,
                               input_buffer, /*is_input=*/true, locked_buffers,
@@ -2809,6 +2817,13 @@ Expected<void> LiteRtCompiledModelT::Run(
       const auto& output_name_str = runner->subgraph_output_names()[i];
       tensor_name = output_name_str;
       output_tensor = runner->output_tensor(tensor_name);
+    }
+
+    auto [bound_buffer, is_first] =
+        bound_buffers.try_emplace(output_tensor, output_buffers[i]);
+    if (!is_first && bound_buffer->second != output_buffers[i]) {
+      copied_outputs.push_back({i, bound_buffer->second});
+      continue;
     }
 
     auto res = RegisterBuffer(runner, const_cast<TfLiteTensor*>(output_tensor),
@@ -2993,6 +3008,44 @@ Expected<void> LiteRtCompiledModelT::Run(
                    constant_output.tensor_name);
       }
     }
+  }
+
+  // Fill the output buffers of tensors that are backed by another buffer.
+  // Locking the source waits for its event, so an async run blocks here.
+  auto lock_buffer = [&locked_buffers](
+                         LiteRtTensorBuffer buffer,
+                         LiteRtTensorBufferLockMode mode) -> Expected<void*> {
+    if (auto it = locked_buffers.find(buffer); it != locked_buffers.end()) {
+      return it->second;
+    }
+    void* host_mem_addr = nullptr;
+    LITERT_RETURN_IF_ERROR(
+        LiteRtLockTensorBuffer(buffer, &host_mem_addr, mode));
+    locked_buffers[buffer] = host_mem_addr;
+    return host_mem_addr;
+  };
+  for (const auto& [output_index, source_buffer] : copied_outputs) {
+    // Tensors may have moved during allocation, so look the tensor up again.
+    const TfLiteTensor* output_tensor =
+        use_interpreter_directly
+            ? interp_->tensor(interp_->outputs()[output_index])
+            : runner->output_tensor(
+                  runner->subgraph_output_names()[output_index]);
+    LiteRtTensorBuffer output_buffer = output_buffers[output_index];
+    if (output_buffer->buffer_size() < output_tensor->bytes) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        absl::StrCat("Output buffer too small: allocated ",
+                                     output_buffer->buffer_size(),
+                                     ", required ", output_tensor->bytes));
+    }
+    LITERT_ASSIGN_OR_RETURN(
+        void* source,
+        lock_buffer(source_buffer, kLiteRtTensorBufferLockModeRead));
+    LITERT_ASSIGN_OR_RETURN(
+        void* output,
+        lock_buffer(output_buffer, kLiteRtTensorBufferLockModeWrite));
+    // memmove, because two tensor buffers may wrap the same memory.
+    std::memmove(output, source, output_tensor->bytes);
   }
 
   last_inference_duration_nanos_.store(inference_duration_nanos,

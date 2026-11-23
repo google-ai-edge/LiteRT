@@ -1542,6 +1542,82 @@ TEST_F(CompiledModelWithDefaultEnvironmentTest, ConstantOutputTensor) {
   }
 }
 
+// Test for an output tensor that is also an input tensor.
+TEST_F(CompiledModelWithDefaultEnvironmentTest, PassthroughOutputTensor) {
+  // The model returns x * y and the input y itself. It has a signature, so it
+  // runs through the signature runner.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          *env_,
+          testing::GetTestFilePath(kPassthroughOutputTensorModelFileName),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  ASSERT_EQ(input_buffers.size(), 2);
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_EQ(output_buffers.size(), 2);
+
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>({1.0f, 2.0f}));
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>({10.0f, 20.0f}));
+  // Mark the outputs so stale bytes read from or left in them show up.
+  for (TensorBuffer& output_buffer : output_buffers) {
+    LITERT_ASSERT_OK(output_buffer.Write<float>({-1.0f, -1.0f}));
+  }
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  std::vector<float> output(2);
+  LITERT_ASSERT_OK(output_buffers[0].Read(absl::MakeSpan(output)));
+  EXPECT_THAT(output, ElementsAre(10.0f, 40.0f));
+  LITERT_ASSERT_OK(output_buffers[1].Read(absl::MakeSpan(output)));
+  EXPECT_THAT(output, ElementsAre(10.0f, 20.0f));
+
+  // The caller may also pass the input buffer itself as the pass-through
+  // output.
+  LITERT_ASSERT_OK_AND_ASSIGN(output_buffers[1], input_buffers[1].Duplicate());
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>({3.0f, 4.0f}));
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>({100.0f, 200.0f}));
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  LITERT_ASSERT_OK(output_buffers[0].Read(absl::MakeSpan(output)));
+  EXPECT_THAT(output, ElementsAre(300.0f, 800.0f));
+  LITERT_ASSERT_OK(output_buffers[1].Read(absl::MakeSpan(output)));
+  EXPECT_THAT(output, ElementsAre(100.0f, 200.0f));
+}
+
+// Test for a tensor that is listed twice as output.
+TEST_F(CompiledModelWithDefaultEnvironmentTest, DuplicateOutputTensor) {
+  // The model returns x * y twice. It has no signature, so the interpreter
+  // runs it directly.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      CompiledModel compiled_model,
+      CompiledModel::Create(
+          *env_, testing::GetTestFilePath(kDuplicateOutputTensorModelFileName),
+          HwAccelerators::kCpu));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> input_buffers,
+                              compiled_model.CreateInputBuffers());
+  ASSERT_EQ(input_buffers.size(), 2);
+  LITERT_ASSERT_OK_AND_ASSIGN(std::vector<TensorBuffer> output_buffers,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_EQ(output_buffers.size(), 2);
+
+  LITERT_ASSERT_OK(input_buffers[0].Write<float>({1.0f, 2.0f}));
+  LITERT_ASSERT_OK(input_buffers[1].Write<float>({10.0f, 20.0f}));
+  for (TensorBuffer& output_buffer : output_buffers) {
+    LITERT_ASSERT_OK(output_buffer.Write<float>({-1.0f, -1.0f}));
+  }
+  LITERT_ASSERT_OK(compiled_model.Run(input_buffers, output_buffers));
+
+  for (TensorBuffer& output_buffer : output_buffers) {
+    std::vector<float> output(2);
+    LITERT_ASSERT_OK(output_buffer.Read(absl::MakeSpan(output)));
+    EXPECT_THAT(output, ElementsAre(10.0f, 40.0f));
+  }
+}
+
 TEST_F(CompiledModelWithDefaultEnvironmentTest, ExternalTensorBinding) {
   // Create weight tensor buffer.
   alignas(LITERT_HOST_MEMORY_BUFFER_ALIGNMENT) float kWeightTensor[] = {1.0f,

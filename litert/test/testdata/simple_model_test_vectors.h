@@ -28,6 +28,10 @@ constexpr const char* kModelFileName = "simple_model.tflite";
 constexpr const char* kDynamicModelFileName = "dynamic_add_model.tflite";
 constexpr const char* kConstantOutputTensorModelFileName =
     "constant_output_tensor.tflite";
+constexpr const char* kPassthroughOutputTensorModelFileName =
+    "passthrough_output_tensor.tflite";
+constexpr const char* kDuplicateOutputTensorModelFileName =
+    "duplicate_output_tensor.tflite";
 constexpr const char* kNpuModelFileName = "simple_model_npu.tflite";
 constexpr const char* kQualcommModelFileName = "simple_model_qualcomm.bin";
 constexpr const char* kQualcommUInt16ModelFileName =
