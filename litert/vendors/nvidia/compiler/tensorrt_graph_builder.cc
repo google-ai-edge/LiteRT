@@ -3874,6 +3874,51 @@ Expected<bool> IsFloorModSupported(const Op& op) {
          op.Outputs()[0].ElementType() == litert::ElementType::Int32;
 }
 
+// BITWISE_XOR of int32 tensors (Qwen 4's n-gram hash), as arithmetic.
+Expected<bool> IsBitwiseXorSupported(const Op& op) {
+  return IsFloorModSupported(op);
+}
+
+// The largest constant table a GATHER takes into the engine: Qwen 4's PLE
+// tables of a real export (hundreds of millions of rows) stay on LiteRT's
+// CPU, a reduced model's or an embedding of this size runs in the engine.
+constexpr size_t kMaxGatherTableBytes = size_t{256} << 20;
+
+// GATHER along one axis (batch_dims 0) of a float or int32 tensor, or of a
+// constant table up to kMaxGatherTableBytes, with int32 indices.
+Expected<bool> IsGatherSupported(const Op& op) {
+  if (op.Inputs().size() != 2 || op.Outputs().size() != 1) {
+    return false;
+  }
+  int32_t axis = 0, batch_dims = 0;
+  if (LiteRtGetGatherAxisOption(op.Get(), &axis) != kLiteRtStatusOk ||
+      LiteRtGetGatherBatchDimsOption(op.Get(), &batch_dims) !=
+          kLiteRtStatusOk ||
+      batch_dims != 0) {
+    return false;
+  }
+  const Tensor data = op.Inputs()[0];
+  const Tensor indices = op.Inputs()[1];
+  LITERT_ASSIGN_OR_RETURN(bool data_static, IsStaticTensorRtTensor(data));
+  LITERT_ASSIGN_OR_RETURN(bool indices_static, IsStaticTensorRtTensor(indices));
+  LITERT_ASSIGN_OR_RETURN(bool output_static,
+                          IsStaticTensorRtTensor(op.Outputs()[0]));
+  if (!data_static || !indices_static || !output_static ||
+      indices.ElementType() != litert::ElementType::Int32 ||
+      indices.HasWeights() ||
+      (data.ElementType() != litert::ElementType::Int32 &&
+       !IsFloatLike(data.ElementType())) ||
+      data.QTypeId() != kLiteRtQuantizationNone) {
+    return false;
+  }
+  LITERT_ASSIGN_OR_RETURN(auto type, data.RankedTensorType());
+  const int rank = static_cast<int>(type.Layout().Rank());
+  if (axis < 0) axis += rank;
+  if (axis < 0 || axis >= rank) return false;
+  return !data.HasWeights() ||
+         data.Weights().Bytes().size() <= kMaxGatherTableBytes;
+}
+
 Expected<bool> IsConv2dSupported(const Op& op) {
   if (op.Inputs().size() < 2 || op.Inputs().size() > 3 ||
       op.Outputs().size() != 1) {
@@ -7193,6 +7238,9 @@ class TensorRtGraphBuilder {
         break;
       case kLiteRtOpCodeTflLogicalAnd:
         operation = nvinfer1::ElementWiseOperation::kAND;
+        break;
+      case kLiteRtOpCodeTflLogicalOr:
+        operation = nvinfer1::ElementWiseOperation::kOR;
         break;
       default:
         return Error(kLiteRtStatusErrorUnsupported,
@@ -10692,6 +10740,88 @@ class TensorRtGraphBuilder {
     if (layer == nullptr || layer->getOutput(0) == nullptr) {
       return Error(kLiteRtStatusErrorCompilation,
                    "Failed to add TensorRT reduce-max layer");
+    }
+    return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
+  }
+
+  // a ^ b of int32 tensors bit by bit, TensorRT having no integer bitwise
+  // operation: bit k of x (k < 31) is floor(x / 2^k) - 2 floor(x / 2^(k+1)),
+  // bit 31 is x < 0, and a bit of the result is p + q - 2 p q. TensorRT fuses
+  // the elementwise layers into one kernel.
+  Expected<void> LowerBitwiseXor(const Op& op) {
+    LITERT_ASSIGN_OR_RETURN(auto* a, GetTensor(op.Inputs()[0]));
+    LITERT_ASSIGN_OR_RETURN(auto* b, GetTensor(op.Inputs()[1]));
+    LITERT_RETURN_IF_ERROR(MatchElementwiseRanks(a, b));
+    const int rank = a->getDimensions().nbDims;
+    const auto scalar = [&](int32_t value) -> nvinfer1::ITensor* {
+      owned_weights_.emplace_back(sizeof(int32_t));
+      std::memcpy(owned_weights_.back().data(), &value, sizeof(value));
+      nvinfer1::Dims dims{};
+      dims.nbDims = rank;
+      for (int i = 0; i < rank; ++i) dims.d[i] = 1;
+      auto* layer = network_->addConstant(
+          dims, nvinfer1::Weights{nvinfer1::DataType::kINT32,
+                                  owned_weights_.back().data(), 1});
+      return layer == nullptr ? nullptr : layer->getOutput(0);
+    };
+    using Ew = nvinfer1::ElementWiseOperation;
+    const auto ew = [&](nvinfer1::ITensor* x, nvinfer1::ITensor* y,
+                        Ew operation) -> nvinfer1::ITensor* {
+      if (x == nullptr || y == nullptr) return nullptr;
+      auto* layer = network_->addElementWise(*x, *y, operation);
+      return layer == nullptr ? nullptr : layer->getOutput(0);
+    };
+    const auto bit = [&](nvinfer1::ITensor* x, int k) -> nvinfer1::ITensor* {
+      if (k == 31) {
+        auto* negative = ew(x, scalar(0), Ew::kLESS);
+        if (negative == nullptr) return nullptr;
+        auto* cast = network_->addCast(*negative, nvinfer1::DataType::kINT32);
+        return cast == nullptr ? nullptr : cast->getOutput(0);
+      }
+      auto* low = ew(x, scalar(int32_t{1} << k), Ew::kFLOOR_DIV);
+      nvinfer1::ITensor* high = nullptr;
+      if (k < 30) {
+        high = ew(x, scalar(int32_t{1} << (k + 1)), Ew::kFLOOR_DIV);
+      } else {
+        // floor(x / 2^31), 2^31 not being an int32: -1 for x < 0, else 0.
+        auto* negative = ew(x, scalar(0), Ew::kLESS);
+        auto* cast =
+            negative == nullptr
+                ? nullptr
+                : network_->addCast(*negative, nvinfer1::DataType::kINT32);
+        high = cast == nullptr ? nullptr
+                               : ew(scalar(0), cast->getOutput(0), Ew::kSUB);
+      }
+      return ew(low, ew(high, scalar(2), Ew::kPROD), Ew::kSUB);
+    };
+    nvinfer1::ITensor* result = nullptr;
+    for (int k = 0; k < 32; ++k) {
+      auto* p = bit(a, k);
+      auto* q = bit(b, k);
+      auto* x = ew(ew(p, q, Ew::kSUM),
+                   ew(scalar(2), ew(p, q, Ew::kPROD), Ew::kPROD), Ew::kSUB);
+      auto* term =
+          ew(x, scalar(static_cast<int32_t>(uint32_t{1} << k)), Ew::kPROD);
+      result = result == nullptr ? term : ew(result, term, Ew::kSUM);
+      if (result == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add the TensorRT layers of BITWISE_XOR");
+      }
+    }
+    return SetOutputTensor(op.Outputs()[0], result);
+  }
+
+  // GATHER along `axis` (batch_dims 0, IsGatherSupported).
+  Expected<void> LowerGather(const Op& op) {
+    LITERT_ASSIGN_OR_RETURN(auto* data, GetTensor(op.Inputs()[0]));
+    LITERT_ASSIGN_OR_RETURN(auto* indices, GetTensor(op.Inputs()[1]));
+    int32_t axis = 0;
+    LITERT_RETURN_IF_ERROR(LiteRtGetGatherAxisOption(op.Get(), &axis));
+    if (axis < 0) axis += data->getDimensions().nbDims;
+    auto* layer = network_->addGather(*data, *indices, axis);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add TensorRT gather layer");
     }
     return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
   }
@@ -15885,7 +16015,12 @@ class TensorRtGraphBuilder {
       case kLiteRtOpCodeTflNotEqual:
       case kLiteRtOpCodeTflEqual:
       case kLiteRtOpCodeTflLogicalAnd:
+      case kLiteRtOpCodeTflLogicalOr:
         return LowerComparison(op);
+      case kLiteRtOpCodeTflBitwiseXor:
+        return LowerBitwiseXor(op);
+      case kLiteRtOpCodeTflGather:
+        return LowerGather(op);
       case kLiteRtOpCodeTflRelu:
       case kLiteRtOpCodeTflRelu6:
       case kLiteRtOpCodeTflReluN1To1:
@@ -16118,7 +16253,14 @@ bool IsTensorRtOpSupported(const Op& op) {
       result = IsComparisonSupported(op);
       break;
     case kLiteRtOpCodeTflLogicalAnd:
+    case kLiteRtOpCodeTflLogicalOr:
       result = IsLogicalAndSupported(op);
+      break;
+    case kLiteRtOpCodeTflBitwiseXor:
+      result = IsBitwiseXorSupported(op);
+      break;
+    case kLiteRtOpCodeTflGather:
+      result = IsGatherSupported(op);
       break;
     case kLiteRtOpCodeTflRelu:
     case kLiteRtOpCodeTflRelu6:

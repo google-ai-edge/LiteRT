@@ -4413,6 +4413,82 @@ TEST(TensorRtGraphBuilderTest, Int8CachePrefillAttentionBlock) {
   }
 }
 
+TEST(TensorRtGraphBuilderTest, BitwiseXorOfAnyInt32) {
+  // Qwen 4's n-gram hash XORs token products: BITWISE_XOR of int32 tensors,
+  // which TensorRT computes bit by bit, over values of every sign and size.
+  constexpr int kCount = 64;
+  std::vector<int32_t> a(kCount), b(kCount);
+  uint32_t state = 12345u;
+  for (int i = 0; i < kCount; ++i) {
+    state = state * 1664525u + 1013904223u;
+    a[i] = static_cast<int32_t>(state);
+    state = state * 1664525u + 1013904223u;
+    b[i] = static_cast<int32_t>(state >> (i % 32));
+  }
+  a[0] = INT32_MIN;
+  b[0] = -1;
+  a[1] = INT32_MAX;
+  b[1] = INT32_MIN;
+  a[2] = 0;
+  b[2] = -7;
+  LiteRtModelT model;
+  auto& graph = model.EmplaceSubgraph();
+  const auto tensor = [&](const char* name) -> LiteRtTensorT& {
+    auto& t = graph.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1, kCount}));
+    t.SetName(name);
+    return t;
+  };
+  auto& lhs = tensor("lhs");
+  auto& rhs = tensor("rhs");
+  auto& out = tensor("xor");
+  graph.Inputs().push_back(&lhs);
+  graph.Inputs().push_back(&rhs);
+  graph.Outputs().push_back(&out);
+  auto& op = graph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflBitwiseXor);
+  litert::internal::AttachInput(&lhs, op);
+  litert::internal::AttachInput(&rhs, op);
+  litert::internal::AttachOutput(&out, op);
+  auto built = litert::nvidia::BuildTensorRtEngine(
+      litert::compiler::Subgraph(LrtGetCompilerContext(), &graph));
+  ASSERT_TRUE(built.HasValue()) << built.Error().Message();
+  litert::nvidia::TensorRtLogger logger;
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(runtime->deserializeCudaEngine(
+      built->engine.data(), built->engine.size()));
+  ASSERT_NE(engine, nullptr);
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  std::array<void*, 3> device{};
+  for (auto*& pointer : device) {
+    ASSERT_EQ(cudaMalloc(&pointer, kCount * sizeof(int32_t)), cudaSuccess);
+  }
+  ASSERT_EQ(cudaMemcpy(device[0], a.data(), kCount * 4, cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_EQ(cudaMemcpy(device[1], b.data(), kCount * 4, cudaMemcpyHostToDevice),
+            cudaSuccess);
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[0].c_str(), device[0]));
+  ASSERT_TRUE(
+      context->setTensorAddress(built->input_names[1].c_str(), device[1]));
+  ASSERT_TRUE(
+      context->setTensorAddress(built->output_names[0].c_str(), device[2]));
+  ASSERT_TRUE(context->enqueueV3(nullptr));
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  std::vector<int32_t> got(kCount);
+  ASSERT_EQ(
+      cudaMemcpy(got.data(), device[2], kCount * 4, cudaMemcpyDeviceToHost),
+      cudaSuccess);
+  for (int i = 0; i < kCount; ++i) {
+    EXPECT_EQ(got[i], a[i] ^ b[i]) << i << ": " << a[i] << " ^ " << b[i];
+  }
+  for (void* pointer : device) EXPECT_EQ(cudaFree(pointer), cudaSuccess);
+}
+
 TEST(TensorRtGraphBuilderTest, SdpaTransposedRowsOfAFewTokens) {
   // odml.sdpa_transposed with several query heads per KV head over the caches
   // an odml.cache_update writes in place (Gemma 4 26B's global layers: 16

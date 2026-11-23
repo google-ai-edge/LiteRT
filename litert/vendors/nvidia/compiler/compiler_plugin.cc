@@ -557,6 +557,20 @@ bool EnvEnableOpListIsSet() {
   return value != nullptr && value[0] != '\0';
 }
 
+// The ops of Qwen 4's PLE n-gram hash the default policy otherwise leaves on
+// the CPU: in a subgraph with a BITWISE_XOR only (the Gemma 4 vision encoders
+// hold LOGICAL_OR and GATHER ops that keep their place).
+bool IsHashOp(const litert::compiler::Op& op) {
+  switch (op.Code()) {
+    case kLiteRtOpCodeTflBitwiseXor:
+    case kLiteRtOpCodeTflLogicalOr:
+    case kLiteRtOpCodeTflGather:
+      return true;
+    default:
+      return false;
+  }
+}
+
 bool IsPolicyAllowedOp(const litert::compiler::Op& op, PartitionPolicy policy) {
   if (EnvEnableOpListIsSet()) {
     return EnvOpListContains("LITERT_NVIDIA_TENSORRT_ENABLE_OPS", op);
@@ -700,6 +714,8 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION",
       // The batched decode engines built beside each decode engine.
       "LITERT_NVIDIA_DISPATCH_SLOTS",
+      // Qwen 4's n-gram hash and lookups in the engine.
+      "LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
     if (const char* value = std::getenv(name); value != nullptr) {
@@ -1652,12 +1668,14 @@ std::vector<LiteRtOpWithPartitionIndex> FilterSmallPartitions(
 }
 
 // Qwen 4's PLE n-gram hash (BITWISE_XOR of token products, FLOOR_MOD by the
-// table sizes, offsets, and the table GATHERs) runs on LiteRT's CPU with its
-// tables. Its integer ops that TensorRT could take (SLICE, MUL, EQUAL, SELECT,
-// FLOOR_MOD, ADD, CONCATENATION, RESHAPE) would split the layers around every
-// PLE layer into engines of their own (GPU -> CPU -> GPU): an integer op all of
-// whose results go only to ops on the CPU stays on the CPU, repeated up the
-// chain. Only in subgraphs with a BITWISE_XOR (no other model has one).
+// table sizes, offsets, and the table GATHERs) runs on LiteRT's CPU, or with
+// LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH in the engine (IsHashOp) but for
+// the lookups of tables too large for it (IsGatherSupported). The integer ops
+// feeding a lookup on the CPU would put GPU
+// islands between CPU ops and split the layers around every PLE layer into
+// engines of their own (GPU -> CPU -> GPU): an integer op all of whose
+// results go only to ops on the CPU stays on the CPU, repeated up the chain.
+// Only in subgraphs with a BITWISE_XOR (no other model has one).
 std::vector<LiteRtOpWithPartitionIndex> KeepIntegerChainsOnCpu(
     const litert::compiler::Subgraph& graph,
     const std::vector<LiteRtOpWithPartitionIndex>& candidate_ops) {
@@ -1969,10 +1987,36 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
   std::map<LiteRtOpCode, int> cap_rejected_counts;
   std::vector<LiteRtOpWithPartitionIndex> candidate_ops;
   const size_t max_selected_ops = MaxSelectedOpsPerSubgraph(policy);
+  // Qwen 4's n-gram hash (a BITWISE_XOR, which no other model has): with
+  // LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH=1 its ops and its table lookups
+  // run in the engine (IsHashOp), the lookups of tables too large for it on
+  // the CPU (KeepIntegerChainsOnCpu). Off by default: on the RTX 5080 the
+  // wide artifact's decode step measured slower that way (0.60-1.09 ms
+  // against 0.54-0.66 ms over five alternating runs), the engine's GEMVs
+  // slower, for a cause not found yet.
+  // A lookup whose result is a graph output (the n-gram context state, which
+  // LiteRT-LM binds in place, input and output one buffer) stays on the CPU:
+  // the engine could write it while its other readers still read the input.
+  bool has_hash = false;
+  for (const auto& op : graph.Ops()) {
+    has_hash |= op.Code() == kLiteRtOpCodeTflBitwiseXor;
+  }
+  std::unordered_set<LiteRtTensor> graph_outputs;
+  for (const auto& output : graph.Outputs()) graph_outputs.insert(output.Get());
+  const bool engine_hash =
+      EnvEnabled("LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
+                 /*default_value=*/false);
+  const auto engine_hash_op = [&](const litert::compiler::Op& op) {
+    return engine_hash && has_hash && policy == PartitionPolicy::kDefault &&
+           IsHashOp(op) &&
+           !(op.Code() == kLiteRtOpCodeTflGather &&
+             graph_outputs.count(op.Outputs()[0].Get()) != 0);
+  };
   for (const auto& op : graph.Ops()) {
     ++total_ops;
     const bool supported = litert::nvidia::IsTensorRtOpSupported(op);
-    const bool policy_allowed = IsPolicyAllowedOp(op, policy);
+    const bool policy_allowed =
+        IsPolicyAllowedOp(op, policy) || engine_hash_op(op);
     const bool env_disabled = IsEnvDisabledOp(op);
     if (supported && policy_allowed && !env_disabled) {
       if (max_selected_ops == 0 || candidate_ops.size() < max_selected_ops) {
