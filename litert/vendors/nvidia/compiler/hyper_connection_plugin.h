@@ -41,8 +41,11 @@ struct HcMixPluginParams {
   float eps = 1e-6f;
   // 1: INT4 weights in blocks of 32 with FP16 scales; 0: BF16 weights.
   int32_t int4 = 0;
+  // The rows of an extra projection of the normed streams (0: none).
+  int32_t extra = 0;
   HcMixWeightsPlace down;
   HcMixWeightsPlace up;
+  HcMixWeightsPlace more;  // the extra projection's
 };
 
 // Qwen 4's hyper-connection mix as one plugin (trtllm/hyper_connection.h):
@@ -57,6 +60,10 @@ struct HcMixPluginParams {
 //           BF16: the down weights BF16 [low_rank * streams * hidden] and
 //           the up weights BF16 [streams * hidden * low_rank]
 //   outputs mixed BF16 [.., hidden], normed BF16 like x
+// With `extra` rows, an extra projection of the normed streams runs in the
+// same launch (the combine's injection weights read them too): its weights
+// (and INT4 scales) [extra, streams * hidden] are the last inputs, in the
+// forms of the other two, and its result BF16 [.., extra] the third output.
 // Null when the kernel does not take the shapes.
 nvinfer1::IPluginV3* CreateHcMixPlugin(
     const HcMixPluginParams& params) noexcept;

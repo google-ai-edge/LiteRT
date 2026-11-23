@@ -54,14 +54,26 @@ constexpr char kPluginVersion[] = "1";
 constexpr char kPluginNamespace[] = "";
 
 // The plugin's fields in the order of FieldValues.
-constexpr int kIntFields = 4;
+constexpr int kIntFields = 5;
 constexpr int kFloatFields = 2;
-constexpr int kWideFields = 6;
+constexpr int kWideFields = 9;
 constexpr int kFields = kIntFields + kFloatFields + kWideFields;
-constexpr std::array<const char*, kFields> kFieldNames = {
-    "streams",           "hidden",     "low_rank",         "int4",
-    "down_scale",        "eps",        "down_granule",     "down_weight_offset",
-    "down_scale_offset", "up_granule", "up_weight_offset", "up_scale_offset"};
+constexpr std::array<const char*, kFields> kFieldNames = {"streams",
+                                                          "hidden",
+                                                          "low_rank",
+                                                          "int4",
+                                                          "extra",
+                                                          "down_scale",
+                                                          "eps",
+                                                          "down_granule",
+                                                          "down_weight_offset",
+                                                          "down_scale_offset",
+                                                          "up_granule",
+                                                          "up_weight_offset",
+                                                          "up_scale_offset",
+                                                          "extra_granule",
+                                                          "extra_weight_offset",
+                                                          "extra_scale_offset"};
 
 struct FieldValues {
   std::array<int32_t, kIntFields> ints{};
@@ -70,10 +82,11 @@ struct FieldValues {
 
   static FieldValues Of(const HcMixPluginParams& p) noexcept {
     FieldValues v;
-    v.ints = {p.streams, p.hidden, p.low_rank, p.int4};
+    v.ints = {p.streams, p.hidden, p.low_rank, p.int4, p.extra};
     v.floats = {p.down_scale, p.eps};
     v.wides = {p.down.granule, p.down.weight_offset, p.down.scale_offset,
-               p.up.granule,   p.up.weight_offset,   p.up.scale_offset};
+               p.up.granule,   p.up.weight_offset,   p.up.scale_offset,
+               p.more.granule, p.more.weight_offset, p.more.scale_offset};
     return v;
   }
 
@@ -83,10 +96,12 @@ struct FieldValues {
     p.hidden = ints[1];
     p.low_rank = ints[2];
     p.int4 = ints[3];
+    p.extra = ints[4];
     p.down_scale = floats[0];
     p.eps = floats[1];
     p.down = {wides[0], wides[1], wides[2]};
     p.up = {wides[3], wides[4], wides[5]};
+    p.more = {wides[6], wides[7], wides[8]};
     return p;
   }
 
@@ -112,6 +127,7 @@ struct FieldValues {
     if (fields == nullptr || fields->fields == nullptr) return false;
     wides[2] = -1;
     wides[5] = -1;
+    wides[8] = -1;
     for (int32_t i = 0; i < fields->nbFields; ++i) {
       const auto& field = fields->fields[i];
       if (field.name == nullptr || field.data == nullptr || field.length != 1) {
@@ -191,29 +207,31 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
     return kPluginNamespace;
   }
 
-  int32_t getNbOutputs() const noexcept override { return 2; }
+  int32_t getNbOutputs() const noexcept override { return OutputCount(); }
 
   int32_t getOutputDataTypes(nvinfer1::DataType* output_types,
                              int32_t num_outputs,
                              const nvinfer1::DataType* input_types,
                              int32_t num_inputs) const noexcept override {
     if (output_types == nullptr || input_types == nullptr ||
-        num_inputs != InputCount() || num_outputs != 2) {
+        num_inputs != InputCount() || num_outputs != OutputCount()) {
       return 1;
     }
     for (int32_t i = 0; i < num_inputs; ++i) {
       if (input_types[i] != InputType(i)) return 1;
     }
-    output_types[0] = nvinfer1::DataType::kBF16;
-    output_types[1] = nvinfer1::DataType::kBF16;
+    for (int32_t i = 0; i < num_outputs; ++i) {
+      output_types[i] = nvinfer1::DataType::kBF16;
+    }
     return 0;
   }
 
   bool supportsFormatCombination(
       int32_t position, const nvinfer1::DynamicPluginTensorDesc* in_out,
       int32_t num_inputs, int32_t num_outputs) noexcept override {
-    if (in_out == nullptr || num_inputs != InputCount() || num_outputs != 2 ||
-        position < 0 || position >= num_inputs + num_outputs) {
+    if (in_out == nullptr || num_inputs != InputCount() ||
+        num_outputs != OutputCount() || position < 0 ||
+        position >= num_inputs + num_outputs) {
       return false;
     }
     const nvinfer1::DataType type =
@@ -229,13 +247,20 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
       nvinfer1::IExprBuilder& expr_builder) noexcept override {
     static_cast<void>(shape_inputs);
     if (inputs == nullptr || outputs == nullptr || num_inputs != InputCount() ||
-        num_shape_inputs != 0 || num_outputs != 2 || inputs[0].nbDims < 1) {
+        num_shape_inputs != 0 || num_outputs != OutputCount() ||
+        inputs[0].nbDims < 1) {
       return 1;
     }
+    const int last = inputs[0].nbDims - 1;
     outputs[0] = inputs[0];
-    outputs[0].d[outputs[0].nbDims - 1] = expr_builder.constant(params_.hidden);
+    outputs[0].d[last] = expr_builder.constant(params_.hidden);
     outputs[1] = inputs[0];
-    return outputs[0].d[outputs[0].nbDims - 1] != nullptr ? 0 : 1;
+    if (params_.extra > 0) {
+      outputs[2] = inputs[0];
+      outputs[2].d[last] = expr_builder.constant(params_.extra);
+      if (outputs[2].d[last] == nullptr) return 1;
+    }
+    return outputs[0].d[last] != nullptr ? 0 : 1;
   }
 
   int32_t configurePlugin(const nvinfer1::DynamicPluginTensorDesc* inputs,
@@ -243,7 +268,7 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) noexcept override {
     return inputs != nullptr && outputs != nullptr &&
-                   num_inputs == InputCount() && num_outputs == 2
+                   num_inputs == InputCount() && num_outputs == OutputCount()
                ? 0
                : 1;
   }
@@ -253,7 +278,7 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
                         const nvinfer1::PluginTensorDesc* outputs,
                         int32_t num_outputs) noexcept override {
     return inputs != nullptr && outputs != nullptr &&
-                   num_inputs == InputCount() && num_outputs == 2
+                   num_inputs == InputCount() && num_outputs == OutputCount()
                ? 0
                : 1;
   }
@@ -263,7 +288,8 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
                           const nvinfer1::DynamicPluginTensorDesc* outputs,
                           int32_t num_outputs) const noexcept override {
     static_cast<void>(outputs);
-    if (inputs == nullptr || num_inputs != InputCount() || num_outputs != 2) {
+    if (inputs == nullptr || num_inputs != InputCount() ||
+        num_outputs != OutputCount()) {
       return 0;
     }
     const LiteRtNvidiaHcMixParams p =
@@ -292,6 +318,23 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
     const void* up =
         Place(params_.up, input_desc[up_weights].dims, inputs[up_weights],
               params_.up.weight_offset, weight_bytes);
+    // The extra projection's inputs follow the up projection's.
+    const int more_weights = int4 ? 6 : 4;
+    const size_t more_values = static_cast<size_t>(params_.extra) * Width();
+    const void* more = nullptr;
+    const void* more_scales = nullptr;
+    if (params_.extra > 0) {
+      more = Place(params_.more, input_desc[more_weights].dims,
+                   inputs[more_weights], params_.more.weight_offset,
+                   int4 ? more_values / 2 : more_values * 2);
+      if (int4) {
+        more_scales = params_.more.scale_offset >= 0
+                          ? Place(params_.more, input_desc[7].dims, inputs[7],
+                                  params_.more.scale_offset,
+                                  more_values / 32 * sizeof(uint16_t))
+                          : inputs[7];
+      }
+    }
     const void* down_scales = nullptr;
     const void* up_scales = nullptr;
     if (int4) {
@@ -307,14 +350,19 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
     cudaError_t status = cudaErrorInvalidValue;
     // A null weights pointer: the input does not hold this plugin's weights.
     if (down != nullptr && up != nullptr &&
-        (!int4 || (down_scales != nullptr && up_scales != nullptr))) {
-      status = LiteRtNvidiaLaunchHcMix(
+        (!int4 || (down_scales != nullptr && up_scales != nullptr)) &&
+        (params_.extra == 0 ||
+         (more != nullptr && (!int4 || more_scales != nullptr)))) {
+      status = LiteRtNvidiaLaunchHcMixExtra(
           &p, static_cast<const __nv_bfloat16*>(inputs[0]),
           static_cast<const float*>(inputs[1]), down,
           static_cast<const __half*>(down_scales), up,
-          static_cast<const __half*>(up_scales),
+          static_cast<const __half*>(up_scales), more,
+          static_cast<const __half*>(more_scales),
           static_cast<__nv_bfloat16*>(outputs[0]),
-          static_cast<__nv_bfloat16*>(outputs[1]), state_, workspace, stream);
+          static_cast<__nv_bfloat16*>(outputs[1]),
+          params_.extra > 0 ? static_cast<__nv_bfloat16*>(outputs[2]) : nullptr,
+          state_, workspace, stream);
     }
     if (status != cudaSuccess) {
       std::fprintf(stderr, "[%s] CUDA launch failed: %s (%d): %s\n",
@@ -348,17 +396,24 @@ class HcMixPlugin final : public nvinfer1::IPluginV3,
             params_.low_rank,
             params_.down_scale,
             params_.eps,
-            params_.int4};
+            params_.int4,
+            params_.extra};
   }
 
-  int32_t InputCount() const noexcept { return params_.int4 != 0 ? 6 : 4; }
+  // A projection is two inputs with INT4 weights (weights, scales), else one.
+  int32_t InputCount() const noexcept {
+    return 2 + (params_.int4 != 0 ? 2 : 1) * (params_.extra > 0 ? 3 : 2);
+  }
+
+  int32_t OutputCount() const noexcept { return params_.extra > 0 ? 3 : 2; }
 
   nvinfer1::DataType InputType(int32_t index) const noexcept {
     if (index == 0) return nvinfer1::DataType::kBF16;
     if (index == 1) return nvinfer1::DataType::kFLOAT;
     if (params_.int4 == 0) return nvinfer1::DataType::kBF16;
-    const HcMixWeightsPlace& place = index < 4 ? params_.down : params_.up;
-    const bool scales = index == 3 || index == 5;
+    const HcMixWeightsPlace& place =
+        index < 4 ? params_.down : (index < 6 ? params_.up : params_.more);
+    const bool scales = index % 2 == 1;
     if (place.granule != 0 && (!scales || place.scale_offset >= 0)) {
       return nvinfer1::DataType::kINT64;
     }
@@ -469,6 +524,8 @@ nvinfer1::IPluginV3* CreateHcMixPlugin(
   if ((params.int4 != 0 && params.int4 != 1) ||
       !ValidPlace(params.down, params.int4 != 0) ||
       !ValidPlace(params.up, params.int4 != 0) ||
+      !ValidPlace(params.more, params.int4 != 0) ||
+      (params.extra == 0 && params.more.granule != 0) ||
       !(params.down_scale == params.down_scale)) {
     return nullptr;
   }
@@ -480,7 +537,8 @@ nvinfer1::IPluginV3* CreateHcMixPlugin(
                                        params.low_rank,
                                        params.down_scale,
                                        params.eps,
-                                       params.int4};
+                                       params.int4,
+                                       params.extra};
   if (!LiteRtNvidiaHcMixSupports(&one)) return nullptr;
   return new (std::nothrow) HcMixPlugin(params);
 }

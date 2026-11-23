@@ -13322,6 +13322,9 @@ class TensorRtGraphBuilder {
     // The tensors that hold the normed streams, in any shape; ops outside
     // the mix may read them (the combine's injection projection does).
     std::vector<Tensor> normed;
+    // A projection of the normed streams outside the mix that its launch
+    // computes too (FindHcMixExtra): its weights and its result.
+    std::optional<Tensor> extra_weights, extra_output;
   };
 
   // The op that defines `tensor` past RESHAPEs, which join `reshapes`. With
@@ -13670,6 +13673,15 @@ class TensorRtGraphBuilder {
         }
       }
       if (!ordered) continue;
+      if (const auto extra = FindHcMixExtra(*block, inside, anchor);
+          extra.has_value()) {
+        block->extra_weights = extra->Inputs()[1];
+        block->extra_output = extra->Outputs()[0];
+        const auto rows = extra->Inputs()[1].RankedTensorType();
+        block->params.extra = rows->Layout().Dimensions()[0];
+        members.push_back(extra->Get());
+        hc_mix_projections_.insert(extra->Get());
+      }
       unlowered_ops_.insert(members.begin(), members.end());
       hc_mix_projections_.insert(hc_mix_candidate_projections_.begin(),
                                  hc_mix_candidate_projections_.end());
@@ -13684,6 +13696,52 @@ class TensorRtGraphBuilder {
                  found, candidates);
     }
     return {};
+  }
+
+  // A fully connected op outside a matched mix that projects its normed
+  // streams onto a few rows (the combine's injection weights, [hc, streams *
+  // hidden]) with weights of the mix's type: the mix's launch computes it
+  // too, where it was a GEMV launch of its own for a few kilobytes. Only
+  // when everything that reads its result comes after the mix's plugin.
+  std::optional<Op> FindHcMixExtra(const HcMixBlock& block,
+                                   const std::unordered_set<LiteRtOp>& inside,
+                                   LiteRtOp anchor) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION_COMBINE",
+                    /*default_value=*/true)) {
+      return std::nullopt;
+    }
+    const int64_t width =
+        static_cast<int64_t>(block.params.streams) * block.params.hidden;
+    for (const Tensor& normed : block.normed) {
+      for (const auto& use : normed.Uses()) {
+        const Op& user = use.user;
+        if (use.user_arg_ind != 0 || inside.count(user.Get()) != 0 ||
+            user.Code() != kLiteRtOpCodeTflFullyConnected ||
+            user.Inputs().size() < 2 || op_order_.count(user.Get()) == 0 ||
+            unlowered_ops_.count(user.Get()) != 0) {
+          continue;
+        }
+        const Tensor weights = user.Inputs()[1];
+        const auto type = weights.RankedTensorType();
+        if (!type || type->Layout().Rank() != 2) continue;
+        const int64_t rows = type->Layout().Dimensions()[0];
+        LiteRtNvidiaHcMixParams with = block.params;
+        with.extra = static_cast<int32_t>(rows);
+        if (rows < 1 || rows > 16 || !IsHcMixProjection(user, rows, width) ||
+            (block.params.int4 != 0 ? !IsBlockwiseInt4Weights(weights)
+                                    : !IsUnquantizedFloat32(weights)) ||
+            !LiteRtNvidiaHcMixSupports(&with)) {
+          continue;
+        }
+        bool after = true;
+        for (const auto& reader : user.Outputs()[0].Uses()) {
+          after = after && op_order_.count(reader.user.Get()) != 0 &&
+                  op_order_[reader.user.Get()] > op_order_[anchor];
+        }
+        if (after) return user;
+      }
+    }
+    return std::nullopt;
   }
 
   // The weights and scales inputs of one projection of a mix's plugin: INT4
@@ -13830,6 +13888,15 @@ class TensorRtGraphBuilder {
     params.int4 = p.int4;
     params.down = down.place;
     params.up = up.place;
+    HcMixWeights more;
+    if (block.extra_weights.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(
+          more, AddHcMixWeights(
+                    *block.extra_weights, int4,
+                    "_" + std::to_string(block.extra_weights->TensorIndex())));
+      params.extra = p.extra;
+      params.more = more.place;
+    }
     TrtPtr<nvinfer1::IPluginV3> plugin(CreateHcMixPlugin(params));
     if (!plugin) {
       return Error(kLiteRtStatusErrorCompilation,
@@ -13840,6 +13907,11 @@ class TensorRtGraphBuilder {
     const int32_t up_input = static_cast<int32_t>(inputs.size());
     inputs.push_back(up.weights);
     if (int4) inputs.push_back(up.scales);
+    const int32_t more_input = static_cast<int32_t>(inputs.size());
+    if (block.extra_weights.has_value()) {
+      inputs.push_back(more.weights);
+      if (int4) inputs.push_back(more.scales);
+    }
     auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
         *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
     if (layer == nullptr || layer->getOutput(0) == nullptr ||
@@ -13861,13 +13933,33 @@ class TensorRtGraphBuilder {
         holder_readers_.push_back({layer, *up.segment, false, up_input + 1});
       }
     }
+    if (more.segment.has_value()) {
+      holder_readers_.push_back({layer, *more.segment, false, more_input});
+      if (more.scales_in_store) {
+        holder_readers_.push_back(
+            {layer, *more.segment, false, more_input + 1});
+      }
+    }
     const std::string name = "cuda_hc_mix" + suffix;
     layer->setName(KeepName(UniqueName(name)));
-    for (int o = 0; o < 2; ++o) {
+    const int outputs = block.extra_weights.has_value() ? 3 : 2;
+    for (int o = 0; o < outputs; ++o) {
+      if (layer->getOutput(o) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "The hyper-connection mix plugin lacks an output");
+      }
       layer->getOutput(o)->setName(
           KeepName(UniqueName(name + "_" + std::to_string(o))));
     }
     owned_plugins_.push_back(std::move(plugin));
+    if (block.extra_output.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(auto type,
+                              block.extra_output->RankedTensorType());
+      LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
+      LITERT_ASSIGN_OR_RETURN(auto* reshaped,
+                              ReshapeTensor(layer->getOutput(2), dims));
+      LITERT_RETURN_IF_ERROR(SetOutputTensor(*block.extra_output, reshaped));
+    }
     for (const Tensor& normed : block.normed) {
       LITERT_ASSIGN_OR_RETURN(auto type, normed.RankedTensorType());
       LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
@@ -13881,8 +13973,9 @@ class TensorRtGraphBuilder {
                             ReshapeTensor(layer->getOutput(0), out_dims));
     LITERT_LOG(LITERT_INFO,
                "NVIDIA TensorRT-RTX fused CUDA hyper-connection mix: rows=%d "
-               "streams=%d hidden=%d low_rank=%d weights=%s%s",
-               p.rows, p.streams, p.hidden, p.low_rank, int4 ? "int4" : "bf16",
+               "streams=%d hidden=%d low_rank=%d extra=%d weights=%s%s",
+               p.rows, p.streams, p.hidden, p.low_rank, p.extra,
+               int4 ? "int4" : "bf16",
                down.segment.has_value() ? " (weight store)" : "");
     return SetOutputTensor(*block.output, out);
   }

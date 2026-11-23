@@ -719,6 +719,8 @@ std::string BuildCompilerSdkVersion() {
       // =0: Qwen 4's hyper-connection mixes op by op (no existing model has
       // one, so the default changes no engine of theirs).
       "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION",
+      // =0: the combine's injection projection as a GEMV of its own.
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION_COMBINE",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
     if (const char* value = std::getenv(name); value != nullptr) {
