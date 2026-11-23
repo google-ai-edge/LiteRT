@@ -179,6 +179,17 @@ bool StreamCapturing(cudaStream_t stream) {
          status != cudaStreamCaptureStatusNone;
 }
 
+// The paths for Qwen 4's narrow projections (long rows into few outputs,
+// short rows into many); LITERT_NVIDIA_GEMV_NARROW_PATHS=0 turns them off,
+// to time them against the general ones.
+bool NarrowPathsEnabled() {
+  static const bool enabled = [] {
+    const char* value = std::getenv("LITERT_NVIDIA_GEMV_NARROW_PATHS");
+    return value == nullptr || std::strcmp(value, "0") != 0;
+  }();
+  return enabled;
+}
+
 template <int Rows, int Threads, int Gate>
 cudaError_t LaunchDense(const __nv_bfloat16* activation,
                         const uint8_t* weights, const __half* scales,
@@ -212,6 +223,25 @@ cudaError_t LaunchDense(const __nv_bfloat16* activation,
   if constexpr (Threads >= 512) {
     // The long narrow rows' CTAs (LaunchDenseRowsAnyThreads): one row each.
     return launch(std::integral_constant<int, 1>());
+  } else if constexpr (Threads == 32) {
+    // Short rows into many outputs (Qwen 4's hyper-connection up projection,
+    // [10240 x 320], 10 blocks a row): eight rows a CTA left a warp a third
+    // busy over 1280 CTAs; 32 rows a CTA give each busy lane 32 loads in
+    // flight. Only one row of at most 512 inputs into 8192 outputs and more
+    // (a decode step), which no other model's projections are (their sums
+    // keep their order).
+    if constexpr (Rows == 1 && Gate == 0) {
+      if (input_size <= 512 && output_size >= 8192 && NarrowPathsEnabled()) {
+        return launch(std::integral_constant<int, 32>());
+      }
+    }
+    if (output_size >= kDenseMinCtas * kTileRows) {
+      return launch(std::integral_constant<int, kTileRows>());
+    }
+    if (output_size >= kDenseMinCtas * 4) {
+      return launch(std::integral_constant<int, 4>());
+    }
+    return launch(std::integral_constant<int, 2>());
   } else {
     if (output_size >= kDenseMinCtas * kTileRows) {
       return launch(std::integral_constant<int, kTileRows>());
@@ -438,7 +468,7 @@ cudaError_t LaunchDenseFp32(const __nv_bfloat16* activation,
   // 10240 inputs and more into at most 512 outputs, which no other model's
   // projections are (Gemma 4 26B's drafter has [1024 x 8192]: their sums keep
   // their order).
-  if (blocks >= 320 && output_size <= 512) {
+  if (blocks >= 320 && output_size <= 512 && NarrowPathsEnabled()) {
     return LaunchDenseRows<512>(activation, weights, scales, norm, output,
                                 rows, input_size, output_size, gate, stream);
   }
