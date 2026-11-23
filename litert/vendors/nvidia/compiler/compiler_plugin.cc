@@ -716,6 +716,9 @@ std::string BuildCompilerSdkVersion() {
       "LITERT_NVIDIA_DISPATCH_SLOTS",
       // Qwen 4's n-gram hash and lookups in the engine.
       "LITERT_NVIDIA_TENSORRT_ENGINE_NGRAM_HASH",
+      // =0: Qwen 4's hyper-connection mixes op by op (no existing model has
+      // one, so the default changes no engine of theirs).
+      "LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
     if (const char* value = std::getenv(name); value != nullptr) {

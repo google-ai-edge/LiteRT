@@ -55,6 +55,7 @@
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
 #include "litert/vendors/nvidia/compiler/general_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/hyper_connection_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
@@ -75,6 +76,7 @@
 #include "litert/vendors/nvidia/trtllm/gated_delta_net.h"
 #include "litert/vendors/nvidia/trtllm/general_attention.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
+#include "litert/vendors/nvidia/trtllm/hyper_connection.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
 #include "litert/vendors/nvidia/trtllm/qkv_norm_rope.h"
@@ -4440,6 +4442,7 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindCompositeAttentionBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindMoeBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindGatedDeltaNetBlocks(subgraph));
+    LITERT_RETURN_IF_ERROR(FindHcMixBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindQuantRegions(subgraph));
     if (megakernel_body_) {
       LITERT_RETURN_IF_ERROR(LowerMegakernel(subgraph));
@@ -6478,7 +6481,9 @@ class TensorRtGraphBuilder {
           op_order_.find(user.Get()) == op_order_.end() ||
           op_order_[user.Get()] < op_order_[op.Get()] ||
           fused_gemv_outputs_.find(user.Get()) != fused_gemv_outputs_.end() ||
-          gated.count(user.Get()) != 0) {
+          gated.count(user.Get()) != 0 ||
+          // A fused hyper-connection mix computes its own projections.
+          hc_mix_projections_.count(user.Get()) != 0) {
         continue;
       }
       auto info = InspectSubbyteGemvWeights(user.Inputs()[1]);
@@ -13305,6 +13310,583 @@ class TensorRtGraphBuilder {
     return SetOutputTensor(*block.output, out);
   }
 
+  // Qwen 4's hyper-connection mix (trtllm/hyper_connection.h) of the streams
+  // x [.., streams * hidden], matched from its mean over the streams
+  // (FindHcMixBlocks).
+  struct HcMixBlock {
+    LiteRtNvidiaHcMixParams params{};
+    std::optional<Tensor> x;
+    std::vector<float> norm_weight;  // [streams * hidden]
+    std::optional<Tensor> down_weights, up_weights;
+    std::optional<Tensor> output;  // the mean
+    // The tensors that hold the normed streams, in any shape; ops outside
+    // the mix may read them (the combine's injection projection does).
+    std::vector<Tensor> normed;
+  };
+
+  // The op that defines `tensor` past RESHAPEs, which join `reshapes`. With
+  // `single_use`, null unless `tensor` and every reshape's input have one
+  // reader.
+  static std::optional<Op> ProducerPastReshapes(Tensor tensor, bool single_use,
+                                                std::vector<Op>& reshapes) {
+    while (true) {
+      if (single_use && tensor.Uses().size() != 1) return std::nullopt;
+      const auto producer = tensor.GetDefiningOp();
+      if (!producer) return std::nullopt;
+      if (producer->Code() != kLiteRtOpCodeTflReshape ||
+          producer->Inputs().empty() || producer->Outputs().size() != 1) {
+        return *producer;
+      }
+      reshapes.push_back(*producer);
+      tensor = producer->Inputs()[0];
+    }
+  }
+
+  // A fully connected op of a mix: [outputs, inputs] constant weights, no
+  // bias but zeros, no fused activation.
+  static bool IsHcMixProjection(const Op& op, int64_t outputs, int64_t inputs) {
+    if (op.Code() != kLiteRtOpCodeTflFullyConnected || op.Inputs().size() < 2 ||
+        op.Outputs().size() != 1 || !HasNoFusedActivation(op) ||
+        !op.Inputs()[1].HasWeights() ||
+        !TensorHasShape(op.Inputs()[1], {static_cast<int32_t>(outputs),
+                                         static_cast<int32_t>(inputs)})) {
+      return false;
+    }
+    if (op.Inputs().size() < 3) return true;
+    const Tensor bias = op.Inputs()[2];
+    if (!bias.HasWeights() || !IsUnquantizedFloat32(bias)) return false;
+    for (const uint8_t byte : bias.Weights().Bytes()) {
+      if (byte != 0) return false;
+    }
+    return true;
+  }
+
+  // The product of `op` (a MUL, or a DIV by the constant) with a constant
+  // scalar: the factor and the other operand.
+  static std::optional<std::pair<float, Tensor>> ScalarProduct(const Op& op) {
+    if (op.Inputs().size() != 2 || op.Outputs().size() != 1 ||
+        !HasNoFusedActivation(op)) {
+      return std::nullopt;
+    }
+    if (op.Code() == kLiteRtOpCodeTflMul) {
+      for (int i = 0; i < 2; ++i) {
+        if (const auto factor = ReadFloatScalar(op.Inputs()[i]);
+            factor.has_value() && !op.Inputs()[1 - i].HasWeights()) {
+          return std::make_pair(*factor, op.Inputs()[1 - i]);
+        }
+      }
+    } else if (op.Code() == kLiteRtOpCodeTflDiv) {
+      if (const auto divisor = ReadFloatScalar(op.Inputs()[1]);
+          divisor.has_value() && *divisor != 0.0f &&
+          !op.Inputs()[0].HasWeights()) {
+        return std::make_pair(1.0f / *divisor, op.Inputs()[0]);
+      }
+    }
+    return std::nullopt;
+  }
+
+  // Matches a mix from the reduction over its streams, in the spellings of
+  // the Qwen 3.8 export's recipes:
+  //   normed = rms_norm(x as [.., streams, hidden], w) [* per-stream weights]
+  //   t      = silu(scale * fully_connected(normed, down))   scale optional
+  //   u      = logistic(fully_connected(t, up))
+  //   mixed  = mean over the streams of (u * normed), or their sum times
+  //            1 / streams
+  // with reshapes between the shapes and silu as z * logistic(z). Every
+  // intermediate result has its readers within the mix, except the normed
+  // streams. The ops of the mix join `members`; `anchor` is its last op.
+  std::optional<HcMixBlock> MatchHcMix(const Op& reduce,
+                                       std::vector<LiteRtOp>& members,
+                                       LiteRtOp& anchor) {
+    const bool is_mean = reduce.Code() == kLiteRtOpCodeTflMean;
+    if ((!is_mean && reduce.Code() != kLiteRtOpCodeTflSum) ||
+        reduce.Inputs().size() != 2 || reduce.Outputs().size() != 1) {
+      return std::nullopt;
+    }
+    const auto gated_type = reduce.Inputs()[0].RankedTensorType();
+    const auto axes = ReadInt32Constant(reduce.Inputs()[1]);
+    if (!gated_type || !axes || axes->size() != 1) return std::nullopt;
+    const auto gated_dims = gated_type->Layout().Dimensions();
+    const int rank = static_cast<int>(gated_dims.size());
+    if (rank < 2 || ((*axes)[0] != rank - 2 && (*axes)[0] != -2)) {
+      return std::nullopt;
+    }
+    const int64_t streams = gated_dims[rank - 2];
+    const int64_t hidden = gated_dims[rank - 1];
+    int64_t rows = 1;
+    for (int i = 0; i + 2 < rank; ++i) rows *= gated_dims[i];
+    if (streams < 1 || hidden < 1 || rows < 1 || rows > 64) return std::nullopt;
+    const int64_t width = streams * hidden;
+    HcMixBlock block;
+    block.output = reduce.Outputs()[0];
+    anchor = reduce.Get();
+    members.push_back(reduce.Get());
+    if (!is_mean) {
+      const auto uses = block.output->Uses();
+      if (uses.size() != 1) return std::nullopt;
+      const Op& scale = uses[0].user;
+      const auto product = ScalarProduct(scale);
+      if (!product || product->second.Get() != block.output->Get() ||
+          std::fabs(product->first * static_cast<float>(streams) - 1.0f) >
+              1e-6f) {
+        return std::nullopt;
+      }
+      members.push_back(scale.Get());
+      anchor = scale.Get();
+      block.output = scale.Outputs()[0];
+    }
+    const auto join = [&](const std::vector<Op>& ops) {
+      for (const Op& op : ops) members.push_back(op.Get());
+    };
+    // u * normed.
+    std::vector<Op> reshapes;
+    const auto gated =
+        ProducerPastReshapes(reduce.Inputs()[0], /*single_use=*/true, reshapes);
+    if (!gated || gated->Code() != kLiteRtOpCodeTflMul ||
+        gated->Inputs().size() != 2 || !HasNoFusedActivation(*gated)) {
+      return std::nullopt;
+    }
+    join(reshapes);
+    members.push_back(gated->Get());
+    std::optional<Op> up;
+    std::optional<Tensor> gated_normed;
+    for (int side = 0; side < 2 && !up; ++side) {
+      reshapes.clear();
+      const auto sigmoid = ProducerPastReshapes(gated->Inputs()[side],
+                                                /*single_use=*/true, reshapes);
+      if (!sigmoid || sigmoid->Code() != kLiteRtOpCodeTflLogistic ||
+          sigmoid->Inputs().size() != 1) {
+        continue;
+      }
+      std::vector<Op> below;
+      const auto fc = ProducerPastReshapes(sigmoid->Inputs()[0],
+                                           /*single_use=*/true, below);
+      if (!fc || fc->Code() != kLiteRtOpCodeTflFullyConnected) continue;
+      join(reshapes);
+      join(below);
+      members.push_back(sigmoid->Get());
+      up = *fc;
+      gated_normed = gated->Inputs()[1 - side];
+    }
+    if (!up || up->Inputs().size() < 2) return std::nullopt;
+    const auto up_type = up->Inputs()[1].RankedTensorType();
+    if (!up_type || up_type->Layout().Rank() != 2) return std::nullopt;
+    const int64_t low_rank = up_type->Layout().Dimensions()[1];
+    if (!IsHcMixProjection(*up, width, low_rank)) return std::nullopt;
+    members.push_back(up->Get());
+    // t = z * logistic(z), z the scaled down projection.
+    reshapes.clear();
+    const auto silu =
+        ProducerPastReshapes(up->Inputs()[0], /*single_use=*/true, reshapes);
+    if (!silu || silu->Code() != kLiteRtOpCodeTflMul ||
+        silu->Inputs().size() != 2 || !HasNoFusedActivation(*silu)) {
+      return std::nullopt;
+    }
+    join(reshapes);
+    std::optional<Tensor> z;
+    for (int i = 0; i < 2 && !z; ++i) {
+      const auto logistic = silu->Inputs()[i].GetDefiningOp();
+      if (logistic && logistic->Code() == kLiteRtOpCodeTflLogistic &&
+          logistic->Inputs().size() == 1 &&
+          silu->Inputs()[i].Uses().size() == 1 &&
+          logistic->Inputs()[0].Get() == silu->Inputs()[1 - i].Get() &&
+          silu->Inputs()[1 - i].Uses().size() == 2) {
+        z = silu->Inputs()[1 - i];
+        members.push_back(logistic->Get());
+      }
+    }
+    if (!z) return std::nullopt;
+    members.push_back(silu->Get());
+    block.params.down_scale = 1.0f;
+    std::optional<Op> down;
+    if (const auto defining = z->GetDefiningOp(); defining) down = *defining;
+    if (down && down->Code() != kLiteRtOpCodeTflFullyConnected) {
+      const auto product = ScalarProduct(*down);
+      if (!product) return std::nullopt;
+      block.params.down_scale = product->first;
+      members.push_back(down->Get());
+      reshapes.clear();
+      down =
+          ProducerPastReshapes(product->second, /*single_use=*/true, reshapes);
+      join(reshapes);
+    }
+    if (!down || !IsHcMixProjection(*down, low_rank, width)) {
+      return std::nullopt;
+    }
+    members.push_back(down->Get());
+    // The normed streams that the down projection and the gates read: one
+    // value in different shapes.
+    std::vector<Op> to_down, to_gate;
+    const auto normed = ProducerPastReshapes(down->Inputs()[0],
+                                             /*single_use=*/false, to_down);
+    const auto normed_gate =
+        ProducerPastReshapes(*gated_normed, /*single_use=*/false, to_gate);
+    if (!normed || !normed_gate || normed->Get() != normed_gate->Get() ||
+        normed->Outputs().size() != 1) {
+      return std::nullopt;
+    }
+    block.normed.push_back(normed->Outputs()[0]);
+    for (const auto* path : {&to_down, &to_gate}) {
+      for (const Op& reshape : *path) {
+        bool seen = false;
+        for (LiteRtOp member : members) seen = seen || member == reshape.Get();
+        if (seen) continue;
+        members.push_back(reshape.Get());
+        block.normed.push_back(reshape.Outputs()[0]);
+      }
+    }
+    // rms_norm over each stream, then an optional weight per stream and
+    // channel.
+    std::vector<float> scale(static_cast<size_t>(width), 1.0f);
+    std::optional<Op> norm = *normed;
+    if (norm->Code() == kLiteRtOpCodeTflMul) {
+      if (norm->Inputs().size() != 2 || !HasNoFusedActivation(*norm)) {
+        return std::nullopt;
+      }
+      const int constant = norm->Inputs()[1].HasWeights() ? 1 : 0;
+      const Tensor weights = norm->Inputs()[constant];
+      const auto weights_type = weights.RankedTensorType();
+      if (!weights.HasWeights() || !IsUnquantizedFloat32(weights) ||
+          !weights_type) {
+        return std::nullopt;
+      }
+      // [.., streams, hidden], [hidden] or a scalar: the trailing dims of the
+      // normed streams.
+      const auto dims = weights_type->Layout().Dimensions();
+      const auto bytes = weights.Weights().Bytes();
+      size_t count = 1;
+      for (const auto dim : dims) count *= static_cast<size_t>(dim);
+      if (bytes.size() != count * sizeof(float) ||
+          (count != static_cast<size_t>(width) &&
+           count != static_cast<size_t>(hidden) && count != 1) ||
+          (count == static_cast<size_t>(width) &&
+           (dims.size() < 2 || dims[dims.size() - 1] != hidden)) ||
+          (count == static_cast<size_t>(hidden) && dims.back() != hidden)) {
+        return std::nullopt;
+      }
+      for (size_t i = 0; i < scale.size(); ++i) {
+        std::memcpy(&scale[i], bytes.data() + (i % count) * sizeof(float),
+                    sizeof(float));
+      }
+      members.push_back(norm->Get());
+      reshapes.clear();
+      norm = ProducerPastReshapes(norm->Inputs()[1 - constant],
+                                  /*single_use=*/true, reshapes);
+      join(reshapes);
+      if (!norm) return std::nullopt;
+    }
+    const auto norm_weights = RmsNormWeights(*norm, static_cast<int>(hidden));
+    if (!norm_weights) return std::nullopt;
+    const auto norm_input_type = norm->Inputs()[0].RankedTensorType();
+    if (!norm_input_type) return std::nullopt;
+    {
+      // The norm is over the channels of each stream.
+      const auto dims = norm_input_type->Layout().Dimensions();
+      if (dims.size() < 2 || dims[dims.size() - 1] != hidden ||
+          dims[dims.size() - 2] != streams) {
+        return std::nullopt;
+      }
+    }
+    members.push_back(norm->Get());
+    block.norm_weight.resize(static_cast<size_t>(width));
+    for (size_t i = 0; i < block.norm_weight.size(); ++i) {
+      block.norm_weight[i] =
+          norm_weights->first[i % static_cast<size_t>(hidden)] * scale[i];
+    }
+    // The streams, before the reshapes that only the norm reads.
+    Tensor x = norm->Inputs()[0];
+    while (true) {
+      const auto reshape = x.GetDefiningOp();
+      if (!reshape || reshape->Code() != kLiteRtOpCodeTflReshape ||
+          reshape->Inputs().empty() || x.Uses().size() != 1) {
+        break;
+      }
+      members.push_back(reshape->Get());
+      x = reshape->Inputs()[0];
+    }
+    if (x.HasWeights() || !IsFloatLike(x.ElementType())) return std::nullopt;
+    block.x = x;
+    const bool int4 = IsBlockwiseInt4Weights(down->Inputs()[1]) &&
+                      IsBlockwiseInt4Weights(up->Inputs()[1]);
+    if (!int4 && (!IsUnquantizedFloat32(down->Inputs()[1]) ||
+                  !IsUnquantizedFloat32(up->Inputs()[1]))) {
+      return std::nullopt;
+    }
+    block.down_weights = down->Inputs()[1];
+    block.up_weights = up->Inputs()[1];
+    block.params.rows = static_cast<int32_t>(rows);
+    block.params.streams = static_cast<int32_t>(streams);
+    block.params.hidden = static_cast<int32_t>(hidden);
+    block.params.low_rank = static_cast<int32_t>(low_rank);
+    block.params.eps = norm_weights->second;
+    block.params.int4 = int4 ? 1 : 0;
+    if (!LiteRtNvidiaHcMixSupports(&block.params)) return std::nullopt;
+    hc_mix_candidate_projections_ = {down->Get(), up->Get()};
+    return block;
+  }
+
+  // Records every hyper-connection mix matched by MatchHcMix: its ops are
+  // not lowered, and its last op emits the LiteRtNvidiaHcMix plugin
+  // (LowerHcMixBlock): one launch where the op-by-op lowering has two GEMV
+  // launches and three fused pointwise kernels. Over a few rows only (decode
+  // and verify steps), with BF16 activations and the CUDA GEMV path.
+  // LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION=0 keeps the op-by-op
+  // lowering.
+  Expected<void> FindHcMixBlocks(const Subgraph& subgraph) {
+    if (!EnvEnabled("LITERT_NVIDIA_TENSORRT_FUSE_HYPER_CONNECTION",
+                    /*default_value=*/true) ||
+        !Fp16ActivationsEnabled() ||
+        ModeFloatType() != nvinfer1::DataType::kBF16 ||
+        PredequantizeFcWeightsMode() != PredequantMode::kCudaGemv) {
+      return {};
+    }
+    size_t found = 0;
+    size_t candidates = 0;
+    for (const auto& op : subgraph.Ops()) {
+      if (op.Code() != kLiteRtOpCodeTflMean &&
+          op.Code() != kLiteRtOpCodeTflSum) {
+        continue;
+      }
+      std::vector<LiteRtOp> members;
+      LiteRtOp anchor = nullptr;
+      auto block = MatchHcMix(op, members, anchor);
+      if (!block.has_value()) continue;
+      ++candidates;
+      bool ordered = op_order_.count(anchor) != 0;
+      std::unordered_set<LiteRtOp> inside(members.begin(), members.end());
+      for (LiteRtOp member : members) {
+        ordered = ordered && op_order_.count(member) != 0 &&
+                  unlowered_ops_.count(member) == 0 &&
+                  op_order_[member] <= op_order_[anchor];
+      }
+      // What reads the normed streams outside the mix comes after the
+      // plugin; nothing outside reads the other results of its ops.
+      for (const Tensor& normed : block->normed) {
+        for (const auto& use : normed.Uses()) {
+          const LiteRtOp user = use.user.Get();
+          ordered = ordered && (inside.count(user) != 0 ||
+                                (op_order_.count(user) != 0 &&
+                                 op_order_[user] > op_order_[anchor]));
+        }
+      }
+      if (!ordered) continue;
+      unlowered_ops_.insert(members.begin(), members.end());
+      hc_mix_projections_.insert(hc_mix_candidate_projections_.begin(),
+                                 hc_mix_candidate_projections_.end());
+      hc_mix_anchor_ops_[anchor] = hc_mix_blocks_.size();
+      hc_mix_blocks_.push_back(std::move(*block));
+      ++found;
+    }
+    if (candidates != 0) {
+      LITERT_LOG(LITERT_INFO,
+                 "NVIDIA TensorRT-RTX fused %zu of %zu hyper-connection mixes "
+                 "into the CUDA hyper-connection plugin",
+                 found, candidates);
+    }
+    return {};
+  }
+
+  // The weights and scales inputs of one projection of a mix's plugin: INT4
+  // blockwise weights in the weight store when there is one (the plugin then
+  // reads the segment's holder, see AddSubbyteGemvPlugin), else constants;
+  // unquantized weights as a BF16 constant.
+  struct HcMixWeights {
+    nvinfer1::ITensor* weights = nullptr;
+    nvinfer1::ITensor* scales = nullptr;  // INT4 only
+    HcMixWeightsPlace place;
+    std::optional<uint32_t> segment;
+    bool scales_in_store = false;
+  };
+
+  Expected<HcMixWeights> AddHcMixWeights(const Tensor& tensor, bool int4,
+                                         const std::string& suffix) {
+    HcMixWeights result;
+    if (!int4) {
+      const auto bytes = tensor.Weights().Bytes();
+      std::vector<float> values(bytes.size() / sizeof(float));
+      std::memcpy(values.data(), bytes.data(), values.size() * sizeof(float));
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] = static_cast<int64_t>(values.size());
+      LITERT_ASSIGN_OR_RETURN(
+          result.weights,
+          AddFloatConstant(values, dims, "cuda_hc_mix_weights" + suffix,
+                           nvinfer1::DataType::kBF16));
+      return result;
+    }
+    LITERT_ASSIGN_OR_RETURN(auto info, InspectSubbyteGemvWeights(tensor));
+    std::vector<float> unused;
+    std::vector<absl::Span<const uint8_t>> block_scales;
+    LITERT_RETURN_IF_ERROR(
+        AppendGemvScales(tensor, info, unused, block_scales));
+    if (info.scale_block != 32 || block_scales.size() != 1) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "A hyper-connection mix needs blockwise INT4 weights");
+    }
+    const absl::Span<const uint8_t> packed = tensor.Weights().Bytes();
+    std::optional<TensorRtWeightLocation> location;
+    if (weight_store_ != nullptr) {
+      const bool scales_to_store =
+          EnvEnabled("LITERT_NVIDIA_TENSORRT_BLOCK_SCALES_IN_STORE",
+                     /*default_value=*/true);
+      std::vector<absl::Span<const uint8_t>> all = {packed};
+      if (scales_to_store) all.push_back(block_scales[0]);
+      auto added = weight_store_->Add(all);
+      if (added.HasValue()) {
+        location = *added;
+        result.scales_in_store = scales_to_store;
+      } else if (added.Error().Status() != kLiteRtStatusErrorNotFound) {
+        return added.Error();
+      } else if (scales_to_store) {
+        // Converted scales are not views of the file: they stay in the plan
+        // while the weights go to the store.
+        const absl::Span<const uint8_t> members[] = {packed};
+        auto weights_only = weight_store_->Add(members);
+        if (weights_only.HasValue()) {
+          location = *weights_only;
+        } else if (weights_only.Error().Status() !=
+                   kLiteRtStatusErrorNotFound) {
+          return weights_only.Error();
+        }
+      }
+    }
+    if (location.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(result.weights, ProvisionalWeightHolder());
+      result.segment = location->segment;
+      result.place.granule = static_cast<int64_t>(weight_store_->granule());
+      result.place.weight_offset = static_cast<int64_t>(location->offset);
+    } else {
+      owned_weights_.emplace_back(packed.begin(), packed.end());
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] = static_cast<int64_t>(owned_weights_.back().size());
+      nvinfer1::Weights weights{nvinfer1::DataType::kINT8,
+                                owned_weights_.back().data(), dims.d[0]};
+      auto* constant = network_->addConstant(dims, weights);
+      if (constant == nullptr || constant->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add a hyper-connection mix's packed weights");
+      }
+      LITERT_RETURN_IF_ERROR(
+          RegisterRefitWeight(weights, "cuda_hc_mix_weights" + suffix));
+      result.weights = constant->getOutput(0);
+      uses_cuda_subbyte_gemv_ = true;
+    }
+    if (result.scales_in_store) {
+      // The scales follow the weights in the segment; the holder serves both
+      // inputs (AddWeightHolders).
+      result.scales = result.weights;
+      result.place.scale_offset =
+          static_cast<int64_t>(location->offset + packed.size());
+    } else {
+      owned_weights_.emplace_back(block_scales[0].begin(),
+                                  block_scales[0].end());
+      nvinfer1::Dims dims{};
+      dims.nbDims = 1;
+      dims.d[0] =
+          static_cast<int64_t>(owned_weights_.back().size() / sizeof(uint16_t));
+      nvinfer1::Weights weights{nvinfer1::DataType::kHALF,
+                                owned_weights_.back().data(), dims.d[0]};
+      auto* constant = network_->addConstant(dims, weights);
+      if (constant == nullptr || constant->getOutput(0) == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "Failed to add a hyper-connection mix's block scales");
+      }
+      LITERT_RETURN_IF_ERROR(
+          RegisterRefitWeight(weights, "cuda_hc_mix_block_scales" + suffix));
+      result.scales = constant->getOutput(0);
+    }
+    return result;
+  }
+
+  // Emits one matched hyper-connection mix at its last op.
+  Expected<void> LowerHcMixBlock(size_t index) {
+    HcMixBlock& block = hc_mix_blocks_[index];
+    const auto& p = block.params;
+    const bool int4 = p.int4 != 0;
+    LITERT_ASSIGN_OR_RETURN(auto* x, GetTensor(*block.x));
+    LITERT_ASSIGN_OR_RETURN(x, AddCastTensor(x, nvinfer1::DataType::kBF16));
+    const std::string suffix =
+        "_" + std::to_string(block.down_weights->TensorIndex());
+    nvinfer1::Dims norm_dims{};
+    norm_dims.nbDims = 1;
+    norm_dims.d[0] = static_cast<int64_t>(block.norm_weight.size());
+    LITERT_ASSIGN_OR_RETURN(auto* norm_weight,
+                            AddFloatConstant(block.norm_weight, norm_dims,
+                                             "cuda_hc_mix_norm" + suffix,
+                                             nvinfer1::DataType::kFLOAT));
+    LITERT_ASSIGN_OR_RETURN(auto down,
+                            AddHcMixWeights(*block.down_weights, int4, suffix));
+    LITERT_ASSIGN_OR_RETURN(
+        auto up,
+        AddHcMixWeights(*block.up_weights, int4,
+                        "_" + std::to_string(block.up_weights->TensorIndex())));
+    HcMixPluginParams params;
+    params.streams = p.streams;
+    params.hidden = p.hidden;
+    params.low_rank = p.low_rank;
+    params.down_scale = p.down_scale;
+    params.eps = p.eps;
+    params.int4 = p.int4;
+    params.down = down.place;
+    params.up = up.place;
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateHcMixPlugin(params));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the hyper-connection mix plugin");
+    }
+    std::vector<nvinfer1::ITensor*> inputs = {x, norm_weight, down.weights};
+    if (int4) inputs.push_back(down.scales);
+    const int32_t up_input = static_cast<int32_t>(inputs.size());
+    inputs.push_back(up.weights);
+    if (int4) inputs.push_back(up.scales);
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs.data(), static_cast<int32_t>(inputs.size()), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the hyper-connection mix plugin layer");
+    }
+    // The holders of the segments replace the provisional ones
+    // (AddWeightHolders): each input that reads a holder on its own.
+    if (down.segment.has_value()) {
+      holder_readers_.push_back({layer, *down.segment, false, 2});
+      if (down.scales_in_store) {
+        holder_readers_.push_back({layer, *down.segment, false, 3});
+      }
+    }
+    if (up.segment.has_value()) {
+      holder_readers_.push_back({layer, *up.segment, false, up_input});
+      if (up.scales_in_store) {
+        holder_readers_.push_back({layer, *up.segment, false, up_input + 1});
+      }
+    }
+    const std::string name = "cuda_hc_mix" + suffix;
+    layer->setName(KeepName(UniqueName(name)));
+    for (int o = 0; o < 2; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+    }
+    owned_plugins_.push_back(std::move(plugin));
+    for (const Tensor& normed : block.normed) {
+      LITERT_ASSIGN_OR_RETURN(auto type, normed.RankedTensorType());
+      LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
+      LITERT_ASSIGN_OR_RETURN(auto* reshaped,
+                              ReshapeTensor(layer->getOutput(1), dims));
+      LITERT_RETURN_IF_ERROR(SetOutputTensor(normed, reshaped));
+    }
+    LITERT_ASSIGN_OR_RETURN(auto out_type, block.output->RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto out_dims, ConvertDims(out_type));
+    LITERT_ASSIGN_OR_RETURN(auto* out,
+                            ReshapeTensor(layer->getOutput(0), out_dims));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX fused CUDA hyper-connection mix: rows=%d "
+               "streams=%d hidden=%d low_rank=%d weights=%s%s",
+               p.rows, p.streams, p.hidden, p.low_rank, int4 ? "int4" : "bf16",
+               down.segment.has_value() ? " (weight store)" : "");
+    return SetOutputTensor(*block.output, out);
+  }
+
   // Qwen 3.5's gated_delta_update as the LiteRtNvidiaGatedDeltaUpdate plugin
   // (trtllm/gated_delta.h): q, k, v, beta and g in FP32, the state read from
   // and written to the runtime's FP32 buffer.
@@ -16008,6 +16590,10 @@ class TensorRtGraphBuilder {
         gdn != gdn_anchor_ops_.end()) {
       return LowerGatedDeltaNetBlock(gdn->second);
     }
+    if (auto mix = hc_mix_anchor_ops_.find(op.Get());
+        mix != hc_mix_anchor_ops_.end()) {
+      return LowerHcMixBlock(mix->second);
+    }
     if (auto region = quant_regions_.find(op.Get());
         region != quant_regions_.end()) {
       return LowerQuantRegion(region->second);
@@ -16205,6 +16791,13 @@ class TensorRtGraphBuilder {
   // (FindGatedDeltaNetBlocks).
   std::vector<GatedDeltaNetBlock> gdn_blocks_;
   std::unordered_map<LiteRtOp, size_t> gdn_anchor_ops_;
+  // The hyper-connection mixes fused into one plugin each, by their last op
+  // (FindHcMixBlocks), and their two projections.
+  std::vector<HcMixBlock> hc_mix_blocks_;
+  std::unordered_map<LiteRtOp, size_t> hc_mix_anchor_ops_;
+  std::unordered_set<LiteRtOp> hc_mix_projections_;
+  // The projections of the mix that MatchHcMix matched last.
+  std::array<LiteRtOp, 2> hc_mix_candidate_projections_{};
   // The statically quantized products (FindQuantRegions): the INT8 values
   // the quant layers produced, by model tensor; the regions, by the op that
   // emits them; the INT8 tensors the product regions will produce and read.
