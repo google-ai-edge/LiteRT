@@ -15,8 +15,12 @@
 #include "litert/vendors/nvidia/compiler/tensorrt_graph_builder.h"
 
 #include <fcntl.h>
+#ifdef _WIN32
+#include <io.h>
+#else
 #include <sys/mman.h>
 #include <unistd.h>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -45,6 +49,7 @@
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
+#include "litert/vendors/nvidia/windows_compat.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace {
