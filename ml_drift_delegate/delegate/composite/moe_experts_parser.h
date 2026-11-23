@@ -49,6 +49,12 @@ struct MoeExpertsAttributes {
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
   Activation activation = Activation::kGeluTanh;
+  // Optional softcaps applied to the linear gate factor and up (`ff1`)
+  // projection (disabled when <= 0). For SiLU, `gate_softcap` bounds the
+  // linear factor only while sigmoid sees the uncapped gate:
+  // `tanh(gate / gate_softcap) * gate_softcap * sigmoid(gate)`.
+  float gate_softcap = 0.0f;
+  float up_softcap = 0.0f;
   // Per-expert (blockwise) weight scales, shaped
   // [out_channels, experts, 1, blocks_per_row]. When a scale tensor is shared
   // across subgraphs it is converted to the GPU scale layout once by

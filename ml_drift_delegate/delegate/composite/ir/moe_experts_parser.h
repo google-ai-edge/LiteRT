@@ -43,6 +43,8 @@ struct MoeExpertsAttributes {
   int hidden_dim = 0;
   WeightType weight_type = WeightType::kFp32;
   Activation activation = Activation::kGeluTanh;
+  float gate_softcap = 0.0f;
+  float up_softcap = 0.0f;
   std::optional<MoeScaleTensor> ff_gate_scale;
   std::optional<MoeScaleTensor> ff1_scale;
   std::optional<MoeScaleTensor> linear_scale;
