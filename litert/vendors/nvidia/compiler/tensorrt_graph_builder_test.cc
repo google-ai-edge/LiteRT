@@ -5721,10 +5721,9 @@ TEST(TensorRtGraphBuilderTest, SwigluCompositeAppliesItsActivation) {
   }
 }
 
-TEST(TensorRtGraphBuilderTest, MoeLayerBlockOfTheFusedExport) {
-  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
-    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
-  }
+// The MoE layer block below with the moe op's `activation`: the residual
+// stream after it into `stream` (the same in both layouts).
+void RunMoeLayerBlock(const char* activation, std::vector<float>* stream) {
   // A layer's feed-forward block around the moe op as Gemma 4 26B's two
   // exports lay it out. The first: gate and up projections, GELU and a
   // multiply, and a router that selects the top probabilities and divides
@@ -6060,7 +6059,7 @@ TEST(TensorRtGraphBuilderTest, MoeLayerBlockOfTheFusedExport) {
     moe.SetCustomCode("moe");
     flexbuffers::Builder moe_options;
     const auto moe_map = moe_options.StartMap();
-    moe_options.String("activation", "gelu_tanh");
+    moe_options.String("activation", activation);
     moe_options.Int("hidden_dim", kHidden);
     moe_options.Int("model_dim", kD);
     moe_options.Int("num_active_experts", kTopK);
@@ -6141,4 +6140,32 @@ TEST(TensorRtGraphBuilderTest, MoeLayerBlockOfTheFusedExport) {
   EXPECT_GT(added, 1.0);
   munmap(const_cast<uint8_t*>(mapping), file_bytes.size());
   unlink(path.c_str());
+  *stream = results[0];
+}
+
+TEST(TensorRtGraphBuilderTest, MoeLayerBlockOfTheFusedExport) {
+  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
+    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
+  }
+  std::vector<float> stream;
+  RunMoeLayerBlock("gelu_tanh", &stream);
+}
+
+// The same block with Qwen's SiLU experts (the moe op's "silu"): the block
+// plugin takes it, both layouts agree, and the experts' activation reaches the
+// kernels (the stream differs from the GELU experts').
+TEST(TensorRtGraphBuilderTest, MoeLayerBlockWithSiluExperts) {
+  if (!litert::nvidia::TensorRtWeightHoldersSupported()) {
+    GTEST_SKIP() << "Needs the weight placeholders of TensorRT-RTX 1.7.";
+  }
+  std::vector<float> gelu, silu;
+  ASSERT_NO_FATAL_FAILURE(RunMoeLayerBlock("gelu_tanh", &gelu));
+  ASSERT_NO_FATAL_FAILURE(RunMoeLayerBlock("silu", &silu));
+  ASSERT_EQ(silu.size(), gelu.size());
+  ASSERT_FALSE(silu.empty());
+  double differing = 0.0;
+  for (size_t i = 0; i < silu.size(); ++i) {
+    differing += std::fabs(silu[i] - gelu[i]);
+  }
+  EXPECT_GT(differing, 1e-3);
 }
