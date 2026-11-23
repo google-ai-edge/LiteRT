@@ -33,24 +33,12 @@
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/slot_test_util.h"
 
 namespace {
 
-struct CudaDeleter {
-  void operator()(void* p) const { cudaFree(p); }
-};
-using Device = std::unique_ptr<void, CudaDeleter>;
-
-Device Upload(const void* host, size_t bytes) {
-  void* p = nullptr;
-  if (cudaMalloc(&p, bytes) != cudaSuccess) return nullptr;
-  if (host != nullptr) {
-    cudaMemcpy(p, host, bytes, cudaMemcpyHostToDevice);
-  } else {
-    cudaMemset(p, 0, bytes);
-  }
-  return Device(p);
-}
+using litert::nvidia::slot_test::Device;
+using litert::nvidia::slot_test::Upload;
 
 // A reproducible stream of bits.
 class Random {

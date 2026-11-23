@@ -621,13 +621,18 @@ cc_test(
 cuda_library(
     name = "slot_kernels_cuda",
     srcs = [
+        "cache_write_slots.cu",
         "decode_attention_slots.cu",
+        "qkv_norm_rope_slots.cu",
     ],
     hdrs = [
         "block_sync.cuh",
+        "cache_write_slots.h",
         "decode_attention.h",
         "decode_attention_blocks.cuh",
         "decode_attention_slots.h",
+        "qkv_norm_rope.h",
+        "qkv_norm_rope_slots.h",
     ],
     # copybara:uncomment_begin(google-only)
     # copts = [
@@ -653,7 +658,9 @@ cc_import(
 cc_library(
     name = "slot_kernels",
     hdrs = [
+        "cache_write_slots.h",
         "decode_attention_slots.h",
+        "qkv_norm_rope_slots.h",
     ],
     tags = ["manual"],
     deps = [
@@ -680,6 +687,66 @@ cc_test(
     deps = [
         ":gemma4_head_kernels",
         ":slot_kernels",
+        ":slot_test_util",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_library(
+    name = "slot_test_util",
+    testonly = 1,
+    hdrs = ["slot_test_util.h"],
+    tags = ["manual"],
+    deps = [
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "qkv_norm_rope_slots_test",
+    srcs = ["qkv_norm_rope_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_kernels",
+        ":slot_test_util",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "cache_write_slots_test",
+    srcs = ["cache_write_slots_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":slot_kernels",
+        ":slot_test_util",
+        "//litert/vendors/nvidia/compiler:int8_cache_write_kernel",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
