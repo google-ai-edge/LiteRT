@@ -3091,12 +3091,13 @@ class SlotEngine {
                  "cudaStreamCreateWithFlags slots auxiliary"));
       engine->aux_streams_.push_back(aux);
     }
-    LITERT_LOG(
-        LITERT_INFO,
-        "NVIDIA dispatch loaded the batched decode engine of %d slots "
-        "(%s, engine_bytes=%zu, device_memory_bytes=%lld)",
-        slots, path.c_str(), engine->bytecode_.engine_size,
-        static_cast<long long>(engine->engine_->getDeviceMemorySizeV2()));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA dispatch loaded the batched decode engine of %d slots "
+               "(%s, engine_bytes=%zu, device_memory_bytes=%lld, "
+               "aux_streams=%d)",
+               slots, path.c_str(), engine->bytecode_.engine_size,
+               static_cast<long long>(engine->engine_->getDeviceMemorySizeV2()),
+               engine->engine_->getNbAuxStreams());
     return engine;
   }
 
