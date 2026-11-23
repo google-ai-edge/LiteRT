@@ -72,6 +72,7 @@ litert_dynamic_lib(
         ":google_tensor_options_cc_proto",
         "//litert/c:litert_builder_header",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c:litert_op_options_header",
         "//litert/c/internal:litert_logging",

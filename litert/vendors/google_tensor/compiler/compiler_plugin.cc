@@ -970,7 +970,7 @@ absl::flat_hash_map<int, bool> ValidateCompositeOpsBatch(
     absl::string_view serialized_options) {
   absl::flat_hash_map<int, bool> composite_support_map;
   std::vector<int> composite_op_indices;
-  std::vector<std::string> composite_names;
+  std::vector<litert::google_tensor::CompositeOpDescriptor> composite_ops;
 
   for (int i = 0; i < ops.size(); ++i) {
     const litert::compiler::Op& op = ops[i];
@@ -982,22 +982,41 @@ absl::flat_hash_map<int, bool> ValidateCompositeOpsBatch(
               kLiteRtStatusOk &&
           custom_op_name != nullptr) {
         composite_op_indices.push_back(i);
-        composite_names.emplace_back(custom_op_name);
+        litert::google_tensor::CompositeOpDescriptor descriptor;
+        descriptor.name = custom_op_name;
+        const std::vector<litert::compiler::Tensor> inputs = op.Inputs();
+        descriptor.operand_types.reserve(inputs.size());
+        descriptor.operand_quantization_types.reserve(inputs.size());
+        for (const litert::compiler::Tensor& input : inputs) {
+          descriptor.operand_types.push_back(
+              static_cast<LiteRtElementType>(input.ElementType()));
+          descriptor.operand_quantization_types.push_back(input.QTypeId());
+        }
+        const std::vector<litert::compiler::Tensor> outputs = op.Outputs();
+        descriptor.result_types.reserve(outputs.size());
+        descriptor.result_quantization_types.reserve(outputs.size());
+        for (const litert::compiler::Tensor& output : outputs) {
+          descriptor.result_types.push_back(
+              static_cast<LiteRtElementType>(output.ElementType()));
+          descriptor.result_quantization_types.push_back(output.QTypeId());
+        }
+        composite_ops.push_back(std::move(descriptor));
       } else {
         composite_support_map[i] = false;
       }
     }
   }
 
-  if (composite_names.empty()) {
+  if (composite_ops.empty()) {
     return composite_support_map;
   }
 
   litert::Expected<std::vector<bool>> are_supported =
-      adapter != nullptr ? adapter->AreCompositesSupported(
-                               composite_names, serialized_options.data(),
-                               serialized_options.size())
-                         : litert::Unexpected(kLiteRtStatusErrorNotFound);
+      adapter != nullptr
+          ? adapter->AreCompositesSupported(absl::MakeConstSpan(composite_ops),
+                                            serialized_options.data(),
+                                            serialized_options.size())
+          : litert::Unexpected(kLiteRtStatusErrorNotFound);
 
   if (are_supported.HasValue() &&
       are_supported->size() == composite_op_indices.size()) {

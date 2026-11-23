@@ -141,9 +141,58 @@ TEST(AdapterTest, AreCompositesSupported) {
   EXPECT_THAT(mixed_results, ElementsAre(true, false, true, false));
 
   // Empty list
-  LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> empty_results,
-                              adapter->AreCompositesSupported({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      const std::vector<bool> empty_results,
+      adapter->AreCompositesSupported(absl::Span<const std::string>{}));
   EXPECT_TRUE(empty_results.empty());
+
+  // Composite op descriptors with operand and result data types
+  const std::vector<CompositeOpDescriptor> typed_ops = {
+      CompositeOpDescriptor{
+          .name = "odml.rms_norm",
+          .operand_types = {kLiteRtElementTypeFloat32,
+                            kLiteRtElementTypeFloat32},
+          .result_types = {kLiteRtElementTypeFloat32},
+      },
+      CompositeOpDescriptor{
+          .name = "odml.group_norm",
+          .operand_types = {kLiteRtElementTypeFloat32,
+                            kLiteRtElementTypeFloat32,
+                            kLiteRtElementTypeFloat32},
+          .result_types = {kLiteRtElementTypeFloat32},
+      },
+      CompositeOpDescriptor{
+          .name = "odml.group_norm",
+          .operand_types = {kLiteRtElementTypeInt32, kLiteRtElementTypeFloat32,
+                            kLiteRtElementTypeFloat32},
+          .result_types = {kLiteRtElementTypeInt32},
+      },
+      CompositeOpDescriptor{
+          .name = "odml.rms_norm",
+          .operand_types = {kLiteRtElementTypeFloat16,
+                            kLiteRtElementTypeFloat16},
+          .result_types = {kLiteRtElementTypeFloat32},
+      },
+      // Unquantized UInt8 (`ui8`) is rejected on `odml.rms_norm`, whereas
+      // quantized UInt8 (`qui8`) is supported.
+      CompositeOpDescriptor{
+          .name = "odml.rms_norm",
+          .operand_types = {kLiteRtElementTypeUInt8, kLiteRtElementTypeUInt8},
+          .result_types = {kLiteRtElementTypeUInt8},
+      },
+      CompositeOpDescriptor{
+          .name = "odml.rms_norm",
+          .operand_types = {kLiteRtElementTypeUInt8, kLiteRtElementTypeUInt8},
+          .result_types = {kLiteRtElementTypeUInt8},
+          .operand_quantization_types = {kLiteRtQuantizationPerTensor,
+                                         kLiteRtQuantizationPerTensor},
+          .result_quantization_types = {kLiteRtQuantizationPerTensor},
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(const std::vector<bool> typed_results,
+                              adapter->AreCompositesSupported(typed_ops));
+  EXPECT_THAT(typed_results,
+              ElementsAre(true, true, false, false, false, true));
 }
 
 TEST(AdapterTest, GetUnsupportedOpsSuccess) {

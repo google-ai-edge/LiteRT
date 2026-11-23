@@ -351,8 +351,11 @@ TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
   ASSERT_EQ(selected_ops.size(), 0);
 }
 
-void AddCompositeOpToSubgraph(LiteRtSubgraphT& subgraph,
-                              absl::string_view composite_name) {
+void AddCompositeOpToSubgraph(
+    LiteRtSubgraphT& subgraph, absl::string_view composite_name,
+    absl::Span<const LiteRtElementType> operand_types = {},
+    absl::Span<const LiteRtElementType> result_types = {},
+    bool is_quantized = false) {
   LiteRtOpT& composite = subgraph.EmplaceOp();
   composite.SetOpCode(kLiteRtOpCodeShloComposite);
   ::tflite::StableHLOCompositeOptionsT opts;
@@ -362,6 +365,23 @@ void AddCompositeOpToSubgraph(LiteRtSubgraphT& subgraph,
   options.type = tflite::BuiltinOptions2_StableHLOCompositeOptions;
   options.Set(std::move(opts));
   litert::internal::SetTflOptions2(composite, std::move(options));
+
+  for (const LiteRtElementType type : operand_types) {
+    LiteRtTensorT& input_tensor = subgraph.EmplaceTensor();
+    input_tensor.SetType(MakeRankedTensorType(type, {1, 4}));
+    if (is_quantized) {
+      input_tensor.SetQarams(MakePerTensorQuantization(0.05f, 128));
+    }
+    litert::internal::AttachInput(&input_tensor, composite);
+  }
+  for (const LiteRtElementType type : result_types) {
+    LiteRtTensorT& output_tensor = subgraph.EmplaceTensor();
+    output_tensor.SetType(MakeRankedTensorType(type, {1, 4}));
+    if (is_quantized) {
+      output_tensor.SetQarams(MakePerTensorQuantization(0.05f, 128));
+    }
+    litert::internal::AttachOutput(&output_tensor, composite);
+  }
 }
 
 void AddTflOpToSubgraph(LiteRtSubgraphT& subgraph, LiteRtOpCode op_code) {
@@ -482,6 +502,62 @@ TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
   LITERT_ASSERT_OK(
       LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
   EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithDataTypeValidation) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& google_tensor_options,
+                              options.GetOptions<GoogleTensorOptions>());
+  google_tensor_options.SetExperimentalEnableInputValidator(true);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto litert_opts,
+      internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+  auto plugin_or = StaticallyLinkedPlugin::Create(
+      LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+  ASSERT_TRUE(plugin_or.HasValue());
+  auto& plugin = *plugin_or;
+
+  LiteRtModelT model;
+  LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+  // Op 0: `odml.rms_norm` with supported types [f32, f32] -> [f32]
+  AddCompositeOpToSubgraph(
+      subgraph, "odml.rms_norm",
+      {kLiteRtElementTypeFloat32, kLiteRtElementTypeFloat32},
+      {kLiteRtElementTypeFloat32});
+  // Op 1: `odml.group_norm` with supported types [f32, f32, f32] -> [f32]
+  AddCompositeOpToSubgraph(
+      subgraph, "odml.group_norm",
+      {kLiteRtElementTypeFloat32, kLiteRtElementTypeFloat32,
+       kLiteRtElementTypeFloat32},
+      {kLiteRtElementTypeFloat32});
+  // Op 2: `odml.group_norm` with unsupported types [i32, f32, f32] -> [i32]
+  AddCompositeOpToSubgraph(subgraph, "odml.group_norm",
+                           {kLiteRtElementTypeInt32, kLiteRtElementTypeFloat32,
+                            kLiteRtElementTypeFloat32},
+                           {kLiteRtElementTypeInt32});
+  // Op 3: `odml.rms_norm` with unquantized UInt8 (`ui8`) -> unsupported
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm",
+                           {kLiteRtElementTypeUInt8, kLiteRtElementTypeUInt8},
+                           {kLiteRtElementTypeUInt8}, /*is_quantized=*/false);
+  // Op 4: `odml.rms_norm` with quantized UInt8 (`qui8`) -> supported
+  AddCompositeOpToSubgraph(subgraph, "odml.rms_norm",
+                           {kLiteRtElementTypeUInt8, kLiteRtElementTypeUInt8},
+                           {kLiteRtElementTypeUInt8}, /*is_quantized=*/true);
+
+  LiteRtOpListT selected_op_list;
+  LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+      plugin.Get(), /*soc_model=*/"Tensor_G5", &subgraph, &selected_op_list));
+  const std::vector<LiteRtOpWithPartitionIndex> selected_ops =
+      selected_op_list.Values();
+
+  // Ops 0, 1, and 4 have supported data type combinations.
+  ASSERT_EQ(selected_ops.size(), 3);
+  EXPECT_EQ(selected_ops[0].first, subgraph.Ops()[0]);
+  EXPECT_EQ(selected_ops[1].first, subgraph.Ops()[1]);
+  EXPECT_EQ(selected_ops[2].first, subgraph.Ops()[4]);
 }
 
 // `simple_reducemax_op.tflite` holds a single f32 `tfl.reduce_max`. That op is
