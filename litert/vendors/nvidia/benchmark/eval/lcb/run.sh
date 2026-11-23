@@ -68,9 +68,21 @@ path, profile, mode, budget, context, build, model, engine, expansion, here, ben
 def sha(path):
     with open(path, 'rb') as f:
         return hashlib.file_digest(f, 'sha256').hexdigest()
+def model_sha(path):
+    # Kept by the file's path, size and modification time: a model's tens of gigabytes take
+    # minutes to read again when they are no longer in the page cache, at every run.
+    stat = os.stat(path)
+    key = hashlib.sha256(f'{os.path.realpath(path)}|{stat.st_size}|{stat.st_mtime_ns}'.encode()).hexdigest()
+    kept = pathlib.Path(os.environ['NB_ROOT']) / 'cache' / 'digests' / key[:32]
+    if kept.exists():
+        return kept.read_text().strip()
+    digest = sha(path)
+    kept.parent.mkdir(parents=True, exist_ok=True)
+    kept.write_text(digest + '\n')
+    return digest
 config = {'profile': profile, 'mode': mode, 'max_output_tokens': int(budget),
           'context': int(context), 'build_id': build, 'model': model,
-          'model_sha256': sha(model), 'binaries': {name: sha(pathlib.Path(engine).parent / name)
+          'model_sha256': model_sha(model), 'binaries': {name: sha(pathlib.Path(engine).parent / name)
           for name in ('litert_lm_advanced_main', 'libLiteRtCompilerPlugin_Nvidia.so', 'libLiteRtDispatch_Nvidia.so')},
           # The build the binaries came from (build.sh's stamp); build_id above is the checkout's heads now.
           'binaries_build_id': (pathlib.Path(engine).parent / 'BUILD_ID').read_text().strip()
