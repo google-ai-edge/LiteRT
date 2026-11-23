@@ -224,3 +224,27 @@ cc_test(
         "@flatbuffers",
     ],
 )
+
+# A model with Qwen 4's attention layers at reduced sizes, its CPU and NVIDIA
+# runs and their comparison (qsa_artifact.cc).
+cc_binary(
+    name = "qsa_artifact",
+    srcs = ["qsa_artifact.cc"],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
+        "//litert/cc:litert_environment",
+        "//litert/cc:litert_environment_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//tflite/schema:schema_fbs",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/strings",
+        "@flatbuffers",
+    ],
+)
