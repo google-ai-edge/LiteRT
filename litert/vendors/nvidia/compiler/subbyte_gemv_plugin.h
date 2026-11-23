@@ -83,8 +83,11 @@ nvinfer1::IPluginV3* CreateSubbyteGemvPlugin(
     float norm_multiplier = 1.0f, bool row_positions = false,
     bool int8_blockwise = false, bool slot_rows = false) noexcept;
 
-// The slot-rows form of a blockwise INT4 GEMV plugin of this file (a plugin of
-// a batched decode engine's merged projection), or null for any other plugin.
+// The plugin a batched decode engine's merged projection runs for a GEMV
+// plugin of this file, over the rows of every slot with each row's bits the
+// ones it gets alone: a blockwise INT4 GEMV's slot-rows form, a per-channel
+// GEMV itself (its kernel keeps each row's order at any row count); null for
+// a GEMM or any other plugin.
 nvinfer1::IPluginV3* SubbyteGemvSlotRowsPlugin(
     nvinfer1::IPluginV3& plugin) noexcept;
 

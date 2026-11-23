@@ -194,10 +194,35 @@ class SlotNetworkBuilder {
       LITERT_ASSIGN_OR_RETURN(bool merged, MergeProjection(layer));
       if (merged) return {};
     }
+    if (OnlySharedInputs(layer)) {
+      // Computed from the weights alone (a dequantization of a constant):
+      // once for every slot.
+      LITERT_RETURN_IF_ERROR(CloneForSlot(layer, 0));
+      for (int32_t o = 0; o < layer.getNbOutputs(); ++o) {
+        nvinfer1::ITensor* copy = map_[Key(layer.getOutput(o), 0)];
+        shared_tensor_[layer.getOutput(o)] = copy;
+        shared_.insert({copy, true});
+      }
+      return {};
+    }
     for (int32_t s = 0; s < slots_; ++s) {
       LITERT_RETURN_IF_ERROR(CloneForSlot(layer, s));
     }
     return {};
+  }
+
+  // Whether every input of a layer other than a plugin or a cache update is
+  // one every slot shares.
+  bool OnlySharedInputs(nvinfer1::ILayer& layer) const {
+    if (layer.getType() == nvinfer1::LayerType::kPLUGIN_V3 ||
+        layer.getType() == nvinfer1::LayerType::kKVCACHE_UPDATE) {
+      return false;
+    }
+    for (int32_t i = 0; i < layer.getNbInputs(); ++i) {
+      const nvinfer1::ITensor* input = layer.getInput(i);
+      if (input != nullptr && shared_tensor_.count(input) == 0) return false;
+    }
+    return true;
   }
 
   // A blockwise INT4 GEMV whose weights every slot shares: one plugin over
@@ -398,6 +423,38 @@ class SlotNetworkBuilder {
         auto* c = out_.addSoftMax(*a);
         if (c != nullptr) c->setAxes(l.getAxes());
         copy = c;
+        break;
+      }
+      case LT::kDEQUANTIZE: {
+        auto& l = static_cast<nvinfer1::IDequantizeLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        auto* c = out_.addDequantize(*a, *b, l.getToType());
+        if (c != nullptr) {
+          c->setAxis(l.getAxis());
+          const nvinfer1::Dims block = l.getBlockShape();
+          if (block.nbDims > 0 && !c->setBlockShape(block)) {
+            return Fail("a dequantization's block shape");
+          }
+        }
+        copy = c;
+        first_optional = 2;
+        break;
+      }
+      case LT::kQUANTIZE: {
+        auto& l = static_cast<nvinfer1::IQuantizeLayer&>(layer);
+        LITERT_ASSIGN_OR_RETURN(auto* a, need(0));
+        LITERT_ASSIGN_OR_RETURN(auto* b, need(1));
+        auto* c = out_.addQuantize(*a, *b, l.getToType());
+        if (c != nullptr) {
+          c->setAxis(l.getAxis());
+          const nvinfer1::Dims block = l.getBlockShape();
+          if (block.nbDims > 0 && !c->setBlockShape(block)) {
+            return Fail("a quantization's block shape");
+          }
+        }
+        copy = c;
+        first_optional = 2;
         break;
       }
       case LT::kIDENTITY: {

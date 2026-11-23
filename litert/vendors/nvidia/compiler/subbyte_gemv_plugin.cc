@@ -159,7 +159,15 @@ class SubbyteGemvPlugin final : public nvinfer1::IPluginV3,
   // This plugin for slot rows (kSlotRowsField), or null when it is not a
   // blockwise GEMV.
   nvinfer1::IPluginV3* SlotRowsTwin() const noexcept {
-    if (gemm_ != 0 || scale_block_ == 0) return nullptr;
+    if (gemm_ != 0) return nullptr;
+    // The per-channel kernel (int2_gemv.cu) keeps every row's sums in the
+    // order of a row alone at any row count: the plugin itself.
+    if (scale_block_ == 0) {
+      return new (std::nothrow) SubbyteGemvPlugin(
+          bit_width_, rows_, columns_, gate_, gemm_, weight_offset_,
+          holder_granule_, scale_block_, scale_offset_, norm_eps_,
+          norm_multiplier_, row_positions_, int8_blockwise_, slot_rows_);
+    }
     return new (std::nothrow) SubbyteGemvPlugin(
         bit_width_, rows_, columns_, gate_, gemm_, weight_offset_,
         holder_granule_, scale_block_, scale_offset_, norm_eps_,

@@ -3133,28 +3133,41 @@ class SlotEngine {
       LITERT_RETURN_IF_ERROR(CudaOk(cudaStreamWaitEvent(stream_, event, 0),
                                     "cudaStreamWaitEvent slot step"));
     }
-    for (int s = 0; s < slots_; ++s) {
-      for (size_t i = 0; i < input_names.size(); ++i) {
-        if (!context_->setTensorAddress(
-                litert::nvidia::SlotTensorName(input_names[i], s).c_str(),
-                (*inputs[s])[i])) {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "Batched decode engine: an input address");
+    // Only the addresses that changed: setting one invalidates the captured
+    // CUDA graph, and a capture per step would cost more than the step.
+    const size_t per_slot = input_names.size() + output_names.size();
+    if (bound_.size() != per_slot * slots_) {
+      bound_.assign(per_slot * slots_, nullptr);
+      names_.clear();
+      for (int s = 0; s < slots_; ++s) {
+        for (const auto& name : input_names) {
+          names_.push_back(litert::nvidia::SlotTensorName(name, s));
         }
-      }
-      for (size_t i = 0; i < output_names.size(); ++i) {
-        if (output_names[i].empty()) continue;
-        if (!context_->setTensorAddress(
-                litert::nvidia::SlotTensorName(output_names[i], s).c_str(),
-                (*outputs[s])[i])) {
-          return Error(kLiteRtStatusErrorRuntimeFailure,
-                       "Batched decode engine: an output address");
+        for (const auto& name : output_names) {
+          names_.push_back(name.empty()
+                               ? std::string()
+                               : litert::nvidia::SlotTensorName(name, s));
         }
       }
     }
-    if (!aux_streams_.empty()) {
+    for (int s = 0; s < slots_; ++s) {
+      for (size_t i = 0; i < per_slot; ++i) {
+        const size_t at = s * per_slot + i;
+        void* address = i < input_names.size()
+                            ? (*inputs[s])[i]
+                            : (*outputs[s])[i - input_names.size()];
+        if (names_[at].empty() || bound_[at] == address) continue;
+        if (!context_->setTensorAddress(names_[at].c_str(), address)) {
+          return Error(kLiteRtStatusErrorRuntimeFailure,
+                       "Batched decode engine: a tensor address");
+        }
+        bound_[at] = address;
+      }
+    }
+    if (!aux_streams_.empty() && !aux_streams_set_) {
       context_->setAuxStreams(aux_streams_.data(),
                               static_cast<int32_t>(aux_streams_.size()));
+      aux_streams_set_ = true;
     }
     if (!context_->enqueueV3(stream_)) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
@@ -3174,6 +3187,10 @@ class SlotEngine {
 
   int slots_ = 0;
   uint64_t launches_ = 0;
+  // The tensors' names and the addresses bound to them, slot by slot.
+  std::vector<std::string> names_;
+  std::vector<void*> bound_;
+  bool aux_streams_set_ = false;
   std::vector<uint8_t> file_;
   litert::nvidia::TensorRtBytecode bytecode_;
   litert::nvidia::TensorRtLogger logger_;
@@ -3224,6 +3241,18 @@ class DecodeSlotGroup {
     std::lock_guard<std::mutex> group_lock(group->mutex_);
     group->last_seen_[participant] = Clock::time_point{};
     return group;
+  }
+
+  // Whether no other context of the group stepped lately.
+  bool Alone(const void* participant) {
+    std::lock_guard<std::mutex> lock(mutex_);
+    const auto now = Clock::now();
+    for (const auto& [other, seen] : last_seen_) {
+      if (other != participant && now - seen < std::chrono::milliseconds(50)) {
+        return false;
+      }
+    }
+    return true;
   }
 
   void Leave(const void* participant) {
@@ -5767,10 +5796,9 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> SpeculateNextStep() {
     if (!feed_.enabled || feed_.stopped || !feed_.argmax_ready) return {};
-    if (slot_group_) {
+    if (slot_group_ && !slot_group_->Alone(this)) {
       // A step that may be batched with other contexts' runs when they do:
-      // none ahead of the host.
-      feed_.stopped = true;
+      // none ahead of the host while another context steps.
       return {};
     }
     if (UpdatesStateInPlace()) {
