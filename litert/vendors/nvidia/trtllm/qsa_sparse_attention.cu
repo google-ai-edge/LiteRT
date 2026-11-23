@@ -570,9 +570,6 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   float* m_s = reinterpret_cast<float*>(p_s + m_pad * kProbLd);
   float* l_s = m_s + m_pad;
   uint8_t* allowed = reinterpret_cast<uint8_t*>(l_s + m_pad);
-  int32_t* chunk_blocks =
-      reinterpret_cast<int32_t*>(allowed + kMaxTileRows * kChunkTokens);
-  uint32_t* chunk_members = reinterpret_cast<uint32_t*>(chunk_blocks + 4);
 
   const int warp = threadIdx.x / 32;
   const int lane = threadIdx.x % 32;
@@ -619,48 +616,68 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   const int64_t head = int64_t{kv_head} * p.cache_len * kDim;
   __syncthreads();
 
-  // The keys (and values) of the four blocks list[c .. c + 4) and the keys
-  // each row may attend to.
-  const auto stage = [&](int32_t c, bool with_values) {
-    if (threadIdx.x < 4) {
-      const bool in = c + static_cast<int32_t>(threadIdx.x) < hi;
-      chunk_blocks[threadIdx.x] = in ? list[c + threadIdx.x] : -1;
-      chunk_members[threadIdx.x] = in ? members[c + threadIdx.x] : 0u;
-    }
-    __syncthreads();
-    constexpr int kVectorsPerRow = kDim / 8;
-#pragma unroll 4
-    for (int i = threadIdx.x; i < kChunkTokens * kVectorsPerRow;
-         i += blockDim.x) {
+  // The keys (and values) of the four blocks list[c .. c + 4) and which of
+  // them each row may attend to, fetched into registers a chunk ahead (the
+  // loads of the next chunk overlap the products of this one), then stored.
+  constexpr int kVectorsPerRow = kDim / 8;
+  constexpr int kChunkVectors = kChunkTokens * kVectorsPerRow;
+  constexpr int kPerThread = (kChunkVectors + 127) / 128;  // >= 128 threads
+  struct Fetched {
+    uint4 key[kPerThread];
+    uint4 value[kPerThread];
+    uint32_t seen;  // the keys row threadIdx.x / 4 sees of block % 4
+  };
+  const auto fetch = [&](int32_t c, bool with_values, Fetched* f) {
+#pragma unroll
+    for (int j = 0; j < kPerThread; ++j) {
+      f->key[j] = make_uint4(0, 0, 0, 0);
+      f->value[j] = make_uint4(0, 0, 0, 0);
+      const int i = static_cast<int>(threadIdx.x) + j * blockDim.x;
+      if (i >= kChunkVectors) continue;
       const int t = i / kVectorsPerRow;
-      const int d8 = i % kVectorsPerRow;
-      const int32_t block = chunk_blocks[t / 4];
-      uint4 key = make_uint4(0, 0, 0, 0);
-      uint4 value = make_uint4(0, 0, 0, 0);
-      if (block >= 0 && block * 4 + t % 4 < p.cache_len) {
-        const int64_t at = head + (int64_t{block} * 4 + t % 4) * kDim + d8 * 8;
-        key = *reinterpret_cast<const uint4*>(k + at);
-        if (with_values) value = *reinterpret_cast<const uint4*>(v + at);
-      }
-      *reinterpret_cast<uint4*>(k_s + t * kLd + d8 * 8) = key;
-      if (with_values) {
-        *reinterpret_cast<uint4*>(v_s + t * kLd + d8 * 8) = value;
+      const int32_t entry = c + t / 4;
+      if (entry >= hi) continue;
+      const int32_t token = list[entry] * 4 + t % 4;
+      if (token >= p.cache_len) continue;
+      const int64_t at = head + int64_t{token} * kDim + (i % kVectorsPerRow) * 8;
+      f->key[j] = *reinterpret_cast<const uint4*>(k + at);
+      if (with_values) f->value[j] = *reinterpret_cast<const uint4*>(v + at);
+    }
+    f->seen = 0;
+    if (static_cast<int32_t>(threadIdx.x) < rows * 4) {
+      const int32_t entry = c + static_cast<int32_t>(threadIdx.x) % 4;
+      const int32_t r = static_cast<int32_t>(threadIdx.x) / 4;
+      if (entry < hi && ((members[entry] >> r) & 1u) != 0) {
+        f->seen = visibility.Block(row0 + r, list[entry]);
       }
     }
-    for (int i = threadIdx.x; i < rows * 4; i += blockDim.x) {
-      const int r = i / 4;
-      const int j = i % 4;
-      const int32_t block = chunk_blocks[j];
-      uint32_t seen = 0;
-      if (block >= 0 && ((chunk_members[j] >> r) & 1u) != 0) {
-        seen = visibility.Block(row0 + r, block);
-      }
+  };
+  const auto store = [&](const Fetched& f, bool with_values) {
+#pragma unroll
+    for (int j = 0; j < kPerThread; ++j) {
+      const int i = static_cast<int>(threadIdx.x) + j * blockDim.x;
+      if (i >= kChunkVectors) continue;
+      const int offset = (i / kVectorsPerRow) * kLd + (i % kVectorsPerRow) * 8;
+      *reinterpret_cast<uint4*>(k_s + offset) = f.key[j];
+      if (with_values) *reinterpret_cast<uint4*>(v_s + offset) = f.value[j];
+    }
+    if (static_cast<int32_t>(threadIdx.x) < rows * 4) {
+      const int r = threadIdx.x / 4;
+      const int j = threadIdx.x % 4;
 #pragma unroll
       for (int t = 0; t < 4; ++t) {
-        allowed[r * kChunkTokens + j * 4 + t] = (seen >> t) & 1u;
+        allowed[r * kChunkTokens + j * 4 + t] = (f.seen >> t) & 1u;
       }
     }
+  };
+  // Makes chunk c current (the previous chunk's readers done first) and
+  // fetches the one after it.
+  Fetched next;
+  const auto stage = [&](int32_t c, bool with_values) {
     __syncthreads();
+    store(next, with_values);
+    __syncthreads();
+    if (c + 4 < hi) fetch(c + 4, with_values, &next);
   };
 
   // This warp's 16 vectors against the chunk's keys, into s_s.
@@ -686,6 +703,7 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   const bool real = computes && m < vectors;
   const uint8_t* row_allowed = allowed + (real ? m / group : 0) * kChunkTokens;
 
+  if (lo < hi) fetch(lo, false, &next);
   for (int32_t c = lo; c < hi; c += 4) {
     stage(c, false);
     if (!computes) continue;
@@ -706,6 +724,7 @@ __global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
   wmma::fragment<wmma::accumulator, 16, 16, 16, float> o[kDim / 16];
 #pragma unroll
   for (int j = 0; j < kDim / 16; ++j) wmma::fill_fragment(o[j], 0.0f);
+  if (lo < hi) fetch(lo, true, &next);
   for (int32_t c = lo; c < hi; c += 4) {
     stage(c, true);
     if (!computes) continue;
@@ -934,7 +953,7 @@ size_t TileSharedBytes(int32_t m_pad) {
          static_cast<size_t>(m_pad) * (kChunkTokens + 4) * 4 +  // scores
          static_cast<size_t>(m_pad) * (kChunkTokens + 8) * 2 +  // weights
          static_cast<size_t>(m_pad) * 2 * 4 +                  // max, sum
-         kMaxTileRows * kChunkTokens + 8 * sizeof(int32_t);
+         kMaxTileRows * kChunkTokens;
 }
 
 template <int kDim>
