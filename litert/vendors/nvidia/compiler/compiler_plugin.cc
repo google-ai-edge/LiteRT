@@ -63,6 +63,7 @@
 #include "litert/vendors/nvidia/compiler/weight_holder_calibration.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
 #include "litert/vendors/nvidia/cuda_vmm.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_lowering.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "NvInferRuntime.h"
 #include "NvInferVersion.h"
@@ -620,6 +621,7 @@ std::string BuildCompilerSdkVersion() {
   // Switches of behaviour that is off by default: in the key only when set,
   // so that the engines built without them keep their keys.
   constexpr const char* kSwitchEnvironmentVariables[] = {
+      "LITERT_NVIDIA_MEGAKERNEL",
       "LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION",
   };
   for (const char* name : kSwitchEnvironmentVariables) {
@@ -1791,6 +1793,22 @@ LiteRtStatus LiteRtCompilerPluginPartition(LiteRtCompilerPlugin compiler_plugin,
                num_graph_ops, min_subgraph_ops, max_subgraph_ops);
     return kLiteRtStatusOk;
   }
+  // Experimental, only with LITERT_NVIDIA_MEGAKERNEL set: the decode
+  // signature of a Gemma 4 mixture-of-experts export whole, as one partition
+  // that compiles to one megakernel program (experimental/megakernel).
+  if (litert::nvidia::MegakernelRequested() &&
+      litert::nvidia::IsMegakernelBody(graph, std::string(subgraph->Name()))) {
+    for (const auto& op : graph.Ops()) {
+      LITERT_RETURN_IF_ERROR(
+          compiler_plugin->ctx->push_op(selected_ops, op.Get(), 0));
+    }
+    litert::nvidia::RememberMegakernelBody(graph);
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX megakernel: selected the %zu ops of "
+               "signature decode as one program",
+               num_graph_ops);
+    return kLiteRtStatusOk;
+  }
   const PartitionPolicy policy = GetPartitionPolicy();
   int total_ops = 0;
   int selected_op_count = 0;
@@ -2099,7 +2117,11 @@ LiteRtStatus LiteRtCompilerPluginCompile(
       }
     }
     memory_profiler.Log("partition_build_begin", function_name.c_str());
-    auto engine_or = litert::nvidia::BuildTensorRtEngine(
+    // BuildMegakernelEngine only for a partition the megakernel's switch
+    // selected whole (experimental/megakernel).
+    auto engine_or = (litert::nvidia::IsMegakernelPartition(subgraph)
+                          ? litert::nvidia::BuildMegakernelEngine
+                          : litert::nvidia::BuildTensorRtEngine)(
         subgraph, read_only_inputs[i], plugin_weight_store.get(),
         shared_inputs[i]);
     if (!engine_or) {

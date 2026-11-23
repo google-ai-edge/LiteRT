@@ -64,6 +64,8 @@
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "litert/vendors/nvidia/compiler/weight_store_builder.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_lowering.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_plugin.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -4338,8 +4340,12 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindMoeBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindGatedDeltaNetBlocks(subgraph));
     LITERT_RETURN_IF_ERROR(FindQuantRegions(subgraph));
+    if (megakernel_body_) {
+      LITERT_RETURN_IF_ERROR(LowerMegakernel(subgraph));
+    }
     std::vector<Op> prefill_cache_updates;
     for (size_t i = 0; i < num_ops_to_lower; ++i) {
+      if (megakernel_body_) break;
       if (ops[i].Code() == kLiteRtOpCodeShloComposite &&
           CompositeOpName(ops[i]) == "odml.cache_update" &&
           PrefillCacheUpdateRingMode(ops[i]).has_value() &&
@@ -15825,6 +15831,10 @@ class TensorRtGraphBuilder {
   std::vector<QuantGlue> quant_glues_;
   std::vector<QuantQkvRope> quant_qkv_ropes_;
   std::vector<QuantHead> quant_heads_;
+
+  // Experimental, inert unless LITERT_NVIDIA_MEGAKERNEL is set: the decode
+  // megakernel's lowering, as members of this builder.
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_lowering.inc"
 };
 
 }  // namespace
@@ -15977,6 +15987,17 @@ Expected<TensorRtBuildResult> BuildTensorRtEngine(
   }();
   memory_profiler.Log("graph_builder_destroyed");
   return result;
+}
+
+// Experimental (experimental/megakernel/megakernel_lowering.h).
+Expected<TensorRtBuildResult> BuildMegakernelEngine(
+    const Subgraph& subgraph,
+    absl::Span<const std::string> read_only_value_cache_inputs,
+    TensorRtWeightStoreBuilder* weight_store,
+    absl::Span<const std::string> shared_cache_inputs) {
+  TensorRtGraphBuilder builder;
+  return builder.BuildMegakernel(subgraph, read_only_value_cache_inputs,
+                                 weight_store, shared_cache_inputs);
 }
 
 }  // namespace litert::nvidia

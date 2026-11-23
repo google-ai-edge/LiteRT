@@ -92,6 +92,7 @@
 #include "litert/vendors/nvidia/dispatch/topk_candidates_c_api.h"
 #include "litert/vendors/nvidia/dispatch/topk_candidates_kernel.h"
 #include "litert/vendors/nvidia/dispatch/weight_store.h"
+#include "litert/vendors/nvidia/experimental/megakernel/megakernel_plugin.h"
 #include "litert/vendors/nvidia/memory_profile.h"
 #include "litert/vendors/nvidia/tensorrt_logger.h"
 #include "NvInfer.h"
@@ -3785,6 +3786,9 @@ class LiteRtDispatchInvocationContextT {
 
   Expected<void> DeserializeEngine() {
     litert::nvidia::EnsureSubbyteGemvPluginRegistered();
+    // Experimental: only an engine compiled with LITERT_NVIDIA_MEGAKERNEL set
+    // holds this plugin.
+    litert::nvidia::EnsureMegakernelPluginRegistered();
     litert::nvidia::EnsureDecodeAttentionPluginRegistered();
     litert::nvidia::EnsureCacheUpdatePluginRegistered();
     litert::nvidia::EnsureGatedDeltaPluginsRegistered();
