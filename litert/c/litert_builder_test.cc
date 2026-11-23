@@ -42,6 +42,7 @@ using ::litert::OwningBufferRef;
 using ::litert::internal::BufferManager;
 using ::testing::ElementsAre;
 using ::testing::ElementsAreArray;
+using ::testing::UnorderedElementsAre;
 
 TEST(LiteRtBuilderTest, CanEraseOp) {
   LiteRtBuilderT builder;
@@ -125,7 +126,10 @@ TEST(LiteRtBuilderTest, SetOpInputLastUpdateWins) {
   builder.ApplyChanges(&subgraph);
 
   EXPECT_THAT(op.Inputs(), ElementsAre(&second));
-  EXPECT_EQ(first.NumUses(), 0);
+  // `first` has no remaining uses after the second update unwinds it, so
+  // ApplyChanges() DCE removes it (along with `old_tensor`).
+  EXPECT_THAT(subgraph.Tensors(),
+              UnorderedElementsAre(&output_tensor, &second));
   EXPECT_EQ(second.NumUses(), 1);
 }
 
