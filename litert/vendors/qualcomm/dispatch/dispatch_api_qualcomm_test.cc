@@ -34,6 +34,7 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
@@ -1217,6 +1218,207 @@ TEST(Qualcomm, DispatchApiWithDmaBufInt16Model) {
   LiteRtDestroyTensorBuffer(input_0_tensor_buffer);
   EXPECT_EQ(LiteRtDispatchInvocationContextDestroy(invocation_context),
             kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
+            kLiteRtStatusOk);
+}
+
+// Two invocation contexts whose graphs are in two different QNN contexts share
+// the same tensor buffers, like the DISPATCH_OPs of a model that is split into
+// several context binaries. Checks that both invocation contexts produce the
+// expected output with the shared buffers, that the second one still does
+// after the buffers are detached from the first one, and that unregistering
+// the buffers and destroying the contexts succeed. The two QNN contexts are
+// small and normally share one HTP PD, where a memory handle of either QNN
+// context also works for the graph of the other, so the test does not detect
+// a buffer that is registered with only one of them.
+TEST(Qualcomm, DispatchApiSharedBuffersAcrossQnnContexts) {
+#if !defined(__ANDROID__)
+  GTEST_SKIP()
+      << "This test is specific to Android devices with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "Skipping test because targeted backend is not supported";
+  }
+#endif
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env, CreateDefaultEnvironment());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_opts,
+                              litert::internal::LiteRtOptionsPtrBuilder::Build(
+                                  options, env.GetHolder()));
+
+  ASSERT_EQ(LiteRtDispatchInitialize(LrtGetRuntimeContext(),
+                                     env.GetHolder().handle, litert_opts.get()),
+            kLiteRtStatusOk);
+
+  LiteRtDispatchDeviceContext device_context = nullptr;
+  ASSERT_EQ(LiteRtDispatchDeviceContextCreate(
+                LrtGetRuntimeContext(), litert_opts.get(), &device_context),
+            kLiteRtStatusOk);
+
+  auto model_file_name =
+      litert::testing::GetTestFilePath(kQualcommModelFileName);
+  auto model = litert::internal::LoadBinaryFile(model_file_name);
+  ASSERT_TRUE(model) << model.Error();
+  // QNN contexts are cached by bytecode address, so a copy of the same context
+  // binary is loaded into a second QNN context.
+  litert::OwningBufferRef<uint8_t> model_copy(
+      static_cast<const uint8_t*>(model->Data()), model->Size());
+
+  const LiteRtMemBuffer exec_bytecode_buffers[] = {
+      {/*.fd=*/-1, /*.base_addr=*/model->Data(), /*.offset=*/0,
+       /*.size=*/model->Size()},
+      {/*.fd=*/-1, /*.base_addr=*/model_copy.Data(), /*.offset=*/0,
+       /*.size=*/model_copy.Size()},
+  };
+  LiteRtDispatchInvocationContext invocation_contexts[2] = {nullptr, nullptr};
+  for (int i = 0; i < 2; ++i) {
+    ASSERT_EQ(LiteRtDispatchInvocationContextCreate(
+                  LrtGetRuntimeContext(), device_context,
+                  kLiteRtDispatchExecutableTypeMlModel,
+                  &exec_bytecode_buffers[i], /*function_name=*/"simple",
+                  /*num_inputs=*/2, /*num_outputs=*/1, &invocation_contexts[i]),
+              kLiteRtStatusOk);
+  }
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // Allocate and register tensor buffers, and attach each of them to both
+  // invocation contexts.
+  // ///////////////////////////////////////////////////////////////////////////
+
+  LiteRtTensorBuffer input_0_tensor_buffer;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
+                env.GetHolder().handle, kLiteRtTensorBufferTypeFastRpc,
+                &kInput0TensorType, sizeof(kTestInput0Tensor),
+                &input_0_tensor_buffer),
+            kLiteRtStatusOk);
+  LiteRtTensorBuffer input_1_tensor_buffer;
+  ASSERT_EQ(LiteRtCreateManagedTensorBuffer(
+                env.GetHolder().handle, kLiteRtTensorBufferTypeFastRpc,
+                &kInput1TensorType, sizeof(kTestInput1Tensor),
+                &input_1_tensor_buffer),
+            kLiteRtStatusOk);
+  LiteRtTensorBuffer output_tensor_buffer;
+  ASSERT_EQ(
+      LiteRtCreateManagedTensorBuffer(
+          env.GetHolder().handle, kLiteRtTensorBufferTypeFastRpc,
+          &kOutputTensorType, sizeof(kTestOutputTensor), &output_tensor_buffer),
+      kLiteRtStatusOk);
+
+  LiteRtTensorBufferHandle input_0_handle;
+  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
+                device_context, input_0_tensor_buffer, &input_0_handle),
+            kLiteRtStatusOk);
+  LiteRtTensorBufferHandle input_1_handle;
+  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
+                device_context, input_1_tensor_buffer, &input_1_handle),
+            kLiteRtStatusOk);
+  LiteRtTensorBufferHandle output_handle;
+  EXPECT_EQ(LiteRtDispatchRegisterTensorBuffer(
+                device_context, output_tensor_buffer, &output_handle),
+            kLiteRtStatusOk);
+
+  for (auto invocation_context : invocation_contexts) {
+    EXPECT_EQ(
+        LiteRtDispatchAttachInput(invocation_context,
+                                  /*graph_input_index=*/0, input_0_handle),
+        kLiteRtStatusOk);
+    EXPECT_EQ(
+        LiteRtDispatchAttachInput(invocation_context,
+                                  /*graph_input_index=*/1, input_1_handle),
+        kLiteRtStatusOk);
+    EXPECT_EQ(
+        LiteRtDispatchAttachOutput(invocation_context,
+                                   /*graph_output_index=*/0, output_handle),
+        kLiteRtStatusOk);
+  }
+
+  {
+    void* host_mem_addr;
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_0_tensor_buffer, &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_mem_addr, kTestInput0Tensor, sizeof(kTestInput0Tensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_0_tensor_buffer), kLiteRtStatusOk);
+
+    ASSERT_EQ(LiteRtLockTensorBuffer(input_1_tensor_buffer, &host_mem_addr,
+                                     kLiteRtTensorBufferLockModeWrite),
+              kLiteRtStatusOk);
+    std::memcpy(host_mem_addr, kTestInput1Tensor, sizeof(kTestInput1Tensor));
+    ASSERT_EQ(LiteRtUnlockTensorBuffer(input_1_tensor_buffer), kLiteRtStatusOk);
+  }
+
+  // Clears the output buffer, invokes `invocation_context` and checks the
+  // output.
+  auto invoke_and_check_output =
+      [&](LiteRtDispatchInvocationContext invocation_context) {
+        void* host_mem_addr;
+        ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffer, &host_mem_addr,
+                                         kLiteRtTensorBufferLockModeWrite),
+                  kLiteRtStatusOk);
+        std::memset(host_mem_addr, 0, sizeof(kTestOutputTensor));
+        ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer),
+                  kLiteRtStatusOk);
+
+        ASSERT_EQ(LiteRtDispatchInvoke(invocation_context), kLiteRtStatusOk);
+
+        ASSERT_EQ(LiteRtLockTensorBuffer(output_tensor_buffer, &host_mem_addr,
+                                         kLiteRtTensorBufferLockModeRead),
+                  kLiteRtStatusOk);
+        auto output = absl::MakeSpan(static_cast<const float*>(host_mem_addr),
+                                     kTestOutputSize);
+        EXPECT_THAT(output,
+                    Pointwise(testing::FloatNear(kTol), kTestOutputTensor));
+        ASSERT_EQ(LiteRtUnlockTensorBuffer(output_tensor_buffer),
+                  kLiteRtStatusOk);
+      };
+
+  invoke_and_check_output(invocation_contexts[0]);
+  invoke_and_check_output(invocation_contexts[1]);
+
+  // The second invocation context must still work after the buffers are
+  // detached from the first one. Detaching releases no memory handle; that
+  // happens when a buffer is unregistered.
+  EXPECT_EQ(LiteRtDispatchDetachInput(invocation_contexts[0],
+                                      /*graph_input_index=*/0, input_0_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDetachInput(invocation_contexts[0],
+                                      /*graph_input_index=*/1, input_1_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDetachOutput(invocation_contexts[0],
+                                       /*graph_output_index=*/0, output_handle),
+            kLiteRtStatusOk);
+
+  invoke_and_check_output(invocation_contexts[1]);
+
+  // ///////////////////////////////////////////////////////////////////////////
+  // Clean up resources.
+  // ///////////////////////////////////////////////////////////////////////////
+
+  EXPECT_EQ(LiteRtDispatchDetachInput(invocation_contexts[1],
+                                      /*graph_input_index=*/0, input_0_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDetachInput(invocation_contexts[1],
+                                      /*graph_input_index=*/1, input_1_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchDetachOutput(invocation_contexts[1],
+                                       /*graph_output_index=*/0, output_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(LiteRtDispatchUnregisterTensorBuffer(device_context, output_handle),
+            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchUnregisterTensorBuffer(device_context, input_1_handle),
+      kLiteRtStatusOk);
+  EXPECT_EQ(
+      LiteRtDispatchUnregisterTensorBuffer(device_context, input_0_handle),
+      kLiteRtStatusOk);
+  LiteRtDestroyTensorBuffer(output_tensor_buffer);
+  LiteRtDestroyTensorBuffer(input_1_tensor_buffer);
+  LiteRtDestroyTensorBuffer(input_0_tensor_buffer);
+  for (auto invocation_context : invocation_contexts) {
+    EXPECT_EQ(LiteRtDispatchInvocationContextDestroy(invocation_context),
+              kLiteRtStatusOk);
+  }
   EXPECT_EQ(LiteRtDispatchDeviceContextDestroy(device_context),
             kLiteRtStatusOk);
 }
