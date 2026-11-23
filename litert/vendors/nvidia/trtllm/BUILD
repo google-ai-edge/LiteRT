@@ -752,3 +752,26 @@ cc_test(
         "@local_cuda//:cuda_runtime",
     ],
 )
+
+cc_test(
+    name = "moe_slot_rows_test",
+    srcs = ["moe_slot_rows_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":gemma4_head_kernels",
+        ":slot_test_util",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)

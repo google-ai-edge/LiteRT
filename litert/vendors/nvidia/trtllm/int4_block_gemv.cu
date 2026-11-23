@@ -2057,6 +2057,72 @@ extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlock(
       DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
 }
 
+extern "C" cudaError_t LiteRtNvidiaLaunchMoeLayerBlockSlotRows(
+    const LiteRtNvidiaMoeShape* shape, const LiteRtNvidiaMoeArena* arena,
+    const void* activation, const float* per_expert_scale,
+    const float* router_norm_scale, float router_multiplier,
+    const float* expert_norm_scale, float norm_eps, int renormalize,
+    const LiteRtNvidiaMoeBlockParams* block, void* workspace, void* output,
+    cudaStream_t stream) {
+  using namespace litert::nvidia::int4_block;
+  if (!FusedArgumentsValid(shape, arena, activation, router_norm_scale,
+                           expert_norm_scale, norm_eps, workspace) ||
+      shape->rows > kLiteRtNvidiaInt4BlockGemvMaxRows || block == nullptr ||
+      block->dense_norm_scale == nullptr ||
+      block->dense_post_scale == nullptr || block->moe_post_scale == nullptr ||
+      block->sum_post_scale == nullptr || block->side_stream == nullptr ||
+      block->fork == nullptr || block->join == nullptr ||
+      arena->dense_gate_up == nullptr ||
+      arena->dense_gate_up_scales == nullptr ||
+      arena->dense_down == nullptr || arena->dense_down_scales == nullptr ||
+      LiteRtNvidiaMoeBlockWorkspaceBytes(shape, block->dense_hidden,
+                                         block->dense_gate) == 0) {
+    return cudaErrorInvalidValue;
+  }
+  const MoeWorkspace w =
+      LayoutWorkspace(*shape, block->dense_hidden, block->dense_gate);
+  auto* bytes = static_cast<char*>(workspace);
+  auto* dense_hidden = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_hidden);
+  auto* dense_out = reinterpret_cast<__nv_bfloat16*>(bytes + w.dense_out);
+  // The dense feed-forward on the side stream as in the layer block, every
+  // row on the kernels a row alone runs on.
+  cudaError_t status = cudaEventRecord(block->fork, stream);
+  if (status != cudaSuccess) return status;
+  status = cudaStreamWaitEvent(block->side_stream, block->fork, 0);
+  if (status != cudaSuccess) return status;
+  status = LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+      activation, arena->dense_gate_up, arena->dense_gate_up_scales,
+      block->dense_norm_scale, norm_eps, 1.0f, dense_hidden, shape->rows,
+      shape->model_dim, block->dense_hidden, block->dense_gate,
+      block->side_stream);
+  if (status != cudaSuccess) return status;
+  status = LiteRtNvidiaLaunchBf16Int4BlockGemvSlotRowsNormed(
+      dense_hidden, arena->dense_down, arena->dense_down_scales, nullptr, 0.0f,
+      1.0f, dense_out, shape->rows, block->dense_hidden, shape->model_dim, 0,
+      block->side_stream);
+  if (status != cudaSuccess) return status;
+  status = cudaEventRecord(block->join, block->side_stream);
+  if (status != cudaSuccess) return status;
+  // The router's logits come from the FP32 kernels at any of these row
+  // counts, and without the grouping a (row, expert) pair has its own blocks,
+  // the ones of a launch of that row alone.
+  status = LaunchFusedRouting(shape, arena, activation, router_norm_scale,
+                              router_multiplier, norm_eps, renormalize,
+                              workspace, stream);
+  if (status != cudaSuccess) return status;
+  LiteRtNvidiaMoeArena row_arena = *arena;
+  row_arena.group_rows = 0;
+  const BlockEpilogue epilogue{
+      block, static_cast<const __nv_bfloat16*>(activation), dense_out,
+      norm_eps};
+  return LaunchMoeChecked(
+      shape, &row_arena, activation,
+      reinterpret_cast<const int32_t*>(bytes + w.top_indices),
+      reinterpret_cast<const float*>(bytes + w.top_weights), per_expert_scale,
+      expert_norm_scale, norm_eps, workspace, output, stream, &epilogue,
+      DecodeRoutingLogits(*shape, bytes + w.logits), renormalize);
+}
+
 extern "C" cudaError_t LiteRtNvidiaLaunchBf16Int4BlockGemvRows(
     const void* activation, const uint8_t* packed_weights, const void* scales,
     void* output, int rows, int input_size, int output_size, int gate,
