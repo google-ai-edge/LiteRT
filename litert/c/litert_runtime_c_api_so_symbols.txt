@@ -51,6 +51,8 @@ LiteRtBuilderBuildTransposeConvOpOption
 LiteRtBuilderBuildUnpackOpOption
 LiteRtBuilderBuildWeights
 LiteRtBuilderEraseOp
+LiteRtBuilderIsSubgraphOutput
+LiteRtBuilderSetOpInput
 LiteRtClearTensorBuffer
 LiteRtClearTensorBufferEvent
 LiteRtCompiledModelClearErrors
