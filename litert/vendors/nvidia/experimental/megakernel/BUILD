@@ -15,6 +15,7 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_import.bzl", "cc_import")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
+load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//third_party/nvidia_cuda:build_defs.bzl", "cuda_library")
 
 package(
@@ -114,6 +115,34 @@ cc_binary(
         ":megakernel_lab_data_archive",
         ":mktrace",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+# The megakernel against the reference step on a small synthetic step.
+cc_test(
+    name = "megakernel_test",
+    srcs = [
+        "megakernel_lab_data.h",
+        "megakernel_test.cc",
+    ],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":megakernel",
+        ":megakernel_lab_data_archive",
+        "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",
     ],

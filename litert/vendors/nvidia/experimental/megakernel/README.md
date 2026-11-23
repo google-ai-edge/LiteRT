@@ -109,6 +109,9 @@ An experiment. On the RTX 5080 under WSL (2026-11-20, `bench.sh --model 26b
   counters carry the step's epoch.
 - `megakernel_lab.cc`, `megakernel_lab_data.*`, `mktrace.*`: the lab and its
   trace (below).
+- `megakernel_test.cc`: a GPU unit test, the kernel against the reference on
+  a small synthetic step (three layers of the 26B's shapes, short caches, a
+  small vocabulary), and against its own bits from step to step.
 
 ## Numerics
 
