@@ -839,17 +839,26 @@ class Model:
     """Attaches buffer `buffer_id` to dispatch op `op` as entry point `name`."""
     self._handle.attach_asset(op._handle, buffer_id, name)  # pylint: disable=protected-access
 
-  def set_build_stamp(self, soc_manufacturer: str, soc_model: str) -> None:
+  def set_build_stamp(
+      self,
+      soc_manufacturer: str,
+      soc_model: str,
+      *,
+      overwrite: bool = False,
+  ) -> None:
     """Records the compiler target in the model metadata.
 
     Args:
       soc_manufacturer: Target SoC manufacturer identifier.
       soc_model: Target SoC model identifier.
+      overwrite: When `True`, replaces an existing build stamp instead of
+        raising `LiteRtError`.
 
     Raises:
-      LiteRtError: If a build stamp exists or the strings are too long.
+      LiteRtError: If a build stamp exists (and `overwrite=False`) or the
+        strings are too long.
     """
-    self._handle.set_build_stamp(soc_manufacturer, soc_model)
+    self._handle.set_build_stamp(soc_manufacturer, soc_model, overwrite)
 
   def build_stamp(self) -> tuple[str, str] | None:
     """Returns (soc_manufacturer, soc_model) of the build stamp, or None."""
