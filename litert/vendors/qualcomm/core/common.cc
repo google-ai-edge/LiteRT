@@ -615,6 +615,12 @@ std::vector<std::int32_t> Options::GetDumpTensorIds() const {
   return dump_tensor_ids_;
 }
 
+void Options::SetTensorDumpDir(absl::string_view tensor_dump_dir) {
+  tensor_dump_dir_ = tensor_dump_dir;
+}
+
+absl::string_view Options::GetTensorDumpDir() const { return tensor_dump_dir_; }
+
 absl::string_view Options::GetIrJsonDir() const { return ir_json_dir_; }
 
 void Options::SetIrJsonDir(absl::string_view ir_json_dir) {
@@ -875,6 +881,7 @@ std::string Options::Dump() const {
   // --- DEBUG ---
   absl::StrAppend(&out, "[DEBUG]\n");
   field(2, "DumpTensorIds", absl::StrJoin(dump_tensor_ids_, ","));
+  field(2, "TensorDumpDir", tensor_dump_dir_);
   field(2, "SchematicDir", schematic_dir_);
 
   // Strip the trailing space empty values leave after " : ".

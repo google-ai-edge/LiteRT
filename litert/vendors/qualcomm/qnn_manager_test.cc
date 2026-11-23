@@ -241,6 +241,25 @@ TEST(InitQnnOptionsDlbcTest, PublicWeightSharingPreservesHtpDlbc) {
   EXPECT_TRUE(qnn_options.GetHtpDlbc());
 }
 
+TEST(InitQnnOptionsTest, PropagatesTensorDumpDir) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetTensorDumpDir().empty());
+
+  qualcomm_options->SetTensorDumpDir("/custom/tensors");
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_EQ(qnn_options.GetTensorDumpDir(), "/custom/tensors");
+
+  qualcomm_options->SetTensorDumpDir("");
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_TRUE(qnn_options.GetTensorDumpDir().empty());
+}
+
 TEST(InitQnnOptionsTest, PropagatesQnnLibDirAndDspSkelDir) {
   auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
   ASSERT_TRUE(qualcomm_options.HasValue());

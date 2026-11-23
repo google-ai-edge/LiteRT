@@ -112,6 +112,7 @@ struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsDspPdSession> dsp_pd_session;
   std::optional<LrtQualcommOptionsDspEncoding> dsp_encoding;
   std::optional<std::vector<std::int32_t>> dump_tensor_ids;
+  std::optional<std::string> tensor_dump_dir;
   std::optional<std::string> ir_json_dir;
   std::optional<std::string> dlc_dir;
   std::optional<std::string> graph_transform;
@@ -272,6 +273,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           }
           status = LrtQualcommOptionsSetDumpTensorIds(parsed_options,
                                                       ids.data(), ids.size());
+        } else if (key == "tensor_dump_dir") {
+          status = LrtQualcommOptionsSetTensorDumpDir(
+              parsed_options, std::string(value).c_str());
         } else if (key == "ir_json_dir") {
           status = LrtQualcommOptionsSetIrJsonDir(parsed_options,
                                                   std::string(value).c_str());
@@ -505,6 +509,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     }
     LITERT_RETURN_IF_ERROR(
         encoder.EncodeStringArray("dump_tensor_ids", id_strings));
+  }
+  if (options->tensor_dump_dir.has_value()) {
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("tensor_dump_dir", *options->tensor_dump_dir));
   }
   if (options->ir_json_dir.has_value()) {
     LITERT_RETURN_IF_ERROR(
@@ -1083,6 +1091,26 @@ LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
 }
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
+
+LiteRtStatus LrtQualcommOptionsSetTensorDumpDir(LrtQualcommOptions options,
+                                             const char* tensor_dump_dir) {
+  if (options == nullptr || tensor_dump_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->tensor_dump_dir = tensor_dump_dir;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetTensorDumpDir(LrtQualcommOptions options,
+                                             const char** tensor_dump_dir) {
+  if (options == nullptr || tensor_dump_dir == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *tensor_dump_dir = options->tensor_dump_dir.has_value()
+                         ? options->tensor_dump_dir->c_str()
+                         : "";
+  return kLiteRtStatusOk;
+}
 
 LiteRtStatus LrtQualcommOptionsSetHtpPerformanceMode(
     LrtQualcommOptions options,

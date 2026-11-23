@@ -32,7 +32,7 @@ consumed at two distinct moments:
 | Phase | Who reads it | Examples |
 |-------|--------------|----------|
 | **Compile time** | Compiler plugin (`apply_plugin_main`, AOT / JIT graph build) | `use_conv_hmx`, `optimization_level`, `vtcm_size`, `graph_priority` |
-| **Dispatch time** | Runtime dispatcher (on-device execution) | `htp_performance_mode`, `htp_context_init_acceleration` |
+| **Dispatch time** | Runtime dispatcher (on-device execution) | `htp_performance_mode`, `htp_context_init_acceleration`, `tensor_dump_dir` |
 | **Both** | Compiler plugin and runtime dispatcher | `log_level`, `backend`, `profiling`, `htp_device_id` |
 
 ---
@@ -47,7 +47,7 @@ flowchart TB
     subgraph ROW1[" "]
         direction LR
         BOTH["🌐 Both<br/><div style='text-align:left'>─────────────────<br/>log_level<br/>backend<br/>custom_op_package<br/>profiling<br/>htp_device_id</div>"]
-        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_perf_ctrl_mode, htp_pd_session, htp_context_init_acceleration<br/>DSP: dsp_performance_mode, dsp_perf_ctrl_mode, dsp_pd_session</div>"]
+        DISPATCH["🚀 Dispatch<br/><div style='text-align:left'>────────────────────────<br/>HTP: htp_performance_mode, htp_perf_ctrl_mode, htp_pd_session, htp_context_init_acceleration<br/>DSP: dsp_performance_mode, dsp_perf_ctrl_mode, dsp_pd_session<br/>Debug: tensor_dump_dir</div>"]
         BOTH ~~~ DISPATCH
     end
     subgraph ROW2[" "]
@@ -68,7 +68,7 @@ flowchart TB
 | **LPAI** | `lpai_target`, `lpai_fps`, `lpai_ftrt_ratio`, `lpai_client_perf_type`, `lpai_core_affinity_type`, `lpai_core_selection` |
 | **IR** | `dlc_dir` |
 | **SAVER** | `saver_output_dir` |
-| **Debug** | `dump_tensor_ids`, `ir_json_dir` |
+| **Debug** | `dump_tensor_ids`, `tensor_dump_dir`, `ir_json_dir` |
 
 ### A note on surfaces
 
@@ -241,7 +241,15 @@ QNN intermediate-representation dumps — diagnostic artifacts produced at compi
 | Option | CLI flag (`--qualcomm_…`) | Default | Phase | Notes |
 |--------|------|---------|-------|----------------|
 | Dump tensor IDs | `dump_tensor_ids` | *(empty)* | compile | Comma-separated tensor IDs to mark as extra graph outputs (per-layer dump for the accuracy debugger). `-1` = dump all op outputs. |
+| Tensor dump dir | `tensor_dump_dir` | *(empty)* | dispatch initialization | Destination for marked tensors (`.raw` data and `.csv` quantization parameters), set at model creation. Empty uses `dumped_tensors/` in the current working directory. Does not enable dumping. |
 | IR JSON dir | `ir_json_dir` | *(empty)* | compile | If set, compile QNN IR as QNN JSON to this dir. |
+
+Set the directory with `--qualcomm_tensor_dump_dir=<dir>`, TOML
+`tensor_dump_dir = "<dir>"`, `LrtQualcommOptionsSetTensorDumpDir()`, or
+`QualcommOptions::SetTensorDumpDir()` before creating the compiled model.
+Per-inference options do not change the directory. It is created recursively when
+marked tensors are written. Repeated runs overwrite files with the same tensor
+name. Dump failures are logged and do not fail inference.
 
 ---
 

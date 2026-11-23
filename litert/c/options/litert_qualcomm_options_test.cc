@@ -17,6 +17,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <string>
 #include <vector>
 
 #include <gtest/gtest.h>
@@ -349,6 +350,36 @@ TEST(LiteRtQualcommOptionsTest, DspEncoding) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, TensorDumpDir) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, QualcommOptions::Create());
+  const char* dir = nullptr;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetTensorDumpDir(options.Get(), &dir));
+  EXPECT_STREQ(dir, "");
+  EXPECT_EQ(SerializeAndParse(options.Get()).GetTensorDumpDir(), "");
+
+  std::string input_dir = "/tmp/dump";
+  LITERT_ASSERT_OK(
+      LrtQualcommOptionsSetTensorDumpDir(options.Get(), input_dir.c_str()));
+  input_dir.assign("changed");
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetTensorDumpDir(options.Get(), &dir));
+  EXPECT_STREQ(dir, "/tmp/dump");
+  EXPECT_EQ(SerializeAndParse(options.Get()).GetTensorDumpDir(), "/tmp/dump");
+}
+
+TEST(LiteRtQualcommOptionsTest, TensorDumpDirInvalidArguments) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, QualcommOptions::Create());
+  const char* dir = nullptr;
+  EXPECT_EQ(LrtQualcommOptionsSetTensorDumpDir(nullptr, "/tmp/dump"),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtQualcommOptionsSetTensorDumpDir(options.Get(), nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtQualcommOptionsGetTensorDumpDir(nullptr, &dir),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtQualcommOptionsGetTensorDumpDir(options.Get(), nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(options.GetTensorDumpDir(), "");
+}
+
 TEST(LiteRtQualcommOptionsTest, IrJsonDir) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -649,6 +680,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kOff);
   options->SetProfiling(QualcommOptions::Profiling::kDetailed);
   EXPECT_EQ(options->GetProfiling(), QualcommOptions::Profiling::kDetailed);
+
+  EXPECT_EQ(options->GetTensorDumpDir(), "");
+  options->SetTensorDumpDir("tmp");
+  EXPECT_EQ(options->GetTensorDumpDir(), "tmp");
 
   const std::vector<std::int32_t> kDumpTensorIds{1, 2, 3};
   EXPECT_TRUE(options->GetDumpTensorIds().empty());

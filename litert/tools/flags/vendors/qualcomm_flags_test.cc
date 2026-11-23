@@ -839,6 +839,17 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetDspSkelDir(), "");
 }
 
+TEST(QualcommOptionsFromFlagsTest, TensorDumpDir) {
+  absl::SetFlag(&FLAGS_qualcomm_tensor_dump_dir, "/custom/tensor_dumps");
+
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetTensorDumpDir(), "/custom/tensor_dumps");
+
+  absl::SetFlag(&FLAGS_qualcomm_tensor_dump_dir, "");
+}
+
 TEST(QualcommOptionsFromFlagsTest, CustomQnnLibAndDspSkelDirs) {
   absl::SetFlag(&FLAGS_qualcomm_qnn_lib_dir, "/custom/qnn/lib");
   absl::SetFlag(&FLAGS_qualcomm_dsp_skel_dir, "/custom/dsp/skel");

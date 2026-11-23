@@ -483,6 +483,17 @@ class QualcommOptions : public ConcreteOptionsBase {
     return std::vector<std::int32_t>(ids, ids + number_of_ids);
   }
 
+  // Sets the initial output directory for tensor dumps.
+  // An empty string uses the default directory.
+  void SetTensorDumpDir(const std::string& tensor_dump_dir) {
+    LrtQualcommOptionsSetTensorDumpDir(options_, tensor_dump_dir.c_str());
+  }
+  StringView GetTensorDumpDir() const {
+    const char* val = "";
+    LrtQualcommOptionsGetTensorDumpDir(options_, &val);
+    return val;
+  }
+
   void SetIrJsonDir(const std::string& ir_json_dir) {
     LrtQualcommOptionsSetIrJsonDir(options_, ir_json_dir.c_str());
   }
