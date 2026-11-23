@@ -16,6 +16,8 @@
 
 #if defined(_WIN32)
 #include <windows.h>
+#else
+#include <unistd.h>
 #endif
 
 #include <array>
@@ -186,14 +188,17 @@ ModelBuffer BuildModel(absl::string_view group_name) {
   return result;
 }
 
-ModelBuffer BuildModelWithDuplicateExternalBuffers(
-    absl::string_view group_name, uint64_t second_offset = kSliceOffset) {
+ModelBuffer BuildModelWithTwoExternalBuffers(absl::string_view group_name,
+                                             uint64_t offset_0,
+                                             uint64_t length_0,
+                                             uint64_t offset_1,
+                                             uint64_t length_1) {
   flatbuffers::FlatBufferBuilder builder;
 
-  const std::vector<int32_t> tensor_shape = {
-      static_cast<int32_t>(kTensorElementCount)};
+  const std::vector<int32_t> shape_0 = {static_cast<int32_t>(length_0)};
+  const std::vector<int32_t> shape_1 = {static_cast<int32_t>(length_1)};
   auto tensor_0 = tflite::CreateTensor(
-      builder, builder.CreateVector(tensor_shape), tflite::TensorType_UINT8,
+      builder, builder.CreateVector(shape_0), tflite::TensorType_UINT8,
       /*buffer=*/0, builder.CreateString("external_tensor_0"),
       /*quantization=*/0,
       /*is_variable=*/false,
@@ -202,7 +207,7 @@ ModelBuffer BuildModelWithDuplicateExternalBuffers(
       /*has_rank=*/false,
       /*variant_tensors=*/0, kExternalBufferId);
   auto tensor_1 = tflite::CreateTensor(
-      builder, builder.CreateVector(tensor_shape), tflite::TensorType_UINT8,
+      builder, builder.CreateVector(shape_1), tflite::TensorType_UINT8,
       /*buffer=*/0, builder.CreateString("external_tensor_1"),
       /*quantization=*/0,
       /*is_variable=*/false,
@@ -234,12 +239,12 @@ ModelBuffer BuildModelWithDuplicateExternalBuffers(
       std::vector<flatbuffers::Offset<tflite::ExternalBufferGroup>>{
           placeholder_group, group});
 
-  auto ext_buffer_0 = tflite::CreateExternalBuffer(
-      builder, kExternalBufferId, kGroupId, kSliceOffset, kSliceLengthBytes,
-      builder.CreateString(""));
+  auto ext_buffer_0 = tflite::CreateExternalBuffer(builder, kExternalBufferId,
+                                                   kGroupId, offset_0, length_0,
+                                                   builder.CreateString(""));
   auto ext_buffer_1 = tflite::CreateExternalBuffer(
-      builder, kDuplicateExternalBufferId, kGroupId, second_offset,
-      kSliceLengthBytes, builder.CreateString(""));
+      builder, kDuplicateExternalBufferId, kGroupId, offset_1, length_1,
+      builder.CreateString(""));
   auto ext_buffers_vec = builder.CreateVector(
       std::vector<flatbuffers::Offset<tflite::ExternalBuffer>>{ext_buffer_0,
                                                                ext_buffer_1});
@@ -256,6 +261,13 @@ ModelBuffer BuildModelWithDuplicateExternalBuffers(
   result.data.assign(builder.GetBufferPointer(),
                      builder.GetBufferPointer() + builder.GetSize());
   return result;
+}
+
+ModelBuffer BuildModelWithDuplicateExternalBuffers(
+    absl::string_view group_name, uint64_t second_offset = kSliceOffset) {
+  return BuildModelWithTwoExternalBuffers(group_name, kSliceOffset,
+                                          kSliceLengthBytes, second_offset,
+                                          kSliceLengthBytes);
 }
 
 ModelBuffer BuildModelWithoutExternalWeights() {
@@ -552,6 +564,352 @@ TEST(ExternalWeightLoaderTest, RejectsScopedSectionPastWindowsFileEnd) {
   request.cpu = true;
   EXPECT_EQ(loader->PrepareAccess(request, nullptr),
             kLiteRtStatusErrorInvalidArgument);
+}
+#else
+void* GetHostBufferAddress(const WeightAccess* access) {
+  EXPECT_NE(access, nullptr);
+  if (access == nullptr) {
+    return nullptr;
+  }
+  void* host_mem_addr = nullptr;
+  EXPECT_EQ(LrtGetRuntimeContext()->lock_tensor_buffer(
+                access->GetHostBuffer(), &host_mem_addr,
+                kLiteRtTensorBufferLockModeRead),
+            kLiteRtStatusOk);
+  EXPECT_EQ(
+      LrtGetRuntimeContext()->unlock_tensor_buffer(access->GetHostBuffer()),
+      kLiteRtStatusOk);
+  return host_mem_addr;
+}
+
+TEST(ExternalWeightLoaderTest, ScopedSlicesShareContiguousMappingOnPosix) {
+  if constexpr (sizeof(void*) < 8) {
+    GTEST_SKIP() << "Shared group mapping is only enabled on 64-bit POSIX";
+  }
+  constexpr uint64_t kSectionOffset = 65536 + 128;
+  constexpr uint64_t kSecondOffset = 65536;
+  constexpr absl::string_view kGroupName = "mapped_posix_group";
+  std::string payload(3 * 65536, 'x');
+  payload.replace(kSectionOffset, 8, "first123");
+  payload.replace(kSectionOffset + kSecondOffset, 8, "second12");
+
+  ModelBuffer model =
+      BuildModelWithDuplicateExternalBuffers(kGroupName, kSecondOffset);
+  auto file =
+      ScopedFile::Open(WriteWeightsFile("whole_mapping_posix.bin", payload));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = kSectionOffset,
+                                       .length = kSecondOffset + 8});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
+
+  const WeightAccess* access_0 =
+      loader->GetExternalWeightByBuffer(kExternalBufferId);
+  const WeightAccess* access_1 =
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId);
+  ExpectHostBufferEquals(
+      access_0,
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("first123"), 8));
+  ExpectHostBufferEquals(
+      access_1,
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("second12"), 8));
+
+  const auto* ptr_0 = static_cast<const char*>(GetHostBufferAddress(access_0));
+  const auto* ptr_1 = static_cast<const char*>(GetHostBufferAddress(access_1));
+  ASSERT_NE(ptr_0, nullptr);
+  ASSERT_NE(ptr_1, nullptr);
+  EXPECT_EQ(ptr_1 - ptr_0, static_cast<ptrdiff_t>(kSecondOffset));
+
+  // Releasing one slice must keep the shared mapping alive for the sibling.
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("second12"), 8));
+
+  // Re-preparing the released slice reuses the still-live group mapping.
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  const auto* reloaded_ptr_0 = static_cast<const char*>(GetHostBufferAddress(
+      loader->GetExternalWeightByBuffer(kExternalBufferId)));
+  EXPECT_EQ(reloaded_ptr_0, ptr_0);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("first123"), 8));
+
+  // Releasing every slice unmaps the group, and a later prepare remaps cleanly.
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kDuplicateExternalBufferId),
+            kLiteRtStatusOk);
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("first123"), 8));
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("second12"), 8));
+}
+
+TEST(ExternalWeightLoaderTest, FilePathSlicesShareContiguousMappingOnPosix) {
+  if constexpr (sizeof(void*) < 8) {
+    GTEST_SKIP() << "Shared group mapping is only enabled on 64-bit POSIX";
+  }
+  constexpr uint64_t kSecondOffset = 65536;
+  constexpr absl::string_view kGroupName = "shared_file_group.bin";
+  std::string payload(2 * 65536, 'z');
+  payload.replace(0, 8, "alpha123");
+  payload.replace(kSecondOffset, 8, "beta5678");
+  WriteWeightsFile(kGroupName, payload);
+
+  ModelBuffer model =
+      BuildModelWithDuplicateExternalBuffers(kGroupName, kSecondOffset);
+  auto loader = CreateLiteRtWeightLoader(
+      LrtGetRuntimeContext(), model.model(),
+      /*model_directory=*/std::string(::testing::TempDir()),
+      /*scoped_weight_source=*/nullptr);
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
+
+  const WeightAccess* access_0 =
+      loader->GetExternalWeightByBuffer(kExternalBufferId);
+  const WeightAccess* access_1 =
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId);
+  const auto* ptr_0 = static_cast<const char*>(GetHostBufferAddress(access_0));
+  const auto* ptr_1 = static_cast<const char*>(GetHostBufferAddress(access_1));
+  ASSERT_NE(ptr_0, nullptr);
+  ASSERT_NE(ptr_1, nullptr);
+  EXPECT_EQ(ptr_1 - ptr_0, static_cast<ptrdiff_t>(kSecondOffset));
+  ExpectHostBufferEquals(
+      access_0,
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("alpha123"), 8));
+  ExpectHostBufferEquals(
+      access_1,
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("beta5678"), 8));
+}
+
+TEST(ExternalWeightLoaderTest,
+     DiscardsMultiPageSharedSliceWithoutAffectingNeighbor) {
+  const size_t page_size = static_cast<size_t>(sysconf(_SC_PAGESIZE));
+  ASSERT_GT(page_size, 0);
+
+  // Place buffer 0 across multiple pages with an unaligned start and end so
+  // inward page alignment covers its interior page(s) while buffer 1 shares
+  // its trailing boundary page.
+  const uint64_t offset_0 = 64;
+  const uint64_t length_0 = 3 * page_size;
+  const uint64_t offset_1 = offset_0 + length_0;
+  const uint64_t length_1 = 64;
+
+  std::string payload(static_cast<size_t>(offset_1 + length_1 + page_size),
+                      '\0');
+  for (size_t i = 0; i < length_0; ++i) {
+    payload[offset_0 + i] = static_cast<char>((i * 31) & 0xFF);
+  }
+  for (size_t i = 0; i < length_1; ++i) {
+    payload[offset_1 + i] = static_cast<char>(0xA0 + (i & 0x1F));
+  }
+
+  constexpr absl::string_view kGroupName = "discard_shared_group";
+  ModelBuffer model = BuildModelWithTwoExternalBuffers(
+      kGroupName, offset_0, length_0, offset_1, length_1);
+  auto file =
+      ScopedFile::Open(WriteWeightsFile("discard_shared_group.bin", payload));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = 0, .length = payload.size()});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_EQ(loader->PrepareAccess(request, /*env=*/nullptr), kLiteRtStatusOk);
+
+  const absl::Span<const uint8_t> expected_0(
+      reinterpret_cast<const uint8_t*>(payload.data() + offset_0), length_0);
+  const absl::Span<const uint8_t> expected_1(
+      reinterpret_cast<const uint8_t*>(payload.data() + offset_1), length_1);
+  ExpectHostBufferEquals(loader->GetExternalWeightByBuffer(kExternalBufferId),
+                         expected_0);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+      expected_1);
+
+#if defined(__linux__)
+  if constexpr (sizeof(void*) >= 8) {
+    // On Linux, MADV_DONTNEED on a MAP_PRIVATE file mapping discards COW writes
+    // on advised pages and reverts them to file contents while leaving
+    // unadvised pages untouched. Dirty buffer 0's leading boundary page, an
+    // interior full page, and buffer 1's shared trailing boundary page to
+    // verify inward alignment advises only interior full pages.
+    auto* mut_0 = static_cast<uint8_t*>(GetHostBufferAddress(
+        loader->GetExternalWeightByBuffer(kExternalBufferId)));
+    auto* mut_1 = static_cast<uint8_t*>(GetHostBufferAddress(
+        loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId)));
+    ASSERT_NE(mut_0, nullptr);
+    ASSERT_NE(mut_1, nullptr);
+    const uint8_t orig_leading = mut_0[0];
+    const uint8_t orig_interior = mut_0[page_size];
+    const uint8_t orig_neighbor = mut_1[0];
+    mut_0[0] ^= 0xFF;
+    mut_0[page_size] ^= 0xFF;
+    mut_1[0] ^= 0xFF;
+
+    ASSERT_EQ(loader->DiscardExternalWeightByBuffer(kExternalBufferId),
+              kLiteRtStatusOk);
+    EXPECT_EQ(mut_0[page_size], orig_interior);
+    EXPECT_EQ(mut_0[0], static_cast<uint8_t>(orig_leading ^ 0xFF));
+    EXPECT_EQ(mut_1[0], static_cast<uint8_t>(orig_neighbor ^ 0xFF));
+
+    mut_0[0] = orig_leading;
+    mut_1[0] = orig_neighbor;
+  } else {
+    ASSERT_EQ(loader->DiscardExternalWeightByBuffer(kExternalBufferId),
+              kLiteRtStatusOk);
+  }
+#else
+  ASSERT_EQ(loader->DiscardExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+#endif
+  ASSERT_EQ(loader->DiscardExternalWeightByBuffer(kDuplicateExternalBufferId),
+            kLiteRtStatusOk);
+
+  // Both buffers remain readable after discard (file-backed pages re-fault).
+  ExpectHostBufferEquals(loader->GetExternalWeightByBuffer(kExternalBufferId),
+                         expected_0);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+      expected_1);
+}
+
+TEST(ExternalWeightLoaderTest, RejectsScopedSectionPastPosixFileEnd) {
+  constexpr absl::string_view kGroupName = "truncated_posix_group";
+  ModelBuffer model = BuildModel(kGroupName);
+  auto file = ScopedFile::Open(
+      WriteWeightsFile("truncated_mapping_posix.bin", "12345678"));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = 65536, .length = 8});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  WeightAccessRequest request;
+  request.cpu = true;
+  EXPECT_EQ(loader->PrepareAccess(request, /*env=*/nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
+TEST(ExternalWeightLoaderTest, RejectsSlicePastScopedSectionEndOnPosix) {
+  constexpr absl::string_view kGroupName = "slice_oob_posix_group";
+  std::string payload(128, 'z');
+  payload.replace(0, 8, "valid123");
+  ModelBuffer model = BuildModelWithTwoExternalBuffers(
+      kGroupName, /*offset_0=*/0, /*length_0=*/8,
+      /*offset_1=*/64, /*length_1=*/8);
+  auto file =
+      ScopedFile::Open(WriteWeightsFile("slice_oob_posix.bin", payload));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = 0, .length = 64});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  EXPECT_EQ(loader->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+            nullptr);
+
+  // Valid sibling in the same group still prepares and stays readable if the
+  // out-of-range slice is requested again afterwards.
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  EXPECT_EQ(loader->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("valid123"), 8));
+}
+
+TEST(ExternalWeightLoaderTest,
+     RollsBackSharedGroupRefCountWhenHostBufferCreationFails) {
+  if constexpr (sizeof(void*) < 8) {
+    GTEST_SKIP() << "Shared group mapping is only enabled on 64-bit POSIX";
+  }
+  constexpr absl::string_view kGroupName = "rollback_posix_group";
+  std::string payload(128, 'p');
+  payload.replace(0, 8, "good1234");
+  // Offset 8 violates LITERT_HOST_MEMORY_BUFFER_ALIGNMENT (64), causing
+  // create_tensor_buffer_from_host_memory() to fail after MapCpuSlice().
+  ModelBuffer model = BuildModelWithTwoExternalBuffers(
+      kGroupName, /*offset_0=*/0, /*length_0=*/8,
+      /*offset_1=*/8, /*length_1=*/8);
+  auto file =
+      ScopedFile::Open(WriteWeightsFile("rollback_posix_group.bin", payload));
+  ASSERT_TRUE(file.ok());
+  ScopedWeightSource::SectionMap sections;
+  sections.emplace(std::string(kGroupName),
+                   ScopedWeightSection{.offset = 0, .length = payload.size()});
+  auto source = std::make_unique<ScopedWeightSource>(std::move(*file),
+                                                     std::move(sections));
+  auto loader = CreateLiteRtWeightLoader(LrtGetRuntimeContext(), model.model(),
+                                         std::nullopt, std::move(source));
+  ASSERT_NE(loader, nullptr);
+
+  WeightAccessRequest request;
+  request.cpu = true;
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  auto* mut_0 = static_cast<uint8_t*>(GetHostBufferAddress(
+      loader->GetExternalWeightByBuffer(kExternalBufferId)));
+  ASSERT_NE(mut_0, nullptr);
+  mut_0[0] ^= 0xFF;
+
+  EXPECT_NE(loader->PrepareAccessForBuffer(kDuplicateExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  EXPECT_EQ(loader->GetExternalWeightByBuffer(kDuplicateExternalBufferId),
+            nullptr);
+
+  // Releasing buffer 0 must unmap the shared group (active_slices dropped to
+  // 0, not pinned at 1 by the failed buffer 1). A fresh remap restores clean
+  // file bytes instead of keeping the COW write on the 8-byte slice.
+  ASSERT_EQ(loader->ReleaseExternalWeightByBuffer(kExternalBufferId),
+            kLiteRtStatusOk);
+  ASSERT_EQ(loader->PrepareAccessForBuffer(kExternalBufferId, request,
+                                           /*env=*/nullptr),
+            kLiteRtStatusOk);
+  ExpectHostBufferEquals(
+      loader->GetExternalWeightByBuffer(kExternalBufferId),
+      absl::MakeConstSpan(reinterpret_cast<const uint8_t*>("good1234"), 8));
 }
 #endif
 

@@ -183,25 +183,133 @@ std::string JoinPath(absl::string_view base, absl::string_view relative) {
 }
 
 struct CpuMapping {
+  // Full mapped range (for owned mappings) or the backing group/host memory
+  // range (for non-owned slices). Empty when unmapped.
   absl::Span<const std::byte> base;
+  // Exact byte range for this tensor's data.
   absl::Span<const std::byte> data;
-  bool mmapped = false;
+  // True if this entry owns the mmap/MapViewOfFile allocation in `base` and
+  // must unmap it on release.
+  bool owns_mapping = false;
+  // True if `data` is backed by a file mmap that supports madvise().
+  bool is_file_backed_mmap = false;
+  // When backed by a shared per-group mmap (`!owns_mapping` and
+  // `is_file_backed_mmap`), identifies the group in `group_mappings_`.
+  std::optional<uint32_t> shared_group_id;
 };
 
+#if !defined(_WIN32)
+// Owns a single contiguous POSIX mmap covering an entire external weight group
+// (a ScopedWeightSection or standalone external weight file).
+struct MappedGroupRegion {
+  MappedGroupRegion() = default;
+  MappedGroupRegion(void* base, size_t map_length, size_t page_offset,
+                    size_t data_length)
+      : base(base),
+        map_length(map_length),
+        page_offset(page_offset),
+        data_length(data_length) {}
+
+  MappedGroupRegion(const MappedGroupRegion&) = delete;
+  MappedGroupRegion& operator=(const MappedGroupRegion&) = delete;
+
+  MappedGroupRegion(MappedGroupRegion&& other) noexcept
+      : base(std::exchange(other.base, nullptr)),
+        map_length(std::exchange(other.map_length, 0)),
+        page_offset(std::exchange(other.page_offset, 0)),
+        data_length(std::exchange(other.data_length, 0)),
+        active_slices(std::exchange(other.active_slices, 0)) {}
+
+  MappedGroupRegion& operator=(MappedGroupRegion&& other) noexcept {
+    if (this != &other) {
+      Reset();
+      base = std::exchange(other.base, nullptr);
+      map_length = std::exchange(other.map_length, 0);
+      page_offset = std::exchange(other.page_offset, 0);
+      data_length = std::exchange(other.data_length, 0);
+      active_slices = std::exchange(other.active_slices, 0);
+    }
+    return *this;
+  }
+
+  ~MappedGroupRegion() { Reset(); }
+
+  void Reset() {
+    if (base != nullptr && map_length > 0) {
+      munmap(base, map_length);
+    }
+    base = nullptr;
+    map_length = 0;
+    page_offset = 0;
+    data_length = 0;
+    active_slices = 0;
+  }
+
+  absl::Span<const std::byte> data() const {
+    if (base == nullptr || data_length == 0) {
+      return {};
+    }
+    return absl::MakeConstSpan(
+        static_cast<const std::byte*>(base) + page_offset, data_length);
+  }
+
+  void* base = nullptr;
+  size_t map_length = 0;
+  size_t page_offset = 0;
+  size_t data_length = 0;
+  size_t active_slices = 0;
+};
+#endif  // !defined(_WIN32)
+
 litert::Expected<void> DiscardCpuMappingPages(const CpuMapping& mapping) {
-  if (mapping.base.empty() || !mapping.mmapped) {
+  if (!mapping.is_file_backed_mmap) {
     return {};
   }
 #if !defined(_WIN32)
-  if (madvise(const_cast<std::byte*>(mapping.base.data()), mapping.base.size(),
-              MADV_DONTNEED) != 0) {
+  if (mapping.owns_mapping) {
+    if (mapping.base.empty()) {
+      return {};
+    }
+    if (madvise(const_cast<std::byte*>(mapping.base.data()),
+                mapping.base.size(), MADV_DONTNEED) != 0) {
+      return litert::Unexpected(
+          kLiteRtStatusErrorRuntimeFailure,
+          absl::StrCat("madvise failed: ", strerror(errno)));
+    }
+    return {};
+  }
+  if (mapping.data.empty()) {
+    return {};
+  }
+  // For a slice inside a shared group mapping, align inward to full OS pages so
+  // we only advise pages exclusively covered by this tensor and leave boundary
+  // pages shared with adjacent tensors untouched.
+  const int64_t page_size_signed = sysconf(_SC_PAGESIZE);
+  if (page_size_signed <= 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to determine OS page size");
+  }
+  const size_t page_size = static_cast<size_t>(page_size_signed);
+  const uintptr_t start_addr = reinterpret_cast<uintptr_t>(mapping.data.data());
+  const size_t remainder = static_cast<size_t>(start_addr % page_size);
+  const size_t leading = remainder == 0 ? 0 : page_size - remainder;
+  if (leading >= mapping.data.size()) {
+    return {};
+  }
+  const size_t remaining = mapping.data.size() - leading;
+  const size_t aligned_length = remaining - (remaining % page_size);
+  if (aligned_length == 0) {
+    return {};
+  }
+  if (madvise(const_cast<std::byte*>(mapping.data.data() + leading),
+              aligned_length, MADV_DONTNEED) != 0) {
     return litert::Unexpected(
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrCat("madvise failed: ", strerror(errno)));
   }
 #else
   // Windows does not provide MADV_DONTNEED for file mappings. The view remains
-  // valid and will be released by ReleaseEntry().
+  // valid and will be released by ReleaseOwnedCpuMapping().
 #endif
   return {};
 }
@@ -271,20 +379,14 @@ litert::Expected<void> ReadScopedRangeWin32(HANDLE handle,
 }
 #endif  // defined(_WIN32)
 
-void ReleaseEntry(Entry& entry) {
-  entry.access.reset();
-  if (!entry.cpu_mapping) {
-    return;
-  }
-  if (!entry.cpu_mapping->base.empty() && entry.cpu_mapping->mmapped) {
+void ReleaseOwnedCpuMapping(const CpuMapping& mapping) {
+  if (!mapping.base.empty() && mapping.owns_mapping) {
 #if !defined(_WIN32)
-    munmap(const_cast<std::byte*>(entry.cpu_mapping->base.data()),
-           entry.cpu_mapping->base.size());
+    munmap(const_cast<std::byte*>(mapping.base.data()), mapping.base.size());
 #else
-    UnmapViewOfFile(const_cast<std::byte*>(entry.cpu_mapping->base.data()));
+    UnmapViewOfFile(const_cast<std::byte*>(mapping.base.data()));
 #endif
   }
-  entry.cpu_mapping.reset();
 }
 
 litert::Expected<std::string> ResolveGroupPath(
@@ -314,28 +416,145 @@ struct MmapParams {
   size_t map_length;
 };
 
-MmapParams GetMmapParams(uint64_t absolute_offset, uint64_t length) {
+litert::Expected<MmapParams> GetMmapParams(uint64_t absolute_offset,
+                                           uint64_t length) {
   MmapParams params;
 #if !defined(_WIN32)
-  const int64_t page_size = sysconf(_SC_PAGESIZE);
-  params.page_offset =
-      static_cast<size_t>(absolute_offset % static_cast<uint64_t>(page_size));
-  params.map_offset = static_cast<off_t>(absolute_offset - params.page_offset);
-  params.map_length = params.page_offset + static_cast<size_t>(length);
+  const int64_t page_size_signed = sysconf(_SC_PAGESIZE);
+  if (page_size_signed <= 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              "Failed to determine OS page size");
+  }
+  const uint64_t page_size = static_cast<uint64_t>(page_size_signed);
+  params.page_offset = static_cast<size_t>(absolute_offset % page_size);
+  const uint64_t aligned_offset = absolute_offset - params.page_offset;
+  if (aligned_offset >
+      static_cast<uint64_t>(std::numeric_limits<off_t>::max())) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "External weight offset overflows off_t");
+  }
+  params.map_offset = static_cast<off_t>(aligned_offset);
 #else
   SYSTEM_INFO sys_info;
   GetSystemInfo(&sys_info);
   const uint64_t alloc_granularity = sys_info.dwAllocationGranularity;
-  params.page_offset =
-      static_cast<size_t>(absolute_offset % alloc_granularity);
+  params.page_offset = static_cast<size_t>(absolute_offset % alloc_granularity);
   params.map_offset = absolute_offset - params.page_offset;
-  params.map_length = params.page_offset + static_cast<size_t>(length);
 #endif
+  if (length > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) -
+                   params.page_offset) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "External weight mapping length overflows size_t");
+  }
+  params.map_length = params.page_offset + static_cast<size_t>(length);
   return params;
 }
 
+#if !defined(_WIN32)
+litert::Expected<uint64_t> GetPosixFileSize(int fd, absl::string_view label) {
+  struct stat st;
+  if (fstat(fd, &st) != 0) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to stat ", label, ": ", strerror(errno)));
+  }
+  if (st.st_size < 0) {
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              absl::StrCat("Invalid file size for ", label));
+  }
+  return static_cast<uint64_t>(st.st_size);
+}
+
+litert::Expected<MappedGroupRegion> MapPosixRegion(
+    int fd, uint64_t offset, std::optional<uint64_t> length,
+    absl::string_view label) {
+  LITERT_ASSIGN_OR_RETURN(const uint64_t file_size,
+                          GetPosixFileSize(fd, label));
+  if (offset > file_size) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("External weight range exceeds file size for ", label));
+  }
+  const uint64_t region_length = length.value_or(file_size - offset);
+  if (region_length > file_size - offset) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        absl::StrCat("External weight range exceeds file size for ", label));
+  }
+  if (region_length == 0) {
+    return MappedGroupRegion{};
+  }
+  LITERT_ASSIGN_OR_RETURN(const MmapParams params,
+                          GetMmapParams(offset, region_length));
+  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
+  // host mapped pointer for zero copy weight loading.
+  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE, fd, params.map_offset);
+  if (base == MAP_FAILED) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("mmap failed for ", label, ": ", strerror(errno)));
+  }
+#if defined(__APPLE__)
+  // Advise XNU not to eagerly wire/retain pages across multi-GB weight
+  // mappings during initial scans (matching MemoryMappedFilePosix::Create).
+  if (madvise(base, params.map_length, MADV_DONTNEED) != 0) {
+    LITERT_LOG(LITERT_WARNING, "madvise(MADV_DONTNEED) failed for %.*s: %s",
+               static_cast<int>(label.size()), label.data(), strerror(errno));
+  }
+#endif  // defined(__APPLE__)
+  return MappedGroupRegion(base, params.map_length, params.page_offset,
+                           static_cast<size_t>(region_length));
+}
+
+CpuMapping TakeOwnedCpuMapping(MappedGroupRegion&& region) {
+  const size_t map_length = region.map_length;
+  const size_t page_offset = region.page_offset;
+  const size_t data_length = region.data_length;
+  void* base = std::exchange(region.base, nullptr);
+  region.map_length = 0;
+  region.page_offset = 0;
+  region.data_length = 0;
+  region.active_slices = 0;
+  if (base == nullptr) {
+    return CpuMapping{.owns_mapping = false, .is_file_backed_mmap = false};
+  }
+  return CpuMapping{
+      .base =
+          absl::MakeConstSpan(static_cast<const std::byte*>(base), map_length),
+      .data = absl::MakeConstSpan(
+          static_cast<const std::byte*>(base) + page_offset, data_length),
+      .owns_mapping = true,
+      .is_file_backed_mmap = true};
+}
+
+litert::Expected<MappedGroupRegion> MapPosixGroupRegion(
+    const WeightSource& source) {
+  if (source.kind == WeightSource::Kind::kScopedFile) {
+    if (!source.scoped_source || !source.scoped_source->file.IsValid()) {
+      return litert::Unexpected(kLiteRtStatusErrorFailedPrecondition,
+                                "Scoped weight source is not available");
+    }
+    return MapPosixRegion(source.scoped_source->file.file(),
+                          source.section->offset, source.section->length,
+                          "scoped weight file");
+  }
+  int fd = open(source.path.c_str(), O_RDONLY);
+  if (fd < 0) {
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        absl::StrCat("Failed to open ", source.path, ": ", strerror(errno)));
+  }
+  litert::Expected<MappedGroupRegion> region =
+      MapPosixRegion(fd, /*offset=*/0, /*length=*/std::nullopt, source.path);
+  close(fd);
+  return region;
+}
+#endif  // !defined(_WIN32)
+
 litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
-                                                 const std::string& path) {
+                                                  const std::string& path) {
 #if !defined(_WIN32)
   int fd = open(path.c_str(), O_RDONLY);
   if (fd < 0) {
@@ -343,44 +562,20 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
         kLiteRtStatusErrorRuntimeFailure,
         absl::StrCat("Failed to open ", path, ": ", strerror(errno)));
   }
-
-  struct stat st;
-  if (fstat(fd, &st) != 0) {
-    int saved_errno = errno;
-    close(fd);
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("Failed to stat ", path, ": ", strerror(saved_errno)));
-  }
-
-  const uint64_t file_size = static_cast<uint64_t>(st.st_size);
-  if (info.offset > file_size || info.length > file_size - info.offset) {
-    close(fd);
-    return litert::Unexpected(
-        kLiteRtStatusErrorInvalidArgument,
-        absl::StrCat("External weight slice out of range for ", path));
-  }
-
-  MmapParams params = GetMmapParams(info.offset, info.length);
-  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
-  // host mapped pointer for zero copy weight loading.
-  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE, fd, params.map_offset);
-  int saved_errno = errno;
+  litert::Expected<MappedGroupRegion> region =
+      MapPosixRegion(fd, info.offset, info.length, path);
   close(fd);
-  if (base == MAP_FAILED) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("mmap failed for ", path, ": ", strerror(saved_errno)));
+  if (!region) {
+    return region.Error();
   }
+  return TakeOwnedCpuMapping(std::move(*region));
 #else
   HANDLE file_handle =
       CreateFileA(path.c_str(), GENERIC_READ, FILE_SHARE_READ, nullptr,
                   OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
   if (file_handle == INVALID_HANDLE_VALUE) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("Failed to open ", path));
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              absl::StrCat("Failed to open ", path));
   }
 
   LARGE_INTEGER file_size;
@@ -392,7 +587,8 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
         absl::StrCat("External weight slice out of range for ", path));
   }
 
-  MmapParams params = GetMmapParams(info.offset, info.length);
+  LITERT_ASSIGN_OR_RETURN(MmapParams params,
+                          GetMmapParams(info.offset, info.length));
 
   HANDLE mapping_handle =
       CreateFileMappingA(file_handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
@@ -414,13 +610,14 @@ litert::Expected<CpuMapping> MapFileSliceFromPath(const LiteRtWeightInfo& info,
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "MapViewOfFile failed on Windows");
   }
-#endif
   return CpuMapping{
       .base =
           absl::MakeConstSpan(static_cast<std::byte*>(base), params.map_length),
       .data = absl::MakeConstSpan(
           static_cast<std::byte*>(base) + params.page_offset, info.length),
-      .mmapped = true};
+      .owns_mapping = true,
+      .is_file_backed_mmap = true};
+#endif
 }
 
 #if defined(_WIN32)
@@ -428,27 +625,22 @@ inline int FileSeek64(std::FILE* file, int64_t offset, int whence) {
   return _fseeki64(file, offset, whence);
 }
 
-inline int64_t FileTell64(std::FILE* file) {
-  return _ftelli64(file);
-}
+inline int64_t FileTell64(std::FILE* file) { return _ftelli64(file); }
 #else   // defined(_WIN32)
 inline int FileSeek64(std::FILE* file, int64_t offset, int whence) {
   return fseeko(file, static_cast<off_t>(offset), whence);
 }
 
-inline int64_t FileTell64(std::FILE* file) {
-  return ftello(file);
-}
+inline int64_t FileTell64(std::FILE* file) { return ftello(file); }
 #endif  // defined(_WIN32)
 
 litert::Expected<void> ReadFileSliceFromPath(const LiteRtWeightInfo& info,
-                                            const std::string& path,
-                                            void* output) {
+                                             const std::string& path,
+                                             void* output) {
   std::FILE* file = std::fopen(path.c_str(), "rb");
   if (!file) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("Failed to open ", path));
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              absl::StrCat("Failed to open ", path));
   }
   if (FileSeek64(file, 0, SEEK_END) != 0) {
     std::fclose(file);
@@ -471,9 +663,8 @@ litert::Expected<void> ReadFileSliceFromPath(const LiteRtWeightInfo& info,
   }
   if (FileSeek64(file, static_cast<int64_t>(info.offset), SEEK_SET) != 0) {
     std::fclose(file);
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("Failed to seek in ", path));
+    return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                              absl::StrCat("Failed to seek in ", path));
   }
 
   const size_t read_bytes = std::fread(output, 1, info.length, file);
@@ -517,20 +708,21 @@ litert::Expected<CpuMapping> MapScopedFileSlice(
   LITERT_RETURN_IF_ERROR(ValidateScopedSlice(info, section, &absolute_offset));
 #if !defined(_WIN32)
   int fd = source->file.file();
-  MmapParams params = GetMmapParams(absolute_offset, info.length);
-  // MAP_PRIVATE with PROT_WRITE is required for Nvidia vulkan driver to use
-  // host mapped pointer for zero copy weight loading.
-  void* base = mmap(nullptr, params.map_length, PROT_READ | PROT_WRITE,
-                    MAP_PRIVATE, fd, params.map_offset);
-  int saved_errno = errno;
-  if (base == MAP_FAILED) {
-    return litert::Unexpected(
-        kLiteRtStatusErrorRuntimeFailure,
-        absl::StrCat("mmap failed: ", strerror(saved_errno)));
+  LITERT_ASSIGN_OR_RETURN(const uint64_t file_size,
+                          GetPosixFileSize(fd, "scoped weight file"));
+  if (section.offset > file_size ||
+      section.length > file_size - section.offset) {
+    return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                              "Scoped weight section exceeds file size");
   }
+  LITERT_ASSIGN_OR_RETURN(
+      MappedGroupRegion region,
+      MapPosixRegion(fd, absolute_offset, info.length, "scoped weight file"));
+  return TakeOwnedCpuMapping(std::move(region));
 #else
   HANDLE handle = source->file.file();
-  MmapParams params = GetMmapParams(absolute_offset, info.length);
+  LITERT_ASSIGN_OR_RETURN(MmapParams params,
+                          GetMmapParams(absolute_offset, info.length));
 
   HANDLE mapping_handle =
       CreateFileMappingA(handle, nullptr, PAGE_READONLY, 0, 0, nullptr);
@@ -553,13 +745,14 @@ litert::Expected<CpuMapping> MapScopedFileSlice(
     return litert::Unexpected(kLiteRtStatusErrorRuntimeFailure,
                               "MapViewOfFile failed on Windows");
   }
-#endif
   return CpuMapping{
       .base =
           absl::MakeConstSpan(static_cast<std::byte*>(base), params.map_length),
       .data = absl::MakeConstSpan(
           static_cast<std::byte*>(base) + params.page_offset, info.length),
-      .mmapped = true};
+      .owns_mapping = true,
+      .is_file_backed_mmap = true};
+#endif
 }
 
 litert::Expected<void> ReadScopedFileSlice(
@@ -587,9 +780,8 @@ litert::Expected<void> ReadScopedFileSlice(
           absl::StrCat("pread failed for scoped weight: ", strerror(errno)));
     }
     if (read_bytes == 0) {
-      return litert::Unexpected(
-          kLiteRtStatusErrorInvalidArgument,
-          "Unexpected EOF while reading scoped weight");
+      return litert::Unexpected(kLiteRtStatusErrorInvalidArgument,
+                                "Unexpected EOF while reading scoped weight");
     }
     cursor += read_bytes;
     remaining -= read_bytes;
@@ -615,7 +807,8 @@ litert::Expected<CpuMapping> MapWeightSlice(const LiteRtWeightInfo& info,
     return CpuMapping{.base = source.host_memory,
                       .data = absl::MakeConstSpan(
                           source.host_memory.data() + info.offset, info.length),
-                      .mmapped = false};
+                      .owns_mapping = false,
+                      .is_file_backed_mmap = false};
   }
   if (source.kind == WeightSource::Kind::kScopedFile) {
     return MapScopedFileSlice(info, *source.section, source.scoped_source);
@@ -641,34 +834,6 @@ litert::Expected<void> ReadWeightSlice(const LiteRtWeightInfo& info,
                                output);
   }
   return ReadFileSliceFromPath(info, source.path, output);
-}
-
-litert::Expected<void> EnsureCpuTensorBuffer(
-    LiteRtRuntimeContext* runtime_context, Entry& entry,
-    const LiteRtWeightInfo& info, const WeightSource& source) {
-  if (!entry.access.has_value()) {
-    entry.access.emplace();
-  }
-  if (entry.access->GetHostBuffer() != nullptr) {
-    LiteRtTensorBufferType buffer_type;
-    if (runtime_context->get_tensor_buffer_type(
-            entry.access->GetHostBuffer(), &buffer_type) == kLiteRtStatusOk &&
-        buffer_type == kLiteRtTensorBufferTypeHostMemory) {
-      return {};
-    }
-  }
-
-  if (!entry.cpu_mapping) {
-    LITERT_ASSIGN_OR_RETURN(entry.cpu_mapping, MapWeightSlice(info, source));
-  }
-
-  LiteRtTensorBuffer host_buffer;
-  LITERT_RETURN_IF_ERROR(runtime_context->create_tensor_buffer_from_host_memory(
-      &info.tensor_type, const_cast<std::byte*>(entry.cpu_mapping->data.data()),
-      entry.cpu_mapping->data.size(), /*deallocator=*/nullptr, &host_buffer));
-  entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
-      host_buffer, LiteRtTensorBufferDeleter{runtime_context}));
-  return {};
 }
 
 litert::Expected<void> EnsureDeviceTensorBuffer(
@@ -725,16 +890,10 @@ litert::Expected<void> EnsureMetalTensorBuffer(
 }
 #endif  // LITERT_HAS_METAL_SUPPORT
 
-litert::Expected<void> PrepareEntryAccess(LiteRtRuntimeContext* runtime_context,
-                                          Entry& entry,
-                                          const LiteRtWeightInfo& info,
-                                          const WeightSource& source,
-                                          const WeightAccessRequest& request,
-                                          LiteRtEnvironmentT* env) {
-  if (request.cpu) {
-    LITERT_RETURN_IF_ERROR(
-        EnsureCpuTensorBuffer(runtime_context, entry, info, source));
-  }
+litert::Expected<void> PrepareDeviceEntryAccess(
+    LiteRtRuntimeContext* runtime_context, Entry& entry,
+    const LiteRtWeightInfo& info, const WeightSource& source,
+    const WeightAccessRequest& request, LiteRtEnvironmentT* env) {
   if (request.opencl) {
 #if LITERT_HAS_OPENCL_SUPPORT
     LITERT_RETURN_IF_ERROR(
@@ -865,8 +1024,15 @@ class LiteRtWeightLoader : public WeightLoader {
 
   ~LiteRtWeightLoader() override {
     for (auto& [_, entry] : entries_) {
-      ReleaseEntry(entry);
+      entry.access.reset();
+      if (entry.cpu_mapping.has_value()) {
+        ReleaseOwnedCpuMapping(*entry.cpu_mapping);
+        entry.cpu_mapping.reset();
+      }
     }
+#if !defined(_WIN32)
+    group_mappings_.clear();
+#endif  // !defined(_WIN32)
   }
 
   absl::Span<const WeightInfo> GetWeightInfo() const override {
@@ -988,6 +1154,132 @@ class LiteRtWeightLoader : public WeightLoader {
     return {};
   }
 
+#if !defined(_WIN32)
+  litert::Expected<MappedGroupRegion*> GetOrMapGroupRegion(
+      uint32_t group_id, const WeightSource& source) {
+    auto it = group_mappings_.find(group_id);
+    if (it != group_mappings_.end()) {
+      return &it->second;
+    }
+    LITERT_ASSIGN_OR_RETURN(MappedGroupRegion region,
+                            MapPosixGroupRegion(source));
+    auto [inserted_it, _] =
+        group_mappings_.emplace(group_id, std::move(region));
+    return &inserted_it->second;
+  }
+#endif  // !defined(_WIN32)
+
+  litert::Expected<CpuMapping> MapCpuSlice(const LiteRtWeightInfo& info,
+                                           const WeightSource& source) {
+#if !defined(_WIN32)
+    // On 64-bit POSIX, back all tensors in an external weight group with one
+    // contiguous mmap rather than per-tensor VMAs. Per-tensor VMAs disrupt
+    // sequential kernel readahead and inflate peak RSS and cold-load latency on
+    // multi-GB models (notably on iOS/macOS).
+    if constexpr (sizeof(void*) >= 8) {
+      if (source.kind == WeightSource::Kind::kScopedFile ||
+          source.kind == WeightSource::Kind::kFilePath) {
+        LITERT_ASSIGN_OR_RETURN(MappedGroupRegion * region,
+                                GetOrMapGroupRegion(info.group_id, source));
+        const absl::Span<const std::byte> group_data = region->data();
+        if (info.offset > group_data.size() ||
+            info.length > group_data.size() - info.offset) {
+          if (region->active_slices == 0) {
+            group_mappings_.erase(info.group_id);
+          }
+          return litert::Unexpected(
+              kLiteRtStatusErrorInvalidArgument,
+              "External weight slice out of range for mapped weight group");
+        }
+        ++region->active_slices;
+        const absl::Span<const std::byte> slice_data =
+            group_data.empty()
+                ? absl::Span<const std::byte>{}
+                : absl::MakeConstSpan(group_data.data() + info.offset,
+                                      static_cast<size_t>(info.length));
+        return CpuMapping{.base = group_data,
+                          .data = slice_data,
+                          .owns_mapping = false,
+                          .is_file_backed_mmap = true,
+                          .shared_group_id = info.group_id};
+      }
+    }
+#endif  // !defined(_WIN32)
+    return MapWeightSlice(info, source);
+  }
+
+  void ReleaseCpuMapping(const CpuMapping& mapping, bool discard_pages = true) {
+#if !defined(_WIN32)
+    if (mapping.shared_group_id.has_value()) {
+      const uint32_t group_id = *mapping.shared_group_id;
+      auto it = group_mappings_.find(group_id);
+      if (it != group_mappings_.end()) {
+        if (it->second.active_slices > 1) {
+          // Other tensors still reference this shared group mapping; advise the
+          // kernel that pages strictly inside this tensor are no longer needed.
+          if (discard_pages) {
+            (void)DiscardCpuMappingPages(mapping);
+          }
+          --it->second.active_slices;
+        } else {
+          // Last active reference to this group; unmap the entire region.
+          group_mappings_.erase(it);
+        }
+      }
+      return;
+    }
+#endif  // !defined(_WIN32)
+    ReleaseOwnedCpuMapping(mapping);
+  }
+
+  litert::Expected<void> EnsureCpuTensorBufferForEntry(
+      Entry& entry, const LiteRtWeightInfo& info, const WeightSource& source) {
+    if (entry.access.has_value() && entry.access->GetHostBuffer() != nullptr) {
+      LiteRtTensorBufferType buffer_type;
+      if (runtime_context_->get_tensor_buffer_type(
+              entry.access->GetHostBuffer(), &buffer_type) == kLiteRtStatusOk &&
+          buffer_type == kLiteRtTensorBufferTypeHostMemory) {
+        return {};
+      }
+    }
+
+    bool mapped_in_call = false;
+    if (!entry.cpu_mapping.has_value()) {
+      LITERT_ASSIGN_OR_RETURN(entry.cpu_mapping, MapCpuSlice(info, source));
+      mapped_in_call = true;
+    }
+
+    LiteRtTensorBuffer host_buffer = nullptr;
+    const LiteRtStatus status =
+        runtime_context_->create_tensor_buffer_from_host_memory(
+            &info.tensor_type,
+            const_cast<std::byte*>(entry.cpu_mapping->data.data()),
+            entry.cpu_mapping->data.size(), /*deallocator=*/nullptr,
+            &host_buffer);
+    if (status != kLiteRtStatusOk) {
+      if (mapped_in_call) {
+        ReleaseCpuMapping(*entry.cpu_mapping, /*discard_pages=*/false);
+        entry.cpu_mapping.reset();
+      }
+      return litert::Unexpected(status, "Failed to create host tensor buffer");
+    }
+    if (!entry.access.has_value()) {
+      entry.access.emplace();
+    }
+    entry.access->SetHostBuffer(LiteRtTensorBufferPtr(
+        host_buffer, LiteRtTensorBufferDeleter{runtime_context_}));
+    return {};
+  }
+
+  void ReleaseEntry(Entry& entry) {
+    entry.access.reset();
+    if (!entry.cpu_mapping.has_value()) {
+      return;
+    }
+    ReleaseCpuMapping(*entry.cpu_mapping);
+    entry.cpu_mapping.reset();
+  }
+
   litert::Expected<void> PrepareAccessForBufferImpl(
       uint32_t external_buffer_id, const WeightAccessRequest& request,
       LiteRtEnvironmentT* env) {
@@ -999,8 +1291,15 @@ class LiteRtWeightLoader : public WeightLoader {
     }
     const LiteRtWeightInfo& info = infos_[it->second.info_index];
     LITERT_ASSIGN_OR_RETURN(WeightSource source, ResolveWeightSource(info));
-    return PrepareEntryAccess(runtime_context_, it->second, info, source,
-                              request, env);
+    if (request.cpu) {
+      LITERT_RETURN_IF_ERROR(
+          EnsureCpuTensorBufferForEntry(it->second, info, source));
+    }
+    if (request.opencl || request.metal) {
+      LITERT_RETURN_IF_ERROR(PrepareDeviceEntryAccess(
+          runtime_context_, it->second, info, source, request, env));
+    }
+    return {};
   }
 
   litert::Expected<void> SetExternalWeightByBufferImpl(
@@ -1192,6 +1491,11 @@ class LiteRtWeightLoader : public WeightLoader {
   LiteRtRuntimeContext* runtime_context_;
   std::optional<std::string> model_directory_;
   std::vector<LiteRtWeightInfo> infos_;
+#if !defined(_WIN32)
+  // Declared before `entries_` so shared mappings outlive any tensor buffer
+  // handles referencing them.
+  absl::flat_hash_map<uint32_t, MappedGroupRegion> group_mappings_;
+#endif  // !defined(_WIN32)
   absl::flat_hash_map<uint32_t, Entry> entries_;
   absl::flat_hash_map<uint32_t, uint32_t> canonical_external_buffer_ids_;
   absl::flat_hash_map<uint32_t, std::string> group_paths_;
