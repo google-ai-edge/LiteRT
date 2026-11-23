@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <memory>
@@ -108,6 +109,51 @@ TEST_F(ConvertScatterNdTest, ConvertsConstantUpdatesToConstantOp) {
   // The scatter_nd consumes the constant as its updates input.
   EXPECT_EQ(scatter_op->inputs[1], const_op->outputs[0]);
   EXPECT_NE(scatter_op->inputs[0], const_op->outputs[0]);
+}
+
+// A constant updates input that is a shared buffer already has an IR tensor, so
+// no CONSTANT op is created for it.
+TEST_F(ConvertScatterNdTest, SharedConstantUpdatesDoNotCreateConstantOp) {
+  constexpr int kUpdatesTensorIndex = 1;
+  constexpr size_t kGlobalId = 7;
+  static_cast<StubDelegateData*>(delegate_->data_)
+      ->shared_buffer_map[kUpdatesTensorIndex] = kGlobalId;
+
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinScatterNd, /*version=*/1);
+
+  model.AddInput(kTfLiteInt32, {3, 3});  // indices
+
+  const std::vector<float> updates(3 * 5, 1.0f);
+  std::vector<uint8_t> updates_data(updates.size() * sizeof(float));
+  std::memcpy(updates_data.data(), updates.data(), updates_data.size());
+  model.AddConstInput(kTfLiteFloat32, {3, 5}, updates_data);  // updates
+
+  const std::vector<int32_t> shape = {4, 2, 3, 5};
+  std::vector<uint8_t> shape_data(shape.size() * sizeof(int32_t));
+  std::memcpy(shape_data.data(), shape.data(), shape_data.size());
+  model.AddConstInput(kTfLiteInt32, {4}, shape_data);  // shape
+
+  model.AddOutput(kTfLiteFloat32, {4, 2, 3, 5});  // output
+
+  std::unique_ptr<::tflite::Interpreter> interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  // Only the scatter_nd op; neither the shared updates nor the constant shape
+  // is materialized by a CONSTANT op.
+  ASSERT_EQ(ir_model->ops().size(), 1);
+
+  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  EXPECT_EQ(op->name, "scatter_nd");
+  ASSERT_EQ(op->inputs.size(), 2);
+  const ::ml_drift::ir::IrTensor* updates_tensor =
+      ir_model->tensor(op->inputs[1]);
+  ASSERT_TRUE(updates_tensor);
+  EXPECT_TRUE(updates_tensor->buffer_source.is_shared);
+  EXPECT_EQ(static_cast<size_t>(updates_tensor->buffer_source.global_id),
+            kGlobalId);
 }
 
 }  // namespace

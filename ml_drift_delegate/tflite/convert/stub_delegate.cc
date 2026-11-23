@@ -70,7 +70,8 @@ TfLiteStatus Prepare(TfLiteContext* context, TfLiteDelegate* delegate) {
             delegate_params->delegate->data_);
         ::ml_drift::ir::IrModel* model =
             BuildIrModel(*context, *delegate_params, stub_data->options,
-                         &stub_data->custom_parsers);
+                         &stub_data->custom_parsers, /*shared_tensors=*/nullptr,
+                         &stub_data->shared_buffer_map);
         if (!model) {
           return nullptr;
         }

@@ -38,9 +38,16 @@ namespace {
 // addressed stay zero. A [N, 3] indices tensor is the case Bi = N, Hi = Wi = 1.
 //
 // All index vectors that address a cell contribute to it: float updates are
-// summed and bool updates are OR-ed. Out-of-range index vectors are ignored.
+// summed and bool updates are OR-ed.
 //
-// Each thread computes one output element (X, Y, S, B) by scanning `indices`.
+// Out-of-range index vectors are ignored, whereas the CPU kernel fails with
+// "scatter_nd index out of bounds".
+//
+// Each thread computes one output element (X, Y, S, B) by scanning all N index
+// vectors, because duplicate indices have to be combined. The cost is
+// O(N x B x H x W x S), which is fine for small N. The support check puts no
+// limit on N, so a model with a large N may run slower on the GPU than on the
+// CPU fallback.
 std::unique_ptr<::ml_drift::GPUOperation> CreateScatterNdOp(
     const ::ml_drift::TensorDescriptor& indices_desc,
     const ::ml_drift::TensorDescriptor& updates_desc,

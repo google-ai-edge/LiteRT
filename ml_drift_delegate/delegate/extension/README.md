@@ -18,12 +18,7 @@ Two things to know before you start:
 
 | Operator  | Kernel                 | Supported form                           |
 | :-------- | :--------------------- | :--------------------------------------- |
-| ScatterND | `scatter_nd_kernel.cc` | Index depth 3: indices `[N, 3]` or `[B, H, W, 3]` address (batch, height, width) of a 4D output `[B, H, W, C]`; updates have the indices shape with the last dim replaced by C; float32 or bool updates; duplicate indices are summed for float updates and OR-ed for bool updates; index vectors that are out of range are ignored, whereas the CPU kernel fails with "scatter_nd index out of bounds" |
-
-Known limitation of the ScatterND kernel: each output element scans all N index
-vectors, because duplicate indices have to be combined. The cost is
-O(N x B x H x W x S), which is fine for small N. The support check puts no limit
-on N, so a model with a large N may run slower on the GPU than on the CPU fallback.
+| ScatterND | `scatter_nd_kernel.cc` | Indices of shape `[N, 3]` or `[B, H, W, 3]` that select (batch, height, width) of a 4D output |
 
 ## ScatterND as an example
 
