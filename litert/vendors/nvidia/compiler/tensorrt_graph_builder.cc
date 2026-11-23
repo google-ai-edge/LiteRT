@@ -54,6 +54,7 @@
 #include "litert/vendors/nvidia/compiler/cache_update_plugin.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/gated_delta_plugin.h"
+#include "litert/vendors/nvidia/compiler/general_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
@@ -69,6 +70,7 @@
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
 #include "litert/vendors/nvidia/trtllm/gated_delta.h"
 #include "litert/vendors/nvidia/trtllm/gated_delta_net.h"
+#include "litert/vendors/nvidia/trtllm/general_attention.h"
 #include "litert/vendors/nvidia/trtllm/global_attention.h"
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
@@ -1521,6 +1523,364 @@ std::optional<QuantFusedSdpa> ParseQuantFusedSdpa(const Op& op) {
   return QuantFusedSdpa{*caches, q_quant->scale, rows, tokens, update_cache};
 }
 
+// The composites over KV caches in the forms the quantized attention plugin
+// does not take (general_attention_plugin.h): float or INT8 queries, bool or
+// additive float masks, a scale and a soft cap, head depths other than 256,
+// packed INT4 caches in odml.fused_sdpa_cache_update, float or re-scaled
+// keys and values into INT8, INT4 and UINT8 caches, and UINT8 caches. Off
+// unless LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION=1: models whose composites
+// the specialized kernels or the decompositions run today build the same
+// engines without it.
+bool GeneralAttentionEnabled() {
+  const char* value = std::getenv("LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION");
+  return value != nullptr && std::strcmp(value, "1") == 0;
+}
+
+// A cache tensor of the general forms: INT8 or INT4 with a zero point of 0,
+// or UINT8 with 128, quantized per tensor.
+struct GeneralCacheType {
+  int32_t type = 0;  // LiteRtNvidiaGeneralType
+  float scale = 0.0f;
+};
+
+std::optional<GeneralCacheType> ParseGeneralCacheType(const Tensor& tensor) {
+  const auto type = tensor.ElementType();
+  if (tensor.QTypeId() != kLiteRtQuantizationPerTensor) {
+    return std::nullopt;
+  }
+  const auto q = tensor.PerTensorQuantization();
+  if (!std::isfinite(q.scale) || q.scale <= 0.0f) {
+    return std::nullopt;
+  }
+  if (type == litert::ElementType::Int8 && q.zero_point == 0) {
+    return GeneralCacheType{kLiteRtNvidiaGeneralInt8, q.scale};
+  }
+  if (type == litert::ElementType::Int4 && q.zero_point == 0) {
+    return GeneralCacheType{kLiteRtNvidiaGeneralInt4, q.scale};
+  }
+  if (type == litert::ElementType::UInt8 && q.zero_point == 128) {
+    return GeneralCacheType{kLiteRtNvidiaGeneralUint8, q.scale};
+  }
+  return std::nullopt;
+}
+
+// A key cache [1, H, S, D] and a value cache [1, H, D, S] of one quantized
+// type.
+struct GeneralCaches {
+  int32_t type = 0;
+  float k_scale = 0.0f;
+  float v_scale = 0.0f;
+  int32_t heads = 0;
+  int32_t seq = 0;
+  int32_t depth = 0;
+};
+
+std::optional<GeneralCaches> ParseGeneralCaches(const Tensor& k,
+                                                const Tensor& v) {
+  const auto kt = ParseGeneralCacheType(k);
+  const auto vt = ParseGeneralCacheType(v);
+  const auto kd = StaticRank4Dims(k);
+  const auto vd = StaticRank4Dims(v);
+  if (!kt || !vt || !kd || !vd || kt->type != vt->type || (*kd)[0] != 1 ||
+      (*vd)[0] != 1 || (*vd)[1] != (*kd)[1] || (*vd)[2] != (*kd)[3] ||
+      (*vd)[3] != (*kd)[2] ||
+      (kt->type == kLiteRtNvidiaGeneralInt4 &&
+       ((*kd)[2] % 2 != 0 || (*kd)[3] % 2 != 0))) {
+    return std::nullopt;
+  }
+  return GeneralCaches{kt->type, kt->scale, vt->scale,
+                       (*kd)[1], (*kd)[2],  (*kd)[3]};
+}
+
+// A float input of the general forms, or an INT8 one (the plugin takes the
+// float the graph quantized and rounds it with this scale): the scale, 0 for
+// a float. nullopt for anything else.
+std::optional<float> GeneralFloatInput(const Tensor& tensor) {
+  if (IsFloatLike(tensor.ElementType()) &&
+      tensor.QTypeId() == kLiteRtQuantizationNone) {
+    return 0.0f;
+  }
+  const auto quant = ParseQuantTensor(tensor);
+  if (quant.has_value() && quant->bits == 8) {
+    return quant->scale;
+  }
+  return std::nullopt;
+}
+
+// The keys or values a step writes into quantized caches: floats, or
+// quantized values (an INT8 grid of any scale, or the cache's own grid).
+std::optional<float> GeneralUpdateInput(const Tensor& tensor,
+                                        const GeneralCaches& caches,
+                                        float cache_scale) {
+  if (const auto scale = GeneralFloatInput(tensor)) {
+    return scale;
+  }
+  const auto own = ParseGeneralCacheType(tensor);
+  if (own.has_value() && own->type == caches.type &&
+      own->scale == cache_scale) {
+    return 0.0f;  // already on the cache's grid
+  }
+  return std::nullopt;
+}
+
+// The attributes of the attention composites: scale (1), softcap or
+// logit_cap (none), and the caches' time axes, which must be 2 and 3.
+struct GeneralAttentionAttributes {
+  float scale = 1.0f;
+  float softcap = 0.0f;
+};
+
+std::optional<GeneralAttentionAttributes> ParseGeneralAttentionAttributes(
+    const Op& op) {
+  GeneralAttentionAttributes result;
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) != kLiteRtStatusOk ||
+      !options.attributes_map.has_value()) {
+    return result;
+  }
+  const auto& map = options.attributes_map.value();
+  if ((!map["k_ts_idx"].IsNull() && map["k_ts_idx"].AsInt32() != 2) ||
+      (!map["v_ts_idx"].IsNull() && map["v_ts_idx"].AsInt32() != 3)) {
+    return std::nullopt;
+  }
+  if (!map["scale"].IsNull()) result.scale = map["scale"].AsFloat();
+  const auto softcap =
+      !map["softcap"].IsNull() ? map["softcap"] : map["logit_cap"];
+  if (!softcap.IsNull()) result.softcap = softcap.AsFloat();
+  if (!std::isfinite(result.scale) || !std::isfinite(result.softcap) ||
+      result.softcap < 0.0f) {
+    return std::nullopt;
+  }
+  return result;
+}
+
+bool IsGeneralMask(const Tensor& mask, int32_t rows, int32_t keys) {
+  return (mask.ElementType() == litert::ElementType::Bool ||
+          (IsFloatLike(mask.ElementType()) &&
+           mask.QTypeId() == kLiteRtQuantizationNone)) &&
+         (TensorHasShape(mask, {1, 1, rows, keys}) ||
+          TensorHasShape(mask, {1, 1, 1, keys}));
+}
+
+// odml.cache_update into quantized caches in a general form: the forms
+// ParseQuantCacheUpdate and the INT8 scatter path take stay theirs. The
+// caches are inputs of the graph.
+struct GeneralCacheUpdate {
+  GeneralCaches caches;
+  int32_t tokens = 0;
+  float src_int8_scale = 0.0f;
+};
+
+std::optional<GeneralCacheUpdate> ParseGeneralCacheUpdate(const Op& op) {
+  if (!GeneralAttentionEnabled() || op.Inputs().size() != 7 ||
+      op.Outputs().size() != 2 || !op.Inputs()[3].IsSubgraphInput() ||
+      !op.Inputs()[4].IsSubgraphInput() ||
+      ParseQuantCacheUpdate(op).has_value()) {
+    return std::nullopt;
+  }
+  const auto caches = ParseGeneralCaches(op.Inputs()[3], op.Inputs()[4]);
+  const auto kd = StaticRank4Dims(op.Inputs()[0]);
+  const auto vd = StaticRank4Dims(op.Inputs()[1]);
+  if (!caches || !kd || !vd || *kd != *vd || (*kd)[0] != 1 ||
+      (*kd)[1] != caches->heads || (*kd)[2] > caches->seq ||
+      (*kd)[3] != caches->depth) {
+    return std::nullopt;
+  }
+  // Float keys and values into INT8 caches are the scatter path's.
+  if (caches->type == kLiteRtNvidiaGeneralInt8 &&
+      IsFloatLike(op.Inputs()[0].ElementType()) &&
+      IsFloatLike(op.Inputs()[1].ElementType())) {
+    return std::nullopt;
+  }
+  std::optional<float> src_scale;
+  for (int i = 0; i < 2; ++i) {
+    const float cache_scale = i == 0 ? caches->k_scale : caches->v_scale;
+    const auto scale = GeneralUpdateInput(op.Inputs()[i], *caches, cache_scale);
+    const auto out = ParseGeneralCacheType(op.Outputs()[i]);
+    auto start_type = op.Inputs()[5 + i].RankedTensorType();
+    if (!scale || (src_scale.has_value() && *src_scale != *scale) || !out ||
+        out->type != caches->type || out->scale != cache_scale ||
+        StaticRank4Dims(op.Outputs()[i]) !=
+            StaticRank4Dims(op.Inputs()[3 + i]) ||
+        !start_type ||
+        op.Inputs()[5 + i].ElementType() != litert::ElementType::Int32 ||
+        start_type->Layout().Rank() != 1 ||
+        start_type->Layout().Dimensions()[0] != 4) {
+      return std::nullopt;
+    }
+    src_scale = scale;
+  }
+  return GeneralCacheUpdate{*caches, (*kd)[2], *src_scale};
+}
+
+// Whether `tensor`, a cache an attention composite reads, is a quantized
+// cache an engine holds as the model stores it: an input of the graph, or
+// the result of an odml.cache_update the quantized attention plugin, the
+// general plugin or the INT8 scatter path writes.
+bool IsGeneralCacheSource(const Tensor& tensor) {
+  if (tensor.IsSubgraphInput()) {
+    return true;
+  }
+  const auto producer = tensor.GetDefiningOp();
+  if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
+      CompositeOpName(*producer) != "odml.cache_update") {
+    return false;
+  }
+  if (ParseQuantCacheUpdate(*producer).has_value() ||
+      ParseGeneralCacheUpdate(*producer).has_value()) {
+    return true;
+  }
+  // The scatter path: float keys and values into INT8 caches.
+  const auto& in = producer->Inputs();
+  return in.size() == 7 && IsFloatLike(in[0].ElementType()) &&
+         IsFloatLike(in[1].ElementType()) &&
+         ParseGeneralCacheType(in[3]).has_value() &&
+         in[3].ElementType() == litert::ElementType::Int8;
+}
+
+// odml.sdpa_transposed over quantized caches in a general form, (q
+// [1, Hq, n, D] float or INT8, k_cache, v_cache, mask [1, 1, n | 1, S] bool
+// or float, params) -> float [1, Hq, n, D]. The form ParseQuantSdpa takes
+// stays its.
+struct GeneralSdpa {
+  GeneralCaches caches;
+  GeneralAttentionAttributes attributes;
+  float q_int8_scale = 0.0f;
+  int32_t group = 0;
+  int32_t tokens = 0;
+};
+
+std::optional<GeneralSdpa> ParseGeneralSdpa(const Op& op) {
+  if (!GeneralAttentionEnabled() ||
+      (op.Inputs().size() != 4 && op.Inputs().size() != 5) ||
+      op.Outputs().size() != 1 || ParseQuantSdpa(op).has_value()) {
+    return std::nullopt;
+  }
+  const auto& in = op.Inputs();
+  const auto caches = ParseGeneralCaches(in[1], in[2]);
+  const auto q_scale = GeneralFloatInput(in[0]);
+  const auto qd = StaticRank4Dims(in[0]);
+  const auto attributes = ParseGeneralAttentionAttributes(op);
+  if (!caches || !q_scale || !qd || !attributes || (*qd)[0] != 1 ||
+      (*qd)[1] % caches->heads != 0 || (*qd)[3] != caches->depth ||
+      !IsGeneralMask(in[3], (*qd)[2], caches->seq) ||
+      !IsFloatLike(op.Outputs()[0].ElementType()) ||
+      !TensorHasShape(op.Outputs()[0],
+                      {(*qd)[0], (*qd)[1], (*qd)[2], (*qd)[3]}) ||
+      !IsGeneralCacheSource(in[1]) || !IsGeneralCacheSource(in[2])) {
+    return std::nullopt;
+  }
+  GeneralSdpa result{*caches, *attributes, *q_scale, (*qd)[1] / caches->heads,
+                     (*qd)[2]};
+  LiteRtNvidiaGeneralAttentionParams p{};
+  p.kv_heads = caches->heads;
+  p.rows = result.group * result.tokens;
+  p.depth = caches->depth;
+  p.cache_len = caches->seq;
+  p.mask_rows = 1;
+  p.q = {kLiteRtNvidiaGeneralBFloat16, *q_scale};
+  p.caches = {caches->type, caches->k_scale, caches->v_scale};
+  p.scale = attributes->scale;
+  p.softcap = attributes->softcap;
+  if (!LiteRtNvidiaGeneralAttentionSupports(&p)) {
+    return std::nullopt;
+  }
+  return result;
+}
+
+// odml.fused_sdpa_cache_update over quantized ring caches in a general form,
+// (q [1, H, R, D], k_cache, v_cache, k [1, H, M, D], v [1, H, D, M], mask
+// [1, 1, M, S + M] bool or float, params int32) -> (float [1, H, R, D] and,
+// unless the composite has one output, the two caches). The caches are
+// inputs of the graph. The form ParseQuantFusedSdpa takes stays its.
+struct GeneralFusedSdpa {
+  GeneralCaches caches;
+  GeneralAttentionAttributes attributes;
+  float q_int8_scale = 0.0f;
+  float new_int8_scale = 0.0f;
+  int32_t rows = 0;
+  int32_t tokens = 0;
+  bool update_cache = true;
+};
+
+std::optional<GeneralFusedSdpa> ParseGeneralFusedSdpa(const Op& op) {
+  if (!GeneralAttentionEnabled() || op.Inputs().size() != 7 ||
+      (op.Outputs().size() != 3 && op.Outputs().size() != 1) ||
+      !op.Inputs()[1].IsSubgraphInput() || !op.Inputs()[2].IsSubgraphInput() ||
+      ParseQuantFusedSdpa(op).has_value()) {
+    return std::nullopt;
+  }
+  const auto& in = op.Inputs();
+  const auto caches = ParseGeneralCaches(in[1], in[2]);
+  const auto q_scale = GeneralFloatInput(in[0]);
+  const auto qd = StaticRank4Dims(in[0]);
+  const auto kd = StaticRank4Dims(in[3]);
+  const auto attributes = ParseGeneralAttentionAttributes(op);
+  if (!caches || !q_scale || !qd || !kd || !attributes) {
+    return std::nullopt;
+  }
+  const int32_t rows = (*qd)[2];
+  const int32_t tokens = (*kd)[2];
+  const auto k_scale = GeneralUpdateInput(in[3], *caches, caches->k_scale);
+  const auto v_scale = GeneralUpdateInput(in[4], *caches, caches->v_scale);
+  auto params_type = in[6].RankedTensorType();
+  int64_t params_count = 1;
+  if (params_type) {
+    for (int32_t d : params_type->Layout().Dimensions()) params_count *= d;
+  }
+  if ((*qd)[0] != 1 || (*qd)[1] != caches->heads || (*qd)[3] != caches->depth ||
+      tokens < 1 || rows % tokens != 0 || !k_scale || !v_scale ||
+      *k_scale != *v_scale ||
+      !TensorHasShape(in[3], {1, caches->heads, tokens, caches->depth}) ||
+      !TensorHasShape(in[4], {1, caches->heads, caches->depth, tokens}) ||
+      !IsGeneralMask(in[5], tokens, caches->seq + tokens) ||
+      !TensorHasShape(in[5], {1, 1, tokens, caches->seq + tokens}) ||
+      in[6].ElementType() != litert::ElementType::Int32 || !params_type ||
+      params_count < 2 || !IsFloatLike(op.Outputs()[0].ElementType()) ||
+      !TensorHasShape(op.Outputs()[0],
+                      {1, caches->heads, rows, caches->depth})) {
+    return std::nullopt;
+  }
+  const bool update_cache = op.Outputs().size() == 3;
+  if (update_cache) {
+    for (int i = 0; i < 2; ++i) {
+      const auto out = ParseGeneralCacheType(op.Outputs()[1 + i]);
+      if (!out || out->type != caches->type ||
+          out->scale != (i == 0 ? caches->k_scale : caches->v_scale) ||
+          StaticRank4Dims(op.Outputs()[1 + i]) != StaticRank4Dims(in[1 + i])) {
+        return std::nullopt;
+      }
+    }
+  }
+  GeneralFusedSdpa result{*caches, *attributes, *q_scale,    *k_scale,
+                          rows,    tokens,      update_cache};
+  LiteRtNvidiaGeneralAttentionParams p{};
+  p.kv_heads = caches->heads;
+  p.rows = rows;
+  p.depth = caches->depth;
+  p.cache_len = caches->seq;
+  p.new_len = tokens;
+  p.mask_rows = tokens;
+  p.q = {kLiteRtNvidiaGeneralBFloat16, *q_scale};
+  p.caches = {caches->type, caches->k_scale, caches->v_scale};
+  p.new_kv = {kLiteRtNvidiaGeneralBFloat16, *k_scale};
+  p.scale = attributes->scale;
+  p.softcap = attributes->softcap;
+  LiteRtNvidiaGeneralWriteParams w{};
+  w.heads = caches->heads;
+  w.cache_len = caches->seq;
+  w.depth = caches->depth;
+  w.tokens = tokens;
+  w.mode = kLiteRtNvidiaGeneralWriteRing;
+  w.caches = p.caches;
+  w.src = p.new_kv;
+  if (!LiteRtNvidiaGeneralAttentionSupports(&p) ||
+      (update_cache && !LiteRtNvidiaGeneralCacheWriteSupports(&w))) {
+    return std::nullopt;
+  }
+  return result;
+}
+
 // The "moe" custom op of Gemma 4 26B-A4B (the XNNPACK delegate's
 // mixture-of-experts contract): inputs x [1, n, model_dim], top_weights
 // [1, n, k], top_indices [1, n, k] int32, gate and up weights INT4
@@ -2511,7 +2871,8 @@ Expected<bool> IsCompositeSupported(const Op& op) {
   if (name == "odml.cache_update") {
     if (PrefillCacheUpdateRingMode(op).has_value() ||
         DecodeCacheUpdateMode(op).has_value() ||
-        ParseQuantCacheUpdate(op).has_value()) {
+        ParseQuantCacheUpdate(op).has_value() ||
+        ParseGeneralCacheUpdate(op).has_value()) {
       return true;
     }
     // (update_a f32, update_b f32, _, cache_a i8, cache_b i8, start_a i32,
@@ -2563,7 +2924,7 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     return ParseSwiglu(op).has_value();
   }
   if (name == "odml.sdpa_transposed") {
-    if (ParseQuantSdpa(op).has_value()) {
+    if (ParseQuantSdpa(op).has_value() || ParseGeneralSdpa(op).has_value()) {
       return true;
     }
     if (!SdpaTransposedGroup(op).has_value()) {
@@ -2586,7 +2947,8 @@ Expected<bool> IsCompositeSupported(const Op& op) {
     return true;
   }
   if (name == "odml.fused_sdpa_cache_update") {
-    return ParseQuantFusedSdpa(op).has_value();
+    return ParseQuantFusedSdpa(op).has_value() ||
+           ParseGeneralFusedSdpa(op).has_value();
   }
   if (name == "odml.qsa_indexer_update") {
     return ParseQsaIndexerUpdate(op).has_value();
@@ -3959,6 +4321,7 @@ class TensorRtGraphBuilder {
     LITERT_RETURN_IF_ERROR(FindWindowedCacheReads(subgraph));
     LITERT_RETURN_IF_ERROR(FindInt8CacheAttentionBlocks(subgraph));
     FindPackedInt4Caches(subgraph);
+    FindGeneralCaches(subgraph);
     LITERT_RETURN_IF_ERROR(AddInputs(subgraph));
     const size_t num_ops_to_lower =
         ops.size() - (trtllm_head.has_value() ? 4 : 0);
@@ -4538,8 +4901,13 @@ class TensorRtGraphBuilder {
       const auto& input = inputs[i];
       LITERT_ASSIGN_OR_RETURN(auto type, input.RankedTensorType());
       LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
-      LITERT_ASSIGN_OR_RETURN(auto data_type,
-                              ConvertDataType(type.ElementType()));
+      // A UINT8 cache of the general forms crosses as its bytes
+      // (FindGeneralCaches).
+      LITERT_ASSIGN_OR_RETURN(
+          auto data_type,
+          byte_caches_.count(input.Get()) != 0
+              ? Expected<nvinfer1::DataType>(nvinfer1::DataType::kINT8)
+              : ConvertDataType(type.ElementType()));
       std::string name = TensorName("input", input, i);
       // An INT4 cache of the composites over quantized caches is declared as
       // the INT8 bytes that hold it (FindPackedInt4Caches).
@@ -4651,8 +5019,11 @@ class TensorRtGraphBuilder {
       }
       if (Fp16ActivationsEnabled()) {
         LITERT_ASSIGN_OR_RETURN(auto type, output.RankedTensorType());
-        LITERT_ASSIGN_OR_RETURN(auto boundary_type,
-                                ConvertDataType(type.ElementType()));
+        LITERT_ASSIGN_OR_RETURN(
+            auto boundary_type,
+            byte_caches_.count(output.Get()) != 0
+                ? Expected<nvinfer1::DataType>(nvinfer1::DataType::kINT8)
+                : ConvertDataType(type.ElementType()));
         if (const auto in_place = in_place_outputs_.find(output.Get());
             in_place != in_place_outputs_.end() &&
             type.ElementType() == litert::ElementType::Float32 &&
@@ -11210,6 +11581,205 @@ class TensorRtGraphBuilder {
     return SetQuantCacheOutput(op.Outputs()[2], layer->getOutput(2));
   }
 
+  // The caches of the general forms (ParseGeneral*): packed INT4 caches as
+  // FindPackedInt4Caches declares them, UINT8 caches as INT8 tensors of
+  // their bytes. Only the general plugin reads or writes them.
+  void FindGeneralCaches(const Subgraph& subgraph) {
+    if (!GeneralAttentionEnabled()) {
+      return;
+    }
+    const auto note = [this](const Tensor& cache, bool value) {
+      if (cache.ElementType() == litert::ElementType::Int4) {
+        packed_int4_caches_[cache.Get()] = value;
+      } else if (cache.ElementType() == litert::ElementType::UInt8) {
+        byte_caches_.insert(cache.Get());
+      }
+    };
+    for (const auto& op : subgraph.Ops()) {
+      if (op.Code() != kLiteRtOpCodeShloComposite) {
+        continue;
+      }
+      const std::string name = CompositeOpName(op);
+      if (name == "odml.cache_update" &&
+          ParseGeneralCacheUpdate(op).has_value()) {
+        for (int i = 0; i < 2; ++i) {
+          note(op.Inputs()[3 + i], i == 1);
+          note(op.Outputs()[i], i == 1);
+        }
+      } else if (name == "odml.sdpa_transposed" &&
+                 ParseGeneralSdpa(op).has_value()) {
+        for (int i = 0; i < 2; ++i) {
+          if (op.Inputs()[1 + i].IsSubgraphInput()) {
+            note(op.Inputs()[1 + i], i == 1);
+          }
+        }
+      } else if (name == "odml.fused_sdpa_cache_update" &&
+                 ParseGeneralFusedSdpa(op).has_value()) {
+        for (int i = 0; i < 2; ++i) {
+          note(op.Inputs()[1 + i], i == 1);
+          if (op.Outputs().size() == 3) note(op.Outputs()[1 + i], i == 1);
+        }
+      }
+    }
+  }
+
+  // A layer of the general attention plugin.
+  Expected<nvinfer1::IPluginV3Layer*> AddGeneralAttentionLayer(
+      const GeneralAttentionOptions& options,
+      std::vector<nvinfer1::ITensor*> inputs, const char* name) {
+    for (const auto* input : inputs) {
+      if (input == nullptr) {
+        return Error(kLiteRtStatusErrorCompilation,
+                     "A cache of a general attention composite is not in "
+                     "the network");
+      }
+    }
+    TrtPtr<nvinfer1::IPluginV3> plugin(CreateGeneralAttentionPlugin(options));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the general attention plugin");
+    }
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(*network_, inputs.data(),
+                                                     inputs.size(), *plugin);
+    if (layer == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the general attention plugin layer");
+    }
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    return layer;
+  }
+
+  static GeneralAttentionOptions GeneralOptions(const GeneralCaches& caches,
+                                                GeneralAttentionMode mode) {
+    GeneralAttentionOptions options;
+    options.mode = mode;
+    options.cache_type = caches.type;
+    options.k_scale = caches.k_scale;
+    options.v_scale = caches.v_scale;
+    return options;
+  }
+
+  // odml.cache_update in a general form (ParseGeneralCacheUpdate).
+  Expected<void> LowerGeneralCacheUpdate(const Op& op,
+                                         const GeneralCacheUpdate& form) {
+    const auto& caches = form.caches;
+    bool keys_major = false;
+    bool values_major = false;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* keys,
+        QuantizedRowsAsFloat(op.Inputs()[0], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &keys_major));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* values,
+        QuantizedRowsAsFloat(op.Inputs()[1], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &values_major));
+    if (keys_major) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Cache update keys must be rows of heads");
+    }
+    if (values->getType() != keys->getType()) {
+      LITERT_ASSIGN_OR_RETURN(values, AddCastTensor(values, keys->getType()));
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* start_k, GetTensor(op.Inputs()[5]));
+    LITERT_ASSIGN_OR_RETURN(auto* start_v, GetTensor(op.Inputs()[6]));
+    GeneralAttentionOptions options =
+        GeneralOptions(caches, GeneralAttentionMode::kCacheUpdate);
+    options.new_int8_scale = form.src_int8_scale;
+    options.v_token_major = values_major;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddGeneralAttentionLayer(options,
+                                 {raw_input_map_[op.Inputs()[3].Get()],
+                                  raw_input_map_[op.Inputs()[4].Get()], keys,
+                                  values, start_k, start_v},
+                                 "cuda_general_cache_update"));
+    LITERT_RETURN_IF_ERROR(
+        SetQuantCacheOutput(op.Outputs()[0], layer->getOutput(0)));
+    return SetQuantCacheOutput(op.Outputs()[1], layer->getOutput(1));
+  }
+
+  // odml.sdpa_transposed in a general form (ParseGeneralSdpa): the query
+  // heads of a KV head as its rows, head-major.
+  Expected<void> LowerGeneralSdpa(const Op& op, const GeneralSdpa& form) {
+    const auto& caches = form.caches;
+    const nvinfer1::Dims grouped{
+        4, {1, caches.heads, form.group * form.tokens, caches.depth}};
+    LITERT_ASSIGN_OR_RETURN(auto* q,
+                            QuantizedQueryAsFloat(op.Inputs()[0], grouped));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetQsaMask(op.Inputs()[3]));
+    GeneralAttentionOptions options =
+        GeneralOptions(caches, GeneralAttentionMode::kAttention);
+    options.q_int8_scale = form.q_int8_scale;
+    options.scale = form.attributes.scale;
+    options.softcap = form.attributes.softcap;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddGeneralAttentionLayer(options,
+                                 {q, RawInt8Cache(op.Inputs()[1].Get()),
+                                  RawInt8Cache(op.Inputs()[2].Get()), mask},
+                                 "cuda_general_attention"));
+    LITERT_ASSIGN_OR_RETURN(auto output_type,
+                            op.Outputs()[0].RankedTensorType());
+    LITERT_ASSIGN_OR_RETURN(auto output_dims, ConvertDims(output_type));
+    LITERT_ASSIGN_OR_RETURN(auto* out,
+                            ReshapeTensor(layer->getOutput(0), output_dims));
+    return SetOutputTensor(op.Outputs()[0], out);
+  }
+
+  // odml.fused_sdpa_cache_update in a general form (ParseGeneralFusedSdpa).
+  Expected<void> LowerGeneralFusedSdpa(const Op& op,
+                                       const GeneralFusedSdpa& form) {
+    const auto& caches = form.caches;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* q,
+        QuantizedQueryAsFloat(
+            op.Inputs()[0],
+            nvinfer1::Dims{4, {1, caches.heads, form.rows, caches.depth}}));
+    bool keys_major = false;
+    bool values_major = false;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* keys,
+        QuantizedRowsAsFloat(op.Inputs()[3], /*columns=*/false, caches.heads,
+                             form.tokens, caches.depth, &keys_major));
+    LITERT_ASSIGN_OR_RETURN(
+        auto* values,
+        QuantizedRowsAsFloat(op.Inputs()[4], /*columns=*/true, caches.heads,
+                             form.tokens, caches.depth, &values_major));
+    if (keys_major) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Fused attention keys must be rows of heads");
+    }
+    if (values->getType() != keys->getType()) {
+      LITERT_ASSIGN_OR_RETURN(values, AddCastTensor(values, keys->getType()));
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetQsaMask(op.Inputs()[5]));
+    LITERT_ASSIGN_OR_RETURN(auto* params, GetTensor(op.Inputs()[6]));
+    GeneralAttentionOptions options =
+        GeneralOptions(caches, GeneralAttentionMode::kFusedAttention);
+    options.q_int8_scale = form.q_int8_scale;
+    options.new_int8_scale = form.new_int8_scale;
+    options.scale = form.attributes.scale;
+    options.softcap = form.attributes.softcap;
+    options.v_token_major = values_major;
+    options.update_cache = form.update_cache;
+    LITERT_ASSIGN_OR_RETURN(
+        auto* layer,
+        AddGeneralAttentionLayer(
+            options,
+            {q, raw_input_map_[op.Inputs()[1].Get()],
+             raw_input_map_[op.Inputs()[2].Get()], mask, keys, values, params},
+            "cuda_general_fused_attention"));
+    LITERT_RETURN_IF_ERROR(
+        SetOutputTensor(op.Outputs()[0], layer->getOutput(0)));
+    if (!form.update_cache) {
+      return {};
+    }
+    LITERT_RETURN_IF_ERROR(
+        SetQuantCacheOutput(op.Outputs()[1], layer->getOutput(1)));
+    return SetQuantCacheOutput(op.Outputs()[2], layer->getOutput(2));
+  }
+
   // odml.runtime_bmm(a, cache, positions) = a @ dequantize(cache)^T over the
   // full context (window-equivalent; see IsCompositeSupported).
   Expected<void> LowerCompositeRuntimeBmm(const Op& op) {
@@ -14929,16 +15499,25 @@ class TensorRtGraphBuilder {
       if (const auto form = ParseQuantCacheUpdate(op); form.has_value()) {
         return LowerQuantCacheUpdate(op, *form);
       }
+      if (const auto form = ParseGeneralCacheUpdate(op); form.has_value()) {
+        return LowerGeneralCacheUpdate(op, *form);
+      }
       return LowerCompositeCacheUpdate(op);
     }
     if (name == "odml.sdpa_transposed") {
       if (const auto form = ParseQuantSdpa(op); form.has_value()) {
         return LowerQuantSdpa(op, *form);
       }
+      if (const auto form = ParseGeneralSdpa(op); form.has_value()) {
+        return LowerGeneralSdpa(op, *form);
+      }
     }
     if (name == "odml.fused_sdpa_cache_update") {
       if (const auto form = ParseQuantFusedSdpa(op); form.has_value()) {
         return LowerQuantFusedSdpa(op, *form);
+      }
+      if (const auto form = ParseGeneralFusedSdpa(op); form.has_value()) {
+        return LowerGeneralFusedSdpa(op, *form);
       }
     }
     if (name == "odml.runtime_bmm") {
@@ -15162,6 +15741,9 @@ class TensorRtGraphBuilder {
   // The INT4 caches the engine declares as their INT8 bytes
   // (FindPackedInt4Caches); true for a value cache.
   std::unordered_map<LiteRtTensor, bool> packed_int4_caches_;
+  // UINT8 caches of the general forms, declared as INT8 tensors of their
+  // bytes (FindGeneralCaches).
+  std::unordered_set<LiteRtTensor> byte_caches_;
   std::vector<std::string> input_names_;
   std::vector<std::string> output_names_;
   int next_name_id_ = 0;

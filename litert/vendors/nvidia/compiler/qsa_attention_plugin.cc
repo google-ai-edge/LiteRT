@@ -23,6 +23,8 @@
 
 #include "cuda_runtime_api.h"
 #include "driver_types.h"
+#include "litert/vendors/nvidia/compiler/general_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/plugin_fields.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/qsa_indexer.h"
 #include "litert/vendors/nvidia/trtllm/qsa_sparse_attention.h"
@@ -30,8 +32,19 @@
 namespace litert::nvidia {
 namespace {
 
-constexpr char kPluginVersion[] = "1";
-constexpr char kPluginNamespace[] = "";
+using plugin_fields::BitsFloat;
+using plugin_fields::ElementBytes;
+using plugin_fields::FloatBits;
+using plugin_fields::IntFields;
+using plugin_fields::IsActivationType;
+using plugin_fields::IsMaskType;
+using plugin_fields::IsStateType;
+using plugin_fields::kPluginNamespace;
+using plugin_fields::kPluginVersion;
+using plugin_fields::Report;
+using plugin_fields::Volume;
+template <int kFields>
+using QsaPluginBase = plugin_fields::PluginBase<kFields>;
 
 int32_t QsaType(nvinfer1::DataType type) {
   switch (type) {
@@ -44,169 +57,10 @@ int32_t QsaType(nvinfer1::DataType type) {
   }
 }
 
-bool IsActivationType(nvinfer1::DataType type) {
-  return type == nvinfer1::DataType::kFLOAT ||
-         type == nvinfer1::DataType::kHALF || type == nvinfer1::DataType::kBF16;
-}
-
-bool IsStateType(nvinfer1::DataType type) {
-  return type == nvinfer1::DataType::kFLOAT ||
-         type == nvinfer1::DataType::kHALF;
-}
-
-bool IsMaskType(nvinfer1::DataType type) {
-  return type == nvinfer1::DataType::kBOOL ||
-         type == nvinfer1::DataType::kFLOAT;
-}
-
 int32_t MaskType(nvinfer1::DataType type) {
   return type == nvinfer1::DataType::kBOOL ? kLiteRtNvidiaQsaMaskBool
                                            : kLiteRtNvidiaQsaMaskFloat;
 }
-
-size_t ElementBytes(nvinfer1::DataType type) {
-  switch (type) {
-    case nvinfer1::DataType::kHALF:
-    case nvinfer1::DataType::kBF16:
-      return 2;
-    case nvinfer1::DataType::kBOOL:
-    case nvinfer1::DataType::kINT8:
-    case nvinfer1::DataType::kUINT8:
-      return 1;
-    default:
-      return 4;
-  }
-}
-
-int64_t Volume(const nvinfer1::Dims& dims) {
-  int64_t volume = 1;
-  for (int i = 0; i < dims.nbDims; ++i) volume *= dims.d[i];
-  return volume;
-}
-
-uint32_t FloatBits(float value) {
-  uint32_t bits;
-  std::memcpy(&bits, &value, sizeof(bits));
-  return bits;
-}
-
-float BitsFloat(uint32_t bits) {
-  float value;
-  std::memcpy(&value, &bits, sizeof(value));
-  return value;
-}
-
-int32_t Report(const char* plugin, cudaError_t status) {
-  if (status == cudaSuccess) return 0;
-  std::fprintf(stderr, "[%s] CUDA launch failed: %s (%d): %s\n", plugin,
-               cudaGetErrorName(status), static_cast<int>(status),
-               cudaGetErrorString(status));
-  return 1;
-}
-
-// The int32 fields of a plugin (floats travel as their bits).
-template <int kCount>
-class IntFields {
- public:
-  explicit IntFields(const std::array<const char*, kCount>& names) noexcept
-      : names_(names) {
-    for (int i = 0; i < kCount; ++i) {
-      fields_[i] = {names_[i], &values_[i], nvinfer1::PluginFieldType::kINT32,
-                    1};
-    }
-    collection_ = {kCount, fields_.data()};
-  }
-  IntFields(const IntFields& other) noexcept : IntFields(other.names_) {
-    values_ = other.values_;
-  }
-  int32_t& operator[](int i) noexcept { return values_[i]; }
-  int32_t operator[](int i) const noexcept { return values_[i]; }
-  const nvinfer1::PluginFieldCollection* Collection() noexcept {
-    return &collection_;
-  }
-  bool Read(const nvinfer1::PluginFieldCollection* fields) noexcept {
-    if (fields == nullptr || fields->fields == nullptr) return false;
-    for (int32_t i = 0; i < fields->nbFields; ++i) {
-      const auto& field = fields->fields[i];
-      if (field.name == nullptr || field.data == nullptr || field.length != 1 ||
-          field.type != nvinfer1::PluginFieldType::kINT32) {
-        continue;
-      }
-      for (int j = 0; j < kCount; ++j) {
-        if (std::strcmp(field.name, names_[j]) == 0) {
-          values_[j] = *static_cast<const int32_t*>(field.data);
-        }
-      }
-    }
-    return true;
-  }
-
- private:
-  std::array<const char*, kCount> names_;
-  std::array<int32_t, kCount> values_{};
-  std::array<nvinfer1::PluginField, kCount> fields_;
-  nvinfer1::PluginFieldCollection collection_;
-};
-
-// The IPluginV3 plumbing both plugins share.
-template <int kFields>
-class QsaPluginBase : public nvinfer1::IPluginV3,
-                      public nvinfer1::IPluginV3OneCore,
-                      public nvinfer1::IPluginV3OneBuild,
-                      public nvinfer1::IPluginV3OneRuntime {
- public:
-  explicit QsaPluginBase(const IntFields<kFields>& fields) noexcept
-      : fields_(fields) {}
-
-  nvinfer1::IPluginCapability* getCapabilityInterface(
-      nvinfer1::PluginCapabilityType type) noexcept override {
-    switch (type) {
-      case nvinfer1::PluginCapabilityType::kCORE:
-        return static_cast<nvinfer1::IPluginV3OneCore*>(this);
-      case nvinfer1::PluginCapabilityType::kBUILD:
-        return static_cast<nvinfer1::IPluginV3OneBuild*>(this);
-      case nvinfer1::PluginCapabilityType::kRUNTIME:
-        return static_cast<nvinfer1::IPluginV3OneRuntime*>(this);
-    }
-    return nullptr;
-  }
-  const char* getPluginVersion() const noexcept override {
-    return kPluginVersion;
-  }
-  const char* getPluginNamespace() const noexcept override {
-    return kPluginNamespace;
-  }
-  int32_t configurePlugin(const nvinfer1::DynamicPluginTensorDesc* inputs,
-                          int32_t num_inputs,
-                          const nvinfer1::DynamicPluginTensorDesc* outputs,
-                          int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr &&
-                   num_inputs == NumInputs() && num_outputs == getNbOutputs()
-               ? 0
-               : 1;
-  }
-  int32_t onShapeChange(const nvinfer1::PluginTensorDesc* inputs,
-                        int32_t num_inputs,
-                        const nvinfer1::PluginTensorDesc* outputs,
-                        int32_t num_outputs) noexcept override {
-    return inputs != nullptr && outputs != nullptr &&
-                   num_inputs == NumInputs() && num_outputs == getNbOutputs()
-               ? 0
-               : 1;
-  }
-  nvinfer1::IPluginV3* attachToContext(
-      nvinfer1::IPluginResourceContext*) noexcept override {
-    return clone();
-  }
-  const nvinfer1::PluginFieldCollection* getFieldsToSerialize() noexcept
-      override {
-    return fields_.Collection();
-  }
-
- protected:
-  virtual int32_t NumInputs() const noexcept = 0;
-  IntFields<kFields> fields_;
-};
 
 // ---------------------------------------------------------------------------
 // odml.qsa_indexer_update
@@ -622,7 +476,9 @@ nvinfer1::IPluginV3* CreateQsaAttentionPlugin(float scale,
   return new (std::nothrow) QsaAttentionPlugin(fields);
 }
 
-void EnsureQsaPluginsRegistered() noexcept {}
+void EnsureQsaPluginsRegistered() noexcept {
+  EnsureGeneralAttentionPluginRegistered();
+}
 
 REGISTER_TENSORRT_PLUGIN(QsaIndexerPluginCreator);
 REGISTER_TENSORRT_PLUGIN(QsaAttentionPluginCreator);

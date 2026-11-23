@@ -617,6 +617,19 @@ std::string BuildCompilerSdkVersion() {
     configuration += value == nullptr ? "<unset>" : value;
     configuration += '\n';
   }
+  // Switches of behaviour that is off by default: in the key only when set,
+  // so that the engines built without them keep their keys.
+  constexpr const char* kSwitchEnvironmentVariables[] = {
+      "LITERT_NVIDIA_TENSORRT_GENERAL_ATTENTION",
+  };
+  for (const char* name : kSwitchEnvironmentVariables) {
+    if (const char* value = std::getenv(name); value != nullptr) {
+      configuration += name;
+      configuration += '=';
+      configuration += value;
+      configuration += '\n';
+    }
+  }
 
   int device = -1;
   cudaDeviceProp properties{};

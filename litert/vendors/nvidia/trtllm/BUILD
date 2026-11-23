@@ -480,10 +480,12 @@ cc_test(
 cuda_library(
     name = "qsa_kernels_cuda",
     srcs = [
+        "general_attention.cu",
         "qsa_indexer.cu",
         "qsa_sparse_attention.cu",
     ],
     hdrs = [
+        "general_attention.h",
         "qsa_common.cuh",
         "qsa_indexer.h",
         "qsa_sparse_attention.h",
@@ -512,6 +514,7 @@ cc_import(
 cc_library(
     name = "qsa_kernels",
     hdrs = [
+        "general_attention.h",
         "qsa_indexer.h",
         "qsa_sparse_attention.h",
     ],
@@ -526,7 +529,10 @@ cc_library(
 cc_library(
     name = "qsa_reference",
     testonly = 1,
-    hdrs = ["qsa_reference.h"],
+    hdrs = [
+        "general_attention_reference.h",
+        "qsa_reference.h",
+    ],
     tags = ["manual"],
 )
 
@@ -570,6 +576,29 @@ cc_test(
     deps = [
         ":gemma4_head_kernels",
         ":qsa_kernels",
+        "@com_google_googletest//:gtest_main",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+    ],
+)
+
+cc_test(
+    name = "general_attention_test",
+    srcs = ["general_attention_test.cc"],
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":qsa_kernels",
+        ":qsa_reference",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",

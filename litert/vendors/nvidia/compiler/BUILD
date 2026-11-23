@@ -736,8 +736,15 @@ litert_dynamic_lib(
 
 cc_library(
     name = "qsa_attention_plugin",
-    srcs = ["qsa_attention_plugin.cc"],
-    hdrs = ["qsa_attention_plugin.h"],
+    srcs = [
+        "general_attention_plugin.cc",
+        "qsa_attention_plugin.cc",
+    ],
+    hdrs = [
+        "general_attention_plugin.h",
+        "plugin_fields.h",
+        "qsa_attention_plugin.h",
+    ],
     tags = ["manual"],
     deps = [
         "//litert/vendors/nvidia/trtllm:qsa_kernels",
@@ -750,6 +757,44 @@ cc_library(
 cc_test(
     name = "qsa_graph_test",
     srcs = ["qsa_graph_test.cc"],
+    env = {
+        "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
+        "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
+    },
+    tags = [
+        "exclusive",
+        "manual",
+        "requires-gpu",
+    ],
+    target_compatible_with = select({
+        "//litert:linux_x86_64": [],
+        "//litert:windows": [],
+        "//litert:linux_aarch64": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":quant_attention_test_graph",
+        ":tensorrt_graph_builder",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_buffer_ref",
+        "//litert/compiler/cc:litert_model",
+        "//litert/core/model",
+        "//litert/vendors/nvidia:tensorrt_logger",
+        "//litert/vendors/nvidia/trtllm:qsa_reference",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+        "@local_cuda//:cuda_headers",
+        "@local_cuda//:cuda_runtime",
+        "@local_tensorrt_rtx//:tensorrt_rtx_headers",
+        "@local_tensorrt_rtx//:tensorrt_rtx_stub",
+    ],
+)
+
+cc_test(
+    name = "general_attention_graph_test",
+    srcs = ["general_attention_graph_test.cc"],
     env = {
         "LITERT_NVIDIA_TENSORRT_FP16_ACTIVATIONS": "bf16",
         "LITERT_NVIDIA_TENSORRT_SHARED_WEIGHTS": "0",
