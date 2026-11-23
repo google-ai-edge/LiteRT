@@ -396,6 +396,7 @@ litert_dispatch_api(
         "//litert/vendors/nvidia/compiler:int8_cache_write_plugin",
         "//litert/vendors/nvidia/compiler:moe_plugin",
         "//litert/vendors/nvidia/compiler:qkv_norm_rope_plugin",
+        "//litert/vendors/nvidia/compiler:qsa_attention_plugin",
         "//litert/vendors/nvidia/compiler:quant_attention_plugin",
         "//litert/vendors/nvidia/compiler:quant_linear_plugin",
         "//litert/vendors/nvidia/compiler:subbyte_gemv_plugin",

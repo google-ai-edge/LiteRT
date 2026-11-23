@@ -57,6 +57,7 @@
 #include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
 #include "litert/vendors/nvidia/compiler/moe_plugin.h"
 #include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
+#include "litert/vendors/nvidia/compiler/qsa_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_attention_plugin.h"
 #include "litert/vendors/nvidia/compiler/quant_linear_plugin.h"
 #include "litert/vendors/nvidia/compiler/subbyte_gemv_plugin.h"
@@ -72,6 +73,8 @@
 #include "litert/vendors/nvidia/trtllm/int2_gemv.h"
 #include "litert/vendors/nvidia/trtllm/int4_block_gemv.h"
 #include "litert/vendors/nvidia/trtllm/qkv_norm_rope.h"
+#include "litert/vendors/nvidia/trtllm/qsa_indexer.h"
+#include "litert/vendors/nvidia/trtllm/qsa_sparse_attention.h"
 #include "litert/vendors/nvidia/trtllm/quant_linear.h"
 #include "litert/vendors/nvidia/trtllm/subbyte_gemm.h"
 #include "litert/vendors/nvidia/trtllm/tiled_attention.h"
@@ -1800,6 +1803,222 @@ std::optional<ShortConvStepOp> ParseShortConvStep(const Op& op) {
   return result;
 }
 
+// The element count of a tensor of static shape, or -1.
+int64_t StaticElementCount(const Tensor& tensor) {
+  auto type = tensor.RankedTensorType();
+  if (!type) return -1;
+  int64_t count = 1;
+  for (int32_t d : type->Layout().Dimensions()) {
+    if (d <= 0) return -1;
+    count *= d;
+  }
+  return count;
+}
+
+bool IsUnquantizedFloat32Or16(const Tensor& tensor) {
+  return (tensor.ElementType() == litert::ElementType::Float32 ||
+          tensor.ElementType() == litert::ElementType::Float16) &&
+         tensor.QTypeId() == kLiteRtQuantizationNone;
+}
+
+// A state the QSA indexer updates in place: a float subgraph input whose
+// updated value is a subgraph output read by nothing else (the runtime binds
+// both to one buffer, as for the linear-attention states).
+bool IsInPlaceQsaState(const Tensor& input, const Tensor& output) {
+  return input.IsSubgraphInput() && IsUnquantizedFloat32Or16(input) &&
+         output.ElementType() == input.ElementType() &&
+         output.QTypeId() == kLiteRtQuantizationNone && output.Uses().empty() &&
+         input.Uses().size() == 1;
+}
+
+// A float operand the QSA plugins take as FP32: a constant, or a runtime
+// tensor.
+bool IsQsaFloatOperand(const Tensor& tensor) {
+  return IsFloatLike(tensor.ElementType()) &&
+         tensor.QTypeId() == kLiteRtQuantizationNone &&
+         (!tensor.HasWeights() ||
+          tensor.ElementType() != litert::ElementType::BFloat16);
+}
+
+// The mask of the QSA composites: [1, 1, rows, len] bool, or float
+// (additive).
+bool IsQsaMask(const Tensor& mask, int32_t rows, int32_t len) {
+  return (mask.ElementType() == litert::ElementType::Bool ||
+          (IsFloatLike(mask.ElementType()) &&
+           mask.QTypeId() == kLiteRtQuantizationNone)) &&
+         TensorHasShape(mask, {1, 1, rows, len});
+}
+
+// The compress ratio of the QSA composites is 4 (the only one the composites
+// define); returns false for any other.
+bool QsaCompressRatioIsFour(const flexbuffers::Map& map) {
+  return map["compress_ratio"].IsNull() || map["compress_ratio"].AsInt32() == 4;
+}
+
+// odml.qsa_indexer_update, Qwen 4's sparse-attention indexer (q_idx [1, S, H,
+// D], k_idx_new [1, S, D], ring_k [1, 4, D], block_k_pool [1, B, D],
+// k_norm_weight [D], block_cos and block_sin [1, B, R], start_pos (int32, one
+// value), mask [1, 1, S, L]) -> (topk_block_indices [1, S, block_topk] int32,
+// ring_k', block_k_pool'): trtllm/qsa_indexer.h. Attributes compress_ratio
+// (4), block_topk (512), rms_norm_eps (1e-6) and scale (1). The ring and the
+// pool are in-place states (IsInPlaceQsaState).
+struct QsaIndexerOp {
+  LiteRtNvidiaQsaIndexerParams params{};
+};
+
+std::optional<QsaIndexerOp> ParseQsaIndexerUpdate(const Op& op) {
+  if (op.Inputs().size() != 9 || op.Outputs().size() != 3) {
+    return std::nullopt;
+  }
+  QsaIndexerOp result;
+  auto& p = result.params;
+  p.block_topk = 512;
+  p.rms_norm_eps = 1e-6f;
+  p.scale = 1.0f;
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+      options.attributes_map.has_value()) {
+    const auto& map = options.attributes_map.value();
+    if (!QsaCompressRatioIsFour(map)) return std::nullopt;
+    if (!map["block_topk"].IsNull()) p.block_topk = map["block_topk"].AsInt32();
+    if (!map["rms_norm_eps"].IsNull()) {
+      p.rms_norm_eps = map["rms_norm_eps"].AsFloat();
+    }
+    if (!map["scale"].IsNull()) p.scale = map["scale"].AsFloat();
+  }
+  const auto& in = op.Inputs();
+  auto q_type = in[0].RankedTensorType();
+  auto pool_type = in[3].RankedTensorType();
+  auto cos_type = in[5].RankedTensorType();
+  auto mask_type = in[8].RankedTensorType();
+  if (!q_type || !pool_type || !cos_type || !mask_type ||
+      q_type->Layout().Rank() != 4 || pool_type->Layout().Rank() != 3 ||
+      cos_type->Layout().Rank() != 3 || mask_type->Layout().Rank() != 4) {
+    return std::nullopt;
+  }
+  const auto q = q_type->Layout().Dimensions();
+  const int32_t rows = q[1];
+  const int32_t dim = q[3];
+  const int32_t blocks = pool_type->Layout().Dimensions()[1];
+  const int32_t rotary = cos_type->Layout().Dimensions()[2];
+  const int32_t len = mask_type->Layout().Dimensions()[3];
+  if (q[0] != 1 || in[0].HasWeights() || !IsFloatLike(in[0].ElementType()) ||
+      in[0].QTypeId() != kLiteRtQuantizationNone ||
+      in[1].ElementType() != in[0].ElementType() || in[1].HasWeights() ||
+      !TensorHasShape(in[1], {1, rows, dim}) ||
+      !TensorHasShape(in[2], {1, 4, dim}) ||
+      !TensorHasShape(in[3], {1, blocks, dim}) ||
+      in[3].ElementType() != in[2].ElementType() ||
+      !IsInPlaceQsaState(in[2], op.Outputs()[1]) ||
+      !IsInPlaceQsaState(in[3], op.Outputs()[2]) ||
+      !TensorHasShape(op.Outputs()[1], {1, 4, dim}) ||
+      !TensorHasShape(op.Outputs()[2], {1, blocks, dim}) ||
+      !TensorHasShape(in[4], {dim}) || !IsQsaFloatOperand(in[4]) ||
+      !TensorHasShape(in[5], {1, blocks, rotary}) ||
+      !TensorHasShape(in[6], {1, blocks, rotary}) ||
+      !IsQsaFloatOperand(in[5]) || !IsQsaFloatOperand(in[6]) ||
+      in[7].ElementType() != litert::ElementType::Int32 ||
+      StaticElementCount(in[7]) != 1 || !IsQsaMask(in[8], rows, len) ||
+      op.Outputs()[0].ElementType() != litert::ElementType::Int32 ||
+      !TensorHasShape(op.Outputs()[0], {1, rows, p.block_topk})) {
+    return std::nullopt;
+  }
+  p.rows = rows;
+  p.index_heads = q[2];
+  p.index_dim = dim;
+  p.rotary_dim = rotary;
+  p.max_blocks = blocks;
+  p.mask_len = len;
+  // The types the plugin sees: the activation type of q (any float), the
+  // model's state type, a bool or FP32 mask.
+  p.q_type = kLiteRtNvidiaQsaFloat32;
+  p.state_type = in[2].ElementType() == litert::ElementType::Float16
+                     ? kLiteRtNvidiaQsaFloat16
+                     : kLiteRtNvidiaQsaFloat32;
+  p.mask_type = in[8].ElementType() == litert::ElementType::Bool
+                    ? kLiteRtNvidiaQsaMaskBool
+                    : kLiteRtNvidiaQsaMaskFloat;
+  if (!LiteRtNvidiaQsaIndexerSupports(&p)) return std::nullopt;
+  return result;
+}
+
+// odml.sparse_sdpa_transposed, Qwen 4's sparse attention (query [1, Hq, S, D],
+// key_cache [1, H, L, D], value_cache [1, H, D, L], topk_block_indices
+// [1, S, block_topk] int32, mask [1, 1, S, L]) -> [1, S, Hq, D]:
+// trtllm/qsa_sparse_attention.h. Attributes compress_ratio (4), block_topk,
+// scale (1), k_ts_idx (2) and v_ts_idx (3). The caches are the results of an
+// in-place odml.cache_update or inputs of the graph.
+struct SparseSdpaOp {
+  LiteRtNvidiaQsaAttentionParams params{};
+};
+
+std::optional<SparseSdpaOp> ParseSparseSdpaTransposed(const Op& op) {
+  if (op.Inputs().size() != 5 || op.Outputs().size() != 1) {
+    return std::nullopt;
+  }
+  SparseSdpaOp result;
+  auto& p = result.params;
+  p.scale = 1.0f;
+  int32_t block_topk = 512;
+  CompositeOptions options;
+  if (options.InitFromOp(op.Get()) == kLiteRtStatusOk &&
+      options.attributes_map.has_value()) {
+    const auto& map = options.attributes_map.value();
+    if (!QsaCompressRatioIsFour(map) ||
+        (!map["k_ts_idx"].IsNull() && map["k_ts_idx"].AsInt32() != 2) ||
+        (!map["v_ts_idx"].IsNull() && map["v_ts_idx"].AsInt32() != 3)) {
+      return std::nullopt;
+    }
+    if (!map["block_topk"].IsNull()) block_topk = map["block_topk"].AsInt32();
+    if (!map["scale"].IsNull()) p.scale = map["scale"].AsFloat();
+  }
+  const auto& in = op.Inputs();
+  const auto qd = StaticRank4Dims(in[0]);
+  const auto kd = StaticRank4Dims(in[1]);
+  if (!qd || !kd || !IsFloatLike(in[0].ElementType()) ||
+      in[0].QTypeId() != kLiteRtQuantizationNone || in[0].HasWeights()) {
+    return std::nullopt;
+  }
+  const int32_t heads = (*qd)[1], rows = (*qd)[2], dim = (*qd)[3];
+  const int32_t kv_heads = (*kd)[1], len = (*kd)[2];
+  if ((*qd)[0] != 1 || (*kd)[0] != 1 || (*kd)[3] != dim ||
+      !IsFp16StoredCacheType(in[1].ElementType()) ||
+      in[1].QTypeId() != kLiteRtQuantizationNone ||
+      in[2].ElementType() != in[1].ElementType() ||
+      !TensorHasShape(in[2], {1, kv_heads, dim, len}) ||
+      in[3].ElementType() != litert::ElementType::Int32 ||
+      !TensorHasShape(in[3], {1, rows, block_topk}) ||
+      !IsQsaMask(in[4], rows, len) ||
+      !IsFloatLike(op.Outputs()[0].ElementType()) ||
+      !TensorHasShape(op.Outputs()[0], {1, rows, heads, dim})) {
+    return std::nullopt;
+  }
+  p.rows = rows;
+  p.q_heads = heads;
+  p.kv_heads = kv_heads;
+  p.head_dim = dim;
+  p.cache_len = len;
+  p.block_topk = block_topk;
+  p.q_type = kLiteRtNvidiaQsaFloat32;
+  p.cache_type = kLiteRtNvidiaQsaFloat16;
+  p.mask_type = in[4].ElementType() == litert::ElementType::Bool
+                    ? kLiteRtNvidiaQsaMaskBool
+                    : kLiteRtNvidiaQsaMaskFloat;
+  if (!LiteRtNvidiaQsaAttentionSupports(&p)) return std::nullopt;
+  // The caches are what an in-place cache update wrote, or inputs of the
+  // graph.
+  for (int i : {1, 2}) {
+    if (in[i].IsSubgraphInput()) continue;
+    const auto producer = in[i].GetDefiningOp();
+    if (!producer || producer->Code() != kLiteRtOpCodeShloComposite ||
+        CompositeOpName(*producer) != "odml.cache_update" ||
+        !DecodeCacheUpdateMode(*producer).has_value()) {
+      return std::nullopt;
+    }
+  }
+  return result;
+}
+
 // The experts stay in the model file until the engine runs: the plugin needs
 // the file the weight store maps (LITERT_NVIDIA_TENSORRT_AOT_MODEL_PATH).
 Expected<bool> IsCustomOpSupported(const Op& op) {
@@ -2368,6 +2587,12 @@ Expected<bool> IsCompositeSupported(const Op& op) {
   }
   if (name == "odml.fused_sdpa_cache_update") {
     return ParseQuantFusedSdpa(op).has_value();
+  }
+  if (name == "odml.qsa_indexer_update") {
+    return ParseQsaIndexerUpdate(op).has_value();
+  }
+  if (name == "odml.sparse_sdpa_transposed") {
+    return ParseSparseSdpaTransposed(op).has_value();
   }
   if (name == "odml.runtime_bmm") {
     // (a, cache, positions) -> a @ dequantize(cache)^T over the full
@@ -7168,7 +7393,8 @@ class TensorRtGraphBuilder {
             if (use.user.Get() == op.Get()) continue;
             const bool sdpa =
                 use.user.Code() == kLiteRtOpCodeShloComposite &&
-                CompositeOpName(use.user) == "odml.sdpa_transposed" &&
+                (CompositeOpName(use.user) == "odml.sdpa_transposed" ||
+                 CompositeOpName(use.user) == "odml.sparse_sdpa_transposed") &&
                 use.user_arg_ind == 2;
             if (!sdpa &&
                 !(use.user_arg_ind == 1 && IsTransposedMatmul(use.user))) {
@@ -14489,6 +14715,202 @@ class TensorRtGraphBuilder {
     return {};
   }
 
+  // A float operand of the QSA plugins in FP32: a constant from its bytes
+  // (not through GetTensor, which rounds constants to the activation type),
+  // or a runtime tensor cast.
+  Expected<nvinfer1::ITensor*> GetQsaFp32Operand(const Tensor& tensor,
+                                                 const std::string& name) {
+    if (tensor.HasWeights()) {
+      LITERT_ASSIGN_OR_RETURN(auto type, tensor.RankedTensorType());
+      LITERT_ASSIGN_OR_RETURN(auto dims, ConvertDims(type));
+      const auto bytes = tensor.Weights().Bytes();
+      const int64_t count = StaticElementCount(tensor);
+      std::vector<float> values(count);
+      if (tensor.ElementType() == litert::ElementType::Float16) {
+        if (bytes.size() != static_cast<size_t>(count) * 2) {
+          return Error(kLiteRtStatusErrorUnsupported,
+                       "QSA constant has the wrong size");
+        }
+        for (int64_t i = 0; i < count; ++i) {
+          uint16_t bits;
+          std::memcpy(&bits, bytes.data() + 2 * i, 2);
+          values[i] = HalfBitsToFloat(bits);
+        }
+      } else {
+        if (bytes.size() != static_cast<size_t>(count) * 4) {
+          return Error(kLiteRtStatusErrorUnsupported,
+                       "QSA constant has the wrong size");
+        }
+        std::memcpy(values.data(), bytes.data(), bytes.size());
+      }
+      return AddFloatConstant(values, dims,
+                              name + std::to_string(tensor.TensorIndex()),
+                              nvinfer1::DataType::kFLOAT);
+    }
+    if (const auto raw = raw_input_map_.find(tensor.Get());
+        raw != raw_input_map_.end() && raw->second != nullptr &&
+        raw->second->getType() == nvinfer1::DataType::kFLOAT) {
+      return raw->second;
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* value, GetTensor(tensor));
+    return AddCastTensor(value, nvinfer1::DataType::kFLOAT);
+  }
+
+  // The mask of a QSA plugin: bool as it is, a float mask in FP32.
+  Expected<nvinfer1::ITensor*> GetQsaMask(const Tensor& mask) {
+    if (mask.ElementType() == litert::ElementType::Bool) {
+      return GetTensor(mask);
+    }
+    return GetQsaFp32Operand(mask, "qsa_mask_");
+  }
+
+  // odml.qsa_indexer_update as the QSA indexer plugin (ParseQsaIndexerUpdate):
+  // the ring and the pool enter and leave the network in the model's type.
+  Expected<void> LowerCompositeQsaIndexer(const Op& op) {
+    const auto parsed = ParseQsaIndexerUpdate(op);
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported qsa_indexer_update composite");
+    }
+    const auto& p = parsed->params;
+    const auto& in = op.Inputs();
+    LITERT_ASSIGN_OR_RETURN(auto* q, GetTensor(in[0]));
+    LITERT_ASSIGN_OR_RETURN(auto* k_new, GetTensor(in[1]));
+    if (k_new->getType() != q->getType()) {
+      LITERT_ASSIGN_OR_RETURN(k_new, AddCastTensor(k_new, q->getType()));
+    }
+    nvinfer1::ITensor* states[2] = {nullptr, nullptr};
+    for (int i = 0; i < 2; ++i) {
+      const auto raw = raw_input_map_.find(in[2 + i].Get());
+      if (raw == raw_input_map_.end() || raw->second == nullptr) {
+        return Error(kLiteRtStatusErrorUnsupported,
+                     "QSA indexer state is not a network input");
+      }
+      states[i] = raw->second;
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* norm,
+                            GetQsaFp32Operand(in[4], "qsa_k_norm_weight_"));
+    LITERT_ASSIGN_OR_RETURN(auto* cos, GetQsaFp32Operand(in[5], "qsa_cos_"));
+    LITERT_ASSIGN_OR_RETURN(auto* sin, GetQsaFp32Operand(in[6], "qsa_sin_"));
+    LITERT_ASSIGN_OR_RETURN(auto* start_pos, GetTensor(in[7]));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetQsaMask(in[8]));
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateQsaIndexerPlugin(p.block_topk, p.rms_norm_eps, p.scale));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the QSA indexer plugin");
+    }
+    nvinfer1::ITensor* inputs[] = {q,   k_new, states[0], states[1], norm,
+                                   cos, sin,   start_pos, mask};
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs, std::size(inputs), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr ||
+        layer->getOutput(1) == nullptr || layer->getOutput(2) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the QSA indexer plugin layer");
+    }
+    const std::string name =
+        "cuda_qsa_indexer_" + std::to_string(in[3].TensorIndex());
+    layer->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    for (int o = 0; o < 3; ++o) {
+      layer->getOutput(o)->setName(
+          KeepName(UniqueName(name + "_" + std::to_string(o))));
+    }
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX QSA indexer: %d rows, %d heads of %d, %d "
+               "blocks, top %d",
+               p.rows, p.index_heads, p.index_dim, p.max_blocks, p.block_topk);
+    // The states leave the network in the model's type, unrounded.
+    for (int o = 1; o < 3; ++o) {
+      raw_output_map_[op.Outputs()[o].Get()] = layer->getOutput(o);
+    }
+    for (int o = 0; o < 3; ++o) {
+      LITERT_RETURN_IF_ERROR(
+          SetOutputTensor(op.Outputs()[o], layer->getOutput(o)));
+    }
+    return {};
+  }
+
+  // odml.sparse_sdpa_transposed as the QSA attention plugin
+  // (ParseSparseSdpaTransposed), over the caches as this network holds them:
+  // the in-place updates' results (FP16, the value cache as rows when only
+  // attention reads it) or the graph's cache inputs.
+  Expected<void> LowerCompositeSparseSdpa(const Op& op) {
+    const auto parsed = ParseSparseSdpaTransposed(op);
+    if (!parsed.has_value()) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "Unsupported sparse_sdpa_transposed composite");
+    }
+    const auto& p = parsed->params;
+    const auto& in = op.Inputs();
+    LITERT_ASSIGN_OR_RETURN(auto* q, GetTensor(in[0]));
+    nvinfer1::ITensor* caches[2] = {nullptr, nullptr};
+    for (int i = 0; i < 2; ++i) {
+      const Tensor cache = in[1 + i];
+      if (cache.IsSubgraphInput()) {
+        const auto raw = raw_input_map_.find(cache.Get());
+        if (raw == raw_input_map_.end() || raw->second == nullptr) {
+          return Error(kLiteRtStatusErrorUnsupported,
+                       "QSA attention cache is not a network input");
+        }
+        caches[i] = raw->second;
+      } else {
+        LITERT_ASSIGN_OR_RETURN(caches[i], GetTensor(cache));
+      }
+    }
+    if (caches[0]->getType() != nvinfer1::DataType::kHALF &&
+        caches[0]->getType() != nvinfer1::DataType::kFLOAT) {
+      return Error(kLiteRtStatusErrorUnsupported,
+                   "QSA attention caches must be FP16 or FP32");
+    }
+    if (caches[1]->getType() != caches[0]->getType()) {
+      LITERT_ASSIGN_OR_RETURN(caches[1],
+                              AddCastTensor(caches[1], caches[0]->getType()));
+    }
+    // The value cache: rows [1, H, L, D] when held transposed, else the
+    // model's columns [1, H, D, L] (through any view of them).
+    const bool rows = transposed_caches_.count(in[2].Get()) != 0;
+    nvinfer1::Dims value_dims{};
+    value_dims.nbDims = 4;
+    value_dims.d[0] = 1;
+    value_dims.d[1] = p.kv_heads;
+    value_dims.d[2] = rows ? p.cache_len : p.head_dim;
+    value_dims.d[3] = rows ? p.head_dim : p.cache_len;
+    const nvinfer1::Dims held = caches[1]->getDimensions();
+    bool same = held.nbDims == 4;
+    for (int d = 0; same && d < 4; ++d) same = held.d[d] == value_dims.d[d];
+    if (!same) {
+      LITERT_ASSIGN_OR_RETURN(caches[1], ReshapeTensor(caches[1], value_dims));
+    }
+    LITERT_ASSIGN_OR_RETURN(auto* topk, GetTensor(in[3]));
+    LITERT_ASSIGN_OR_RETURN(auto* mask, GetQsaMask(in[4]));
+    TrtPtr<nvinfer1::IPluginV3> plugin(
+        CreateQsaAttentionPlugin(p.scale, /*value_columns=*/!rows));
+    if (!plugin) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to create the QSA attention plugin");
+    }
+    nvinfer1::ITensor* inputs[] = {q, caches[0], caches[1], topk, mask};
+    auto* layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+        *network_, inputs, std::size(inputs), *plugin);
+    if (layer == nullptr || layer->getOutput(0) == nullptr) {
+      return Error(kLiteRtStatusErrorCompilation,
+                   "Failed to add the QSA attention plugin layer");
+    }
+    const std::string name =
+        "cuda_qsa_attention_" + std::to_string(in[1].TensorIndex());
+    layer->setName(KeepName(UniqueName(name)));
+    layer->getOutput(0)->setName(KeepName(UniqueName(name)));
+    owned_plugins_.push_back(std::move(plugin));
+    LITERT_LOG(LITERT_INFO,
+               "NVIDIA TensorRT-RTX QSA attention: %d rows, %d heads on %d of "
+               "%d, %d keys, top %d blocks, values as %s",
+               p.rows, p.q_heads, p.kv_heads, p.head_dim, p.cache_len,
+               p.block_topk, rows ? "rows" : "columns");
+    return SetOutputTensor(op.Outputs()[0], layer->getOutput(0));
+  }
+
   Expected<void> LowerComposite(const Op& op) {
     const std::string name = CompositeOpName(op);
     if (name == "odml.rms_norm") {
@@ -14521,6 +14943,12 @@ class TensorRtGraphBuilder {
     }
     if (name == "odml.runtime_bmm") {
       return LowerCompositeRuntimeBmm(op);
+    }
+    if (name == "odml.qsa_indexer_update") {
+      return LowerCompositeQsaIndexer(op);
+    }
+    if (name == "odml.sparse_sdpa_transposed") {
+      return LowerCompositeSparseSdpa(op);
     }
     return Error(kLiteRtStatusErrorUnsupported,
                  "Unsupported composite op during lowering");
