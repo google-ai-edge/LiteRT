@@ -189,5 +189,50 @@ TEST(ShortConvStepOperationParserTest, IsSupportedChecksChannelsLast) {
   }
 }
 
+TEST_F(ConvertShortConvStepTest, ConvertsDynamicHeadsAndResidualScale) {
+  constexpr int kTaps = 4;
+  constexpr int kHeads = 4;
+  constexpr int kSeq = 6;
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  builder.SetCustomName("odml.short_conv_step");
+  builder.AddInput(kTfLiteFloat32, {1, kSeq, kHiddenSize});
+  builder.AddInput(kTfLiteFloat32, {1, kTaps - 1, kHiddenSize});
+  builder.AddInput(kTfLiteFloat32, {1, kTaps, kHiddenSize});
+  builder.AddInput(kTfLiteFloat32, {1, kSeq, kHeads * kTaps});
+  builder.AddOutput(kTfLiteFloat32, {1, kSeq, kHiddenSize});
+  builder.AddOutput(kTfLiteFloat32, {1, kTaps - 1, kHiddenSize});
+
+  flexbuffers::Builder fbb;
+  fbb.Map([&]() {
+    fbb.Int("conv_L_cache", kTaps);
+    fbb.Bool("is_gated", false);
+    fbb.Bool("use_silu", false);
+    fbb.Int("num_heads", kHeads);
+    fbb.Float("residual_scale", 0.33333334f);
+  });
+  fbb.Finish();
+  const auto& fbb_buf = fbb.GetBuffer();
+  void* custom_data = malloc(fbb_buf.size());
+  memcpy(custom_data, fbb_buf.data(), fbb_buf.size());
+  builder.SetCustomData(custom_data, fbb_buf.size());
+
+  auto interpreter = builder.Build();
+  ASSERT_NE(interpreter, nullptr);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_TRUE(ir_model);
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const auto& op = ir_model->ops()[0];
+  EXPECT_THAT(op->name, Eq("short_conv_step"));
+  // in_proj, conv_weight, dyn_weight (conv_state dropped for in-place update).
+  EXPECT_THAT(op->inputs, SizeIs(3));
+  const auto* attr =
+      std::any_cast<::litert::ml_drift::ShortConvStepAttributes>(&op->attr);
+  ASSERT_NE(attr, nullptr);
+  EXPECT_EQ(attr->num_heads, kHeads);
+  EXPECT_NEAR(attr->residual_scale, 0.33333334f, 1e-6f);
+}
+
 }  // namespace
 }  // namespace litert::ml_drift::ir

@@ -243,14 +243,19 @@ absl::Status DelegateKernel::InitializeGraphFloat32(
   SharedConstTensorsMap shared_tensors;
   SharedConstTensorsMap* shared_tensors_ptr = nullptr;
   const TensorIndexToBufferIdMap* tensor_to_buffer_id_map = nullptr;
+  TensorIndexToBufferIdMap canonical_buffer_id_map;
   const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
       nullptr;
   TensorIndexToExternalBufferIdMap canonical_external_buffer_id_map;
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     shared_tensors_ptr = &shared_tensors;
-    tensor_to_buffer_id_map =
-        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-              ->GetTensorBufferIdentifiers());
+    const auto& raw_buffer_id_map =
+        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetTensorBufferIdentifiers();
+    canonical_buffer_id_map =
+        delegate_data_->weight_content_deduplicator.CanonicalizeBufferIdMap(
+            *context, raw_buffer_id_map);
+    tensor_to_buffer_id_map = &canonical_buffer_id_map;
     const auto& external_buffer_id_map =
         reinterpret_cast<const tflite::Subgraph*>(context->impl_)
             ->GetExternalTensorBufferIdentifiers();
@@ -1202,14 +1207,19 @@ absl::Status DelegateKernel::InitializeIrModel(
   SharedConstTensorsMap shared_tensors;
   SharedConstTensorsMap* shared_tensors_ptr = nullptr;
   const TensorIndexToBufferIdMap* tensor_to_buffer_id_map = nullptr;
+  TensorIndexToBufferIdMap canonical_buffer_id_map;
   const TensorIndexToExternalBufferIdMap* tensor_to_external_buffer_id_map =
       nullptr;
   TensorIndexToExternalBufferIdMap canonical_external_buffer_id_map;
   if (delegate_data_->options->enable_constant_tensors_sharing) {
     shared_tensors_ptr = &shared_tensors;
-    tensor_to_buffer_id_map =
-        &(reinterpret_cast<const tflite::Subgraph*>(context->impl_)
-              ->GetTensorBufferIdentifiers());
+    const auto& raw_buffer_id_map =
+        reinterpret_cast<const tflite::Subgraph*>(context->impl_)
+            ->GetTensorBufferIdentifiers();
+    canonical_buffer_id_map =
+        delegate_data_->weight_content_deduplicator.CanonicalizeBufferIdMap(
+            *context, raw_buffer_id_map);
+    tensor_to_buffer_id_map = &canonical_buffer_id_map;
     const auto& external_buffer_id_map =
         reinterpret_cast<const tflite::Subgraph*>(context->impl_)
             ->GetExternalTensorBufferIdentifiers();

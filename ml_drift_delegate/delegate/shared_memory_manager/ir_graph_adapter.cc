@@ -52,7 +52,7 @@ DataType IrModelAdapter::ResolveSharedTensorType(
   if (IsFloatType(graph_value_type)) {
     if (default_data_type == DataType::kFloat32) {
       std::vector<uint32_t> consumers = FindConsumerOps(shared_tensor_id);
-      if (consumers.size() == 1 && OpHasInputs(consumers[0])) {
+      if (!consumers.empty() && OpHasInputs(consumers[0])) {
         DataType input_type = GetOpFirstInputType(consumers[0]);
         if (IsFloatType(input_type)) {
           return input_type;

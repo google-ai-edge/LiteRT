@@ -75,7 +75,8 @@ void BuildAndVerifyMoeGpuModel(
     int num_blocks, ::ml_drift::GpuModel* gpu_model,
     const ::ml_drift::GpuInfo& gpu_info,
     ir::MoeExpertsAttributes::Activation activation =
-        ir::MoeExpertsAttributes::Activation::kGeluTanh) {
+        ir::MoeExpertsAttributes::Activation::kGeluTanh,
+    float gate_softcap = 0.0f, float up_softcap = 0.0f) {
   ::ml_drift::CreateGpuModelInfo create_info;
   create_info.precision = ::ml_drift::CalculationsPrecision::kF32;
   ::ml_drift::GpuModelBuilder model_builder(gpu_info, {});
@@ -125,6 +126,8 @@ void BuildAndVerifyMoeGpuModel(
   attr.hidden_dim = hidden_dim;
   attr.weight_type = weight_type;
   attr.activation = activation;
+  attr.gate_softcap = gate_softcap;
+  attr.up_softcap = up_softcap;
   if (weight_type != ir::MoeExpertsAttributes::WeightType::kFp32) {
     attr.ff_gate_scale = MakeMoeScale(hidden_dim, num_experts, num_blocks);
     attr.ff1_scale = MakeMoeScale(hidden_dim, num_experts, num_blocks);
@@ -360,8 +363,13 @@ TEST(MoeExpertsKernelTest,
         /*sequence_size=*/seq_len, /*num_experts=*/4, /*num_active_experts=*/2,
         /*model_dim=*/16, /*hidden_dim=*/32,
         ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2,
-        &gpu_model, gpu_info, ir::MoeExpertsAttributes::Activation::kSilu);
+        &gpu_model, gpu_info, ir::MoeExpertsAttributes::Activation::kSilu,
+        /*gate_softcap=*/4.0f, /*up_softcap=*/25.0f);
+    EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_fused_activation"));
     EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+    // Packed-groups prefill feeds remapped `[B, AE, S, D]` directly into
+    // ScaleWithBatchIds without an intermediate transpose op.
+    EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "transpose"));
   }
 }
 

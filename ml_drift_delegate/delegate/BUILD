@@ -508,11 +508,37 @@ cc_library(
 )
 
 cc_library(
+    name = "weight_content_deduplicator",
+    srcs = ["weight_content_deduplicator.cc"],
+    hdrs = ["weight_content_deduplicator.h"],
+    deps = [
+        "//tflite/core/c:private_common",
+        "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/numeric:int128",
+        "@com_google_absl//absl/synchronization",
+        "@farmhash_archive//:farmhash",
+    ],
+)
+
+cc_test(
+    name = "weight_content_deduplicator_test",
+    srcs = ["weight_content_deduplicator_test.cc"],
+    deps = [
+        ":weight_content_deduplicator",
+        "//tflite/core/c:private_common",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "delegate_data",
     hdrs = ["delegate_data.h"],
     deps = [
         ":delegate_options",
         ":incrementable_blocking_counter",
+        ":weight_content_deduplicator",
         "//ml_drift_delegate/delegate/serialization_weight_cache",
         "//ml_drift_delegate/delegate/shared_memory_manager",
         "//ml_drift_delegate/tflite:shared_const_tensor_map",
@@ -565,6 +591,7 @@ cc_library(
         ":quantization_util",
         ":tflite_profile",
         ":unowned_tensor_desc",
+        ":weight_content_deduplicator",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_log",

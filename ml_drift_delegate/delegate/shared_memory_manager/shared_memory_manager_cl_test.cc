@@ -863,4 +863,111 @@ TEST_F(SharedMemoryManagerTest,
   TfLiteIntArrayFree(tflite_tensor.dims);
 }
 
+TEST_F(SharedMemoryManagerTest,
+       LoopedLayerMultiConsumerQuantizedWeightSharesSingleGpuBuffer) {
+  ValueIdToSharedTensorMap buffer_id_to_spatial_tensor;
+  ValueIdToSharedTensorMap quant_param_tensors;
+
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF16;
+  create_info.storage_type = TensorStorageType::kBuffer;
+
+  // Build subgraph 1 with 3 looped FullyConnected consumers reading the exact
+  // same shared quantized weight value (simulating 3 passes of a looped layer).
+  auto build_looped_graph = [](GraphFloat32& graph,
+                               std::vector<Node*>& consumers) -> Value* {
+    Value* weights_val = graph.NewValue();
+    weights_val->tensor.shape = BHWC(8, 1, 1, 16);
+    for (int pass = 0; pass < 3; ++pass) {
+      Node* fc = graph.NewNode();
+      fc->operation.type = "fully_connected_int8";
+      Value* act = graph.NewValue();
+      act->tensor.shape = BHWC(1, 1, 1, 16);
+      act->tensor.type = DataType::kFloat16;
+      Value* out = graph.NewValue();
+      out->tensor.shape = BHWC(1, 1, 1, 8);
+      out->tensor.type = DataType::kFloat16;
+      graph.AddConsumer(fc->id, act->id);
+      graph.AddConsumer(fc->id, weights_val->id);
+      graph.SetProducer(fc->id, out->id);
+      consumers.push_back(fc);
+    }
+    return weights_val;
+  };
+
+  GraphFloat32 graph1;
+  std::vector<Node*> consumers1;
+  Value* weights_val1 = build_looped_graph(graph1, consumers1);
+
+  TfLiteTensor tflite_tensor{};
+  tflite_tensor.quantization.type = kTfLiteAffineQuantization;
+  tflite_tensor.type = TfLiteType::kTfLiteInt8;
+  std::vector<int8_t> weights_data(8 * 16, 3);
+  tflite_tensor.data.int8 = weights_data.data();
+  tflite_tensor.bytes = weights_data.size();
+  tflite_tensor.dims = TfLiteIntArrayCreate(2);
+  tflite_tensor.dims->data[0] = 8;
+  tflite_tensor.dims->data[1] = 16;
+
+  auto* quant_params = new TfLiteAffineQuantization();
+  quant_params->quantized_dimension = 0;
+  quant_params->scale = TfLiteFloatArrayCreate(8);
+  quant_params->zero_point = TfLiteIntArrayCreate(8);
+  for (int i = 0; i < 8; ++i) {
+    quant_params->scale->data[i] = 0.5f;
+    quant_params->zero_point->data[i] = 0;
+  }
+  tflite_tensor.quantization.params = quant_params;
+
+  TfLiteContext context{};
+  context.tensors_size = 1;
+  context.tensors = &tflite_tensor;
+  ::litert::ml_drift::SharedTfliteTensor shared_tflite_tensor;
+  shared_tflite_tensor.tflite_tensor_id = 0;
+  shared_tflite_tensor.global_id = 42;
+
+  // Subgraph 1: creates 1 packed GPU weight + 2 quant param tensors (scale, zp)
+  // and wires scale + zp to all 3 looped consumers.
+  auto manager1 = MakeSharedMemoryManagerCl(
+      env_, create_info, std::make_unique<GraphFloat32Adapter>(graph1),
+      &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      /*has_prepacked_tflite_tensors=*/false,
+      /*serialized_external_tensors=*/nullptr,
+      /*madvise_original_tensors=*/false);
+  absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId> map1;
+  ASSERT_OK(manager1->RegisterExternalConstantTensors(
+      weights_val1->id, shared_tflite_tensor, map1));
+  EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
+  EXPECT_EQ(quant_param_tensors.size(), 2);
+  for (Node* fc : consumers1) {
+    // [activation, weights, scale, zero_point]
+    EXPECT_EQ(graph1.FindInputs(fc->id).size(), 4);
+  }
+
+  // Subgraph 2: retrieves the exact same GPU buffers for another 3 looped
+  // consumers without allocating any new weight or param buffers.
+  GraphFloat32 graph2;
+  std::vector<Node*> consumers2;
+  Value* weights_val2 = build_looped_graph(graph2, consumers2);
+  auto manager2 = MakeSharedMemoryManagerCl(
+      env_, create_info, std::make_unique<GraphFloat32Adapter>(graph2),
+      &context, buffer_id_to_spatial_tensor, quant_param_tensors,
+      /*has_prepacked_tflite_tensors=*/false,
+      /*serialized_external_tensors=*/nullptr,
+      /*madvise_original_tensors=*/false);
+  absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId> map2;
+  ASSERT_OK(manager2->RegisterExternalConstantTensors(
+      weights_val2->id, shared_tflite_tensor, map2));
+  EXPECT_EQ(buffer_id_to_spatial_tensor.size(), 1);
+  EXPECT_EQ(quant_param_tensors.size(), 2);
+  for (Node* fc : consumers2) {
+    EXPECT_EQ(graph2.FindInputs(fc->id).size(), 4);
+  }
+
+  TfLiteIntArrayFree(quant_params->zero_point);
+  TfLiteFloatArrayFree(quant_params->scale);
+  delete quant_params;
+  TfLiteIntArrayFree(tflite_tensor.dims);
+}
+
 }  // namespace ml_drift

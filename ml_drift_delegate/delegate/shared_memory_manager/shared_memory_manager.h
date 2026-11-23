@@ -22,6 +22,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
@@ -330,7 +331,8 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-      bool is_weight_sum_i_required, uint32_t fc_op_id, DataType data_type,
+      const std::vector<uint32_t>& weight_consumers,
+      const std::vector<bool>& consumer_needs_weight_sum_i, DataType data_type,
       const OHWI& weights_shape);
 
   // Creates scale and zero point tensors for blockwise quantized weights.
@@ -338,7 +340,7 @@ class SharedMemoryManager {
       const ValueId& shared_tensor_id, uint32_t global_tensor_id,
       const TfLiteTensor& tflite_tensor,
       absl::flat_hash_map<ValueId, GlobalId>* external_tensors,
-      uint32_t fc_op_id, DataType data_type);
+      const std::vector<uint32_t>& weight_consumers, DataType data_type);
 
   // Creates a linear tensor with a given shape, adds it to the graph and sets
   // the memory provided by the data pointer.

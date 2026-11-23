@@ -107,13 +107,21 @@ std::string BxExpr(absl::string_view token, bool is_gated, int hidden_size) {
                                                     "2 * args.num_slices"));
 }
 
-// Shader expression for post-conv activation and gating at `token`.
+// Shader expression for post-conv activation, optional residual scaling, and
+// gating at `token`.
 std::string PostConvOutExpr(absl::string_view acc_var, absl::string_view token,
-                            bool is_gated, bool use_silu, int hidden_size) {
+                            absl::string_view residual_var, bool is_gated,
+                            bool use_silu, float residual_scale,
+                            int hidden_size) {
   std::string val =
       use_silu ? absl::Substitute("($0 / (ucl::Init<float4>(1.0f) + exp(-$0)))",
                                   acc_var)
                : std::string(acc_var);
+  if (residual_scale > 0.0f) {
+    val =
+        absl::Substitute("(($0 + $1) * ucl::Init<float4>(args.residual_scale))",
+                         val, residual_var);
+  }
   if (is_gated) {
     return absl::Substitute(
         "($0 * $1)",
@@ -131,23 +139,35 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& dst_desc,
     const ::ml_drift::TensorDescriptor& state_in_out_desc, int num_slices,
     int hidden_size, int conv_L_cache, bool is_gated, bool use_silu,
-    const ::ml_drift::TensorDescriptor* num_valid_tokens_desc) {
+    const ::ml_drift::TensorDescriptor* num_valid_tokens_desc, int num_heads,
+    float residual_scale, const ::ml_drift::TensorDescriptor* dyn_weight_desc) {
   const int clamped_L_cache = std::clamp(conv_L_cache, 2, 4);
   const int num_state_taps = clamped_L_cache - 1;
   const int seq_len = dst_desc.GetBHWCShape().w;
   // Tokens [0, num_head_tokens) convolve windows that reach into conv_state.
   const int num_head_tokens = std::min(seq_len, num_state_taps);
+  const bool has_dyn_weight =
+      dyn_weight_desc != nullptr && num_heads > 0 && clamped_L_cache == 4;
 
   FusedShortConvStepOp custom_op;
   custom_op.args_.AddInt("num_slices", num_slices);
   custom_op.args_.AddInt("hidden_size", hidden_size);
   custom_op.args_.AddInt("conv_L_cache", clamped_L_cache);
   custom_op.args_.AddInt("has_bias", conv_bias_desc != nullptr ? 1 : 0);
+  if (residual_scale > 0.0f) {
+    custom_op.args_.AddFloat("residual_scale", residual_scale);
+  }
+  if (has_dyn_weight) {
+    custom_op.args_.AddInt("head_slices", (hidden_size / num_heads) / 4);
+  }
 
   custom_op.AddSrcTensor("in_proj", in_proj_desc);
   custom_op.AddSrcTensor("conv_weight", conv_weight_desc);
   if (conv_bias_desc != nullptr) {
     custom_op.AddSrcTensor("conv_bias", *conv_bias_desc);
+  }
+  if (has_dyn_weight) {
+    custom_op.AddSrcTensor("dyn_weight", *dyn_weight_desc);
   }
   if (num_valid_tokens_desc != nullptr) {
     custom_op.AddSrcTensor("num_valid_tokens", *num_valid_tokens_desc);
@@ -188,6 +208,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   if (conv_bias_desc != nullptr) {
     c += "  args.conv_bias.SetBatchRef(0);\n";
   }
+  if (has_dyn_weight) {
+    c += "  args.dyn_weight.SetBatchRef(0);\n";
+  }
   if (num_valid_tokens_desc != nullptr) {
     c += "  args.num_valid_tokens.SetBatchRef(0);\n";
   }
@@ -202,6 +225,9 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     return;
   }
 )";
+  if (has_dyn_weight) {
+    c += "  int H = S / args.head_slices;\n";
+  }
   // Work item 0 computes the tokens whose window reaches into conv_state
   // (tokens [0, num_head_tokens)) and then writes next_state. Keeping every
   // conv_state read and next_state write in one work item keeps the kernel
@@ -225,16 +251,31 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   if (seq_len > num_state_taps) {
     absl::StrAppend(&c, "  if (X >= ", num_state_taps, ") {\n");
     c += "    float4 acc = bias;\n";
+    if (has_dyn_weight) {
+      c += "    float4 dw = ucl::Convert<float4>(args.dyn_weight.Read(X, 0, "
+           "H));\n";
+    }
+    if (residual_scale > 0.0f) {
+      absl::StrAppend(
+          &c, "    float4 cur_x = ", BxExpr("X", is_gated, hidden_size), ";\n");
+    }
     for (int k = 0; k < clamped_L_cache; ++k) {
       const int offset = num_state_taps - k;
-      const std::string token =
-          offset == 0 ? "X" : absl::StrCat("X - ", offset);
-      absl::StrAppend(&c, "    acc += wt", k, " * ",
-                      BxExpr(token, is_gated, hidden_size), ";\n");
+      const std::string x_expr =
+          (offset == 0 && residual_scale > 0.0f)
+              ? "cur_x"
+              : BxExpr(offset == 0 ? "X" : absl::StrCat("X - ", offset),
+                       is_gated, hidden_size);
+      const std::string w_expr =
+          has_dyn_weight ? absl::StrCat("(wt", k, " + ucl::Init<float4>(dw.",
+                                        Component(num_state_taps - k), "))")
+                         : absl::StrCat("wt", k);
+      absl::StrAppend(&c, "    acc += ", w_expr, " * ", x_expr, ";\n");
     }
     absl::StrAppend(
         &c, "    args.out::type out_val = ucl::Convert<args.out::type>(",
-        PostConvOutExpr("acc", "X", is_gated, use_silu, hidden_size),
+        PostConvOutExpr("acc", "X", "cur_x", is_gated, use_silu, residual_scale,
+                        hidden_size),
         ");\n    args.out.Write(out_val, X, 0, S);\n");
     c += "    return;\n  }\n";
   }
@@ -263,15 +304,28 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   };
   for (int t = 0; t < num_head_tokens; ++t) {
     absl::StrAppend(&c, "  float4 acc", t, " = bias;\n");
+    if (has_dyn_weight) {
+      absl::StrAppend(&c, "  float4 dw", t,
+                      " = ucl::Convert<float4>(args.dyn_weight.Read(", t,
+                      ", 0, H));\n");
+    }
     for (int k = 0; k < clamped_L_cache; ++k) {
-      absl::StrAppend(&c, "  acc", t, " += wt", k, " * ", padded(t + k), ";\n");
+      const std::string w_expr =
+          has_dyn_weight
+              ? absl::StrCat("(wt", k, " + ucl::Init<float4>(dw", t, ".",
+                             Component(num_state_taps - k), "))")
+              : absl::StrCat("wt", k);
+      absl::StrAppend(&c, "  acc", t, " += ", w_expr, " * ", padded(t + k),
+                      ";\n");
     }
     const std::string acc_var = absl::StrCat("acc", t);
     const std::string tok_str = absl::StrCat(t);
-    absl::StrAppend(
-        &c, "  args.out::type out_val", t, " = ucl::Convert<args.out::type>(",
-        PostConvOutExpr(acc_var, tok_str, is_gated, use_silu, hidden_size),
-        ");\n  args.out.Write(out_val", t, ", ", t, ", 0, S);\n");
+    const std::string res_var = absl::StrCat("bx", t);
+    absl::StrAppend(&c, "  args.out::type out_val", t,
+                    " = ucl::Convert<args.out::type>(",
+                    PostConvOutExpr(acc_var, tok_str, res_var, is_gated,
+                                    use_silu, residual_scale, hidden_size),
+                    ");\n  args.out.Write(out_val", t, ", ", t, ", 0, S);\n");
   }
 
   // next_state tap j = padded[n + j] with n = num_valid_tokens clamped to
@@ -364,6 +418,8 @@ absl::Status BuildShortConvStepGpuGraph(
 
   std::optional<::ml_drift::TensorHandle> conv_bias;
   const ::ml_drift::TensorDescriptor* conv_bias_desc = nullptr;
+  std::optional<::ml_drift::TensorHandle> dyn_weight;
+  const ::ml_drift::TensorDescriptor* dyn_weight_desc = nullptr;
   std::optional<::ml_drift::TensorHandle> num_valid_tokens;
   const ::ml_drift::TensorDescriptor* num_valid_tokens_desc = nullptr;
   for (size_t i = 2; i < input_ids.size(); ++i) {
@@ -372,6 +428,9 @@ absl::Status BuildShortConvStepGpuGraph(
     if (extra_input.tensor_desc.GetDataType() == ::ml_drift::DataType::kInt32) {
       num_valid_tokens = std::move(extra_input);
       num_valid_tokens_desc = &num_valid_tokens->tensor_desc;
+    } else if (attr.num_heads > 0 && !dyn_weight.has_value()) {
+      dyn_weight = std::move(extra_input);
+      dyn_weight_desc = &dyn_weight->tensor_desc;
     } else {
       conv_bias = std::move(extra_input);
       conv_bias_desc = &conv_bias->tensor_desc;
@@ -381,6 +440,18 @@ absl::Status BuildShortConvStepGpuGraph(
   auto in_proj_shape = in_proj.tensor_desc.GetBHWCShape();
   int hidden_size = attr.is_gated ? (in_proj_shape.c / 3) : in_proj_shape.c;
   int num_slices = (hidden_size + 3) / 4;
+  if (attr.num_heads > 0) {
+    if (!dyn_weight.has_value()) {
+      return absl::InvalidArgumentError(
+          "ShortConvStep with num_heads > 0 requires a dyn_weight tensor.");
+    }
+    if (attr.conv_L_cache != 4 || hidden_size % attr.num_heads != 0 ||
+        (hidden_size / attr.num_heads) % 4 != 0) {
+      return absl::InvalidArgumentError(
+          "ShortConvStep dynamic weights require conv_L_cache == 4 and "
+          "head_dim divisible by 4.");
+    }
+  }
 
   auto dst_desc = in_proj.tensor_desc;
   dst_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, in_proj_shape.w, hidden_size));
@@ -397,11 +468,15 @@ absl::Status BuildShortConvStepGpuGraph(
   auto op = CreateFusedShortConvStep(
       in_proj.tensor_desc, conv_weight.tensor_desc, conv_bias_desc, dst_desc,
       state_in_out_desc, num_slices, hidden_size, attr.conv_L_cache,
-      attr.is_gated, attr.use_silu, num_valid_tokens_desc);
+      attr.is_gated, attr.use_silu, num_valid_tokens_desc, attr.num_heads,
+      attr.residual_scale, dyn_weight_desc);
 
   std::vector<::ml_drift::TensorHandle> src_tensors = {in_proj, conv_weight};
   if (conv_bias.has_value()) {
     src_tensors.push_back(*conv_bias);
+  }
+  if (dyn_weight.has_value()) {
+    src_tensors.push_back(*dyn_weight);
   }
   if (num_valid_tokens.has_value()) {
     src_tensors.push_back(*num_valid_tokens);
