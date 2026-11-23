@@ -9,6 +9,10 @@
 #   EVAL_RUNS: where the runs go (default $LITERT_BENCH_ROOT/eval/lcb/runs).
 #   EVAL_TOP_K/EVAL_TOP_P/EVAL_TEMPERATURE/EVAL_SEED: set all four for a seeded sampler.
 #   EVAL_ALLOW_CONTEXT_LENGTH_EXPANSION=1 opts into the CLI's context expansion flag.
+#   EVAL_ONE_PROCESS=1 runs every problem in one process (../engine_runner.tool): the model loads
+#   once and each problem gets a fresh conversation configured as the CLI's, with the same files
+#   per problem. LITERT_LM_PYTHON names the directory of LiteRT-LM's Python package (litert_lm,
+#   its library built from the LITERT_LM_DIR checkout the CLI comes from).
 # Output: $EVAL_RUNS/LABEL/<question_id>.{out,log,json} (LABEL defaults to MODEL_MODE); .out is
 # the model's response (the CLI's stdout), .log the CLI's log with the BenchmarkInfo block (the
 # prompt is real text and stop tokens end the turn: --benchmark with both token counts 0),
@@ -34,6 +38,13 @@ if [[ -n ${EVAL_TOP_K:-}${EVAL_TOP_P:-}${EVAL_TEMPERATURE:-}${EVAL_SEED:-} ]]; t
   sampler_args=("--sampler_top_k=$EVAL_TOP_K" "--sampler_top_p=$EVAL_TOP_P"
                 "--sampler_temperature=$EVAL_TEMPERATURE" "--sampler_seed=$EVAL_SEED")
 fi
+one_process=${EVAL_ONE_PROCESS:-0}
+[[ $one_process == 0 || $one_process == 1 ]] || nb_die "EVAL_ONE_PROCESS must be 0 or 1"
+if [[ $one_process == 1 ]]; then
+  # LiteRT-LM's C API sets no advanced executor settings: the expansion is the CLI's alone.
+  [[ $expansion == 0 ]] || nb_die "EVAL_ONE_PROCESS=1 cannot expand the context (LiteRT-LM's C API has no setting for it)"
+  [[ -f ${LITERT_LM_PYTHON:-}/litert_lm/__init__.py ]] || nb_die "EVAL_ONE_PROCESS=1 needs LITERT_LM_PYTHON, the directory of the litert_lm package"
+fi
 model=$(nb_model_file "$model_arg")
 profile=$model_arg; [[ $profile =~ ^(e2b|e4b|12b|26b)$ ]] || profile=$(basename "${model%.litertlm}")
 # A/B of compile-time settings: EVAL_POOL_SUFFIX names a separate cache pool (fresh engines) and
@@ -51,9 +62,9 @@ spec=false; [[ $mode == plain ]] || spec=true
 context=$((max_tokens + 2048)); ((context % 1024 == 0)) || context=$(( (context / 1024 + 1) * 1024 ))
 EVAL_HOST_CLOCK=; [[ -f $here/../../clock_check.tool ]] && { EVAL_HOST_CLOCK=$(python3 "$here/../../clock_check.tool" 3) || echo "Warning: the host's clock is not fit: $EVAL_HOST_CLOCK" >&2; }
 export EVAL_HOST_CLOCK
-python3 - "$runs/run.json" "$profile" "$mode" "$max_tokens" "$context" "$(nb_build_id)" "$model" "$engine" "$expansion" "$here" "$BENCH" "${sampler_args[@]}" <<'PY'
+python3 - "$runs/run.json" "$profile" "$mode" "$max_tokens" "$context" "$(nb_build_id)" "$model" "$engine" "$expansion" "$here" "$BENCH" "$one_process" "${sampler_args[@]}" <<'PY'
 import hashlib, json, os, pathlib, sys
-path, profile, mode, budget, context, build, model, engine, expansion, here, bench, *sampler = sys.argv[1:]
+path, profile, mode, budget, context, build, model, engine, expansion, here, bench, one_process, *sampler = sys.argv[1:]
 def sha(path):
     with open(path, 'rb') as f:
         return hashlib.file_digest(f, 'sha256').hexdigest()
@@ -78,32 +89,20 @@ config.update(sampler_arguments=sampler, requested_questions=requested,
                               pathlib.Path(bench) / 'env.sh')})
 if expansion == '1':
     config['allow_context_length_expansion'] = True
+if one_process == '1':
+    # The runner and the LiteRT-LM library it drives in place of the CLI.
+    runner = pathlib.Path(here).parent / 'engine_runner.tool'
+    config['one_process'] = {'runner_sha256': sha(runner), 'litert_lm_sha256': sha(
+        pathlib.Path(os.environ['LITERT_LM_PYTHON']) / 'litert_lm' / 'liblitert-lm.so')}
 target = pathlib.Path(path)
 if target.exists() and json.loads(target.read_text()) != config:
     raise SystemExit('Existing evaluation has different settings; use a new label')
 target.write_text(json.dumps(config, indent=1) + '\n')
 (target.parent / 'settings.json').write_text(json.dumps(config['environment'], indent=1) + '\n')
 PY
-status=0
-for prompt in "$here"/prompts/*.txt; do
-  qid=$(basename "${prompt%.txt}")
-  if [[ -n ${ONLY:-} ]]; then [[ " $ONLY " == *" $qid "* ]] || continue; fi
-  if [[ -s $runs/$qid.out && -f $runs/$qid.json ]] && python3 - "$runs/$qid.json" <<'PY'
-import json, sys
-m = json.load(open(sys.argv[1]))
-sys.exit(0 if m.get('exit_code') == 0 and m.get('decode_tokens', 0) > 0 else 1)
-PY
-  then echo "$qid: done"; continue; fi
-  echo "$(date -Is) $label $qid"
-  rc=0
-  (cd "$NB_LM" && /usr/bin/time -v -o "$runs/$qid.time" "$engine" "--model_path=$model" --backend=npu \
-     --prefill_batch_sizes=1024 "--max_num_tokens=$context" "${context_args[@]}" "${sampler_args[@]}" "--cache_dir=$pool/compiler" \
-     "--litert_dispatch_lib_dir=$NB_RUNTIME_LIBS" --min_log_severity=0 "${selected[@]}" \
-     "--enable_speculative_decoding=$spec" --benchmark=true --benchmark_prefill_tokens=0 \
-     --benchmark_decode_tokens=0 --num_iterations=1 "--max_output_tokens=$max_tokens" \
-     "--input_prompt_file=$prompt" > "$runs/$qid.out" 2> "$runs/$qid.log") || rc=$?
-  [[ $rc == 0 ]] || { status=1; echo "$qid: exit $rc"; }
-  python3 - "$runs/$qid" "$rc" <<'PY'
+# record QID RC: the problem's metrics from its log and accounting into QID.json.
+record() {
+  python3 - "$runs/$1" "$2" <<'PY'
 import json, re, sys
 base = sys.argv[1]
 log = open(base + '.log', errors='replace').read()
@@ -125,5 +124,53 @@ if m:
 json.dump(meta, open(base + '.json', 'w'))
 print('  ', json.dumps(meta))
 PY
+}
+status=0
+pending=()
+for prompt in "$here"/prompts/*.txt; do
+  qid=$(basename "${prompt%.txt}")
+  if [[ -n ${ONLY:-} ]]; then [[ " $ONLY " == *" $qid "* ]] || continue; fi
+  if [[ -s $runs/$qid.out && -f $runs/$qid.json ]] && python3 - "$runs/$qid.json" <<'PY'
+import json, sys
+m = json.load(open(sys.argv[1]))
+sys.exit(0 if m.get('exit_code') == 0 and m.get('decode_tokens', 0) > 0 else 1)
+PY
+  then echo "$qid: done"; continue; fi
+  if [[ $one_process == 1 ]]; then pending+=("$qid"); continue; fi
+  echo "$(date -Is) $label $qid"
+  rc=0
+  (cd "$NB_LM" && /usr/bin/time -v -o "$runs/$qid.time" "$engine" "--model_path=$model" --backend=npu \
+     --prefill_batch_sizes=1024 "--max_num_tokens=$context" "${context_args[@]}" "${sampler_args[@]}" "--cache_dir=$pool/compiler" \
+     "--litert_dispatch_lib_dir=$NB_RUNTIME_LIBS" --min_log_severity=0 "${selected[@]}" \
+     "--enable_speculative_decoding=$spec" --benchmark=true --benchmark_prefill_tokens=0 \
+     --benchmark_decode_tokens=0 --num_iterations=1 "--max_output_tokens=$max_tokens" \
+     "--input_prompt_file=$prompt" > "$runs/$qid.out" 2> "$runs/$qid.log") || rc=$?
+  [[ $rc == 0 ]] || { status=1; echo "$qid: exit $rc"; }
+  record "$qid" "$rc"
 done
+if ((${#pending[@]})); then
+  # One process for the pending problems: the CLI's settings above, as a job list.
+  echo "$(date -Is) $label: ${#pending[@]} problems in one process"
+  python3 - "$runs/jobs.json" "$model" "$NB_RUNTIME_LIBS" "$pool/compiler" "$context" "$max_tokens" \
+      "$spec" "$here/prompts" "$runs" "${selected[*]}" "${sampler_args[*]}" "${pending[@]}" <<'PY'
+import json, sys
+path, model, libs, cache, context, budget, spec, prompts, runs, selected, sampler, *qids = sys.argv[1:]
+flags = dict(a[2:].split('=', 1) for a in sampler.split())
+sampler = {'top_k': int(flags['sampler_top_k']), 'top_p': float(flags['sampler_top_p']),
+           'temperature': float(flags['sampler_temperature']), 'seed': int(flags['sampler_seed'])} if flags else None
+signatures = selected.split('=', 1)[1].split(',') if selected else None
+jobs = [{'name': q, 'prompt_file': f'{prompts}/{q}.txt', 'max_output_tokens': int(budget), 'sampler': sampler,
+         'stdout': f'{runs}/{q}.out', 'stderr': f'{runs}/{q}.log', 'time': f'{runs}/{q}.time'} for q in qids]
+json.dump({'engine': {'model': model, 'dispatch_lib_dir': libs, 'cache_dir': cache, 'max_num_tokens': int(context),
+                      'selected_signatures': signatures, 'speculative_decoding': spec == 'true',
+                      'min_log_severity': 0},
+           'jobs': jobs, 'summary': f'{runs}/one_process.json'}, open(path, 'w'), indent=1)
+PY
+  (cd "$NB_LM" && /usr/bin/time -v -o "$runs/one_process.time" python3 "$here/../engine_runner.tool" "$runs/jobs.json") || status=1
+  for qid in "${pending[@]}"; do
+    rc=$(sed -n 's/^\tExit status: //p' "$runs/$qid.time" 2>/dev/null || true)
+    [[ ${rc:-1} == 0 ]] || { status=1; echo "$qid: exit ${rc:-none}"; }
+    [[ -f $runs/$qid.log ]] && record "$qid" "${rc:-1}"
+  done
+fi
 exit "$status"
