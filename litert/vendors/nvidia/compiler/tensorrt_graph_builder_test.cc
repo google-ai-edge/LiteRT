@@ -1180,13 +1180,17 @@ TEST(TensorRtGraphBuilderTest, CudaGemmForManyActivationRows) {
         double error = 0.0;
         double norm = 0.0;
         for (int32_t n = 0; n < channels[i]; ++n) {
-          double expected = dot(i == 0 ? 0 : 3, m, n);
+          // The hidden output's product is the gate's and the up
+          // projection's alone: the small projection has fewer channels.
+          double expected;
           if (i == 1) {
             const double x = dot(1, m, n);
             expected = 0.5 * x *
                        (1.0 + std::tanh(0.7978845608028654 *
                                         (x + 0.044715 * x * x * x))) *
                        dot(2, m, n);
+          } else {
+            expected = dot(i == 0 ? 0 : 3, m, n);
           }
           const double value = actual[static_cast<size_t>(m) * channels[i] + n];
           error += (value - expected) * (value - expected);
