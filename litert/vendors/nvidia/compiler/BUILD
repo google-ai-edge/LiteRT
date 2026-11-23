@@ -847,6 +847,7 @@ cc_library(
     hdrs = ["slot_plugins.h"],
     tags = ["manual"],
     deps = [
+        ":moe_plugin",
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
         "//litert/vendors/nvidia/trtllm:slot_kernels",
         "@local_cuda//:cuda_headers",
@@ -872,9 +873,12 @@ cc_test(
     }),
     deps = [
         ":decode_attention_plugin",
+        ":int8_cache_write_plugin",
+        ":qkv_norm_rope_plugin",
         ":slot_plugins",
         ":subbyte_gemv_plugin",  # TensorRT-RTX addPluginV3 compatibility header.
         "//litert/vendors/nvidia/trtllm:gemma4_head_kernels",
+        "//litert/vendors/nvidia/trtllm:slot_test_util",
         "@com_google_googletest//:gtest_main",
         "@local_cuda//:cuda_headers",
         "@local_cuda//:cuda_runtime",

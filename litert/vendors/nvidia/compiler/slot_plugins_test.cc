@@ -14,6 +14,7 @@
 
 #include "litert/vendors/nvidia/compiler/slot_plugins.h"
 
+#include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -24,13 +25,21 @@
 #include <gtest/gtest.h>
 #include "cuda_runtime_api.h"
 #include "litert/vendors/nvidia/compiler/decode_attention_plugin.h"
+#include "litert/vendors/nvidia/compiler/int8_cache_write_plugin.h"
+#include "litert/vendors/nvidia/compiler/qkv_norm_rope_plugin.h"
 #include "litert/vendors/nvidia/compiler/tensorrt_rtx_plugin_compat.h"
 #include "NvInfer.h"
 #include "NvInferRuntime.h"
 #include "litert/vendors/nvidia/trtllm/decode_attention.h"
+#include "litert/vendors/nvidia/trtllm/slot_test_util.h"
 
 namespace litert::nvidia {
 namespace {
+
+using slot_test::Bytes;
+using slot_test::Device;
+using slot_test::Download;
+using slot_test::Upload;
 
 class TestLogger final : public nvinfer1::ILogger {
  public:
@@ -42,81 +51,39 @@ class TestLogger final : public nvinfer1::ILogger {
   }
 };
 
-struct CudaDeleter {
-  void operator()(void* p) const { cudaFree(p); }
-};
-using Device = std::unique_ptr<void, CudaDeleter>;
-
-Device Upload(const std::vector<uint8_t>& host) {
-  void* p = nullptr;
-  if (cudaMalloc(&p, host.size()) != cudaSuccess) return nullptr;
-  cudaMemcpy(p, host.data(), host.size(), cudaMemcpyHostToDevice);
-  return Device(p);
-}
-
-// Bytes that are finite FP16 or BF16 values of moderate size when read two at
-// a time (the high byte keeps the exponent in range), or any INT8 values.
-std::vector<uint8_t> Bytes(size_t count, uint32_t seed, bool floats) {
-  std::vector<uint8_t> bytes(count);
-  uint32_t state = seed * 2654435761u + 12345u;
-  for (size_t i = 0; i < count; ++i) {
-    state = state * 1664525u + 1013904223u;
-    const uint8_t byte = static_cast<uint8_t>(state >> 24);
-    bytes[i] = floats && i % 2 == 1 ? static_cast<uint8_t>(0x3c + (byte & 0x83))
-                                    : byte;
-  }
-  return bytes;
-}
-
-// A decode attention layer of a network: q [1, H, rows, D], caches of
-// `cache_len` keys, mask [1, 1, 1, cache_len], and a window's start.
-struct Layer {
-  TestLogger logger;
-  std::unique_ptr<nvinfer1::IBuilder> builder;
-  std::unique_ptr<nvinfer1::INetworkDefinition> network;
-  std::unique_ptr<nvinfer1::IPluginV3> plugin;
-  nvinfer1::IPluginV3Layer* layer = nullptr;
-  std::vector<nvinfer1::Dims> dims;
-  std::vector<nvinfer1::DataType> types;
+struct Tensor {
+  nvinfer1::Dims dims;
+  nvinfer1::DataType type;
 };
 
-std::unique_ptr<Layer> MakeLayer(nvinfer1::IPluginV3* plugin, int heads,
-                                 int rows, int depth, int cache_len,
-                                 int int8_cache, int window) {
-  auto result = std::make_unique<Layer>();
-  result->plugin.reset(plugin);
-  if (plugin == nullptr) return nullptr;
-  result->builder.reset(nvinfer1::createInferBuilder(result->logger));
-  if (!result->builder) return nullptr;
-  result->network.reset(result->builder->createNetworkV2(0));
-  if (!result->network) return nullptr;
-  const nvinfer1::DataType cache_type =
-      int8_cache != 0 ? nvinfer1::DataType::kINT8 : nvinfer1::DataType::kHALF;
-  result->dims = {nvinfer1::Dims4{1, heads, rows, depth},
-                  nvinfer1::Dims4{1, heads, cache_len, depth},
-                  int8_cache == 2 ? nvinfer1::Dims4{1, heads, depth, cache_len}
-                                  : nvinfer1::Dims4{1, heads, cache_len, depth},
-                  nvinfer1::Dims4{1, 1, 1, cache_len}};
-  result->types = {nvinfer1::DataType::kBF16, cache_type, cache_type,
-                   nvinfer1::DataType::kBOOL};
-  if (window != 0) {
-    nvinfer1::Dims one{};
-    one.nbDims = 1;
-    one.d[0] = 1;
-    result->dims.push_back(one);
-    result->types.push_back(nvinfer1::DataType::kINT32);
+nvinfer1::Dims Dims1(int64_t a) {
+  nvinfer1::Dims dims{};
+  dims.nbDims = 1;
+  dims.d[0] = a;
+  return dims;
+}
+
+size_t BytesOf(const Tensor& tensor) {
+  size_t count = 1;
+  for (int i = 0; i < tensor.dims.nbDims; ++i) count *= tensor.dims.d[i];
+  switch (tensor.type) {
+    case nvinfer1::DataType::kFLOAT:
+    case nvinfer1::DataType::kINT32:
+      return count * 4;
+    case nvinfer1::DataType::kHALF:
+    case nvinfer1::DataType::kBF16:
+      return count * 2;
+    default:
+      return count;
   }
-  std::vector<nvinfer1::ITensor*> inputs;
-  for (size_t i = 0; i < result->dims.size(); ++i) {
-    inputs.push_back(
-        result->network->addInput(("input" + std::to_string(i)).c_str(),
-                                  result->types[i], result->dims[i]));
-    if (inputs.back() == nullptr) return nullptr;
-  }
-  result->layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
-      *result->network, inputs.data(), static_cast<int32_t>(inputs.size()),
-      *result->plugin);
-  return result->layer != nullptr ? std::move(result) : nullptr;
+}
+
+nvinfer1::PluginTensorDesc DescOf(const Tensor& tensor) {
+  nvinfer1::PluginTensorDesc desc{};
+  desc.dims = tensor.dims;
+  desc.type = tensor.type;
+  desc.format = nvinfer1::TensorFormat::kLINEAR;
+  return desc;
 }
 
 nvinfer1::IPluginV3OneRuntime* Runtime(nvinfer1::IPluginV3* plugin) {
@@ -124,54 +91,102 @@ nvinfer1::IPluginV3OneRuntime* Runtime(nvinfer1::IPluginV3* plugin) {
       plugin->getCapabilityInterface(nvinfer1::PluginCapabilityType::kRUNTIME));
 }
 
+// A plugin layer of a network over inputs of the given shapes and types.
+struct Layer {
+  TestLogger logger;
+  std::unique_ptr<nvinfer1::IBuilder> builder;
+  std::unique_ptr<nvinfer1::INetworkDefinition> network;
+  std::unique_ptr<nvinfer1::IPluginV3> plugin;
+  nvinfer1::IPluginV3Layer* layer = nullptr;
+  std::vector<Tensor> inputs;
+};
+
+std::unique_ptr<Layer> MakeLayer(nvinfer1::IPluginV3* plugin,
+                                 const std::vector<Tensor>& inputs) {
+  auto result = std::make_unique<Layer>();
+  result->plugin.reset(plugin);
+  if (plugin == nullptr) return nullptr;
+  result->inputs = inputs;
+  result->builder.reset(nvinfer1::createInferBuilder(result->logger));
+  if (!result->builder) return nullptr;
+  result->network.reset(result->builder->createNetworkV2(0));
+  if (!result->network) return nullptr;
+  std::vector<nvinfer1::ITensor*> tensors;
+  for (size_t i = 0; i < inputs.size(); ++i) {
+    tensors.push_back(result->network->addInput(
+        ("input" + std::to_string(i)).c_str(), inputs[i].type, inputs[i].dims));
+    if (tensors.back() == nullptr) return nullptr;
+  }
+  result->layer = tensorrt_rtx_1_5_0_99::AddPluginV3(
+      *result->network, tensors.data(), static_cast<int32_t>(tensors.size()),
+      *result->plugin);
+  return result->layer != nullptr ? std::move(result) : nullptr;
+}
+
+// The twin as an engine holds it: made again from its serialized fields.
+std::unique_ptr<nvinfer1::IPluginV3> Restored(nvinfer1::IPluginV3* twin) {
+  auto* core = static_cast<nvinfer1::IPluginV3OneCore*>(
+      twin->getCapabilityInterface(nvinfer1::PluginCapabilityType::kCORE));
+  auto* creator = static_cast<nvinfer1::IPluginCreatorV3One*>(
+      getPluginRegistry()->getCreator(core->getPluginName(),
+                                      core->getPluginVersion(),
+                                      core->getPluginNamespace()));
+  if (creator == nullptr) return nullptr;
+  return std::unique_ptr<nvinfer1::IPluginV3>(
+      creator->createPlugin("twin", Runtime(twin)->getFieldsToSerialize(),
+                            nvinfer1::TensorRTPhase::kRUNTIME));
+}
+
+// The descriptors of a twin over `slots` slots of a layer.
+std::vector<nvinfer1::PluginTensorDesc> Repeated(
+    const std::vector<Tensor>& tensors, int slots) {
+  std::vector<nvinfer1::PluginTensorDesc> descs;
+  for (int s = 0; s < slots; ++s) {
+    for (const Tensor& tensor : tensors) descs.push_back(DescOf(tensor));
+  }
+  return descs;
+}
+
 // The twin's outputs for `slots` slots against the single-sequence plugin's
 // for each slot alone, through the plugins' own enqueue.
-void CheckTwin(int slots, int heads, int rows, int depth, int cache_len,
-               int int8_cache, int window) {
+void CheckAttentionTwin(int slots, int heads, int rows, int depth,
+                        int cache_len, int int8_cache, int window) {
   SCOPED_TRACE(::testing::Message()
                << slots << " slots, heads " << heads << ", rows " << rows
                << ", depth " << depth << ", " << cache_len << " keys, int8 "
                << int8_cache << ", window " << window);
   const LiteRtNvidiaInt8CacheParams int8 = {0.0125f, -3, 0.02f, 5,
                                             int8_cache == 2};
+  const nvinfer1::DataType cache_type =
+      int8_cache != 0 ? nvinfer1::DataType::kINT8 : nvinfer1::DataType::kHALF;
+  std::vector<Tensor> inputs = {
+      {nvinfer1::Dims4{1, heads, rows, depth}, nvinfer1::DataType::kBF16},
+      {nvinfer1::Dims4{1, heads, cache_len, depth}, cache_type},
+      {int8_cache == 2 ? nvinfer1::Dims4{1, heads, depth, cache_len}
+                       : nvinfer1::Dims4{1, heads, cache_len, depth},
+       cache_type},
+      {nvinfer1::Dims4{1, 1, 1, cache_len}, nvinfer1::DataType::kBOOL}};
+  if (window != 0) inputs.push_back({Dims1(1), nvinfer1::DataType::kINT32});
+  const std::vector<Tensor> outputs = {inputs[0]};
   auto layer = MakeLayer(
       CreateDecodeAttentionPlugin(-10000.0f, /*new_keys=*/false,
                                   int8_cache != 0 ? &int8 : nullptr, window),
-      heads, rows, depth, cache_len, int8_cache, window);
+      inputs);
   ASSERT_NE(layer, nullptr);
   std::unique_ptr<nvinfer1::IPluginV3> twin(
       CreateSlotsTwin(*layer->layer, slots));
   ASSERT_NE(twin, nullptr);
-  // The twin as an engine holds it: made again from its serialized fields.
-  auto* twin_core = static_cast<nvinfer1::IPluginV3OneCore*>(
-      twin->getCapabilityInterface(nvinfer1::PluginCapabilityType::kCORE));
-  ASSERT_NE(twin_core, nullptr);
-  auto* creator = static_cast<nvinfer1::IPluginCreatorV3One*>(
-      getPluginRegistry()->getCreator(twin_core->getPluginName(),
-                                      twin_core->getPluginVersion(),
-                                      twin_core->getPluginNamespace()));
-  ASSERT_NE(creator, nullptr);
-  std::unique_ptr<nvinfer1::IPluginV3> restored(
-      creator->createPlugin("twin", Runtime(twin.get())->getFieldsToSerialize(),
-                            nvinfer1::TensorRTPhase::kRUNTIME));
+  const auto restored = Restored(twin.get());
   ASSERT_NE(restored, nullptr);
 
-  const int n = static_cast<int>(layer->dims.size());
-  std::vector<nvinfer1::PluginTensorDesc> single_in(n), twin_in(slots * n),
-      twin_out(slots);
-  for (int i = 0; i < n; ++i) {
-    single_in[i].dims = layer->dims[i];
-    single_in[i].type = layer->types[i];
-    single_in[i].format = nvinfer1::TensorFormat::kLINEAR;
-  }
-  for (int s = 0; s < slots; ++s) {
-    for (int i = 0; i < n; ++i) twin_in[s * n + i] = single_in[i];
-    twin_out[s] = single_in[0];
-  }
+  const int n = static_cast<int>(inputs.size());
+  auto single_in = Repeated(inputs, 1), single_out = Repeated(outputs, 1);
+  auto twin_in = Repeated(inputs, slots), twin_out = Repeated(outputs, slots);
   auto* single_runtime = Runtime(layer->plugin.get());
   auto* twin_runtime = Runtime(restored.get());
   ASSERT_EQ(
-      single_runtime->onShapeChange(single_in.data(), n, &single_in[0], 1), 0);
+      single_runtime->onShapeChange(single_in.data(), n, single_out.data(), 1),
+      0);
   ASSERT_EQ(twin_runtime->onShapeChange(twin_in.data(), slots * n,
                                         twin_out.data(), slots),
             0);
@@ -191,15 +206,13 @@ void CheckTwin(int slots, int heads, int rows, int depth, int cache_len,
                                          dynamic_out.data(), slots),
             slots * single_ws);
 
-  const size_t q_bytes = static_cast<size_t>(heads) * rows * depth * 2;
-  const size_t cache_bytes = static_cast<size_t>(heads) * cache_len * depth *
-                             (int8_cache != 0 ? 1 : 2);
+  const size_t q_bytes = BytesOf(inputs[0]);
   std::vector<Device> buffers;
   std::vector<const void*> twin_inputs;
   std::vector<void*> twin_outputs;
   std::vector<std::vector<uint8_t>> expected(slots);
-  Device single_workspace = Upload(std::vector<uint8_t>(single_ws));
-  Device twin_workspace = Upload(std::vector<uint8_t>(slots * single_ws));
+  Device single_workspace = Upload(nullptr, single_ws);
+  Device twin_workspace = Upload(nullptr, slots * single_ws);
   ASSERT_TRUE(single_workspace && twin_workspace);
   for (int s = 0; s < slots; ++s) {
     // Slot s sees the first keys up to its own position.
@@ -210,46 +223,40 @@ void CheckTwin(int slots, int heads, int rows, int depth, int cache_len,
         window != 0 ? std::max(0, visible - window) / 16 * 16 : 0;
     std::vector<uint8_t> start_bytes(sizeof(start));
     std::memcpy(start_bytes.data(), &start, sizeof(start));
+    const std::vector<std::vector<uint8_t>> hosts = {
+        Bytes(q_bytes, 10 * s + 1, true),
+        Bytes(BytesOf(inputs[1]), 10 * s + 2, int8_cache == 0),
+        Bytes(BytesOf(inputs[2]), 10 * s + 3, int8_cache == 0), mask,
+        start_bytes};
     std::vector<const void*> slot_inputs;
-    for (const auto& host :
-         {Bytes(q_bytes, 10 * s + 1, true),
-          Bytes(cache_bytes, 10 * s + 2, int8_cache == 0),
-          Bytes(cache_bytes, 10 * s + 3, int8_cache == 0), mask, start_bytes}) {
-      if (static_cast<int>(slot_inputs.size()) == n) break;
-      buffers.push_back(Upload(host));
+    for (int i = 0; i < n; ++i) {
+      buffers.push_back(Upload(hosts[i]));
       ASSERT_NE(buffers.back(), nullptr);
       slot_inputs.push_back(buffers.back().get());
     }
-    buffers.push_back(Upload(std::vector<uint8_t>(q_bytes)));
-    void* single_out = buffers.back().get();
-    buffers.push_back(Upload(std::vector<uint8_t>(q_bytes)));
+    buffers.push_back(Upload(nullptr, q_bytes));
+    void* single_output = buffers.back().get();
+    buffers.push_back(Upload(nullptr, q_bytes));
     twin_outputs.push_back(buffers.back().get());
     twin_inputs.insert(twin_inputs.end(), slot_inputs.begin(),
                        slot_inputs.end());
-    ASSERT_EQ(single_runtime->enqueue(single_in.data(), &single_in[0],
-                                      slot_inputs.data(), &single_out,
+    ASSERT_EQ(single_runtime->enqueue(single_in.data(), single_out.data(),
+                                      slot_inputs.data(), &single_output,
                                       single_workspace.get(), nullptr),
               0);
     ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-    expected[s].resize(q_bytes);
-    ASSERT_EQ(cudaMemcpy(expected[s].data(), single_out, q_bytes,
-                         cudaMemcpyDeviceToHost),
-              cudaSuccess);
+    expected[s] = Download(single_output, q_bytes);
   }
   ASSERT_EQ(
       twin_runtime->enqueue(twin_in.data(), twin_out.data(), twin_inputs.data(),
                             twin_outputs.data(), twin_workspace.get(), nullptr),
       0);
   ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
-  std::vector<uint8_t> actual(q_bytes);
   for (int s = 0; s < slots; ++s) {
-    ASSERT_EQ(cudaMemcpy(actual.data(), twin_outputs[s], q_bytes,
-                         cudaMemcpyDeviceToHost),
-              cudaSuccess);
+    const std::vector<uint8_t> actual = Download(twin_outputs[s], q_bytes);
     EXPECT_NE(std::count(actual.begin(), actual.end(), 0),
               static_cast<ptrdiff_t>(actual.size()));
-    EXPECT_EQ(std::memcmp(actual.data(), expected[s].data(), q_bytes), 0)
-        << "slot " << s;
+    EXPECT_EQ(actual, expected[s]) << "slot " << s;
   }
 }
 
@@ -257,33 +264,368 @@ TEST(SlotPluginsTest, DecodeAttentionTwinMatchesTheLayerOnEachSlot) {
   // Gemma 4 26B-A4B's local and global layers, E4B's local layer through a
   // window and its global layer.
   for (const int slots : {2, 3, 8}) {
-    CheckTwin(slots, 8, 2, 256, 1024, /*int8_cache=*/0, /*window=*/0);
-    CheckTwin(slots, 2, 8, 512, 2048, 0, 0);
-    CheckTwin(slots, 2, 4, 256, 2048, 2, 512);
-    CheckTwin(slots, 1, 8, 512, 2048, 2, 0);
-    CheckTwin(slots, 2, 4, 256, 1024, 1, 0);
+    CheckAttentionTwin(slots, 8, 2, 256, 1024, /*int8_cache=*/0, /*window=*/0);
+    CheckAttentionTwin(slots, 2, 8, 512, 2048, 0, 0);
+    CheckAttentionTwin(slots, 2, 4, 256, 2048, 2, 512);
+    CheckAttentionTwin(slots, 1, 8, 512, 2048, 2, 0);
+    CheckAttentionTwin(slots, 2, 4, 256, 1024, 1, 0);
   }
+}
+
+std::vector<Tensor> AttentionInputs(int heads, int rows, int depth,
+                                    int cache_len) {
+  return {
+      {nvinfer1::Dims4{1, heads, rows, depth}, nvinfer1::DataType::kBF16},
+      {nvinfer1::Dims4{1, heads, cache_len, depth}, nvinfer1::DataType::kHALF},
+      {nvinfer1::Dims4{1, heads, cache_len, depth}, nvinfer1::DataType::kHALF},
+      {nvinfer1::Dims4{1, 1, 1, cache_len}, nvinfer1::DataType::kBOOL}};
 }
 
 TEST(SlotPluginsTest, DeclinesLayersWithoutATwin) {
   // One slot is the layer itself; 16 rows over a cache of depth 512 run on
   // the tensor-core kernel; new keys and row tokens are prefill and verify
   // forms.
-  auto decode =
-      MakeLayer(CreateDecodeAttentionPlugin(-10000.0f), 8, 2, 256, 1024, 0, 0);
+  auto decode = MakeLayer(CreateDecodeAttentionPlugin(-10000.0f),
+                          AttentionInputs(8, 2, 256, 1024));
   ASSERT_NE(decode, nullptr);
   EXPECT_EQ(CreateSlotsTwin(*decode->layer, 1), nullptr);
   EXPECT_EQ(CreateSlotsTwin(*decode->layer, 9), nullptr);
-  auto streaming =
-      MakeLayer(CreateDecodeAttentionPlugin(-10000.0f), 1, 16, 512, 2048, 0, 0);
+  EXPECT_EQ(CreateSlotRowsPlugin(*decode->plugin), nullptr);
+  auto streaming = MakeLayer(CreateDecodeAttentionPlugin(-10000.0f),
+                             AttentionInputs(1, 16, 512, 2048));
   ASSERT_NE(streaming, nullptr);
   EXPECT_EQ(CreateSlotsTwin(*streaming->layer, 2), nullptr);
   auto tokens =
       MakeLayer(CreateDecodeAttentionPlugin(-10000.0f, false, nullptr, 0,
                                             /*row_tokens=*/4),
-                2, 8, 512, 2048, 0, 0);
+                AttentionInputs(2, 8, 512, 2048));
   ASSERT_NE(tokens, nullptr);
   EXPECT_EQ(CreateSlotsTwin(*tokens->layer, 2), nullptr);
+  EXPECT_EQ(CreateCacheWriteSlotsPlugin(0, false), nullptr);
+  EXPECT_EQ(CreateCacheWriteSlotsPlugin(17, false), nullptr);
+}
+
+// A layer's plugin on each slot alone against its twin on all of them,
+// through the plugins' enqueue: `inputs` and `outputs` are the layer's
+// tensors, `per_slot[s][i]` slot s's bytes of input i. An output listed in
+// `in_place` (output o is input in_place[o], or -1) is bound to that input's
+// buffer in both runs, as LiteRT-LM binds a cache.
+void CheckTwin(Layer& layer, int slots, const std::vector<Tensor>& outputs,
+               const std::vector<std::vector<std::vector<uint8_t>>>& per_slot,
+               const std::vector<int>& in_place) {
+  std::unique_ptr<nvinfer1::IPluginV3> twin(
+      CreateSlotsTwin(*layer.layer, slots));
+  ASSERT_NE(twin, nullptr);
+  const auto restored = Restored(twin.get());
+  ASSERT_NE(restored, nullptr);
+  const int n = static_cast<int>(layer.inputs.size());
+  const int m = static_cast<int>(outputs.size());
+  auto single_in = Repeated(layer.inputs, 1), single_out = Repeated(outputs, 1);
+  auto twin_in = Repeated(layer.inputs, slots),
+       twin_out = Repeated(outputs, slots);
+  auto* single_runtime = Runtime(layer.plugin.get());
+  auto* twin_runtime = Runtime(restored.get());
+  ASSERT_EQ(
+      single_runtime->onShapeChange(single_in.data(), n, single_out.data(), m),
+      0);
+  ASSERT_EQ(twin_runtime->onShapeChange(twin_in.data(), slots * n,
+                                        twin_out.data(), slots * m),
+            0);
+  std::vector<Device> buffers;
+  const auto keep = [&](Device device) {
+    EXPECT_NE(device, nullptr);
+    buffers.push_back(std::move(device));
+    return buffers.back().get();
+  };
+  std::vector<const void*> twin_inputs;
+  std::vector<void*> twin_outputs;
+  std::vector<void*> expected;
+  for (int s = 0; s < slots; ++s) {
+    // Two sets of the slot's inputs: an in-place output changes its input.
+    std::vector<const void*> single_inputs;
+    std::vector<void*> single_outputs;
+    const size_t first = twin_inputs.size();
+    for (int i = 0; i < n; ++i) {
+      single_inputs.push_back(keep(Upload(per_slot[s][i])));
+      twin_inputs.push_back(keep(Upload(per_slot[s][i])));
+    }
+    for (int o = 0; o < m; ++o) {
+      if (in_place[o] >= 0) {
+        single_outputs.push_back(const_cast<void*>(single_inputs[in_place[o]]));
+        twin_outputs.push_back(
+            const_cast<void*>(twin_inputs[first + in_place[o]]));
+      } else {
+        single_outputs.push_back(keep(Upload(nullptr, BytesOf(outputs[o]))));
+        twin_outputs.push_back(keep(Upload(nullptr, BytesOf(outputs[o]))));
+      }
+    }
+    ASSERT_EQ(single_runtime->enqueue(single_in.data(), single_out.data(),
+                                      single_inputs.data(),
+                                      single_outputs.data(), nullptr, nullptr),
+              0);
+    expected.insert(expected.end(), single_outputs.begin(),
+                    single_outputs.end());
+  }
+  ASSERT_EQ(
+      twin_runtime->enqueue(twin_in.data(), twin_out.data(), twin_inputs.data(),
+                            twin_outputs.data(), nullptr, nullptr),
+      0);
+  ASSERT_EQ(cudaDeviceSynchronize(), cudaSuccess);
+  for (int s = 0; s < slots; ++s) {
+    for (int o = 0; o < m; ++o) {
+      const size_t bytes = BytesOf(outputs[o]);
+      const std::vector<uint8_t> actual =
+          Download(twin_outputs[s * m + o], bytes);
+      EXPECT_NE(std::count(actual.begin(), actual.end(), 0),
+                static_cast<ptrdiff_t>(bytes));
+      EXPECT_EQ(actual, Download(expected[s * m + o], bytes))
+          << "slot " << s << " output " << o;
+      if (in_place[o] >= 0) {
+        EXPECT_NE(actual, per_slot[s][in_place[o]]) << "slot " << s;
+      }
+    }
+  }
+}
+
+template <typename T>
+std::vector<uint8_t> AsBytes(const std::vector<T>& values) {
+  std::vector<uint8_t> bytes(values.size() * sizeof(T));
+  std::memcpy(bytes.data(), values.data(), bytes.size());
+  return bytes;
+}
+
+TEST(SlotPluginsTest, QkvNormRopeTwinMatchesTheLayerOnEachSlot) {
+  struct Shape {
+    int heads, kv_heads, depth, tokens;
+  };
+  // Gemma 4 26B-A4B's local and global layers, and a verify step's rows.
+  for (const Shape& shape :
+       {Shape{16, 8, 256, 1}, Shape{16, 2, 512, 1}, Shape{8, 2, 256, 5}}) {
+    const int width = (shape.heads + 2 * shape.kv_heads) * shape.depth;
+    nvinfer1::Dims qkv_dims{};
+    qkv_dims.nbDims = 3;
+    qkv_dims.d[0] = 1;
+    qkv_dims.d[1] = shape.tokens;
+    qkv_dims.d[2] = width;
+    const std::vector<Tensor> inputs = {
+        {qkv_dims, nvinfer1::DataType::kBF16},
+        {Dims1(shape.tokens), nvinfer1::DataType::kINT32},
+        {Dims1(shape.depth), nvinfer1::DataType::kFLOAT},
+        {Dims1(shape.depth), nvinfer1::DataType::kFLOAT}};
+    const std::vector<Tensor> outputs = {
+        {nvinfer1::Dims4{1, shape.heads, shape.tokens, shape.depth},
+         nvinfer1::DataType::kBF16},
+        {nvinfer1::Dims4{1, shape.kv_heads, shape.tokens, shape.depth},
+         nvinfer1::DataType::kBF16},
+        {nvinfer1::Dims4{1, shape.kv_heads, shape.tokens, shape.depth},
+         nvinfer1::DataType::kBF16}};
+    std::vector<float> q_scale(shape.depth), k_scale(shape.depth);
+    for (int i = 0; i < shape.depth; ++i) {
+      q_scale[i] = 0.5f + 0.003f * static_cast<float>(i % 97);
+      k_scale[i] = 1.25f - 0.002f * static_cast<float>(i % 89);
+    }
+    for (const int slots : {2, 3, 8}) {
+      SCOPED_TRACE(::testing::Message()
+                   << slots << " slots, heads " << shape.heads << "+2x"
+                   << shape.kv_heads << ", depth " << shape.depth);
+      auto layer = MakeLayer(
+          CreateQkvNormRopePlugin(shape.heads, shape.kv_heads, shape.depth,
+                                  /*rotary=*/shape.depth, /*has_v_norm=*/true,
+                                  1e-6f, 1.0f, 10000.0f),
+          inputs);
+      ASSERT_NE(layer, nullptr);
+      std::vector<std::vector<std::vector<uint8_t>>> per_slot;
+      for (int s = 0; s < slots; ++s) {
+        // Slots at positions of their own, short and long contexts.
+        std::vector<int32_t> positions(shape.tokens);
+        for (int t = 0; t < shape.tokens; ++t) {
+          positions[t] = (s % 2 == 0 ? 3 : 8000) + 257 * s + t;
+        }
+        per_slot.push_back({Bytes(BytesOf(inputs[0]), 20 * s + 1, true),
+                            AsBytes(positions), AsBytes(q_scale),
+                            AsBytes(k_scale)});
+      }
+      CheckTwin(*layer, slots, outputs, per_slot, {-1, -1, -1});
+    }
+  }
+}
+
+TEST(SlotPluginsTest, Int8CacheWriteTwinMatchesTheLayerOnEachSlot) {
+  // Gemma 4 E4B's key and value caches: two KV heads of depth 256.
+  constexpr int kHeads = 2, kDepth = 256, kCacheLen = 2048;
+  for (const bool columns : {false, true}) {
+    const std::vector<Tensor> inputs = {
+        {columns ? nvinfer1::Dims4{1, kHeads, kDepth, kCacheLen}
+                 : nvinfer1::Dims4{1, kHeads, kCacheLen, kDepth},
+         nvinfer1::DataType::kINT8},
+        {nvinfer1::Dims4{1, kHeads, 1, kDepth}, nvinfer1::DataType::kBF16},
+        {Dims1(1), nvinfer1::DataType::kINT32}};
+    const std::vector<Tensor> outputs = {inputs[0]};
+    for (const int slots : {2, 3, 8}) {
+      for (const bool in_place : {true, false}) {
+        SCOPED_TRACE(::testing::Message()
+                     << slots << " slots, columns " << columns << ", in place "
+                     << in_place);
+        auto layer =
+            MakeLayer(CreateInt8CacheWritePlugin(columns, 0.03f, -4), inputs);
+        ASSERT_NE(layer, nullptr);
+        std::vector<std::vector<std::vector<uint8_t>>> per_slot;
+        for (int s = 0; s < slots; ++s) {
+          // The start, the end and positions the write clamps.
+          const int32_t positions[] = {0,  kCacheLen - 1, 517, kCacheLen + 5,
+                                       -3, 1024,          7,   kCacheLen - 2};
+          per_slot.push_back({Bytes(BytesOf(inputs[0]), 30 * s + 1, false),
+                              Bytes(BytesOf(inputs[1]), 30 * s + 2, true),
+                              AsBytes(std::vector<int32_t>{positions[s]})});
+        }
+        CheckTwin(*layer, slots, outputs, per_slot, {in_place ? 0 : -1});
+      }
+    }
+  }
+}
+
+// FP32 to FP16 bits by the conversion every x86-64 and ARM64 host has, for
+// the values the test writes (finite, in FP16's normal range or zero).
+uint16_t HalfBits(float value) {
+  uint32_t bits;
+  std::memcpy(&bits, &value, 4);
+  const uint16_t sign = static_cast<uint16_t>((bits >> 16) & 0x8000u);
+  if ((bits & 0x7fffffffu) == 0) return sign;
+  const int exponent = static_cast<int>((bits >> 23) & 0xff) - 127 + 15;
+  uint32_t half =
+      (static_cast<uint32_t>(exponent) << 10) | ((bits & 0x7fffffu) >> 13);
+  const uint32_t rest = bits & 0x1fffu;
+  if (rest > 0x1000u || (rest == 0x1000u && (half & 1u))) ++half;
+  return static_cast<uint16_t>(sign | half);
+}
+
+// The FP16 cache write plugin against what the single-sequence step runs
+// today: a cast of the step's BF16 rows to the cache's type and TensorRT's
+// own KV cache update, built into an engine and run on each slot's cache.
+TEST(SlotPluginsTest, CacheWritePluginMatchesTheNativeUpdate) {
+  constexpr int kHeads = 2, kDepth = 512, kCacheLen = 96, kSlots = 4;
+  const Tensor cache = {nvinfer1::Dims4{1, kHeads, kCacheLen, kDepth},
+                        nvinfer1::DataType::kHALF};
+  const Tensor update = {nvinfer1::Dims4{1, kHeads, 1, kDepth},
+                         nvinfer1::DataType::kBF16};
+  const Tensor position = {Dims1(1), nvinfer1::DataType::kINT32};
+  TestLogger logger;
+  std::unique_ptr<nvinfer1::IBuilder> builder(
+      nvinfer1::createInferBuilder(logger));
+  ASSERT_NE(builder, nullptr);
+  std::unique_ptr<nvinfer1::INetworkDefinition> network(
+      builder->createNetworkV2(0));
+  ASSERT_NE(network, nullptr);
+  auto* cache_in = network->addInput("cache", cache.type, cache.dims);
+  auto* update_in = network->addInput("update", update.type, update.dims);
+  auto* position_in =
+      network->addInput("position", position.type, position.dims);
+  ASSERT_TRUE(cache_in != nullptr && update_in != nullptr &&
+              position_in != nullptr);
+  auto* cast = network->addCast(*update_in, nvinfer1::DataType::kHALF);
+  ASSERT_NE(cast, nullptr);
+  auto* writer =
+      network->addKVCacheUpdate(*cache_in, *cast->getOutput(0), *position_in,
+                                nvinfer1::KVCacheMode::kLINEAR);
+  ASSERT_NE(writer, nullptr);
+  writer->getOutput(0)->setName("updated");
+  network->markOutput(*writer->getOutput(0));
+  std::unique_ptr<nvinfer1::IBuilderConfig> config(
+      builder->createBuilderConfig());
+  ASSERT_NE(config, nullptr);
+  std::unique_ptr<nvinfer1::IHostMemory> plan(
+      builder->buildSerializedNetwork(*network, *config));
+  ASSERT_NE(plan, nullptr);
+  std::unique_ptr<nvinfer1::IRuntime> runtime(
+      nvinfer1::createInferRuntime(logger));
+  ASSERT_NE(runtime, nullptr);
+  std::unique_ptr<nvinfer1::ICudaEngine> engine(
+      runtime->deserializeCudaEngine(plan->data(), plan->size()));
+  ASSERT_NE(engine, nullptr);
+  ASSERT_STREQ(engine->getAliasedInputTensor("updated"), "cache");
+  std::unique_ptr<nvinfer1::IExecutionContext> context(
+      engine->createExecutionContext());
+  ASSERT_NE(context, nullptr);
+  cudaStream_t stream = nullptr;
+  ASSERT_EQ(cudaStreamCreate(&stream), cudaSuccess);
+
+  std::unique_ptr<nvinfer1::IPluginV3> plugin(
+      CreateCacheWriteSlotsPlugin(kSlots, /*columns=*/false));
+  ASSERT_NE(plugin, nullptr);
+  const std::vector<Tensor> inputs = {cache, update, position};
+  auto plugin_in = Repeated(inputs, kSlots),
+       plugin_out = Repeated({cache}, kSlots);
+  ASSERT_EQ(Runtime(plugin.get())
+                ->onShapeChange(plugin_in.data(), 3 * kSlots, plugin_out.data(),
+                                kSlots),
+            0);
+  std::vector<Device> buffers;
+  std::vector<const void*> plugin_inputs;
+  std::vector<void*> plugin_outputs, native_caches;
+  std::vector<std::vector<uint8_t>> expected;
+  const int32_t positions[kSlots] = {0, 41, kCacheLen - 1, 7};
+  for (int s = 0; s < kSlots; ++s) {
+    const std::vector<uint8_t> cache_bytes =
+        Bytes(BytesOf(cache), 40 * s + 1, true);
+    const std::vector<uint8_t> update_bytes =
+        Bytes(BytesOf(update), 40 * s + 2, true);
+    // What the write leaves in the cache.
+    expected.push_back(cache_bytes);
+    for (int h = 0; h < kHeads; ++h) {
+      for (int d = 0; d < kDepth; ++d) {
+        uint16_t bf16;
+        std::memcpy(&bf16, update_bytes.data() + 2 * (h * kDepth + d), 2);
+        const uint32_t wide = static_cast<uint32_t>(bf16) << 16;
+        float value;
+        std::memcpy(&value, &wide, 4);
+        const uint16_t half = HalfBits(value);
+        std::memcpy(
+            expected[s].data() +
+                2 * ((static_cast<size_t>(h) * kCacheLen + positions[s]) *
+                         kDepth +
+                     d),
+            &half, 2);
+      }
+    }
+    for (int way = 0; way < 2; ++way) {
+      buffers.push_back(Upload(cache_bytes));
+      buffers.push_back(Upload(update_bytes));
+      buffers.push_back(Upload(&positions[s], sizeof(int32_t)));
+      for (int i = 0; i < 3; ++i) {
+        ASSERT_NE(buffers[buffers.size() - 3 + i], nullptr);
+      }
+      void* const slot_cache = buffers[buffers.size() - 3].get();
+      void* const slot_update = buffers[buffers.size() - 2].get();
+      void* const slot_position = buffers[buffers.size() - 1].get();
+      if (way == 0) {
+        ASSERT_TRUE(context->setTensorAddress("cache", slot_cache));
+        ASSERT_TRUE(context->setTensorAddress("updated", slot_cache));
+        ASSERT_TRUE(context->setTensorAddress("update", slot_update));
+        ASSERT_TRUE(context->setTensorAddress("position", slot_position));
+        ASSERT_TRUE(context->enqueueV3(stream));
+        ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+        native_caches.push_back(slot_cache);
+      } else {
+        plugin_inputs.insert(plugin_inputs.end(),
+                             {slot_cache, slot_update, slot_position});
+        plugin_outputs.push_back(slot_cache);
+      }
+    }
+  }
+  ASSERT_EQ(
+      Runtime(plugin.get())
+          ->enqueue(plugin_in.data(), plugin_out.data(), plugin_inputs.data(),
+                    plugin_outputs.data(), nullptr, stream),
+      0);
+  ASSERT_EQ(cudaStreamSynchronize(stream), cudaSuccess);
+  for (int s = 0; s < kSlots; ++s) {
+    const std::vector<uint8_t> written =
+        Download(plugin_outputs[s], BytesOf(cache));
+    EXPECT_EQ(written, Download(native_caches[s], BytesOf(cache)))
+        << "slot " << s;
+    EXPECT_EQ(written, expected[s]) << "slot " << s;
+  }
+  cudaStreamDestroy(stream);
 }
 
 }  // namespace
