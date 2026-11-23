@@ -16,6 +16,7 @@
 
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
+#include <mma.h>
 
 #include <algorithm>
 #include <cmath>
@@ -27,6 +28,7 @@
 namespace {
 
 using litert::nvidia::qsa::LoadAsFloat;
+using litert::nvidia::qsa::LoadEightAsFloat;
 using litert::nvidia::qsa::StoreFromFloat;
 using litert::nvidia::qsa::ToFloat;
 using litert::nvidia::qsa::WarpSum;
@@ -127,12 +129,37 @@ __device__ int32_t BlockExclusiveScan(int32_t value, int32_t* warp_sums,
   return before + inclusive - value;
 }
 
-// A row's blocks in ascending order: the selected ones and those it sees
-// partly, through a bitmap over the cache's blocks in shared memory.
+// Writes the set bits of `bitmap` (`words` words in shared memory) as
+// ascending indices into `list`, at most `capacity`, and their count (capped)
+// into `count`. Every thread of the CTA takes part.
+__device__ void CompactBitmap(const uint32_t* bitmap, int32_t words,
+                              int32_t capacity, int32_t* list, int32_t* count,
+                              int32_t* warp_sums) {
+  const int32_t per = (words + blockDim.x - 1) / blockDim.x;
+  const int32_t lo = min(words, static_cast<int32_t>(threadIdx.x) * per);
+  const int32_t hi = min(words, lo + per);
+  int32_t mine = 0;
+  for (int32_t w = lo; w < hi; ++w) mine += __popc(bitmap[w]);
+  int32_t total = 0;
+  int32_t offset = BlockExclusiveScan(mine, warp_sums, &total);
+  for (int32_t w = lo; w < hi && offset < capacity; ++w) {
+    uint32_t bits = bitmap[w];
+    while (bits != 0 && offset < capacity) {
+      const int bit = __ffs(bits) - 1;
+      bits &= bits - 1;
+      list[offset++] = w * 32 + bit;
+    }
+  }
+  if (threadIdx.x == 0) *count = min(total, capacity);
+}
+
+// A row's blocks: the selected ones and those it sees partly, as a bitmap
+// over the cache's blocks built in shared memory, written out (`bitmaps`,
+// for the tensor-core path) or listed in ascending order (`lists`).
 __global__ void __launch_bounds__(kListThreads) QsaListKernel(
     LiteRtNvidiaQsaAttentionParams p, const int32_t* __restrict__ topk,
     Visibility visibility, int32_t capacity, int32_t* __restrict__ lists,
-    int32_t* __restrict__ counts) {
+    int32_t* __restrict__ counts, uint32_t* __restrict__ bitmaps) {
   extern __shared__ uint32_t bitmap[];
   __shared__ int32_t warp_sums[32];
   const int32_t row = blockIdx.x;
@@ -151,23 +178,53 @@ __global__ void __launch_bounds__(kListThreads) QsaListKernel(
     if (b >= 0 && b < blocks) atomicOr(&bitmap[b / 32], 1u << (b % 32));
   }
   __syncthreads();
-  const int32_t per = (words + kListThreads - 1) / kListThreads;
-  const int32_t lo = min(words, static_cast<int32_t>(threadIdx.x) * per);
-  const int32_t hi = min(words, lo + per);
-  int32_t mine = 0;
-  for (int32_t w = lo; w < hi; ++w) mine += __popc(bitmap[w]);
-  int32_t total = 0;
-  int32_t offset = BlockExclusiveScan(mine, warp_sums, &total);
-  int32_t* list = lists + int64_t{row} * capacity;
-  for (int32_t w = lo; w < hi && offset < capacity; ++w) {
-    uint32_t bits = bitmap[w];
-    while (bits != 0 && offset < capacity) {
-      const int bit = __ffs(bits) - 1;
-      bits &= bits - 1;
-      list[offset++] = w * 32 + bit;
+  if (bitmaps != nullptr) {
+    for (int32_t w = threadIdx.x; w < words; w += blockDim.x) {
+      bitmaps[int64_t{row} * words + w] = bitmap[w];
     }
+    return;
   }
-  if (threadIdx.x == 0) counts[row] = min(total, capacity);
+  CompactBitmap(bitmap, words, capacity, lists + int64_t{row} * capacity,
+                counts + row, warp_sums);
+}
+
+// The blocks some row of a tile of rows attends to, in ascending order (the
+// union of the rows' bitmaps), each with the rows that attend to it (bit r
+// for row r of the tile, in `members`).
+__global__ void __launch_bounds__(kListThreads) QsaTileListKernel(
+    LiteRtNvidiaQsaAttentionParams p, int32_t tile_rows,
+    const uint32_t* __restrict__ bitmaps, int32_t capacity,
+    int32_t* __restrict__ lists, uint32_t* __restrict__ members,
+    int32_t* __restrict__ counts) {
+  extern __shared__ uint32_t bitmap[];
+  __shared__ int32_t warp_sums[32];
+  const int32_t tile = blockIdx.x;
+  const int32_t row0 = tile * tile_rows;
+  const int32_t rows = min(tile_rows, p.rows - row0);
+  const int32_t words = (p.cache_len / 4 + 31) / 32;
+  for (int32_t w = threadIdx.x; w < words; w += blockDim.x) {
+    uint32_t any = 0;
+    for (int32_t r = 0; r < rows; ++r) {
+      any |= bitmaps[int64_t{row0 + r} * words + w];
+    }
+    bitmap[w] = any;
+  }
+  __syncthreads();
+  int32_t* list = lists + int64_t{tile} * capacity;
+  CompactBitmap(bitmap, words, capacity, list, counts + tile, warp_sums);
+  __syncthreads();
+  uint32_t* member = members + int64_t{tile} * capacity;
+  for (int32_t i = threadIdx.x; i < counts[tile]; i += blockDim.x) {
+    const int32_t block = list[i];
+    uint32_t rows_in = 0;
+    for (int32_t r = 0; r < rows; ++r) {
+      rows_in |= ((bitmaps[int64_t{row0 + r} * words + block / 32] >>
+                   (block % 32)) &
+                  1u)
+                 << r;
+    }
+    member[i] = rows_in;
+  }
 }
 
 template <typename Cache>
@@ -230,6 +287,10 @@ struct Vec<__half> {
   }
 };
 
+// Clang may retain loops despite the kernel's best-effort unroll hints, and
+// reports the failed transformation at the kernel's declaration.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
 // Attention of up to kHeads query heads of one KV head over chunk `split` of
 // the block lists of up to four rows. Lane l holds dims [l * kPerLane,
 // (l + 1) * kPerLane) of every head's query, accumulator, keys and values.
@@ -258,18 +319,22 @@ __global__ void __launch_bounds__(kThreads) QsaAttendKernel(
       static_cast<int32_t>(blockIdx.y) * rows_per_cta + slot_in_cta;
   const bool active = row < p.rows;
 
-  // Stage the queries of this CTA's rows as FP32.
+  // Stage the queries of this CTA's rows as FP32, eight at a time.
   float* staged = shared;  // [rows_per_cta][kHeads][kDim]
-  for (int32_t i = threadIdx.x; i < rows_per_cta * kHeads * kDim;
-       i += blockDim.x) {
+#pragma unroll 2
+  for (int32_t i = threadIdx.x * 8; i < rows_per_cta * kHeads * kDim;
+       i += blockDim.x * 8) {
     const int32_t r = static_cast<int32_t>(blockIdx.y) * rows_per_cta +
                       i / (kHeads * kDim);
     const int32_t h = (i / kDim) % kHeads;
     const int32_t d = i % kDim;
-    staged[i] = (r < p.rows && h < heads)
-                    ? LoadAsFloat(q, p.q_type,
-                                  (int64_t{head0 + h} * p.rows + r) * kDim + d)
-                    : 0.0f;
+    float eight[8] = {};
+    if (r < p.rows && h < heads) {
+      LoadEightAsFloat(q, p.q_type,
+                       (int64_t{head0 + h} * p.rows + r) * kDim + d, eight);
+    }
+#pragma unroll
+    for (int j = 0; j < 8; ++j) staged[i + j] = eight[j];
   }
   __syncthreads();
   const float* my_q = staged + slot_in_cta * kHeads * kDim + lane * kPerLane;
@@ -441,34 +506,313 @@ __global__ void __launch_bounds__(kThreads) QsaAttendKernel(
     }
   }
 }
+#pragma clang diagnostic pop
 
-// The chunks of a row and head into its output, in chunk order.
+// The tensor-core path for steps of several rows (verify, prefill chunks)
+// over FP16 caches holding values as rows: a CTA takes the query vectors
+// (rows x heads, at most kMaxTileVectors) of a tile of rows on one KV head,
+// a warp per 16 of them, and walks chunk `split` of the union of the rows'
+// blocks kChunkTokens keys at a time, each key and value loaded once for all
+// of them. Products on tensor cores (FP16 in, FP32 accumulation): a first
+// pass finds each row's largest score, a second takes the probabilities (in
+// FP32 for the sums, FP16 for the products with the values) and accumulates
+// the values, so the accumulators are never rescaled. A key counts for a
+// row when the row lists its block (its bitmap) and sees it.
+constexpr int kChunkTokens = 16;
+constexpr int kMaxTileVectors = 96;
+constexpr int kMaxTileRows = 16;
+
+// Clang may retain loops despite the kernel's best-effort unroll hints, and
+// reports the failed transformation at the kernel's declaration.
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wpass-failed"
+template <int kDim>
+__global__ void __launch_bounds__(kMaxTileVectors / 16 * 32)
+    QsaAttendTileKernel(LiteRtNvidiaQsaAttentionParams p, int32_t tile_rows,
+                        int32_t m_pad, int32_t splits,
+                        const void* __restrict__ q,
+                        const __half* __restrict__ k,
+                        const __half* __restrict__ v,
+                        const uint32_t* __restrict__ tile_members,
+                        const int32_t* __restrict__ tile_lists,
+                        const int32_t* __restrict__ tile_counts,
+                        int32_t tile_capacity, Visibility visibility,
+                        void* __restrict__ out, float* __restrict__ partial) {
+  namespace wmma = nvcuda::wmma;
+  constexpr int kLd = kDim + 8;                 // halves per staged row
+  constexpr int kScoreLd = kChunkTokens + 4;    // floats
+  constexpr int kProbLd = kChunkTokens + 8;     // halves
+  extern __shared__ __align__(32) unsigned char shared_bytes[];
+  // Warps past m_pad / 16 only help to load.
+  __half* q_s = reinterpret_cast<__half*>(shared_bytes);
+  __half* k_s = q_s + m_pad * kLd;
+  __half* v_s = k_s + kChunkTokens * kLd;
+  float* s_s = reinterpret_cast<float*>(v_s + kChunkTokens * kLd);
+  __half* p_s = reinterpret_cast<__half*>(s_s + m_pad * kScoreLd);
+  float* m_s = reinterpret_cast<float*>(p_s + m_pad * kProbLd);
+  float* l_s = m_s + m_pad;
+  uint8_t* allowed = reinterpret_cast<uint8_t*>(l_s + m_pad);
+  int32_t* chunk_blocks =
+      reinterpret_cast<int32_t*>(allowed + kMaxTileRows * kChunkTokens);
+  uint32_t* chunk_members = reinterpret_cast<uint32_t*>(chunk_blocks + 4);
+
+  const int warp = threadIdx.x / 32;
+  const int lane = threadIdx.x % 32;
+  const bool computes = warp < m_pad / 16;
+  const int32_t group = p.q_heads / p.kv_heads;
+  const int32_t kv_head = blockIdx.x;
+  const int32_t tile = blockIdx.y;
+  const int32_t split = blockIdx.z;
+  const int32_t row0 = tile * tile_rows;
+  const int32_t rows = min(tile_rows, p.rows - row0);
+  const int32_t vectors = rows * group;  // vector m: row m / group, head m % group
+
+#pragma unroll 2
+  for (int32_t i = threadIdx.x * 8; i < m_pad * kDim; i += blockDim.x * 8) {
+    const int32_t m = i / kDim;
+    const int32_t d = i % kDim;
+    float eight[8] = {};
+    if (m < vectors) {
+      const int64_t q_row =
+          int64_t{kv_head * group + m % group} * p.rows + row0 + m / group;
+      LoadEightAsFloat(q, p.q_type, q_row * kDim + d, eight);
+    }
+    __align__(16) __half halves[8];
+#pragma unroll
+    for (int j = 0; j < 8; ++j) halves[j] = __float2half(eight[j]);
+    *reinterpret_cast<uint4*>(q_s + m * kLd + d) =
+        *reinterpret_cast<const uint4*>(halves);
+  }
+  for (int32_t i = threadIdx.x; i < m_pad; i += blockDim.x) {
+    m_s[i] = -INFINITY;
+    l_s[i] = 0.0f;
+  }
+  for (int32_t i = threadIdx.x; i < kMaxTileRows * kChunkTokens;
+       i += blockDim.x) {
+    allowed[i] = 0;
+  }
+  const int32_t count = tile_counts[tile];
+  // Chunks of a multiple of four blocks per split.
+  const int32_t per = ((count + splits - 1) / splits + 3) / 4 * 4;
+  const int32_t lo = min(count, split * per);
+  const int32_t hi = min(count, lo + per);
+  const int32_t* list = tile_lists + int64_t{tile} * tile_capacity;
+  const uint32_t* members = tile_members + int64_t{tile} * tile_capacity;
+  const int64_t head = int64_t{kv_head} * p.cache_len * kDim;
+  __syncthreads();
+
+  // The keys (and values) of the four blocks list[c .. c + 4) and the keys
+  // each row may attend to.
+  const auto stage = [&](int32_t c, bool with_values) {
+    if (threadIdx.x < 4) {
+      const bool in = c + static_cast<int32_t>(threadIdx.x) < hi;
+      chunk_blocks[threadIdx.x] = in ? list[c + threadIdx.x] : -1;
+      chunk_members[threadIdx.x] = in ? members[c + threadIdx.x] : 0u;
+    }
+    __syncthreads();
+    constexpr int kVectorsPerRow = kDim / 8;
+#pragma unroll 4
+    for (int i = threadIdx.x; i < kChunkTokens * kVectorsPerRow;
+         i += blockDim.x) {
+      const int t = i / kVectorsPerRow;
+      const int d8 = i % kVectorsPerRow;
+      const int32_t block = chunk_blocks[t / 4];
+      uint4 key = make_uint4(0, 0, 0, 0);
+      uint4 value = make_uint4(0, 0, 0, 0);
+      if (block >= 0) {
+        const int64_t at = head + (int64_t{block} * 4 + t % 4) * kDim + d8 * 8;
+        key = *reinterpret_cast<const uint4*>(k + at);
+        if (with_values) value = *reinterpret_cast<const uint4*>(v + at);
+      }
+      *reinterpret_cast<uint4*>(k_s + t * kLd + d8 * 8) = key;
+      if (with_values) {
+        *reinterpret_cast<uint4*>(v_s + t * kLd + d8 * 8) = value;
+      }
+    }
+    for (int i = threadIdx.x; i < rows * 4; i += blockDim.x) {
+      const int r = i / 4;
+      const int j = i % 4;
+      const int32_t block = chunk_blocks[j];
+      uint32_t seen = 0;
+      if (block >= 0 && ((chunk_members[j] >> r) & 1u) != 0) {
+        seen = visibility.Block(row0 + r, block);
+      }
+#pragma unroll
+      for (int t = 0; t < 4; ++t) {
+        allowed[r * kChunkTokens + j * 4 + t] = (seen >> t) & 1u;
+      }
+    }
+    __syncthreads();
+  };
+
+  // This warp's 16 vectors against the chunk's keys, into s_s.
+  const auto score = [&]() {
+    wmma::fragment<wmma::accumulator, 16, 16, 16, float> acc;
+    wmma::fill_fragment(acc, 0.0f);
+#pragma unroll
+    for (int kk = 0; kk < kDim / 16; ++kk) {
+      wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> a;
+      wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::col_major> b;
+      wmma::load_matrix_sync(a, q_s + warp * 16 * kLd + kk * 16, kLd);
+      wmma::load_matrix_sync(b, k_s + kk * 16, kLd);
+      wmma::mma_sync(acc, a, b, acc);
+    }
+    wmma::store_matrix_sync(s_s + warp * 16 * kScoreLd, acc, kScoreLd,
+                            wmma::mem_row_major);
+    __syncwarp();
+  };
+
+  // Two lanes per vector, eight keys each.
+  const int32_t m = computes ? warp * 16 + lane / 2 : 0;
+  const int t0 = (lane % 2) * 8;
+  const bool real = computes && m < vectors;
+  const uint8_t* row_allowed = allowed + (real ? m / group : 0) * kChunkTokens;
+
+  for (int32_t c = lo; c < hi; c += 4) {
+    stage(c, false);
+    if (!computes) continue;
+    score();
+    float largest = -INFINITY;
+    if (real) {
+#pragma unroll
+      for (int t = 0; t < 8; ++t) {
+        if (row_allowed[t0 + t]) {
+          largest = fmaxf(largest, s_s[m * kScoreLd + t0 + t] * p.scale);
+        }
+      }
+    }
+    largest = fmaxf(largest, __shfl_xor_sync(0xffffffffu, largest, 1));
+    if (lane % 2 == 0) m_s[m] = fmaxf(m_s[m], largest);
+  }
+
+  wmma::fragment<wmma::accumulator, 16, 16, 16, float> o[kDim / 16];
+#pragma unroll
+  for (int j = 0; j < kDim / 16; ++j) wmma::fill_fragment(o[j], 0.0f);
+  for (int32_t c = lo; c < hi; c += 4) {
+    stage(c, true);
+    if (!computes) continue;
+    score();
+    const float row_max = m_s[m];
+    float sum = 0.0f;
+#pragma unroll
+    for (int t = 0; t < 8; ++t) {
+      float weight = 0.0f;
+      if (real && row_allowed[t0 + t] && row_max != -INFINITY) {
+        weight = expf(s_s[m * kScoreLd + t0 + t] * p.scale - row_max);
+      }
+      p_s[m * kProbLd + t0 + t] = __float2half(weight);
+      sum += weight;
+    }
+    sum += __shfl_xor_sync(0xffffffffu, sum, 1);
+    if (lane % 2 == 0) l_s[m] += sum;
+    __syncwarp();
+    wmma::fragment<wmma::matrix_a, 16, 16, 16, __half, wmma::row_major> pa;
+    wmma::load_matrix_sync(pa, p_s + warp * 16 * kProbLd, kProbLd);
+#pragma unroll
+    for (int j = 0; j < kDim / 16; ++j) {
+      wmma::fragment<wmma::matrix_b, 16, 16, 16, __half, wmma::row_major> vb;
+      wmma::load_matrix_sync(vb, v_s + j * 16, kLd);
+      wmma::mma_sync(o[j], pa, vb, o[j]);
+    }
+  }
+
+  if (!computes) return;
+  // Out through this warp's score rows, 16 x 16 at a time.
+  float* scratch = s_s + warp * 16 * kScoreLd;
+#pragma unroll
+  for (int j = 0; j < kDim / 16; ++j) {
+    __syncwarp();
+    wmma::store_matrix_sync(scratch, o[j], kScoreLd, wmma::mem_row_major);
+    __syncwarp();
+    for (int e = lane; e < 256; e += 32) {
+      const int32_t vector = warp * 16 + e / 16;
+      if (vector >= vectors) continue;
+      const int32_t row = row0 + vector / group;
+      const int32_t q_head = kv_head * group + vector % group;
+      const float value = scratch[(e / 16) * kScoreLd + e % 16];
+      const int32_t d = j * 16 + e % 16;
+      if (splits == 1) {
+        const float total = l_s[vector];
+        const float result = total > 0.0f ? value / total : 0.0f;
+        const int64_t at = (int64_t{row} * p.q_heads + q_head) * kDim + d;
+        if (p.q_type == kLiteRtNvidiaQsaFloat16) {
+          StoreFromFloat(result, static_cast<__half*>(out) + at);
+        } else if (p.q_type == kLiteRtNvidiaQsaBFloat16) {
+          StoreFromFloat(result, static_cast<__nv_bfloat16*>(out) + at);
+        } else {
+          StoreFromFloat(result, static_cast<float*>(out) + at);
+        }
+      } else {
+        partial[((int64_t{row} * p.q_heads + q_head) * splits + split) *
+                    (kDim + 4) +
+                d] = value;
+      }
+    }
+  }
+  if (splits > 1 && lane % 2 == 0 && real) {
+    const int32_t row = row0 + m / group;
+    const int32_t q_head = kv_head * group + m % group;
+    float* part = partial +
+                  ((int64_t{row} * p.q_heads + q_head) * splits + split) *
+                      (kDim + 4);
+    part[kDim] = m_s[m];
+    part[kDim + 1] = l_s[m];
+  }
+}
+#pragma clang diagnostic pop
+
+// The chunks of a row and head into its output, in chunk order: the first
+// warp weighs the chunks (at most 64), then every thread sums its dims.
 __global__ void QsaCombineKernel(LiteRtNvidiaQsaAttentionParams p,
                                  int32_t splits,
                                  const float* __restrict__ partial,
                                  void* __restrict__ out) {
+  __shared__ float weights[64];
+  __shared__ float inv_total;
   const int32_t q_head = blockIdx.x;
   const int32_t row = blockIdx.y;
   const int32_t dim = p.head_dim;
+  const int32_t stride = dim + 4;
   const float* parts =
-      partial + (int64_t{row} * p.q_heads + q_head) * splits * (dim + 4);
-  float total_m = -INFINITY;
-  for (int32_t s = 0; s < splits; ++s) {
-    total_m = fmaxf(total_m, parts[s * (dim + 4) + dim]);
+      partial + (int64_t{row} * p.q_heads + q_head) * splits * stride;
+  if (threadIdx.x < 32) {
+    const int lane = threadIdx.x;
+    float m[2];
+    float l[2];
+#pragma unroll
+    for (int i = 0; i < 2; ++i) {
+      const int32_t s = lane + 32 * i;
+      m[i] = s < splits ? parts[s * stride + dim] : -INFINITY;
+      l[i] = s < splits ? parts[s * stride + dim + 1] : 0.0f;
+    }
+    float total_m = fmaxf(m[0], m[1]);
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      total_m = fmaxf(total_m, __shfl_xor_sync(0xffffffffu, total_m, offset));
+    }
+    float total_l = 0.0f;
+#pragma unroll
+    for (int i = 0; i < 2; ++i) {
+      const float weight = m[i] == -INFINITY ? 0.0f : expf(m[i] - total_m);
+      if (lane + 32 * i < splits) weights[lane + 32 * i] = weight;
+      total_l += weight * l[i];
+    }
+    // The sum in lane order (the same for every launch).
+#pragma unroll
+    for (int offset = 16; offset > 0; offset >>= 1) {
+      total_l += __shfl_xor_sync(0xffffffffu, total_l, offset);
+    }
+    if (lane == 0) inv_total = total_l > 0.0f ? 1.0f / total_l : 0.0f;
   }
+  __syncthreads();
   const int64_t base = (int64_t{row} * p.q_heads + q_head) * dim;
   for (int32_t d = threadIdx.x; d < dim; d += blockDim.x) {
-    float total_l = 0.0f;
     float sum = 0.0f;
+#pragma unroll 4
     for (int32_t s = 0; s < splits; ++s) {
-      const float* part = parts + s * (dim + 4);
-      const float ms = part[dim];
-      if (ms == -INFINITY) continue;
-      const float weight = expf(ms - total_m);
-      total_l += weight * part[dim + 1];
-      sum = fmaf(weight, part[d], sum);
+      sum = fmaf(weights[s], parts[s * stride + d], sum);
     }
-    const float value = total_l > 0.0f ? sum / total_l : 0.0f;
+    const float value = sum * inv_total;
     if (p.q_type == kLiteRtNvidiaQsaFloat16) {
       StoreFromFloat(value, static_cast<__half*>(out) + base + d);
     } else if (p.q_type == kLiteRtNvidiaQsaBFloat16) {
@@ -494,29 +838,66 @@ struct Plan {
   int32_t rows_per_cta;
   int32_t row_groups;
   int32_t splits;
+  // The tensor-core path (QsaAttendTileKernel).
+  bool tiled;
+  int32_t tile_rows;
+  int32_t tiles;
+  int32_t tile_capacity;
+  int32_t m_pad;
 };
 
 Plan MakePlan(const LiteRtNvidiaQsaAttentionParams& p) {
-  Plan plan;
+  Plan plan = {};
   plan.capacity = Capacity(p);
   const int32_t group = p.q_heads / p.kv_heads;
-  plan.heads_per_cta = HeadsPerCta(group);
-  plan.head_chunks = (group + plan.heads_per_cta - 1) / plan.heads_per_cta;
-  plan.rows_per_cta = RowsPerCta(p.rows);
-  plan.row_groups = (p.rows + plan.rows_per_cta - 1) / plan.rows_per_cta;
-  const int64_t base =
-      int64_t{p.kv_heads} * plan.head_chunks * plan.row_groups;
+  // The row model's slots may give the rows of a tile caches of their own:
+  // it takes the per-row kernel.
+  plan.tiled = p.rows >= 2 && p.cache_type == kLiteRtNvidiaQsaFloat16 &&
+               p.value_columns == 0 && group <= kMaxTileVectors &&
+               p.mask_type != kLiteRtNvidiaQsaMaskRows;
+  int64_t base = 0;
+  int64_t useful = 0;
+  if (plan.tiled) {
+    plan.tile_rows = std::min({p.rows, kMaxTileRows,
+                               std::max(1, kMaxTileVectors / group)});
+    plan.tiles = (p.rows + plan.tile_rows - 1) / plan.tile_rows;
+    plan.tile_capacity = static_cast<int32_t>(std::min<int64_t>(
+        p.cache_len / 4, int64_t{plan.tile_rows} * plan.capacity));
+    plan.m_pad = (plan.tile_rows * group + 15) / 16 * 16;
+    base = int64_t{p.kv_heads} * plan.tiles;
+    // As little as two chunks of four blocks per split.
+    useful = std::max<int64_t>(1, plan.capacity / 8);
+  } else {
+    plan.heads_per_cta = HeadsPerCta(group);
+    plan.head_chunks = (group + plan.heads_per_cta - 1) / plan.heads_per_cta;
+    plan.rows_per_cta = RowsPerCta(p.rows);
+    plan.row_groups = (p.rows + plan.rows_per_cta - 1) / plan.rows_per_cta;
+    base = int64_t{p.kv_heads} * plan.head_chunks * plan.row_groups;
+    useful = std::max<int64_t>(1, plan.capacity / kMinBlocksPerSplit);
+  }
   const int64_t wanted = (kTargetCtas + base - 1) / base;
-  const int64_t useful =
-      std::max<int64_t>(1, plan.capacity / kMinBlocksPerSplit);
   plan.splits = static_cast<int32_t>(
       std::max<int64_t>(1, std::min<int64_t>({wanted, useful, 64})));
   return plan;
 }
 
+int32_t Words(const LiteRtNvidiaQsaAttentionParams& p) {
+  return (p.cache_len / 4 + 31) / 32;
+}
+
+// The lists (or bitmaps and tile lists) of the workspace, 256-byte aligned.
 size_t ListBytes(const LiteRtNvidiaQsaAttentionParams& p, const Plan& plan) {
-  const size_t bytes =
-      (static_cast<size_t>(p.rows) * plan.capacity + p.rows) * sizeof(int32_t);
+  size_t bytes = 0;
+  if (plan.tiled) {
+    // Bitmaps, then the tiles' lists, members and counts.
+    bytes = static_cast<size_t>(p.rows) * Words(p) * sizeof(uint32_t) +
+            (2 * static_cast<size_t>(plan.tiles) * plan.tile_capacity +
+             plan.tiles) *
+                sizeof(int32_t);
+  } else {
+    bytes = (static_cast<size_t>(p.rows) * plan.capacity + p.rows) *
+            sizeof(int32_t);
+  }
   return (bytes + 255) / 256 * 256;
 }
 
@@ -525,6 +906,38 @@ size_t PartialBytes(const LiteRtNvidiaQsaAttentionParams& p,
   if (plan.splits == 1) return 0;
   return static_cast<size_t>(p.rows) * p.q_heads * plan.splits *
          (p.head_dim + 4) * sizeof(float);
+}
+
+template <int kDim>
+size_t TileSharedBytes(int32_t m_pad) {
+  const size_t ld = kDim + 8;
+  return static_cast<size_t>(m_pad) * ld * 2 +           // queries
+         2 * static_cast<size_t>(kChunkTokens) * ld * 2 +  // keys, values
+         static_cast<size_t>(m_pad) * (kChunkTokens + 4) * 4 +  // scores
+         static_cast<size_t>(m_pad) * (kChunkTokens + 8) * 2 +  // weights
+         static_cast<size_t>(m_pad) * 2 * 4 +                  // max, sum
+         kMaxTileRows * kChunkTokens + 8 * sizeof(int32_t);
+}
+
+template <int kDim>
+void LaunchTile(const LiteRtNvidiaQsaAttentionParams& p, const Plan& plan,
+                const void* q, const void* k, const void* v,
+                const uint32_t* tile_members, const int32_t* tile_lists,
+                const int32_t* tile_counts, const Visibility& visibility,
+                void* out, float* partial, cudaStream_t stream) {
+  const size_t shared = TileSharedBytes<kDim>(plan.m_pad);
+  auto kernel = QsaAttendTileKernel<kDim>;
+  if (shared > 48 * 1024) {
+    cudaFuncSetAttribute(kernel, cudaFuncAttributeMaxDynamicSharedMemorySize,
+                         static_cast<int>(shared));
+  }
+  const dim3 grid(p.kv_heads, plan.tiles, plan.splits);
+  const int threads = std::max(4, plan.m_pad / 16) * 32;
+  kernel<<<grid, threads, shared, stream>>>(
+      p, plan.tile_rows, plan.m_pad, plan.splits, q,
+      static_cast<const __half*>(k),
+      static_cast<const __half*>(v), tile_members, tile_lists, tile_counts,
+      plan.tile_capacity, visibility, out, partial);
 }
 
 template <int kDim, int kHeads, typename Cache>
@@ -642,23 +1055,56 @@ extern "C" cudaError_t LiteRtNvidiaLaunchQsaAttention(
   visibility.rows = p.rows;
   visibility.cache_len = p.cache_len;
 
-  int32_t* lists = static_cast<int32_t*>(workspace);
-  int32_t* counts = lists + static_cast<size_t>(p.rows) * plan.capacity;
   float* partial = reinterpret_cast<float*>(static_cast<char*>(workspace) +
                                             ListBytes(p, plan));
-  const size_t bitmap_bytes =
-      static_cast<size_t>((p.cache_len / 4 + 31) / 32) * sizeof(uint32_t);
+  const size_t bitmap_bytes = static_cast<size_t>(Words(p)) * sizeof(uint32_t);
   if (bitmap_bytes > 48 * 1024) {
     cudaFuncSetAttribute(QsaListKernel,
                          cudaFuncAttributeMaxDynamicSharedMemorySize,
                          static_cast<int>(bitmap_bytes));
+    cudaFuncSetAttribute(QsaTileListKernel,
+                         cudaFuncAttributeMaxDynamicSharedMemorySize,
+                         static_cast<int>(bitmap_bytes));
   }
-  QsaListKernel<<<p.rows, kListThreads, bitmap_bytes, stream>>>(
-      p, topk, visibility, plan.capacity, lists, counts);
-  if (p.cache_type == kLiteRtNvidiaQsaFloat16) {
+  if (plan.tiled) {
+    uint32_t* bitmaps = static_cast<uint32_t*>(workspace);
+    int32_t* tile_lists = reinterpret_cast<int32_t*>(
+        bitmaps + static_cast<size_t>(p.rows) * Words(p));
+    uint32_t* tile_members = reinterpret_cast<uint32_t*>(
+        tile_lists + static_cast<size_t>(plan.tiles) * plan.tile_capacity);
+    int32_t* tile_counts = reinterpret_cast<int32_t*>(
+        tile_members + static_cast<size_t>(plan.tiles) * plan.tile_capacity);
+    QsaListKernel<<<p.rows, kListThreads, bitmap_bytes, stream>>>(
+        p, topk, visibility, plan.capacity, nullptr, nullptr, bitmaps);
+    QsaTileListKernel<<<plan.tiles, kListThreads, bitmap_bytes, stream>>>(
+        p, plan.tile_rows, bitmaps, plan.tile_capacity, tile_lists,
+        tile_members, tile_counts);
+    switch (p.head_dim) {
+      case 64:
+        LaunchTile<64>(p, plan, q, k, v, tile_members, tile_lists, tile_counts,
+                       visibility, out, partial, stream);
+        break;
+      case 128:
+        LaunchTile<128>(p, plan, q, k, v, tile_members, tile_lists,
+                        tile_counts, visibility, out, partial, stream);
+        break;
+      default:
+        LaunchTile<256>(p, plan, q, k, v, tile_members, tile_lists,
+                        tile_counts, visibility, out, partial, stream);
+        break;
+    }
+  } else if (p.cache_type == kLiteRtNvidiaQsaFloat16) {
+    int32_t* lists = static_cast<int32_t*>(workspace);
+    int32_t* counts = lists + static_cast<size_t>(p.rows) * plan.capacity;
+    QsaListKernel<<<p.rows, kListThreads, bitmap_bytes, stream>>>(
+        p, topk, visibility, plan.capacity, lists, counts, nullptr);
     LaunchForDim<__half>(p, plan, q, k, v, lists, counts, visibility, out,
                          partial, stream);
   } else {
+    int32_t* lists = static_cast<int32_t*>(workspace);
+    int32_t* counts = lists + static_cast<size_t>(p.rows) * plan.capacity;
+    QsaListKernel<<<p.rows, kListThreads, bitmap_bytes, stream>>>(
+        p, topk, visibility, plan.capacity, lists, counts, nullptr);
     LaunchForDim<float>(p, plan, q, k, v, lists, counts, visibility, out,
                         partial, stream);
   }

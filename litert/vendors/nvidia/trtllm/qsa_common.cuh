@@ -39,6 +39,37 @@ __device__ __forceinline__ float LoadAsFloat(const void* data, int32_t type,
   return static_cast<const float*>(data)[index];
 }
 
+// Eight consecutive values of `type` from data[index] (index a multiple of 8
+// and the data 16-byte aligned) as FP32, in one or two 16-byte loads.
+__device__ __forceinline__ void LoadEightAsFloat(const void* data,
+                                                 int32_t type, int64_t index,
+                                                 float (&out)[8]) {
+  if (type == kLiteRtNvidiaQsaFloat32) {
+    const float4* at =
+        reinterpret_cast<const float4*>(static_cast<const float*>(data) + index);
+    const float4 a = at[0];
+    const float4 b = at[1];
+    out[0] = a.x;
+    out[1] = a.y;
+    out[2] = a.z;
+    out[3] = a.w;
+    out[4] = b.x;
+    out[5] = b.y;
+    out[6] = b.z;
+    out[7] = b.w;
+    return;
+  }
+  const uint4 raw = *reinterpret_cast<const uint4*>(
+      static_cast<const uint16_t*>(data) + index);
+  const uint16_t* bits = reinterpret_cast<const uint16_t*>(&raw);
+#pragma unroll
+  for (int i = 0; i < 8; ++i) {
+    out[i] = type == kLiteRtNvidiaQsaFloat16
+                 ? __half2float(__ushort_as_half(bits[i]))
+                 : __bfloat162float(__ushort_as_bfloat16(bits[i]));
+  }
+}
+
 __device__ __forceinline__ void StoreFromFloat(float value, float* out) {
   *out = value;
 }

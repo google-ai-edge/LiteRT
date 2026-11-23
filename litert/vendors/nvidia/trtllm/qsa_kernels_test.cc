@@ -528,7 +528,8 @@ TEST(QsaIndexerTest, NegativeStartPositionIsZero) {
 
 // The 27B's indexer: 8 heads of 128 dims, 64 rotary dims, 512 blocks of a
 // budget of 2,048 tokens; decode, a verify of 4 rows and a 64-row chunk at
-// 32k, and decode at the 128k context.
+// 32k, decode at the 128k context, and beyond it (160k: the selection that
+// does not hold a row's scores in registers).
 TEST(QsaIndexerTest, ModelShapesMatchTheReference) {
   struct Case {
     int max_blocks;
@@ -537,7 +538,7 @@ TEST(QsaIndexerTest, ModelShapesMatchTheReference) {
   };
   for (const Case& shape_case :
        {Case{8192, 1, 30001}, Case{8192, 4, 29998}, Case{8192, 64, 4096},
-        Case{32768, 1, 131000}}) {
+        Case{32768, 1, 131000}, Case{40000, 2, 159990}}) {
     ref::IndexerShape shape;
     shape.rows = shape_case.rows;
     shape.index_heads = 8;
@@ -615,9 +616,15 @@ void CheckAttention(AttentionCase c, const std::string& what) {
   const std::vector<float> want = ref::SparseAttention(
       c.shape, c.q, c.k, c.v, c.topk,
       [&](int row, int token) { return mask.Visible(row, token); });
-  const float tolerance = c.q_type == kLiteRtNvidiaQsaBFloat16  ? 1e-2f
-                          : c.q_type == kLiteRtNvidiaQsaFloat16 ? 2e-3f
-                                                                : 2e-5f;
+  // Several rows over FP16 caches run on tensor cores with FP16 queries and
+  // probabilities.
+  const bool tensor_cores = c.shape.rows > 1 &&
+                            c.cache_type == kLiteRtNvidiaQsaFloat16 &&
+                            !c.shape.value_columns;
+  const float tolerance = c.q_type == kLiteRtNvidiaQsaBFloat16 ? 1e-2f
+                          : c.q_type == kLiteRtNvidiaQsaFloat16 || tensor_cores
+                              ? 2e-3f
+                              : 2e-5f;
   ExpectClose(got, want, tolerance, what);
 }
 

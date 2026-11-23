@@ -57,10 +57,13 @@ struct LiteRtNvidiaQsaRows {
 // masks have one or two).
 //
 // One launch lists each row's blocks in ascending order (a pass over its
-// mask row), one attends over them split into chunks (the query heads of a
-// KV head share each key and value load; rows of a launch walk their lists
-// side by side), and with more than one chunk a third combines them. FP32
-// accumulation; the result does not depend on the device.
+// mask row), one attends over them split into chunks, and with more than one
+// chunk a third combines them. A single row runs on CUDA cores in FP32, the
+// query heads of a KV head sharing each key and value load. Several rows
+// over FP16 caches holding values as rows (with a mask) run on tensor cores:
+// tiles of up to 16 rows walk the union of their blocks, each key and value
+// loaded once for all of them, with the queries and the probabilities in
+// FP16 and FP32 accumulation. The result does not depend on the device.
 struct LiteRtNvidiaQsaAttentionParams {
   int32_t rows;
   int32_t q_heads;
