@@ -12572,7 +12572,7 @@ class TensorRtGraphBuilder {
   //   y = short_conv(qkv); q, k = rms_norm(slices of y); v = slice of y
   //   beta = sigmoid(b); g = A * log(1 + exp(min(a, 50)))
   //   o = gated_delta_update(q, k, v, beta, g, state)
-  //   out = rms_norm(o) * (z * sigmoid(z))
+  //   out = rms_norm(o) * (z * sigmoid(z)), or * sigmoid(z) (Qwen 4)
   // with reshapes between the shapes, and in prefill with row/head
   // transposes, row masks on every operand and the valid length. Every
   // intermediate result has a single reader within the layer; the ops past
@@ -12731,20 +12731,27 @@ class TensorRtGraphBuilder {
     }
     const Tensor gate = product.Inputs()[1 - product_uses[0].user_arg_ind];
     const auto silu = gate.GetDefiningOp();
-    if (!silu || gate.Uses().size() != 1 ||
-        silu->Code() != kLiteRtOpCodeTflMul || silu->Inputs().size() != 2 ||
-        !HasNoFusedActivation(*silu)) {
-      return std::nullopt;
-    }
+    if (!silu || gate.Uses().size() != 1) return std::nullopt;
     std::optional<Tensor> z;
-    for (int i = 0; i < 2 && !z; ++i) {
-      const auto logistic = silu->Inputs()[i].GetDefiningOp();
-      if (logistic && logistic->Code() == kLiteRtOpCodeTflLogistic &&
-          silu->Inputs()[i].Uses().size() == 1 &&
-          logistic->Inputs()[0].Get() == silu->Inputs()[1 - i].Get() &&
-          silu->Inputs()[1 - i].Uses().size() == 2) {
-        z = silu->Inputs()[1 - i];
-        members.push_back(logistic->Get());
+    if (silu->Code() == kLiteRtOpCodeTflLogistic &&
+        silu->Inputs().size() == 1 && silu->Inputs()[0].Uses().size() == 1) {
+      // Qwen 4's output gate: rms_norm(o) * sigmoid(z).
+      z = silu->Inputs()[0];
+      block.params.sigmoid_gate = 1;
+    } else {
+      if (silu->Code() != kLiteRtOpCodeTflMul || silu->Inputs().size() != 2 ||
+          !HasNoFusedActivation(*silu)) {
+        return std::nullopt;
+      }
+      for (int i = 0; i < 2 && !z; ++i) {
+        const auto logistic = silu->Inputs()[i].GetDefiningOp();
+        if (logistic && logistic->Code() == kLiteRtOpCodeTflLogistic &&
+            silu->Inputs()[i].Uses().size() == 1 &&
+            logistic->Inputs()[0].Get() == silu->Inputs()[1 - i].Get() &&
+            silu->Inputs()[1 - i].Uses().size() == 2) {
+          z = silu->Inputs()[1 - i];
+          members.push_back(logistic->Get());
+        }
       }
     }
     if (!z) return std::nullopt;
@@ -12905,6 +12912,17 @@ class TensorRtGraphBuilder {
       concat->setAxis(parts[0]->getDimensions().nbDims - 1);
       proj = concat->getOutput(0);
       p.proj_stride = at;
+      // The lowered projections carry their biases (FinishFullyConnected),
+      // which the plugin would add again: it takes zeros instead.
+      LiteRtNvidiaGatedDeltaNetParams sized = p;
+      sized.tokens = 1;
+      const size_t biases =
+          static_cast<size_t>(2 * p.key_heads + p.value_heads) * p.head_dim +
+          static_cast<size_t>(p.value_heads) * p.head_dim + 2 * p.value_heads;
+      const size_t count = LiteRtNvidiaGatedDeltaNetConstantCount(&sized);
+      if (block.constants.size() == count && count >= biases) {
+        std::fill(block.constants.end() - biases, block.constants.end(), 0.0f);
+      }
     }
     LITERT_ASSIGN_OR_RETURN(proj,
                             AddCastTensor(proj, nvinfer1::DataType::kBF16));
