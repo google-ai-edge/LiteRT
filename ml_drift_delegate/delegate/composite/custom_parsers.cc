@@ -18,6 +18,7 @@
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/glu_parser.h"
@@ -33,6 +34,14 @@
 #include "ml_drift_delegate/tflite/unimplemented_operation_parser.h"
 
 namespace litert::ml_drift {
+namespace {
+
+bool IsBlockedFfwCompositeName(absl::string_view op_name) {
+  return op_name == kBlockedFfwCompositeName ||
+         op_name == kBlockFfwCompositeName;
+}
+
+}  // namespace
 
 std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
     std::string_view op_name) {
@@ -70,6 +79,9 @@ std::unique_ptr<TFLiteOperationParser> CustomOperationParserFactory::Create(
   if (op_name == kFusedSdpaCacheUpdateCompositeName) {
     return std::make_unique<FusedSdpaCacheUpdateOperationParser>();
   }
+  if (IsBlockedFfwCompositeName(op_name)) {
+    return std::make_unique<BlockFfwOperationParser>();
+  }
   if (op_name == kQsaIndexerUpdateCompositeName) {
     return std::make_unique<QsaIndexerUpdateOperationParser>();
   }
@@ -89,7 +101,8 @@ bool CustomOperationParserFactory::SupportsIntegerTypes(
              op_name == kQkvNormRopeType || op_name == kShortConvStepType ||
              op_name == kFusedSdpaCacheUpdateCompositeName ||
              op_name == kQsaIndexerUpdateCompositeName ||
-             op_name == kSparseSdpaTransposedCompositeName;
+             op_name == kSparseSdpaTransposedCompositeName ||
+             IsBlockedFfwCompositeName(op_name);
   return res;
 }
 

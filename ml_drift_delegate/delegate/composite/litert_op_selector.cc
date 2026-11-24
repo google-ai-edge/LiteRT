@@ -35,6 +35,8 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_kernel.h"
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_kernel.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_kernel.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_kernel.h"
@@ -281,6 +283,17 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
         ResolveInputsWithBufferParam(/*param_index=*/-1, inputs, model_builder);
     return CreateSparseSdpaTransposedFromNode(sdpa_inputs, outputs, node,
                                               model_builder);
+  }
+  if (node.operation.type == kBlockFfwUnpackPartType) {
+    return CreateBlockFfwUnpackPartFromNode(op_def, inputs, outputs, node,
+                                            model_builder);
+  }
+  if (node.operation.type == kBlockFfwPackPartsType) {
+    return CreateBlockFfwPackPartsFromNode(op_def, inputs, outputs, node,
+                                           model_builder);
+  }
+  if (node.operation.type == kBlockFfwSiluType) {
+    return CreateBlockFfwSiluFromNode(op_def, inputs, outputs, model_builder);
   }
   if (node.operation.type ==
       ToString(::ml_drift::OperationType::kScaledDotProductAttention)) {

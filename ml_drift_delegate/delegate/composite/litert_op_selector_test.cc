@@ -39,6 +39,7 @@
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/tensor_handle.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/add_values_to_cache_parser.h"
+#include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/fused_sdpa_cache_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/gated_delta_update_parser.h"
 #include "ml_drift_delegate/delegate/composite/sdpa_transposed_parser.h"
@@ -1178,6 +1179,305 @@ TEST(LiteRtOpSelectorTest,
     }
   }
   EXPECT_TRUE(found_linked_softmax);
+}
+
+TEST(LiteRtOpSelectorTest,
+     BlockFfwPackPartsUsesSerializableGridAndChunksForWebGpu) {
+  GpuInfo gpu_info;
+  gpu_info.gpu_api = GpuApi::kWebGpu;
+  gpu_info.webgpu_info.max_storage_buffers_per_shader_stage = 8;
+  gpu_info.webgpu_info.max_storage_textures_per_shader_stage = 4;
+
+  auto run_pack = [&](int num_parts, TensorStorageType storage,
+                      int expected_pack_nodes, bool expect_concat) {
+    CreateGpuModelInfo create_info;
+    create_info.precision = CalculationsPrecision::kF32;
+    create_info.storage_type = storage;
+    GpuModelBuilderOptions options;
+    options.storage = storage;
+    GpuModelBuilder builder(gpu_info, options);
+
+    constexpr int kK2 = 2;
+    constexpr int kS = 8;
+    constexpr int kT = 2;
+    std::vector<GpuModelBuilder::TensorHandle> src_handles;
+    std::vector<Value> src_values;
+    OperationDef op_def;
+    src_handles.reserve(num_parts);
+    src_values.reserve(num_parts);
+    for (int k = 0; k < num_parts; ++k) {
+      TensorDescriptor desc(DataType::kFloat32, storage, Layout::kHWC);
+      desc.SetBHWCShape(BHWC(1, 1, kT, kK2 * kS));
+      src_handles.push_back(builder.AddTensor(desc));
+      op_def.src_tensors.push_back(src_handles.back().tensor_desc);
+      src_values.push_back(
+          Value{src_handles.back().id,
+                {DataType::kFloat32, BHWC(1, 1, kT, kK2 * kS)}});
+    }
+    std::vector<Value*> src_ptrs;
+    src_ptrs.reserve(num_parts);
+    for (Value& v : src_values) src_ptrs.push_back(&v);
+
+    TensorDescriptor dst_desc(DataType::kFloat32, storage, Layout::kHWC);
+    dst_desc.SetBHWCShape(BHWC(1, kK2, kT, num_parts * kS));
+    const auto dst_handle = builder.AddTensor(dst_desc);
+    op_def.dst_tensors.push_back(dst_handle.tensor_desc);
+    Value dst_val{dst_handle.id,
+                  {DataType::kFloat32, BHWC(1, kK2, kT, num_parts * kS)}};
+
+    GraphFloat32 graph;
+    Node* pack_node = graph.NewNode();
+    pack_node->operation.type = kBlockFfwPackPartsType;
+    pack_node->operation.attributes =
+        BlockFfwPackPartsAttributes{.num_parts = num_parts};
+
+    LiteRtOpSelector selector(&create_info, &gpu_info);
+    ASSERT_OK(selector.GPUOperationFromNode(op_def, src_ptrs, {&dst_val},
+                                            *pack_node, &builder));
+
+    std::vector<ValueId> in_ids;
+    in_ids.reserve(num_parts);
+    for (const auto& h : src_handles) in_ids.push_back(h.id);
+    GpuModel gpu_model;
+    ASSERT_OK(builder.GetGpuModel(in_ids, {dst_handle.id}, &gpu_model));
+
+    int pack_count = 0;
+    int concat_count = 0;
+    const int max_bindings =
+        storage == TensorStorageType::kBuffer
+            ? gpu_info.webgpu_info.max_storage_buffers_per_shader_stage
+            : gpu_info.webgpu_info.max_storage_textures_per_shader_stage;
+    for (const auto& node : gpu_model.nodes) {
+      EXPECT_LE(static_cast<int>(node.inputs.size() + node.outputs.size()),
+                max_bindings);
+      if (node.name == kBlockFfwPackPartsType) {
+        ++pack_count;
+        EXPECT_EQ(node.gpu_operation->tensor_to_grid_,
+                  ::ml_drift::TensorToGrid::kWBToX_HDToY_SToZ);
+      } else if (absl::StrContains(node.name, "concat")) {
+        ++concat_count;
+      }
+    }
+    EXPECT_EQ(pack_count, expected_pack_nodes);
+    EXPECT_EQ(concat_count > 0, expect_concat);
+  };
+
+  // k1 = 2 on WebGPU buffer fits in 1 dispatch with kWBToX_HDToY_SToZ.
+  run_pack(/*num_parts=*/2, TensorStorageType::kBuffer,
+           /*expected_pack_nodes=*/1, /*expect_concat=*/false);
+  // k1 = 8 on WebGPU buffer (limit 8 -> max_inputs 4) chunks into 2 packs +
+  // concat.
+  run_pack(/*num_parts=*/8, TensorStorageType::kBuffer,
+           /*expected_pack_nodes=*/2, /*expect_concat=*/true);
+  // k1 = 5 on WebGPU texture (limit 4 -> max_inputs 2) chunks into 3 packs
+  // (sizes 2, 2, 1) + concat.
+  run_pack(/*num_parts=*/5, TensorStorageType::kTexture2D,
+           /*expected_pack_nodes=*/3, /*expect_concat=*/true);
+}
+
+TEST(LiteRtOpSelectorTest,
+     BlockFfwKernelRejectsMalformedOpDefAndNonMultipleOf4Parts) {
+  GpuInfo gpu_info = GetTestGpuInfo();
+  CreateGpuModelInfo create_info;
+  create_info.precision = CalculationsPrecision::kF32;
+  create_info.storage_type = TensorStorageType::kBuffer;
+  GpuModelBuilderOptions options;
+  options.storage = TensorStorageType::kBuffer;
+  GpuModelBuilder builder(gpu_info, options);
+  LiteRtOpSelector selector(&create_info, &gpu_info);
+
+  auto make_desc = [](DataType dtype, const BHWC& shape, Layout layout) {
+    TensorDescriptor desc(dtype, TensorStorageType::kBuffer, layout);
+    desc.SetBHWCShape(shape);
+    return desc;
+  };
+  Value v0{0, {DataType::kFloat32, BHWC(1, 1, 1, 12)}};
+  Value v1{1, {DataType::kFloat32, BHWC(1, 1, 1, 6)}};
+  Value v2{2, {DataType::kFloat32, BHWC(1, 1, 1, 12)}};
+
+  // UnpackPart: (c / num_parts) % 4 != 0 (12 / 2 = 6).
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwUnpackPartType;
+    node->operation.attributes =
+        BlockFfwUnpackPartAttributes{.part = 0, .num_parts = 2};
+    OperationDef op_def;
+    op_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 12), Layout::kHWC)};
+    op_def.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 6), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // UnpackPart: mismatched op_def tensor counts.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwUnpackPartType;
+    node->operation.attributes =
+        BlockFfwUnpackPartAttributes{.part = 0, .num_parts = 2};
+    OperationDef op_def;
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // PackParts: (c / num_parts) % 4 != 0 (12 / 2 = 6).
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwPackPartsType;
+    node->operation.attributes = BlockFfwPackPartsAttributes{.num_parts = 2};
+    OperationDef op_def;
+    op_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 6), Layout::kHWC),
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 6), Layout::kHWC)};
+    op_def.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 12), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0, &v1}, {&v2}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // PackParts: inconsistent Axis::kBatch across src_tensors.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwPackPartsType;
+    node->operation.attributes = BlockFfwPackPartsAttributes{.num_parts = 2};
+    OperationDef op_def;
+    op_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC),
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kBHWC)};
+    op_def.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 16), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0, &v1}, {&v2}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // PackParts: mismatched op_def.src_tensors size vs src_ids.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwPackPartsType;
+    node->operation.attributes = BlockFfwPackPartsAttributes{.num_parts = 2};
+    OperationDef op_def;
+    op_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    op_def.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 16), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0, &v1}, {&v2}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // UnpackPart: mismatched dtype and mismatched dst shape.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwUnpackPartType;
+    node->operation.attributes =
+        BlockFfwUnpackPartAttributes{.part = 0, .num_parts = 2};
+    OperationDef dtype_def;
+    dtype_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 2, 1, 16), Layout::kHWC)};
+    dtype_def.dst_tensors = {
+        make_desc(DataType::kFloat16, BHWC(1, 1, 1, 16), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(dtype_def, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+
+    OperationDef bad_dst_h;
+    bad_dst_h.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 2, 1, 16), Layout::kHWC)};
+    bad_dst_h.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 2, 1, 8), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(bad_dst_h, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+
+    OperationDef bad_dst_c;
+    bad_dst_c.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 2, 1, 16), Layout::kHWC)};
+    bad_dst_c.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(bad_dst_c, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // PackParts: non-positive dst height and mismatched src shape.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwPackPartsType;
+    node->operation.attributes = BlockFfwPackPartsAttributes{.num_parts = 2};
+    OperationDef bad_dst_h;
+    bad_dst_h.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC),
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    bad_dst_h.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 0, 1, 16), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(bad_dst_h, {&v0, &v1}, {&v2}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+
+    OperationDef bad_src_c;
+    bad_src_c.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC),
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 12), Layout::kHWC)};
+    bad_src_c.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 2, 1, 8), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(bad_src_c, {&v0, &v1}, {&v2}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // Silu: mismatched src/dst dtypes, mismatched shapes, and empty op_def.
+  {
+    GraphFloat32 graph;
+    Node* node = graph.NewNode();
+    node->operation.type = kBlockFfwSiluType;
+    OperationDef op_def;
+    op_def.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    op_def.dst_tensors = {
+        make_desc(DataType::kFloat16, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(op_def, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+
+    OperationDef bad_shape;
+    bad_shape.src_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 1, 8), Layout::kHWC)};
+    bad_shape.dst_tensors = {
+        make_desc(DataType::kFloat32, BHWC(1, 1, 2, 8), Layout::kHWC)};
+    EXPECT_EQ(selector.GPUOperationFromNode(bad_shape, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+
+    OperationDef empty_def;
+    EXPECT_EQ(selector.GPUOperationFromNode(empty_def, {&v0}, {&v1}, *node,
+                                            &builder)
+                  .code(),
+              absl::StatusCode::kInvalidArgument);
+  }
 }
 }  // namespace
 }  // namespace litert::ml_drift

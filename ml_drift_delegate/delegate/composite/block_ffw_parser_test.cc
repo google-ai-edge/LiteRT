@@ -34,10 +34,12 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/custom_parsers.h"
 #include "ml_drift_delegate/tflite/object_reader.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/builtin_op_data.h"
@@ -237,6 +239,15 @@ std::vector<uint8_t> BuildFlexAttrs(const std::string& activation,
   });
   fbb.Finish();
   return fbb.GetBuffer();
+}
+
+TEST(BlockFfwParserTest, CustomFactoryRegistersBothCompositeNames) {
+  ::ml_drift::GpuInfo gpu_info;
+  CustomOperationParserFactory factory(&gpu_info);
+  EXPECT_TRUE(factory.SupportsIntegerTypes(kBlockedFfwCompositeName));
+  EXPECT_TRUE(factory.SupportsIntegerTypes(kBlockFfwCompositeName));
+  EXPECT_NE(factory.Create(kBlockedFfwCompositeName), nullptr);
+  EXPECT_NE(factory.Create(kBlockFfwCompositeName), nullptr);
 }
 
 TEST(BlockFfwParserTest, ResolvesPlanAndExtractsHostFallback) {
