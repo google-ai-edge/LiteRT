@@ -31,7 +31,7 @@ load("//tflite:build_def.bzl", "tflite_jni_binary")
 # load("//litert/kotlin/google:dackka.bzl", "dackka")
 #
 # copybara:uncomment_end
-load("//tflite/java:aar_with_jni.bzl", "aar_with_jni")
+load("//tflite/java:aar_with_jni.bzl", "aar_with_jni", "aar_without_jni")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -392,34 +392,23 @@ LITERT_KOTLIN_AI_PACK_DEPS = [
     "@litert_maven//:org_jetbrains_kotlinx_kotlinx_coroutines_play_services",
 ]
 
-LITERT_KOTLIN_DEPS_ALL = LITERT_KOTLIN_DEPS_NO_AIPACK + LITERT_KOTLIN_AI_PACK_DEPS
-
 LITERT_API_SRCS_NO_AIPACK = LITERT_KOTLIN_SRCS_NO_AIPACK + TFLITE_JAVA_SRCS_API
-
-LITERT_API_SRCS_ALL = LITERT_API_SRCS_NO_AIPACK + LITERT_AI_PACK_SRCS
 
 JAVACOPTS = select({
     ":public_maven_build": ["--release 17"],
     "//conditions:default": [],
 })
 
-# Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
-# runtime), Compiled Model API only.
-kt_android_library(
+# The targets below are aligned with the Maven packages: the API libraries have no support for
+# Google Play AI Pack, which is provided by ":litert_deployment" separately, so that they don't
+# depend on the Google Play AI Delivery client.
+
+# Same as ":litert_compiled_model_api_no_jni_no_aipack".
+alias(
     name = "litert_compiled_model_api_no_jni",
-    srcs = LITERT_AI_PACK_SRCS,
-    exports_manifest = 1,
-    javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
-    proguard_specs = ["//tflite/java:proguard.flags"],
+    actual = ":litert_compiled_model_api_no_jni_no_aipack",
     visibility = litert_jni_friends() + [
         "//litert/kotlin/src/tests:__pkg__",
-    ],
-    exports = [
-        ":litert_compiled_model_api_no_jni_no_aipack",
-    ],
-    deps = LITERT_KOTLIN_AI_PACK_DEPS + [
-        ":litert_compiled_model_api_no_jni_no_aipack",
     ],
 )
 
@@ -447,7 +436,7 @@ android_library(
     visibility = ["//visibility:public"],
     exports = [
         ":litert_api_jni",  # liblitert_jni.so
-        ":litert_compiled_model_api_no_jni",
+        ":litert_compiled_model_api_no_jni_no_aipack",
     ],
 )
 
@@ -475,26 +464,21 @@ android_library(
 # - TFLite Java sources for the API
 # - LiteRT Kotlin sources
 # - LiteRT JNI
+# It has no support for Google Play AI Pack, which is provided by ":litert_deployment".
 android_library(
     name = "litert_api",
     visibility = ["//visibility:public"],
     exports = [
         ":litert_api_jni",  # liblitert_jni.so
-        ":litert_api_no_jni",
+        ":litert_api_no_jni_no_aipack",
     ],
 )
 
-# Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
-# runtime), with both the Compiled Model API and also the older TFLite Interpreter API.
-kt_android_library(
+# Same as ":litert_api_no_jni_no_aipack".
+alias(
     name = "litert_api_no_jni",
-    srcs = LITERT_API_SRCS_ALL,
-    exports_manifest = 1,
-    javacopts = JAVACOPTS,
-    manifest = "src/main/AndroidManifest.xml",
-    proguard_specs = ["//tflite/java:proguard.flags"],
+    actual = ":litert_api_no_jni_no_aipack",
     visibility = litert_jni_friends(),
-    deps = LITERT_KOTLIN_DEPS_ALL,
 )
 
 # Pure Java/Kotlin API library (no native deps at build time, ":litert_api_jni" is needed at
@@ -511,17 +495,35 @@ kt_android_library(
     deps = LITERT_KOTLIN_DEPS_NO_AIPACK,
 )
 
-# This library is for building the Maven artifact only.
+# This library is for building the "litert-api" Maven artifact only. It has no support for Google
+# Play AI Pack, so that the artifact doesn't depend on the Google Play AI Delivery client. The
+# "litert-deployment" Maven artifact provides that support.
 kt_android_library(
     name = "litert_api_for_maven",
-    srcs = LITERT_API_SRCS_ALL,
+    srcs = LITERT_API_SRCS_NO_AIPACK,
     exports_manifest = 1,
     javacopts = JAVACOPTS,
     manifest = "src/main/AndroidManifest.xml",
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
-    deps = LITERT_KOTLIN_DEPS_ALL + [
+    deps = LITERT_KOTLIN_DEPS_NO_AIPACK + [
         ":litert_api_jni",  # unuseddeps: keep
+    ],
+)
+
+# Android library for the model deployment support. For now it's the support for Google Play AI
+# Pack, i.e. AiPackModelProvider, which depends on the Google Play AI Delivery client. Use it
+# together with ":litert_api" or ":litert". It's also used for building the "litert-deployment"
+# Maven artifact.
+kt_android_library(
+    name = "litert_deployment",
+    srcs = LITERT_AI_PACK_SRCS,
+    exports_manifest = 1,
+    javacopts = JAVACOPTS,
+    manifest = "src/main/AndroidManifestDeployment.xml",
+    visibility = ["//visibility:public"],
+    deps = LITERT_KOTLIN_AI_PACK_DEPS + [
+        ":litert_api_no_jni_no_aipack",
     ],
 )
 
@@ -557,7 +559,7 @@ android_library(
     proguard_specs = ["//tflite/java:proguard.flags"],
     visibility = ["//visibility:private"],
     deps = [
-        ":litert_api_no_jni",
+        ":litert_api_no_jni_no_aipack",
         ":litert_impl_jni",  # native implementation needed for the target
         "@org_checkerframework_qual",
     ],
@@ -580,6 +582,14 @@ aar_with_jni(
     name = "litert-aar",
     android_library = ":litert_for_maven",
     # copybara:uncomment third_party_notice = "//litert/kotlin/google/third_party_licenses:res/raw/third_party_licenses",
+)
+
+# bazel build --config=android_arm64 --android_ndk_min_sdk_version=24 \
+#   --define=extra_kt_jvm_opts='-jvm-target 17' --define=public_maven_build=true \
+#   //litert/kotlin:litert-deployment-aar
+aar_without_jni(
+    name = "litert-deployment-aar",
+    android_library = ":litert_deployment",
 )
 
 # copybara:uncomment_begin(google-only)
@@ -608,7 +618,10 @@ aar_with_jni(
 #     name = "litert_kotlin_docs",
 #     doc_root_path = "edge/api/litert/kotlin",
 #     java_docs_path = "java",
-#     runtime_dep = ":litert_api",
-#     src_jar = ":liblitert_api_no_jni-src.jar",
+#     runtime_dep = ":litert_deployment",
+#     src_jars = [
+#         ":liblitert_api_no_jni_no_aipack-src.jar",
+#         ":liblitert_deployment-src.jar",
+#     ],
 # )
 # copybara:uncomment_end

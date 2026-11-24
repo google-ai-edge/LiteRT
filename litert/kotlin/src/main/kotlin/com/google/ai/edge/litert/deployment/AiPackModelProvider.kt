@@ -32,9 +32,14 @@ import kotlinx.coroutines.suspendCancellableCoroutine
 /**
  * A [ModelProvider] that's backed by on-demand Google Play AI Pack.
  *
- * To use this class, you need to declare the following permission in your manifest:
+ * NOTE: Starting with LiteRT 2.5.0, this class is in the optional `litert-deployment` Maven
+ * package, not in `litert-api`, so that `litert-api` doesn't depend on the Google Play AI Delivery
+ * library.
+ *
+ * To use this class, you need to declare the following permissions in your manifest:
  * ```xml
  * <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+ * <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
  * ```
  *
  * NOTE: For install-time AiPack, use [ModelProvider.staticModel] instead.
