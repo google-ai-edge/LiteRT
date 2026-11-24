@@ -568,6 +568,7 @@ cc_test(
         "//tflite:framework",
         "//tflite:util",
         "//tflite/c:c_api_types",
+        "//tflite/core/c:common",
         "//tflite/kernels:builtin_ops",  # build_cleaner: keep
         "@com_google_absl//absl/log:check",
         "@com_google_googletest//:gtest_main",
