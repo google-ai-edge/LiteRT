@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "testing/base/public/gunit.h"
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
@@ -31,6 +32,7 @@
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/convert/convert_testing_utils.h"
+#include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
 #include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/builtin_ops.h"
@@ -44,6 +46,7 @@ namespace {
 
 struct TestDelegateData {
   IrModelBuilderOptions options;
+  CustomIrOpMap custom_parsers;
   TensorIndexToExternalBufferIdMap external_buffer_map;
   TensorIndexToBufferIdMap internal_buffer_map;
   SharedConstTensorsMap shared_tensors;
@@ -98,7 +101,8 @@ TfLiteStatus TestPrepare(TfLiteContext* context, TfLiteDelegate* delegate) {
   delegate_params.output_tensors = outputs_array;
 
   ::ml_drift::ir::IrModel* model = BuildIrModel(
-      *context, delegate_params, test_data->options, /*custom_parsers=*/nullptr,
+      *context, delegate_params, test_data->options,
+      test_data->custom_parsers.empty() ? nullptr : &test_data->custom_parsers,
       &test_data->shared_tensors, &test_data->internal_buffer_map,
       &test_data->external_buffer_map);
   if (model) {
@@ -758,6 +762,247 @@ TEST_F(IrModelBuilderTest,
     }
   }
   EXPECT_TRUE(found_shared);
+}
+
+std::vector<uint8_t> FloatsToBytes(const std::vector<float>& values) {
+  const auto* raw = reinterpret_cast<const uint8_t*>(values.data());
+  return std::vector<uint8_t>(raw, raw + values.size() * sizeof(float));
+}
+
+TEST_F(IrModelBuilderTest, ConfiguresSharedBlockwiseV2CenteredInt2FC) {
+  constexpr int kWeightsIndex = 1;
+  constexpr int kGlobalId = 55;
+  constexpr int kOutputChannels = 8;
+  constexpr int kInputChannels = 4;
+
+  std::vector<uint8_t> scale_bytes =
+      FloatsToBytes(std::vector<float>(kOutputChannels, 0.5f));
+  std::vector<uint8_t> zp_bytes =
+      FloatsToBytes(std::vector<float>(kOutputChannels, -0.5f));
+  weights_data_.assign(kOutputChannels * kInputChannels / 4, 0x4E);
+
+  model_ = std::make_unique<SingleOpInterpreterBuilder>(
+      kTfLiteBuiltinFullyConnected, /*version=*/17);
+  model_->AddInput(kTfLiteFloat32, {1, 1, 1, kInputChannels});  // id 0
+  model_->AddConstInput(kTfLiteInt2, {kOutputChannels, kInputChannels},
+                        weights_data_);  // id 1
+  model_->AddConstInput(kTfLiteFloat32, {kOutputChannels, 1},
+                        scale_bytes);                                     // 2
+  model_->AddConstInput(kTfLiteFloat32, {kOutputChannels, 1}, zp_bytes);  // 3
+  model_->AddOutput(kTfLiteFloat32, {1, kOutputChannels});                // 4
+
+  auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
+      calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model_->SetParameters(params);
+
+  interpreter_ = model_->Build({0, 1});
+  ASSERT_NE(interpreter_, nullptr);
+
+  TfLiteTensor* weights = interpreter_->tensor(kWeightsIndex);
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* bw_params = static_cast<TfLiteBlockwiseQuantizationV2*>(
+      malloc(sizeof(TfLiteBlockwiseQuantizationV2)));
+  bw_params->scale = 2;
+  bw_params->zero_point = 3;
+  bw_params->block_shape = TfLiteIntArrayCreate(2);
+  bw_params->block_shape->data[0] = 1;
+  bw_params->block_shape->data[1] = kInputChannels;
+  weights->quantization.type = kTfLiteBlockwiseQuantizationV2;
+  weights->quantization.params = bw_params;
+
+  test_data_.internal_buffer_map[kWeightsIndex] = kGlobalId;
+
+  ASSERT_EQ(interpreter_->ModifyGraphWithDelegate(&delegate_), kTfLiteOk);
+  EXPECT_TRUE(test_data_.status.ok());
+  ASSERT_EQ(test_data_.shared_tensors.size(), 1);
+
+  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  for (const auto& op : test_data_.ir_model.ops()) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnectedInt2)) {
+      fc_op = op.get();
+    }
+  }
+  ASSERT_NE(fc_op, nullptr);
+  const auto& fc_attr =
+      std::any_cast<const ::ml_drift::FullyConnectedInt2Attributes&>(
+          fc_op->attr);
+  EXPECT_EQ(fc_attr.scale.shape, ::ml_drift::OHWI(kOutputChannels, 1, 1, 1));
+  EXPECT_TRUE(fc_attr.scale.data.empty());
+  EXPECT_EQ(fc_attr.zero_point.shape,
+            ::ml_drift::OHWI(kOutputChannels, 1, 1, 1));
+  EXPECT_TRUE(fc_attr.zero_point.data.empty());
+
+  for (const auto& tensor : test_data_.ir_model.tensors()) {
+    if (tensor->buffer_source.is_shared) {
+      EXPECT_FALSE(test_data_.shared_tensors.at(tensor->id).dequant_forced);
+      EXPECT_TRUE(tensor->consumers.contains(fc_op->id));
+    }
+  }
+}
+
+TEST_F(IrModelBuilderTest,
+       FallsBackToHostDequantForSharedBlockwiseV2UnevenBlocks) {
+  constexpr int kWeightsIndex = 1;
+  constexpr int kGlobalId = 56;
+  constexpr int kOutputChannels = 2;
+  constexpr int kInputChannels = 5;
+
+  std::vector<uint8_t> scale_bytes =
+      FloatsToBytes(std::vector<float>(kOutputChannels * 2, 0.5f));
+  // 2 * 5 = 10 int2 values -> 3 bytes.
+  weights_data_.assign(3, 0x4E);
+
+  model_ = std::make_unique<SingleOpInterpreterBuilder>(
+      kTfLiteBuiltinFullyConnected, /*version=*/17);
+  model_->AddInput(kTfLiteFloat32, {1, 1, 1, kInputChannels});  // id 0
+  model_->AddConstInput(kTfLiteInt2, {kOutputChannels, kInputChannels},
+                        weights_data_);  // id 1
+  model_->AddConstInput(kTfLiteFloat32, {kOutputChannels, 2},
+                        scale_bytes);                       // 2
+  model_->AddOutput(kTfLiteFloat32, {1, kOutputChannels});  // 3
+
+  auto* params = reinterpret_cast<TfLiteFullyConnectedParams*>(
+      calloc(1, sizeof(TfLiteFullyConnectedParams)));
+  params->activation = kTfLiteActNone;
+  model_->SetParameters(params);
+
+  interpreter_ = model_->Build({0, 1});
+  ASSERT_NE(interpreter_, nullptr);
+
+  TfLiteTensor* weights = interpreter_->tensor(kWeightsIndex);
+  TfLiteQuantizationFree(&weights->quantization);
+  auto* bw_params = static_cast<TfLiteBlockwiseQuantizationV2*>(
+      malloc(sizeof(TfLiteBlockwiseQuantizationV2)));
+  bw_params->scale = 2;
+  bw_params->zero_point = kTfLiteOptionalTensor;
+  bw_params->block_shape = TfLiteIntArrayCreate(2);
+  bw_params->block_shape->data[0] = 1;
+  bw_params->block_shape->data[1] = 4;  // 5 % 4 != 0 -> uneven blocks.
+  weights->quantization.type = kTfLiteBlockwiseQuantizationV2;
+  weights->quantization.params = bw_params;
+
+  test_data_.internal_buffer_map[kWeightsIndex] = kGlobalId;
+
+  ASSERT_EQ(interpreter_->ModifyGraphWithDelegate(&delegate_), kTfLiteOk);
+  EXPECT_TRUE(test_data_.status.ok());
+  // Uneven-block weights are dequantized on host and not shared.
+  EXPECT_TRUE(test_data_.shared_tensors.empty());
+
+  const ::ml_drift::ir::IrOp* fc_op = nullptr;
+  for (const auto& op : test_data_.ir_model.ops()) {
+    if (op->name == ToString(::ml_drift::OperationType::kFullyConnected)) {
+      fc_op = op.get();
+    }
+  }
+  ASSERT_NE(fc_op, nullptr);
+  const auto& fc_attr =
+      std::any_cast<const ::ml_drift::FullyConnectedAttributes&>(fc_op->attr);
+  EXPECT_EQ(fc_attr.weights.shape,
+            ::ml_drift::OHWI(kOutputChannels, 1, 1, kInputChannels));
+}
+
+TEST_F(IrModelBuilderTest, InfersOiTransposedForSharedBlockwiseV2) {
+  auto run_case = [&](std::vector<int> weight_dims, std::vector<int> scale_dims,
+                      std::vector<int> block_shape_dims,
+                      ::ml_drift::BHWC ir_weight_shape,
+                      bool expected_oi_transposed) {
+    TestDelegateData data;
+    TfLiteDelegate del = {};
+    del.data_ = &data;
+    del.Prepare = TestPrepare;
+    del.flags = kTfLiteDelegateFlagsNone;
+
+    data.custom_parsers["test_batched_fc"] = {
+        .is_supported =
+            [](const TfLiteContext*, const TfLiteNode*,
+               const TfLiteRegistration*) { return absl::OkStatus(); },
+        .convert =
+            [ir_weight_shape](
+                const TfLiteContext&, const TfLiteNode& node,
+                const TfLiteRegistration&,
+                absl::flat_hash_map<int, ::ml_drift::ir::IrTensorId>&
+                    tensor_map,
+                const IrModelBuilderOptions&,
+                ::ml_drift::ir::IrModel& ir_model) {
+              const auto w_id = tensor_map[node.inputs->data[1]];
+              ir_model.GetMutableTensor(w_id)->desc.SetBHWCShape(
+                  ir_weight_shape);
+              auto* op = ir_model.add_op();
+              op->name =
+                  ToString(::ml_drift::OperationType::kFullyConnectedInt2);
+              ir_model.AddConsumer(tensor_map[node.inputs->data[0]], op->id);
+              ir_model.AddConsumer(w_id, op->id);
+              ir_model.SetProducer(tensor_map[node.outputs->data[0]], op->id);
+            },
+    };
+
+    int num_elems = 1;
+    for (int d : weight_dims) num_elems *= d;
+    std::vector<uint8_t> w_bytes(num_elems / 4, 0x4E);
+    int num_scales = 1;
+    for (int d : scale_dims) num_scales *= d;
+    std::vector<uint8_t> scale_bytes =
+        FloatsToBytes(std::vector<float>(num_scales, 0.5f));
+
+    SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+    builder.SetCustomName("test_batched_fc");
+    builder.AddInput(kTfLiteFloat32, {1, 2, 1, 4});
+    builder.AddConstInput(kTfLiteInt2, weight_dims, w_bytes);
+    builder.AddConstInput(kTfLiteFloat32, scale_dims, scale_bytes);
+    builder.AddOutput(kTfLiteFloat32, {1, 2, 1, 8});
+
+    auto interp = builder.Build({0, 1});
+    ASSERT_NE(interp, nullptr);
+    TfLiteTensor* weights = interp->tensor(1);
+    TfLiteQuantizationFree(&weights->quantization);
+    auto* bw_params = static_cast<TfLiteBlockwiseQuantizationV2*>(
+        malloc(sizeof(TfLiteBlockwiseQuantizationV2)));
+    bw_params->scale = 2;
+    bw_params->zero_point = kTfLiteOptionalTensor;
+    bw_params->block_shape = TfLiteIntArrayCreate(block_shape_dims.size());
+    for (size_t d = 0; d < block_shape_dims.size(); ++d) {
+      bw_params->block_shape->data[d] = block_shape_dims[d];
+    }
+    weights->quantization.type = kTfLiteBlockwiseQuantizationV2;
+    weights->quantization.params = bw_params;
+
+    data.internal_buffer_map[1] = 77;
+    ASSERT_EQ(interp->ModifyGraphWithDelegate(&del), kTfLiteOk);
+    ASSERT_EQ(data.shared_tensors.size(), 1);
+    EXPECT_EQ(data.shared_tensors.begin()->second.oi_transposed,
+              expected_oi_transposed);
+  };
+
+  // Non-square [H=2, I=4, O=8] -> OHWI(O=8, H=2, W=1, I=4): true.
+  run_case({2, 4, 8}, {2, 1, 8}, {1, 4, 1}, ::ml_drift::BHWC(8, 2, 1, 4),
+           /*expected_oi_transposed=*/true);
+  // Non-square [H=2, O=8, I=4] -> OHWI(O=8, H=2, W=1, I=4): false.
+  run_case({2, 8, 4}, {2, 8, 1}, {1, 1, 4}, ::ml_drift::BHWC(8, 2, 1, 4),
+           /*expected_oi_transposed=*/false);
+  // 4-D [1, H=2, O=8, I=4] -> OHWI(O=8, H=2, W=1, I=4): false.
+  run_case({1, 2, 8, 4}, {1, 2, 8, 1}, {1, 1, 1, 4},
+           ::ml_drift::BHWC(8, 2, 1, 4), /*expected_oi_transposed=*/false);
+  // Square [H=2, 4, 4] with block_shape [1, 1, 4] -> [H, O, I]: false.
+  run_case({2, 4, 4}, {2, 4, 1}, {1, 1, 4}, ::ml_drift::BHWC(4, 2, 1, 4),
+           /*expected_oi_transposed=*/false);
+  // Square [H=2, 4, 4] with block_shape [1, 4, 1] -> [H, I, O]: true.
+  run_case({2, 4, 4}, {2, 1, 4}, {1, 4, 1}, ::ml_drift::BHWC(4, 2, 1, 4),
+           /*expected_oi_transposed=*/true);
+  // Square [H=2, 4, 4] with uniform block_shape [1, 1, 1] disambiguated via
+  // per-channel scale extents: [2, 4, 1] -> [H, O, I] (false),
+  // [2, 1, 4] -> [H, I, O] (true).
+  run_case({2, 4, 4}, {2, 4, 1}, {1, 1, 1}, ::ml_drift::BHWC(4, 2, 1, 4),
+           /*expected_oi_transposed=*/false);
+  run_case({2, 4, 4}, {2, 1, 4}, {1, 1, 1}, ::ml_drift::BHWC(4, 2, 1, 4),
+           /*expected_oi_transposed=*/true);
+  // Ambiguous square [H=2, 4, 4] with block_shape [1, 1, 1] and [2, 4, 4]
+  // scales -> default true.
+  run_case({2, 4, 4}, {2, 4, 4}, {1, 1, 1}, ::ml_drift::BHWC(4, 2, 1, 4),
+           /*expected_oi_transposed=*/true);
+  // 2-D [O=8, I=4] (non-batched) -> keeps SharedTfliteTensor default true.
+  run_case({8, 4}, {8, 1}, {1, 4}, ::ml_drift::BHWC(8, 1, 1, 4),
+           /*expected_oi_transposed=*/true);
 }
 
 }  // namespace
