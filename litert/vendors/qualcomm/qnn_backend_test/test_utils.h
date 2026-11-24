@@ -41,15 +41,37 @@ class QnnModelTest
 
   void SetUp() override {
     const auto& [options, soc_model_name] = GetParam();
-    if (!::qnn::IsTestHtpBackend()) {
+    if (!(::qnn::IsTestHtpBackend() &&
+          options.GetBackendType() == ::qnn::BackendType::kHtpBackend) &&
+        !(::qnn::IsTestLpaiBackend() &&
+          options.GetBackendType() == ::qnn::BackendType::kLpaiBackend)) {
       GTEST_SKIP() << "Skipping test because targeted backend is not supported";
     }
+#if defined(__ANDROID__)
+    if (options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+      GTEST_SKIP() << "LPAI execution is tested with the x86 simulator.";
+    }
+#endif
     SetUpQnnModel(options, soc_model_name);
   }
 
  private:
   void SetUpQnnModel(const ::qnn::Options& options, const char* soc_model_name);
 };
+
+inline auto GetHtpAndLpaiQnnModelParams() {
+#if defined(__ANDROID__)
+  const char* kSoc = nullptr;
+#else
+  const char* kSoc = "SM8850";
+#endif
+  ::qnn::Options lpai_options;
+  lpai_options.SetBackendType(::qnn::BackendType::kLpaiBackend);
+  lpai_options.SetLpaiTarget(::qnn::LpaiTarget::kX86);
+  return ::testing::Values(
+      std::make_tuple(GetTestingDefaultQnnOptions(), kSoc),
+      std::make_tuple(lpai_options, kSoc));
+}
 
 inline auto GetDefaultQnnModelParams() {
 #if defined(__x86_64__) || defined(_M_X64)

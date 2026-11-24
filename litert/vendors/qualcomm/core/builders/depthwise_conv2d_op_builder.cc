@@ -70,9 +70,6 @@ std::vector<OpWrapper> BuildDepthwiseConv2dOp(
   TensorWrapper* bias_tensor = nullptr;
   if (inputs.size() - 1 >= kBiasIndex) {
     bias_tensor = &inputs[kBiasIndex].get();
-    // QNN only support per-tensor quant for bias,
-    // and the scale and offset are both zero.
-    bias_tensor->ConvertAxisScaleOffsetToScaleOffset();
   }
 
   // stride param

@@ -60,7 +60,7 @@ class QnnModel {
 
   bool ValidateOpConfig();
 
-  bool Finalize();
+  bool Finalize(const QnnGraph_Config_t** graph_configs = nullptr);
 
   bool Execute();
 

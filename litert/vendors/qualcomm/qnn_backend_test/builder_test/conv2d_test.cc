@@ -3,17 +3,99 @@
 
 #include <array>
 #include <cstdint>
+#include <tuple>  // IWYU pragma: keep
+#include <utility>
 #include <vector>
 
+#include "QnnTypes.h"  // from @qairt
+#include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/builders/conv2d_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
+#include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"  // IWYU pragma: keep
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
-#include "QnnTypes.h"  // from @qairt
+#include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
+#include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
 
 namespace litert::qnn {
 namespace {
+
+class Conv2dOpBuilderExecutionTest : public QnnModelTest {};
+
+INSTANTIATE_TEST_SUITE_P(, Conv2dOpBuilderExecutionTest,
+                         GetHtpAndLpaiQnnModelParams(), QnnTestPrinter);
+
+TEST_P(Conv2dOpBuilderExecutionTest, KeepsPerChannelBiasQuantization) {
+  auto& tensor_pool = tensor_pool_;
+  const ::qnn::ScaleOffsetQuantizeParamsWrapper activation_quant{0.5f, 0};
+  auto& input = tensor_pool.CreateInputTensorWithName(
+      "input", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 2, 1});
+  const ::qnn::AxisScaleOffsetQuantizeParamsWrapper filter_quant{
+      /*axis=*/0, /*scales=*/{0.1f, 0.2f}, /*zero_points=*/{0, 0}};
+  static constexpr std::array<std::int8_t, 2> filter_data{1, -1};
+  auto& filter = tensor_pool.CreateStaticTensor(
+      QNN_DATATYPE_SFIXED_POINT_8, filter_quant, {2, 1, 1, 1},
+      sizeof(filter_data), filter_data.data());
+  const ::qnn::AxisScaleOffsetQuantizeParamsWrapper bias_quant{
+      /*axis=*/0, /*scales=*/{0.05f, 0.1f}, /*zero_points=*/{0, 0}};
+  static constexpr std::array<std::int32_t, 2> bias_data{10, -20};
+  auto& bias =
+      tensor_pool.CreateStaticTensor(QNN_DATATYPE_SFIXED_POINT_32, bias_quant,
+                                     {2}, sizeof(bias_data), bias_data.data());
+  auto& output = tensor_pool.CreateOutputTensorWithName(
+      "output", QNN_DATATYPE_SFIXED_POINT_8, activation_quant, {1, 1, 2, 2});
+
+  auto ops = ::qnn::BuildConv2dOp(
+      tensor_pool, {input, filter, bias}, {output}, /*stride_h=*/1,
+      /*stride_w=*/1, /*dilation_h=*/1, /*dilation_w=*/1,
+      ::qnn::PaddingType::Valid, /*use_int64_bias_as_int32=*/false);
+
+  ASSERT_EQ(ops.size(), 1);
+  ASSERT_EQ(ops[0].GetInputCount(), 3);
+  const auto& op_bias = ops[0].GetInputTensor(2);
+  EXPECT_EQ(op_bias.GetDataType(), QNN_DATATYPE_SFIXED_POINT_32);
+  const auto& quant = op_bias.GetQnnTensor().v2.quantizeParams;
+  ASSERT_EQ(quant.quantizationEncoding,
+            QNN_QUANTIZATION_ENCODING_AXIS_SCALE_OFFSET);
+  const auto& axis_quant = quant.axisScaleOffsetEncoding;
+  EXPECT_EQ(axis_quant.axis, 0);
+  ASSERT_EQ(axis_quant.numScaleOffsets, 2);
+  EXPECT_FLOAT_EQ(axis_quant.scaleOffset[0].scale, 0.05f);
+  EXPECT_FLOAT_EQ(axis_quant.scaleOffset[1].scale, 0.1f);
+  EXPECT_EQ(axis_quant.scaleOffset[0].offset, 0);
+  EXPECT_EQ(axis_quant.scaleOffset[1].offset, 0);
+  const auto data = op_bias.GetTensorData<std::int32_t>();
+  ASSERT_TRUE(data.has_value());
+  ASSERT_EQ(data->size(), bias_data.size());
+  EXPECT_EQ((*data)[0], bias_data[0]);
+  EXPECT_EQ((*data)[1], bias_data[1]);
+
+  qnn_model_.MoveOpsToGraph(std::move(ops));
+  ASSERT_TRUE(qnn_model_.ValidateOpConfig());
+  const auto& options = std::get<0>(GetParam());
+  if (options.GetBackendType() == ::qnn::BackendType::kLpaiBackend) {
+    auto graph_configs = qnn_backend_ptr_->BuildGraphConfigs(options, "test");
+    auto configs = graph_configs.GetNullTerminatedConfigs();
+    ASSERT_TRUE(qnn_model_.Finalize(configs.data()));
+  } else {
+    ASSERT_TRUE(qnn_model_.Finalize());
+  }
+
+  const auto input_idx = qnn_model_.AddInputTensor(input);
+  const auto output_idx = qnn_model_.AddOutputTensor(output);
+  static constexpr std::array<std::int8_t, 2> input_data{10, -10};
+  ASSERT_TRUE(qnn_model_.SetInputData<std::int8_t>(input_idx, input_data));
+  ASSERT_TRUE(qnn_model_.Execute());
+
+  const auto output_data = qnn_model_.GetOutputData<std::int8_t>(output_idx);
+  ASSERT_TRUE(output_data.has_value());
+  // Dequantized outputs are {1, -3, 0, -1}; output scale 0.5 and zero point 0
+  // give raw INT8 values {2, -6, 0, -2}.
+  static constexpr std::array<std::int8_t, 4> expected_output{2, -6, 0, -2};
+  EXPECT_THAT(*output_data, ::testing::ElementsAreArray(expected_output));
+}
 
 TEST(Conv2dOpBuilderTest, FilterAxisUnchangedAfterBuildConv2dOp) {
   // Verify filter quant params are unchanged after calling BuildConv2dOp().
