@@ -21,6 +21,38 @@ ESDK_URL="https://artifacts.codelinaro.org/artifactory/qli-ci/flashable-binaries
 ESDK_SHA256="4381fb56f2b47e9691cb72bf937c20e5b199bb304ec4eb3a98ec64bfd875cbe0"
 ESDK_INSTALLER_REL="target/qcs8275-iq-8275-evk-pro-sku/sdk/qcom-wayland-x86_64-qcom-multimedia-image-armv8-2a-qcs8275-iq-8275-evk-pro-sku-toolchain-ext-1.8-ver.1.0.sh"
 
+# Same steps as the eSDK installer's "Preparing build system" (ext-sdk-prepare.py),
+# after pinning recipes whose SRCREV is ${AUTOREV}: parsing those runs
+# `git ls-remote`, which fails once the upstream repository is gone (as
+# github.com/microsoft/onnxruntime is). The pin is the revision this eSDK was
+# built from (recorded in its onnxruntime SPDX sstate), so nothing is fetched.
+ORT_SRCREV="470ae16099a74fe05e31f2530489332c0525edb5"
+
+prepare_esdk_build_system() {
+  local esdk_root="$1"
+  local ort_srcrev="$2"
+  local log="${esdk_root}/preparing_build_system.log"
+  echo "SRCREV_ort:pn-onnxruntime = \"${ort_srcrev}\"" \
+    >> "${esdk_root}/conf/local.conf"
+  # `set -e` does not apply on the left of `||`, hence the explicit `&&` chain.
+  (
+    cd "${esdk_root}" &&
+    . buildtools/environment-setup-* > "${log}" 2>&1 &&
+    cd layers/poky &&
+    set -- "${esdk_root}" &&
+    . ./oe-init-build-env "${esdk_root}" >> "${log}" 2>&1 &&
+    bitbake --quiet --setscene-only qcom-multimedia-image esp-qcom-image \
+      dtb-el2-qcom-image dtb-qcom-image initramfs-ostree-image \
+      meta-extsdk-toolchain:do_populate_sysroot >> "${log}" 2>&1 &&
+    bitbake --quiet build-sysroots -c build_native_sysroot >> "${log}" 2>&1 &&
+    bitbake --quiet build-sysroots -c build_target_sysroot >> "${log}" 2>&1
+  ) || {
+    echo "ERROR: eSDK build system preparation failed; see ${log}:"
+    tail -n 50 "${log}"
+    return 1
+  }
+}
+
 install_and_prune_esdk() {
   local esdk_root="${LINUX_AARCH64_ESDK:-${ESDK_DEFAULT_ROOT}}"
   local esdk_gcc="${esdk_root}/tmp/sysroots/x86_64/usr/bin/aarch64-qcom-linux/aarch64-qcom-linux-gcc"
@@ -43,6 +75,8 @@ install_and_prune_esdk() {
   rm -f esdk.zip
   chmod +x "./${ESDK_INSTALLER_REL}"
 
+  # Install with -n (do not prepare the build system), then prepare it with
+  # prepare_esdk_build_system (see above).
   # Yocto/eSDK installers forbid execution as root (UID 0).
   if [[ "$(id -u)" -eq 0 ]]; then
     if ! id -u builder >/dev/null 2>&1; then
@@ -51,9 +85,11 @@ install_and_prune_esdk() {
     fi
     mkdir -p "${esdk_root}"
     chown -R builder:builder "${esdk_root}" "${tmp_esdk}"
-    su -s /bin/bash builder -c 'sh "$1" -y -d "$2"' _ "${tmp_esdk}/${ESDK_INSTALLER_REL}" "${esdk_root}"
+    su -s /bin/bash builder -c 'sh "$1" -y -n -d "$2"' _ "${tmp_esdk}/${ESDK_INSTALLER_REL}" "${esdk_root}"
+    su -s /bin/bash builder -c "$(declare -f prepare_esdk_build_system); prepare_esdk_build_system \"\$1\" \"\$2\"" _ "${esdk_root}" "${ORT_SRCREV}"
   else
-    sh "./${ESDK_INSTALLER_REL}" -y -d "${esdk_root}"
+    sh "./${ESDK_INSTALLER_REL}" -y -n -d "${esdk_root}"
+    prepare_esdk_build_system "${esdk_root}" "${ORT_SRCREV}"
   fi
   popd > /dev/null
 
