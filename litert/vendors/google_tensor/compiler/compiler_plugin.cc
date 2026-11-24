@@ -651,13 +651,36 @@ FilterOutcome GetFilterOutcome(const litert::compiler::Op& op,
   }
 }
 
+bool IsGroupNormCompositeOpSupported(const litert::compiler::Op& op) {
+  // Google Tensor's `odml.group_norm` lowering requires 3 inputs
+  // `(input, scale, bias)` and 1 output. Reject composite ops with fewer
+  // operands (e.g. bias-free LayerNorm) so LiteRT inlines their decomposition
+  // subgraph.
+  const size_t num_inputs = op.Inputs().size();
+  const size_t num_outputs = op.Outputs().size();
+  if (num_inputs != 3 || num_outputs != 1) {
+    LITERT_LOG(
+        LITERT_INFO,
+        "Unsupported odml.group_norm composite: expected 3 inputs and 1 "
+        "output, got %zu inputs and %zu outputs.",
+        num_inputs, num_outputs);
+    return false;
+  }
+  return true;
+}
+
 bool IsShloCompositeOpSupported(const litert::compiler::Op& op) {
   if (op.Code() == kLiteRtOpCodeShloComposite) {
     const char* custom_op_name = nullptr;
-    if (op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
+    if (op.ctx() == nullptr ||
+        op.ctx()->get_shlo_composite_op_name == nullptr ||
+        op.ctx()->get_shlo_composite_op_name(op.Get(), &custom_op_name) !=
             kLiteRtStatusOk ||
         custom_op_name == nullptr) {
       return false;
+    }
+    if (strcmp(custom_op_name, "odml.group_norm") == 0) {
+      return IsGroupNormCompositeOpSupported(op);
     }
     // check if the name of the composite op is in the list of
     // kSupportedStableHloCompositeOps.
@@ -1002,7 +1025,10 @@ absl::flat_hash_map<int, bool> ValidateCompositeOpsBatch(
   if (are_supported.HasValue() &&
       are_supported->size() == composite_op_indices.size()) {
     for (size_t k = 0; k < composite_op_indices.size(); ++k) {
-      composite_support_map[composite_op_indices[k]] = (*are_supported)[k];
+      const int op_index = composite_op_indices[k];
+      composite_support_map[op_index] =
+          (*are_supported)[k] &&
+          google_tensor::IsShloCompositeOpSupported(ops[op_index]);
     }
   } else {
     if (!are_supported.HasValue()) {

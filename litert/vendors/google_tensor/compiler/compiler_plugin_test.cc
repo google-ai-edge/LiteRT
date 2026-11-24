@@ -15,6 +15,7 @@
 #include <cstddef>
 #include <fstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -352,9 +353,16 @@ TEST(TestCallGoogleTensorPlugin, PartitionUnsupportedCompositeOp) {
 }
 
 void AddCompositeOpToSubgraph(LiteRtSubgraphT& subgraph,
-                              absl::string_view composite_name) {
+                              absl::string_view composite_name,
+                              size_t num_inputs = 3, size_t num_outputs = 1) {
   LiteRtOpT& composite = subgraph.EmplaceOp();
   composite.SetOpCode(kLiteRtOpCodeShloComposite);
+  for (size_t i = 0; i < num_inputs; ++i) {
+    litert::internal::AttachInput(&subgraph.EmplaceTensor(), composite);
+  }
+  for (size_t i = 0; i < num_outputs; ++i) {
+    litert::internal::AttachOutput(&subgraph.EmplaceTensor(), composite);
+  }
   ::tflite::StableHLOCompositeOptionsT opts;
   opts.name = std::string(composite_name);
   opts.decomposition_subgraph_index = 0;
@@ -482,6 +490,36 @@ TEST(TestCallGoogleTensorPlugin, PartitionCompositeOpsWithInputValidation) {
   LITERT_ASSERT_OK(
       LiteRtGetSHLOCompositeOpName(selected_ops[1].first, &second_op_name));
   EXPECT_STREQ(second_op_name, "odml.group_norm");
+}
+
+TEST(TestCallGoogleTensorPlugin, PartitionRejectsTwoOperandGroupNormComposite) {
+  for (const bool enable_input_validator : {false, true}) {
+    LITERT_ASSERT_OK_AND_ASSIGN(Environment env, Environment::Create({}));
+    LITERT_ASSERT_OK_AND_ASSIGN(Options options, Options::Create());
+    LITERT_ASSERT_OK_AND_ASSIGN(GoogleTensorOptions & google_tensor_options,
+                                options.GetOptions<GoogleTensorOptions>());
+    google_tensor_options.SetExperimentalEnableInputValidator(
+        enable_input_validator);
+
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto litert_opts,
+        internal::LiteRtOptionsPtrBuilder::Build(options, env.GetHolder()));
+
+    auto plugin_or = StaticallyLinkedPlugin::Create(
+        LrtGetCompilerContext(), /*env=*/nullptr, litert_opts.get());
+    ASSERT_TRUE(plugin_or.HasValue());
+    auto& plugin = *plugin_or;
+
+    LiteRtModelT model;
+    LiteRtSubgraphT& subgraph = model.EmplaceSubgraph();
+    AddCompositeOpToSubgraph(subgraph, "odml.group_norm", /*num_inputs=*/2,
+                             /*num_outputs=*/1);
+
+    LiteRtOpListT selected_op_list;
+    LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_partition(
+        plugin.Get(), /*soc_model=*/"Tensor_G6", &subgraph, &selected_op_list));
+    EXPECT_TRUE(selected_op_list.Values().empty());
+  }
 }
 
 // `simple_reducemax_op.tflite` holds a single f32 `tfl.reduce_max`. That op is
