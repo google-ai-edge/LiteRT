@@ -251,7 +251,16 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
                                     absl::string_view default_val) {
     configs_map_.try_emplace(std::string(key), std::string(default_val));
   };
-  set_default_if_not_set("NPU_USE_NPUW", "YES");
+  // Store boolean NPUW properties as native `bool` rather than "YES"/"NO"
+  // strings: `intel_npu::Plugin::compile_model` reads `NPU_USE_NPUW` via
+  // `ov::Any::as<bool>()`, and string->bool conversion calls
+  // `ov::Any::Base::read_from()` across the compiler-plugin/libopenvino.so DSO
+  // boundary, which crashes with SIGSEGV (SEGV_ACCERR).
+  auto set_default_bool_if_not_set = [&](absl::string_view key,
+                                         bool default_val) {
+    configs_map_.try_emplace(std::string(key), default_val);
+  };
+  set_default_bool_if_not_set("NPU_USE_NPUW", true);
   set_default_if_not_set("NPUW_DEVICES", "NPU");
   // Bank name must be unique per distinct weight pool (see header). Fall back
   // to the legacy fixed name only if the caller could not derive one,
@@ -260,22 +269,22 @@ LiteRtStatus OpenVinoCompileContext::ConfigureForNpuWeightSharing(
                          weights_bank_name.empty()
                              ? absl::string_view("shared")
                              : absl::string_view(weights_bank_name));
-  set_default_if_not_set("NPUW_FUNCALL_FOR_ALL", "YES");
+  set_default_bool_if_not_set("NPUW_FUNCALL_FOR_ALL", true);
 
   if (moe_multi_token_chunk || hfa_decomposed) {
     set_default_if_not_set("NPUW_ONLINE_PIPELINE", "REP");
-    set_default_if_not_set("NPUW_UNFOLD_IREQS", "NO");
+    set_default_bool_if_not_set("NPUW_UNFOLD_IREQS", false);
     set_default_if_not_set("NPUW_ONLINE_ISOLATE",
                            moe_multi_token_chunk ? "ATTN,MOE" : "ATTN");
     if (moe_multi_token_chunk) {
       set_default_if_not_set("NPUW_MOE_TOKEN_CHUNK_SIZE", "0");
     }
     set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCK_SIZE", "4");
-    set_default_if_not_set("NPUW_FOLD", "YES");
+    set_default_bool_if_not_set("NPUW_FOLD", true);
     set_default_if_not_set("NPUW_ONLINE_KEEP_BLOCKS", "3");
   } else {
     set_default_if_not_set("NPUW_ONLINE_PIPELINE", "NONE");
-    set_default_if_not_set("NPUW_CWAI", "YES");
+    set_default_bool_if_not_set("NPUW_CWAI", true);
   }
 
   // NPUW shares weights across partitions only through CWAI, FOLD, or
