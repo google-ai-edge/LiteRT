@@ -529,6 +529,21 @@ TEST(OptimizationLevelTest, Parse) {
   }
 }
 
+TEST(IrExportFormatTest, Parse) {
+  std::string error;
+  QualcommOptions::IrExportFormat value;
+
+  EXPECT_TRUE(AbslParseFlag("default", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::IrExportFormat::kDefault);
+  EXPECT_EQ(AbslUnparseFlag(value), "default");
+
+  EXPECT_TRUE(AbslParseFlag("strip_quant", &value, &error));
+  EXPECT_EQ(value, QualcommOptions::IrExportFormat::kStripQuant);
+  EXPECT_EQ(AbslUnparseFlag(value), "strip_quant");
+
+  EXPECT_FALSE(AbslParseFlag("invalid", &value, &error));
+}
+
 TEST(GraphPriorityTest, Parse) {
   std::string error;
   QualcommOptions::GraphPriority value;
@@ -823,6 +838,8 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
             QualcommOptions::OptimizationLevel::kOptimizeForInferenceO3);
   EXPECT_EQ(options.Value().GetGraphPriority(),
             QualcommOptions::GraphPriority::kDefault);
+  EXPECT_EQ(options.Value().GetIrExportFormat(),
+            QualcommOptions::IrExportFormat::kDefault);
   EXPECT_EQ(options.Value().GetBackend(), QualcommOptions::Backend::kHtp);
   EXPECT_EQ(options.Value().GetGraphIOTensorMemType(),
             QualcommOptions::GraphIOTensorMemType::kMemHandle);

@@ -113,6 +113,11 @@ enum class GraphPriority {
   kHigh = 4,
 };
 
+enum class IrExportFormat {
+  kDefault = 0,
+  kStripQuant = 1,
+};
+
 enum class OpNameFormat {
   kBasic = 0,
   kDetailed = 1,
@@ -259,6 +264,9 @@ class Options {
   void SetGraphPriority(GraphPriority graph_priority);
   GraphPriority GetGraphPriority() const;
 
+  void SetIrExportFormat(IrExportFormat ir_export_format);
+  IrExportFormat GetIrExportFormat() const;
+
   void SetGpuPrecision(GpuPrecision gpu_precision);
   GpuPrecision GetGpuPrecision() const;
 
@@ -345,6 +353,7 @@ class Options {
   OptimizationLevel optimization_level_ =
       OptimizationLevel::kHtpOptimizeForInferenceO3;
   GraphPriority graph_priority_ = GraphPriority::kDefault;
+  IrExportFormat ir_export_format_ = IrExportFormat::kDefault;
   GpuPrecision gpu_precision_ = GpuPrecision::kFp16;
   GpuPerformanceMode gpu_performance_mode_ = GpuPerformanceMode::kHigh;
   std::string saver_output_dir_;

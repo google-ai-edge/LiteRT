@@ -37,4 +37,7 @@ target_link_libraries(qnn_backends
         qnn_common
     PRIVATE
         qnn_log
+        qnn_miscs
+        qnn_tensor_pool
+        qnn_wrappers
 )

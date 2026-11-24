@@ -23,6 +23,7 @@
 #include <functional>
 #include <iterator>
 #include <numeric>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -52,6 +53,7 @@
 #include "litert/vendors/cc/namespace_heuristics.h"
 #include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/compiler/graph_mapper.h"
+#include "litert/vendors/qualcomm/core/backends/ir_backend.h"
 #include "litert/vendors/qualcomm/core/backends/qnn_backend.h"
 #include "litert/vendors/qualcomm/core/builders/addn_op_builder.h"
 #include "litert/vendors/qualcomm/core/builders/arg_min_max_op_builder.h"
@@ -1938,6 +1940,10 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
 
   // TODO: make ConvertOp accept a vector and append OpWrapper in it.
   std::vector<::qnn::OpWrapper> graph_op_wrappers;
+  std::optional<::qnn::IrQuantStripper> quant_stripper;
+  if (options.GetIrExportFormat() == ::qnn::IrExportFormat::kStripQuant) {
+    quant_stripper.emplace();
+  }
   std::ostringstream dump;
   auto ops = graph_mapper.Graph().Ops();
   for (size_t id = 0; id < ops.size(); ++id) {
@@ -1971,6 +1977,9 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
       output_tensors.emplace_back(*tensor_wrapper);
     }
 
+    if (quant_stripper) {
+      quant_stripper->Record(input_tensors);
+    }
     std::vector<::qnn::OpWrapper> op_wrappers;
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
@@ -1998,6 +2007,11 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
         tensor_wrapper.ConvertFromQuantI16ToQuantU16();
       }
     });
+  }
+
+  // IR-only export: strip quantization after the regular composition.
+  if (quant_stripper && !quant_stripper->Apply(tensor_pool)) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
 
   // Create input tensors.

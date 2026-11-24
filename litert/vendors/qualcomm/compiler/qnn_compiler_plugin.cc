@@ -609,6 +609,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     backend_options.SetBackendType(::qnn::BackendType::kIrBackend);
   }
 
+  if (backend_options.GetIrExportFormat() ==
+      ::qnn::IrExportFormat::kStripQuant) {
+    if (backend_options.GetBackendType() != ::qnn::BackendType::kIrBackend) {
+      LITERT_LOG(LITERT_ERROR,
+                 "IR export format 'strip_quant' requires the IR backend. "
+                 "Set --qualcomm_dlc_dir or --qualcomm_backend=ir.");
+      return kLiteRtStatusErrorInvalidArgument;
+    }
+  }
+
   if (backend_options.GetBackendType() == ::qnn::BackendType::kIrBackend) {
     std::string dlc_dir(backend_options.GetDlcDir());
     if (!dlc_dir.empty()) {

@@ -91,6 +91,7 @@ LiteRtStatus ParseCustomOpPackageValue(absl::string_view value,
 struct LrtQualcommOptionsT {
   std::optional<LrtQualcommOptionsLogLevel> log_level;
   std::optional<LrtQualcommOptionsProfiling> profiling;
+  std::optional<LrtQualcommOptionsIrExportFormat> ir_export_format;
   std::optional<bool> use_htp_preference;
   std::optional<bool> use_qint16_as_quint16;
   std::optional<bool> use_int64_bias_as_int32;
@@ -261,6 +262,12 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           }
           status = LrtQualcommOptionsSetDspEncoding(
               parsed_options, static_cast<LrtQualcommOptionsDspEncoding>(*v));
+        } else if (key == "ir_export_format") {
+          auto v = litert::internal::ParseTomlInt(value);
+          if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
+          status = LrtQualcommOptionsSetIrExportFormat(
+              parsed_options,
+              static_cast<LrtQualcommOptionsIrExportFormat>(*v));
         } else if (key == "dump_tensor_ids") {
           auto parts = litert::internal::ParseTomlStringArray(value);
           if (!parts) return litert::ToLiteRtStatus(parts.Error().StatusCC());
@@ -496,6 +503,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_encoding.has_value()) {
     LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
         "dsp_encoding", static_cast<int>(*options->dsp_encoding)));
+  }
+  if (options->ir_export_format.has_value()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeInt(
+        "ir_export_format", static_cast<int>(*options->ir_export_format)));
   }
   if (options->dump_tensor_ids.has_value()) {
     std::vector<std::string> id_strings;
@@ -1252,6 +1263,31 @@ LiteRtStatus LrtQualcommOptionsGetDspEncoding(
   *dsp_encoding =
       options->dsp_encoding.value_or(kLiteRtQualcommDspEncodingStatic);
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetIrExportFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsIrExportFormat ir_export_format) {
+  if (options == nullptr ||
+      ir_export_format < kLiteRtQualcommIrExportFormatDefault ||
+      ir_export_format > kLiteRtQualcommIrExportFormatStripQuant) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  options->ir_export_format = ir_export_format;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetIrExportFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsIrExportFormat* ir_export_format) {
+  if (options == nullptr || ir_export_format == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  *ir_export_format = options->ir_export_format.value_or(
+      kLiteRtQualcommIrExportFormatDefault);
   return kLiteRtStatusOk;
 }
 

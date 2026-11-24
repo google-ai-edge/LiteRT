@@ -153,6 +153,8 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::DspEncoding>(qualcomm_options.GetDspEncoding()));
   qnn_options.SetIrJsonDir(qualcomm_options.GetIrJsonDir());
   qnn_options.SetDlcDir(qualcomm_options.GetDlcDir());
+  qnn_options.SetIrExportFormat(static_cast<::qnn::IrExportFormat>(
+      qualcomm_options.GetIrExportFormat()));
   qnn_options.SetGraphTransform(qualcomm_options.GetGraphTransform());
   qnn_options.SetVtcmSize(qualcomm_options.GetVtcmSize());
   qnn_options.SetHtpDeviceId(qualcomm_options.GetHtpDeviceId());
