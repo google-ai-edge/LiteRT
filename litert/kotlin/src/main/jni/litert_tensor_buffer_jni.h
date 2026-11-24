@@ -54,6 +54,14 @@ Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteLong(JNIEnv* env,
                                                             jlong handle,
                                                             jlongArray input);
 
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeWriteFrom(
+    JNIEnv* env, jclass clazz, jlong handle, jobject source);
+
+JNIEXPORT jlong JNICALL
+Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInto(
+    JNIEnv* env, jclass clazz, jlong handle, jobject destination);
+
 JNIEXPORT jintArray JNICALL
 Java_com_google_ai_edge_litert_TensorBuffer_nativeReadInt(JNIEnv* env,
                                                           jclass clazz,
