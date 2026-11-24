@@ -23,19 +23,23 @@ compare at every step. LiteRT-LM's debugger (--enable_debugger) captures them
 on the CPU; it is off for the NPU executor, whose logits the NVIDIA dispatch
 writes instead (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=DIR:STEPS:MB).
 
-  teacher_forced.py collect [--tokenizer SPM --target FILE] CAPTURE_DIR
+  teacher_forced.py collect [--tokenizer FILE --target FILE] CAPTURE_DIR
   OUT_PREFIX
       The debugger's captures of one run (CAPTURE_DIR = the cache directory's
       litert_lm_debugger) -> OUT_PREFIX.logits.npy (float32 [steps, vocab]) and
       OUT_PREFIX.steps.json (each decode step's position and, given the
-      model's SentencePiece tokenizer and the target text, the token the step
-      scores: step i scores the target's token i).
-  teacher_forced.py collect-dispatch [--tokenizer SPM --target FILE]
+      model's tokenizer and the target text, the token the step scores: step
+      i scores the target's token i). The tokenizer is the model's
+      SentencePiece model, or its Hugging Face tokenizer.json (*.json, read
+      with the `tokenizers` package).
+  teacher_forced.py collect-dispatch [--tokenizer FILE --target FILE]
                                      [--vocab N] DUMP_DIR OUT_PREFIX
       The same from the NVIDIA dispatch's output dumps (DUMP_DIR/index.jsonl):
       every output as wide as the vocabulary (--vocab, default Gemma's
-      262144; Qwen 3.8's is 248320), in the order the steps produced them.
-      They carry no positions: `compare` takes the reference's.
+      262144; Qwen 3.8's is 248320), in the order the steps produced them, of
+      the function that wrote the most of them (the decode step's, not a
+      prefill's last row). They carry no positions: `compare` takes the
+      reference's.
   teacher_forced.py replay-manifest --model FILE.tflite [--signature decode]
                             --function F [--steps N,...] DUMP_DIR LOG OUT_DIR
       A CPU reference where LiteRT-LM's CPU run does not finish (a long
@@ -61,6 +65,11 @@ writes instead (LITERT_NVIDIA_DISPATCH_DUMP_OUTPUTS=DIR:STEPS:MB).
       and the negative log-likelihood of the token fed next under both. Prints
       the agreement by the reference's margin, the margin error's
       distribution, and every statistic by position; --json writes the steps.
+  teacher_forced.py gate [--json FILE] [--positions P,...] [--cutoff C]
+                         [--limit L] [--factor F] [--nll N]
+                         REF_PREFIX TEST_PREFIX [REF_PREFIX TEST_PREFIX ...]
+      `compare`, then the pass bar of gate(), whose verdict is the last line
+      and the exit status (0 pass, 1 fail).
 
 No GPU and no LiteRT are needed: numpy only.
 """
@@ -75,12 +84,17 @@ import sys
 
 import numpy as np
 
-# Optional packages: only --tokenizer needs sentencepiece and only
-# replay-manifest needs tflite. Every other command runs with numpy alone.
+# Optional packages: only --tokenizer needs sentencepiece (or tokenizers, for
+# a tokenizer.json) and only replay-manifest needs tflite. Every other command
+# runs with numpy alone.
 try:
   import sentencepiece  # pylint: disable=g-import-not-at-top
 except ImportError:
   sentencepiece = None
+try:
+  import tokenizers  # pylint: disable=g-import-not-at-top
+except ImportError:
+  tokenizers = None
 try:
   import tflite  # pylint: disable=g-import-not-at-top
 except ImportError:
@@ -122,8 +136,12 @@ def _single(path):
 
 def target_tokens(tokenizer_path, target_path):
   """Tokenizes the target as LiteRT-LM's scoring does (no BOS)."""
+  text = Path(target_path).read_text()
+  if str(tokenizer_path).endswith(".json"):
+    tokenizer = tokenizers.Tokenizer.from_file(str(tokenizer_path))
+    return tokenizer.encode(text, add_special_tokens=False).ids
   processor = sentencepiece.SentencePieceProcessor(model_file=tokenizer_path)
-  return processor.encode(Path(target_path).read_text())
+  return processor.encode(text)
 
 
 def collect(capture_dir, out_prefix, scored=None):
@@ -176,6 +194,13 @@ def collect_dispatch(dump_dir, out_prefix, scored=None, vocab=262144):
   )
   if not entries:
     raise ValueError(f"{dump_dir}: no output of {vocab} columns dumped")
+  # A prefill that also writes logits (its last row) does so once a chunk of
+  # the prompt; the decode step once a step.
+  counts = {}
+  for e in entries:
+    counts[e["function"]] = counts.get(e["function"], 0) + 1
+  decode = max(counts, key=counts.get)
+  entries = [e for e in entries if e["function"] == decode]
   rows = []
   for e in entries:
     if e["skipped"]:
@@ -569,6 +594,146 @@ def compare(pairs, json_path=None, bins=(), position_edges=()):
   return rows
 
 
+def _spread(rows):
+  """Returns the |margin error|'s median, 90% and 99%, and the mean KL."""
+  errors = np.abs([r["margin_error"] for r in rows])
+  return (
+      float(np.median(errors)),
+      float(np.quantile(errors, 0.9)),
+      float(np.quantile(errors, 0.99)),
+      float(np.mean([r["kl"] for r in rows])),
+  )
+
+
+def gate(
+    rows,
+    position_edges=(),
+    cutoff=2.0,
+    limit=3.5,
+    factor=1.5,
+    nll_limit=0.03,
+    min_bucket=30,
+    out=sys.stdout,
+):
+  """Judges a comparison's rows by a pass bar and prints the verdict.
+
+  The bar's numbers are those measured on a statically quantized 3B model's
+  verification set against the CPU (689 steps, positions up to 1,063), where
+  the margin error's 99th percentile was 1.5 to 1.9 logits and its maximum
+  2.8 to 3.4 in every build:
+
+  1. The noise cutoff: where the reference leads by more than CUTOFF logits,
+     the test picks the reference's top token. Each disagreement above the
+     cutoff is listed to be explained; one where the reference's margin or the
+     step's |margin error| exceeds LIMIT fails the bar.
+  2. No growth with position: in every position bucket after the first that
+     holds MIN_BUCKET steps or more, the |margin error|'s median, 90% and 99%
+     and the mean KL are at most FACTOR times the first bucket's.
+  3. The mean NLL of the fed tokens under the test is at most NLL_LIMIT nats
+     a token above the reference's.
+
+  Args:
+    rows: The steps' statistics (compare_steps), with their positions.
+    position_edges: The positions that separate the buckets of criterion 2.
+    cutoff: The reference's margin above which a disagreement is listed.
+    limit: The reference's margin, or |margin error|, above which one fails.
+    factor: How much a later bucket's spread may exceed the first bucket's.
+    nll_limit: How much the test's mean NLL may exceed the reference's.
+    min_bucket: The fewest steps of a bucket that is judged.
+    out: Where the verdict is printed.
+
+  Returns:
+    Whether the bar is passed.
+  """
+  rows = list(rows)
+  failed = []
+  above = [r for r in rows if not r["agree"] and r["ref_margin"] > cutoff]
+  beyond = [
+      r
+      for r in above
+      if r["ref_margin"] > limit or abs(r["margin_error"]) > limit
+  ]
+  print(
+      f"1. noise cutoff {cutoff:g}: {len(above)} disagreements above it,"
+      f" {len(beyond)} beyond {limit:g}",
+      file=out,
+  )
+  for r in sorted(above, key=lambda r: -r["ref_margin"]):
+    print(
+        f"   {r.get('run', '')} step {r['step']} position {r['position']}:"
+        f" reference margin {r['ref_margin']:.3f}, margin error"
+        f" {r['margin_error']:+.3f}, KL {r['kl']:.5f}",
+        file=out,
+    )
+  if beyond:
+    failed.append("1")
+  edges = [0] + list(position_edges) + [float("inf")]
+  buckets = []
+  for lo, hi in zip(edges[:-1], edges[1:]):
+    part = [
+        r
+        for r in rows
+        if r["position"] is not None and lo <= r["position"] < hi
+    ]
+    if part:
+      buckets.append((lo, hi, part))
+  if len(buckets) < 2:
+    print(
+        "2. growth with position: one position bucket, not measured", file=out
+    )
+  else:
+    first = _spread(buckets[0][2])
+    print(
+        f"2. growth with position, at most x{factor:g} of [{buckets[0][0]:g},"
+        f" {buckets[0][1]:g}) ({len(buckets[0][2])} steps, |margin error|"
+        f" median {first[0]:.3f}, 90% {first[1]:.3f}, 99% {first[2]:.3f}, KL"
+        f" mean {first[3]:.5f}):",
+        file=out,
+    )
+    for lo, hi, part in buckets[1:]:
+      if len(part) < min_bucket:
+        print(
+            f"   [{lo:g}, {hi:g}): {len(part)} steps, too few to judge",
+            file=out,
+        )
+        continue
+      ratios = [b / max(a, 1e-9) for a, b in zip(first, _spread(part))]
+      grew = max(ratios) > factor
+      print(
+          f"   [{lo:g}, {hi:g}): {len(part)} steps, median x{ratios[0]:.2f},"
+          f" 90% x{ratios[1]:.2f}, 99% x{ratios[2]:.2f}, KL"
+          f" x{ratios[3]:.2f}{', grew' if grew else ''}",
+          file=out,
+      )
+      if grew and "2" not in failed:
+        failed.append("2")
+  scored = [r for r in rows if "ref_nll" in r]
+  if scored:
+    excess = np.mean([r["test_nll"] for r in scored]) - np.mean(
+        [r["ref_nll"] for r in scored]
+    )
+    print(
+        f"3. NLL of the fed tokens: test - reference {excess:+.4f} nats a"
+        f" token over {len(scored)} steps (at most {nll_limit:+g})",
+        file=out,
+    )
+    if excess > nll_limit:
+      failed.append("3")
+  else:
+    print("3. NLL of the fed tokens: no scored tokens, not measured", file=out)
+    failed.append("3")
+  if failed:
+    print(f"gate: FAIL (criteria {', '.join(failed)})", file=out)
+  elif above:
+    print(
+        f"gate: PASS, {len(above)} disagreements above the cutoff to explain",
+        file=out,
+    )
+  else:
+    print("gate: PASS", file=out)
+  return not failed
+
+
 def main(argv):
   # The flags are parsed with argparse on purpose. The tool has no build rule
   # and runs by path with a python3 that has numpy, so it does not depend on
@@ -599,11 +764,17 @@ def main(argv):
   y.add_argument("--target")
   y.add_argument("out_dir")
   y.add_argument("out_prefix")
-  m = sub.add_parser("compare")
-  m.add_argument("--json")
-  m.add_argument("--bins", default="0.25,0.5,1,1.5,2,3")
-  m.add_argument("--positions", default="")
-  m.add_argument("prefixes", nargs="+")
+  for name in ("compare", "gate"):
+    m = sub.add_parser(name)
+    m.add_argument("--json")
+    m.add_argument("--bins", default="0.25,0.5,1,1.5,2,3")
+    m.add_argument("--positions", default="")
+    m.add_argument("prefixes", nargs="+")
+    if name == "gate":
+      m.add_argument("--cutoff", type=float, default=2.0)
+      m.add_argument("--limit", type=float, default=3.5)
+      m.add_argument("--factor", type=float, default=1.5)
+      m.add_argument("--nll", type=float, default=0.03)
   args = parser.parse_args(argv)
   if args.command == "collect":
     scored = None
@@ -639,7 +810,12 @@ def main(argv):
   pairs = list(zip(args.prefixes[0::2], args.prefixes[1::2]))
   bins = [float(b) for b in args.bins.split(",") if b]
   positions = [int(p) for p in args.positions.split(",") if p]
-  compare(pairs, args.json, bins, positions)
+  rows = compare(pairs, args.json, bins, positions)
+  if args.command == "gate":
+    passed = gate(
+        rows, positions, args.cutoff, args.limit, args.factor, args.nll
+    )
+    return 0 if passed else 1
   return 0
 
 

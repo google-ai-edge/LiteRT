@@ -77,6 +77,48 @@ class TeacherForcedTest(unittest.TestCase):
     self.assertIn("[0, 0.5): 1 steps, 1 disagree", text)
     self.assertIn("[11, inf): 1 steps", text)
 
+  def test_gate(self):
+    def row(position, margin_error, agree=True, ref_margin=1.0, kl=0.01):
+      return {
+          "step": position,
+          "position": position,
+          "agree": agree,
+          "ref_margin": ref_margin,
+          "margin_error": margin_error,
+          "kl": kl,
+          "ref_nll": 0.5,
+          "test_nll": 0.51,
+      }
+
+    def verdict(rows, **kwargs):
+      out = io.StringIO()
+      passed = teacher_forced.gate(rows, [100], out=out, **kwargs)
+      return passed, out.getvalue().splitlines()[-1]
+
+    # The same spread before and after position 100: a pass.
+    errors = [0.1, -0.2, 0.3, -0.4] * 10
+    rows = [row(i, e) for i, e in enumerate(errors)]
+    rows += [row(100 + i, e) for i, e in enumerate(errors)]
+    self.assertEqual(verdict(rows), (True, "gate: PASS"))
+    # A flip where the reference led by 2.5, within the measured error: a
+    # pass, listed to be explained; by 4.0, a defect.
+    explained = rows + [row(7, -2.7, agree=False, ref_margin=2.5)]
+    self.assertEqual(
+        verdict(explained),
+        (True, "gate: PASS, 1 disagreements above the cutoff to explain"),
+    )
+    defect = rows + [row(7, -4.1, agree=False, ref_margin=4.0)]
+    self.assertEqual(verdict(defect), (False, "gate: FAIL (criteria 1)"))
+    # Errors twice as large after position 100.
+    grown = rows[:40] + [row(100 + i, 2 * e) for i, e in enumerate(errors)]
+    self.assertEqual(verdict(grown), (False, "gate: FAIL (criteria 2)"))
+    # Too few steps after position 100 to judge them.
+    self.assertEqual(verdict(grown[:45]), (True, "gate: PASS"))
+    # The test's NLL 0.04 above the reference's.
+    worse = [dict(r, test_nll=0.54) for r in rows]
+    self.assertEqual(verdict(worse), (False, "gate: FAIL (criteria 3)"))
+    self.assertEqual(verdict(worse, nll_limit=0.05), (True, "gate: PASS"))
+
   def test_collect_from_the_debugger(self):
     with tempfile.TemporaryDirectory() as tmp:
       session = Path(tmp) / "capture" / "0"
@@ -129,6 +171,23 @@ class TeacherForcedTest(unittest.TestCase):
             "skipped": "",
             "file": name,
         })
+      # The prefill's last row is not a decode step's logits.
+      (dump / "c1/p/step1").mkdir(parents=True)
+      (dump / "c1/p/step1/out_0.raw").write_bytes(
+          np.ones(vocab, dtype=np.float32).tobytes()
+      )
+      lines.insert(
+          0,
+          {
+              "seq": -1,
+              "context": 1,
+              "function": "p",
+              "step": 1,
+              "dims": [1, 1, vocab],
+              "skipped": "",
+              "file": "c1/p/step1/out_0.raw",
+          },
+      )
       # A cache output of another width is not a step's logits.
       lines.append({
           "seq": 9,
