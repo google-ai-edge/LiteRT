@@ -16,6 +16,7 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_GEMMA4_CONFIG_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_GEMMA4_GEMMA4_CONFIG_H_
 
+#include <algorithm>
 #include <cstddef>
 #include <optional>
 #include <string>
@@ -90,6 +91,34 @@ struct Config {
     }
     return (layer_idx + 1) % attention_pattern_size ? LayerType::kLocalSliding
                                                     : LayerType::kGlobal;
+  }
+
+  // Returns the maximum number of past tokens that layer `layer_idx` attends
+  // to, or 0 when it attends to all of them.
+  //
+  // A local sliding window layer attends to `sliding_window_size` keys: the
+  // current token and the last `sliding_window_size - 1` ones.
+  int KvCacheWindow(size_t layer_idx) const {
+    if (GetLayerType(layer_idx) == LayerType::kLocalSliding &&
+        sliding_window_size > 1) {
+      return sliding_window_size - 1;
+    }
+    return 0;
+  }
+
+  // Returns the number of past tokens that layer `layer_idx` attends to after
+  // `cache_len` tokens.
+  int KvCacheLen(size_t layer_idx, int cache_len) const {
+    const int window = KvCacheWindow(layer_idx);
+    return window > 0 ? std::min(cache_len, window) : cache_len;
+  }
+
+  // Returns the number of past tokens that the local sliding window layers
+  // attend to after `cache_len` tokens.
+  int SlidingWindowKvCacheLen(int cache_len) const {
+    return sliding_window_size > 1
+               ? std::min(cache_len, sliding_window_size - 1)
+               : cache_len;
   }
 
   static Config E4B() {

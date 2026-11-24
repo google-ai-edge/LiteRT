@@ -140,6 +140,35 @@ cc_test(
 )
 
 cc_library(
+    name = "host_kv_cache",
+    srcs = ["host_kv_cache.cc"],
+    hdrs = ["host_kv_cache.h"],
+    deps = [
+        "//tensor/examples/utils:ring_buffer",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "host_kv_cache_test",
+    srcs = ["host_kv_cache_test.cc"],
+    deps = [
+        ":host_kv_cache",
+        "//tensor/examples/utils:ring_buffer",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "gemma4_runtime",
     srcs = ["gemma4_runtime.cc"],
     hdrs = ["gemma4_runtime.h"],
@@ -147,6 +176,7 @@ cc_library(
         ":gemma4_config",
         ":gemma4_graph",
         ":gemma4_weights",
+        ":host_kv_cache",
         "//tensor",
         "//tensor:buffer",
         "//tensor:datatypes",
@@ -168,6 +198,36 @@ cc_library(
         "@com_google_absl//absl/strings:str_format",
         "@com_google_absl//absl/types:span",
         "@perfetto//:libperfetto_client_experimental",
+    ],
+)
+
+cc_test(
+    name = "gemma4_runtime_test",
+    srcs = ["gemma4_runtime_test.cc"],
+    deps = [
+        ":gemma4_config",
+        ":gemma4_graph",
+        ":gemma4_runtime",
+        ":gemma4_weights",
+        ":host_kv_cache",
+        ":test_backends",
+        "//tensor",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/xnnpack:arithmetic",
+        "//tensor/examples/gemma3:util",
+        "//tensor/examples/gemma4/helpers:quantized_embedding",
+        "//tensor/examples/ops/transformer:transformer_ops_xnnpack",
+        "//tensor/examples/utils:ring_buffer",
+        "//tensor/examples/utils:tensor_mapping",
+        "//tensor/utils:macros",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
     ],
 )
 

@@ -24,6 +24,7 @@ limitations under the License.
 #include <limits>
 #include <memory>
 #include <numeric>
+#include <optional>
 #include <string>
 #include <tuple>
 #include <utility>
@@ -48,6 +49,7 @@ limitations under the License.
 #include "tensor/examples/gemma4/gemma4_weights.h"
 #include "tensor/examples/gemma4/helpers/quantized_embedding.h"
 #include "tensor/examples/gemma4/helpers/rope.h"
+#include "tensor/examples/gemma4/host_kv_cache.h"
 #include "tensor/examples/utils/perfetto_session.h"
 #include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/examples/utils/tensor_mapping.h"
@@ -139,27 +141,6 @@ absl::StatusOr<TensorHandle> AttentionMask(Shape shape, const bool is_local,
   LRT_TENSOR_RETURN_IF_ERROR(FillAttentionMask(
       mask.GetShape(), buffer->Span<float>(), is_local, sliding_window_size));
   return mask;
-}
-
-void AppendTokenToKvCache(std::vector<float>& cache_buf,
-                          absl::Span<const float> new_kv, int num_kv_heads,
-                          int cache_len, int head_dim) {
-  if (num_kv_heads == 1) {
-    std::copy_n(new_kv.data(), head_dim,
-                cache_buf.data() + cache_len * head_dim);
-  } else {
-    for (int h = num_kv_heads - 1; h >= 0; --h) {
-      if (h > 0) {
-        std::copy_backward(cache_buf.data() + h * cache_len * head_dim,
-                           cache_buf.data() + (h + 1) * cache_len * head_dim,
-                           cache_buf.data() + h * (cache_len + 1) * head_dim +
-                               cache_len * head_dim);
-      }
-      std::copy_n(new_kv.data() + h * head_dim, head_dim,
-                  cache_buf.data() + h * (cache_len + 1) * head_dim +
-                      cache_len * head_dim);
-    }
-  }
 }
 
 absl::StatusOr<ModelVariant> DeduceModelVariant(
@@ -261,9 +242,14 @@ absl::StatusOr<Gemma4Inputs<>> CreateGemma4Inputs(const Config& config,
     inputs.rope_local_sin.Set({.name = "rope_local_sin",
                                .type = Type::kFP32,
                                .shape = {1, 1, 1, config.head_dim}});
-    inputs.sliding_attention_mask.Set({.name = "sliding_attention_mask",
-                                       .type = Type::kFP32,
-                                       .shape = {1, 1, 1, kv_cache_len + 1}});
+    // Every past token bound to the local layers is inside their sliding
+    // window.
+    const int sliding_kv_cache_len =
+        config.SlidingWindowKvCacheLen(kv_cache_len);
+    inputs.sliding_attention_mask.Set(
+        {.name = "sliding_attention_mask",
+         .type = Type::kFP32,
+         .shape = {1, 1, 1, sliding_kv_cache_len + 1}});
     inputs.global_attention_mask.Set({.name = "global_attention_mask",
                                       .type = Type::kFP32,
                                       .shape = {1, 1, 1, kv_cache_len + 1}});
@@ -274,14 +260,17 @@ absl::StatusOr<Gemma4Inputs<>> CreateGemma4Inputs(const Config& config,
   for (int i = 0; i < config.num_layers; ++i) {
     bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
     int head_dim = is_global ? config.global_key_size : config.head_dim;
-    inputs.key_caches.emplace_back(TensorInit{
-        .name = absl::StrCat("key_cache_", i),
-        .type = Type::kFP32,
-        .shape = {batch_size, config.num_kv_heads, kv_cache_len, head_dim}});
-    inputs.value_caches.emplace_back(TensorInit{
-        .name = absl::StrCat("value_cache_", i),
-        .type = Type::kFP32,
-        .shape = {batch_size, config.num_kv_heads, kv_cache_len, head_dim}});
+    const int layer_kv_cache_len = config.KvCacheLen(i, kv_cache_len);
+    inputs.key_caches.emplace_back(
+        TensorInit{.name = absl::StrCat("key_cache_", i),
+                   .type = Type::kFP32,
+                   .shape = {batch_size, config.num_kv_heads,
+                             layer_kv_cache_len, head_dim}});
+    inputs.value_caches.emplace_back(
+        TensorInit{.name = absl::StrCat("value_cache_", i),
+                   .type = Type::kFP32,
+                   .shape = {batch_size, config.num_kv_heads,
+                             layer_kv_cache_len, head_dim}});
   }
 
   inputs.per_layer_token_embeddings.reserve(config.num_layers);
@@ -375,9 +364,12 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   TRACE_EVENT(kTensorApiCategory, "Decode");
   Timer::LapScope lap_scope = decode_timing.decode.Lap();
 
-  const int32_t seq_k = cache_len + 1;
-  std::vector<float> sliding_mask(static_cast<size_t>(seq_k), 0.0f);
-  std::vector<float> global_mask(static_cast<size_t>(seq_k), 0.0f);
+  // The local layers only attend to their sliding window and every key bound to
+  // them is inside it (see `UpdateKvCache`), so both masks are all zeros.
+  const int32_t global_seq_k = cache_len + 1;
+  const int32_t sliding_seq_k = config.SlidingWindowKvCacheLen(cache_len) + 1;
+  std::vector<float> sliding_mask(static_cast<size_t>(sliding_seq_k), 0.0f);
+  std::vector<float> global_mask(static_cast<size_t>(global_seq_k), 0.0f);
 
   LockedBufferSpan<const float> token_embeddings =
       LockedBufferSpan<const float>::Empty();
@@ -401,20 +393,13 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
                config.local_base_frequency, config.local_rope_proportion,
                absl::Span<float>(local_cos), absl::Span<float>(local_sin));
 
-    if (config.sliding_window_size > 0) {
-      const int32_t min_allowed_pos =
-          std::max<int32_t>(0, seq_k - config.sliding_window_size);
-      const float neg_inf = std::numeric_limits<float>::lowest();
-      for (int32_t j = 0; j < min_allowed_pos; ++j) {
-        sliding_mask[static_cast<size_t>(j)] = neg_inf;
-      }
-    }
-    std::array<int32_t, 4> mask_shape = {1, 1, 1, seq_k};
+    const std::array<int32_t, 4> sliding_mask_shape = {1, 1, 1, sliding_seq_k};
     LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.sliding_attention_mask, mask_shape));
+        decode_inputs.sliding_attention_mask, sliding_mask_shape));
 
+    const std::array<int32_t, 4> global_mask_shape = {1, 1, 1, global_seq_k};
     LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.global_attention_mask, mask_shape));
+        decode_inputs.global_attention_mask, global_mask_shape));
   }
 
   {
@@ -471,79 +456,109 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
   return absl::c_max_element(logits_locked) - logits_locked.begin();
 }
 
-// Initializes the host KV caches from the prefill outputs and uploads them to
-// the decode runner.
+namespace {
+
+// Returns the head size of layer `layer_idx`.
+int HeadDim(const Config& config, int layer_idx) {
+  return config.GetLayerType(layer_idx) == Config::LayerType::kGlobal
+             ? config.global_key_size
+             : config.head_dim;
+}
+
+// Checks that the cache of layer `layer_idx` holds the number of tokens that
+// the decode graph inputs and attention masks assume after `cache_len` tokens.
+absl::Status CheckKvCacheLen(const Config& config, const int layer_idx,
+                             const int cache_len, const HostKvCache& cache) {
+  const int expected_len = config.KvCacheLen(layer_idx, cache_len);
+  if (cache.len() != expected_len) {
+    return absl::InternalError(absl::StrFormat(
+        "The KV cache of layer %d holds %d tokens after %d tokens but the "
+        "decode graph expects %d.",
+        layer_idx, cache.len(), cache_len, expected_len));
+  }
+  return absl::OkStatus();
+}
+
+// Binds `cache` ([num_kv_heads, len, head_dim]) to the decode graph input
+// `input` without a copy.
+absl::Status BindKvCache(NnpackRunner& decode_runner, const TensorHandle& input,
+                         const HostKvCache& cache, const int batch_size,
+                         const int num_kv_heads, const int head_dim) {
+  const std::array<int32_t, 4> shape = {batch_size, num_kv_heads, cache.len(),
+                                        head_dim};
+  LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(input, shape));
+  const absl::Span<const float> data = cache.data();
+  return decode_runner.SetInput(input, data);
+}
+
+}  // namespace
+
 absl::Status InitKvCacheFromPrefill(
     NnpackRunner& prefill_runner, Gemma4Outputs<>& prefill_outputs,
     NnpackRunner& decode_runner, Gemma4Inputs<>& decode_inputs,
     const Config& config, int cache_len, int max_cache_len, int batch_size,
     const std::vector<int>& sharing_patterns,
-    std::vector<std::vector<float>>& host_key_caches,
-    std::vector<std::vector<float>>& host_value_caches) {
+    std::vector<std::optional<HostKvCache>>& host_key_caches,
+    std::vector<std::optional<HostKvCache>>& host_value_caches,
+    const HostKvCache::RingMode ring_mode) {
   TRACE_EVENT(kTensorApiCategory, "InitKvCacheFromPrefill");
   for (int i = 0; i < config.num_layers; ++i) {
     if (sharing_patterns[i] != i) {
       continue;
     }
-    bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
-    int head_dim = is_global ? config.global_key_size : config.head_dim;
-
-    const size_t max_cache_elements =
-        static_cast<size_t>(config.num_kv_heads) * max_cache_len * head_dim;
-    host_key_caches[i].resize(max_cache_elements, 0.0f);
-    host_value_caches[i].resize(max_cache_elements, 0.0f);
-
-    std::array<int32_t, 4> current_cache_shape = {
-        batch_size, config.num_kv_heads, cache_len, head_dim};
-
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.key_caches[i], current_cache_shape));
-    LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-        decode_inputs.value_caches[i], current_cache_shape));
+    const int head_dim = HeadDim(config, i);
+    const int window_len = config.KvCacheWindow(i);
 
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        auto key_locked,
+        host_key_caches[i],
+        HostKvCache::Create(config.num_kv_heads, head_dim, max_cache_len,
+                            window_len, ring_mode));
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        host_value_caches[i],
+        HostKvCache::Create(config.num_kv_heads, head_dim, max_cache_len,
+                            window_len, ring_mode));
+
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        LockedBufferSpan<const float> key_locked,
         prefill_runner.ReadOutputAs<float>(prefill_outputs.key_caches[i]));
     LRT_TENSOR_ASSIGN_OR_RETURN(
-        auto value_locked,
+        LockedBufferSpan<const float> value_locked,
         prefill_runner.ReadOutputAs<float>(prefill_outputs.value_caches[i]));
-
-    const size_t initial_elements =
-        static_cast<size_t>(config.num_kv_heads) * cache_len * head_dim;
-    std::copy_n(key_locked.begin(), initial_elements,
-                host_key_caches[i].begin());
-    std::copy_n(value_locked.begin(), initial_elements,
-                host_value_caches[i].begin());
-
-    absl::Span<const float> key_span =
-        absl::MakeConstSpan(host_key_caches[i].data(), initial_elements);
-    absl::Span<const float> val_span =
-        absl::MakeConstSpan(host_value_caches[i].data(), initial_elements);
+    LRT_TENSOR_RETURN_IF_ERROR(host_key_caches[i]->InitFromPrefill(
+        absl::MakeConstSpan(key_locked.data(), key_locked.size()), cache_len));
+    LRT_TENSOR_RETURN_IF_ERROR(host_value_caches[i]->InitFromPrefill(
+        absl::MakeConstSpan(value_locked.data(), value_locked.size()),
+        cache_len));
     LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.key_caches[i], key_span));
-    LRT_TENSOR_RETURN_IF_ERROR(
-        decode_runner.SetInput(decode_inputs.value_caches[i], val_span));
+        CheckKvCacheLen(config, i, cache_len, *host_key_caches[i]));
+
+    LRT_TENSOR_RETURN_IF_ERROR(BindKvCache(
+        decode_runner, decode_inputs.key_caches[i], *host_key_caches[i],
+        batch_size, config.num_kv_heads, head_dim));
+    LRT_TENSOR_RETURN_IF_ERROR(BindKvCache(
+        decode_runner, decode_inputs.value_caches[i], *host_value_caches[i],
+        batch_size, config.num_kv_heads, head_dim));
   }
   return absl::OkStatus();
 }
 
-// Appends the K/V produced by the last decode step to the host caches and
-// uploads them to the decode runner.
-absl::Status UpdateKvCache(NnpackRunner& decode_runner,
-                           Gemma4Inputs<>& decode_inputs,
-                           Gemma4Outputs<>& decode_outputs,
-                           const Config& config, int cache_len, int batch_size,
-                           const std::vector<int>& sharing_patterns,
-                           std::vector<std::vector<float>>& host_key_caches,
-                           std::vector<std::vector<float>>& host_value_caches,
-                           DecodeTiming& decode_timing) {
+absl::Status UpdateKvCache(
+    NnpackRunner& decode_runner, Gemma4Inputs<>& decode_inputs,
+    Gemma4Outputs<>& decode_outputs, const Config& config, int cache_len,
+    int batch_size, const std::vector<int>& sharing_patterns,
+    std::vector<std::optional<HostKvCache>>& host_key_caches,
+    std::vector<std::optional<HostKvCache>>& host_value_caches,
+    DecodeTiming& decode_timing) {
   TRACE_EVENT(kTensorApiCategory, "UpdateKvCache");
   for (int i = 0; i < config.num_layers; ++i) {
     if (sharing_patterns[i] != i) {
       continue;
     }
-    bool is_global = config.GetLayerType(i) == Config::LayerType::kGlobal;
-    int head_dim = is_global ? config.global_key_size : config.head_dim;
+    if (!host_key_caches[i].has_value() || !host_value_caches[i].has_value()) {
+      return absl::FailedPreconditionError(
+          absl::StrFormat("The KV cache of layer %d isn't initialized.", i));
+    }
+    const int head_dim = HeadDim(config, i);
 
     LockedBufferSpan<const float> new_key_locked =
         LockedBufferSpan<const float>::Empty();
@@ -565,29 +580,21 @@ absl::Status UpdateKvCache(NnpackRunner& decode_runner,
     {
       TRACE_EVENT(kTensorApiCategory, "KvCache::AppendAndUpload");
       Timer::LapScope upload_scope = decode_timing.cache_upload.Lap();
-      AppendTokenToKvCache(host_key_caches[i], new_key_locked,
-                           config.num_kv_heads, cache_len, head_dim);
-      AppendTokenToKvCache(host_value_caches[i], new_value_locked,
-                           config.num_kv_heads, cache_len, head_dim);
-
-      std::array<int32_t, 4> next_cache_shape = {
-          batch_size, config.num_kv_heads, cache_len + 1, head_dim};
-      const size_t next_cache_elements =
-          static_cast<size_t>(config.num_kv_heads) * (cache_len + 1) * head_dim;
-
-      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-          decode_inputs.key_caches[i], next_cache_shape));
-      absl::Span<const float> next_key_span =
-          absl::MakeConstSpan(host_key_caches[i].data(), next_cache_elements);
-      absl::Span<const float> next_val_span =
-          absl::MakeConstSpan(host_value_caches[i].data(), next_cache_elements);
+      LRT_TENSOR_RETURN_IF_ERROR(host_key_caches[i]->Push(
+          absl::MakeConstSpan(new_key_locked.data(), new_key_locked.size())));
+      LRT_TENSOR_RETURN_IF_ERROR(host_value_caches[i]->Push(absl::MakeConstSpan(
+          new_value_locked.data(), new_value_locked.size())));
       LRT_TENSOR_RETURN_IF_ERROR(
-          decode_runner.SetInput(decode_inputs.key_caches[i], next_key_span));
+          CheckKvCacheLen(config, i, cache_len + 1, *host_key_caches[i]));
 
-      LRT_TENSOR_RETURN_IF_ERROR(decode_runner.ReshapeInput(
-          decode_inputs.value_caches[i], next_cache_shape));
-      LRT_TENSOR_RETURN_IF_ERROR(
-          decode_runner.SetInput(decode_inputs.value_caches[i], next_val_span));
+      // The local layers' windows move in memory as they slide, so the caches
+      // are bound again after every step. It's only a pointer update.
+      LRT_TENSOR_RETURN_IF_ERROR(BindKvCache(
+          decode_runner, decode_inputs.key_caches[i], *host_key_caches[i],
+          batch_size, config.num_kv_heads, head_dim));
+      LRT_TENSOR_RETURN_IF_ERROR(BindKvCache(
+          decode_runner, decode_inputs.value_caches[i], *host_value_caches[i],
+          batch_size, config.num_kv_heads, head_dim));
     }
   }
   return absl::OkStatus();
