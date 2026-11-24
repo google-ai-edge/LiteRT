@@ -349,6 +349,40 @@ TensorHandle MaskNewLogits(::ml_drift::GpuModelBuilder* model_builder,
   return dst;
 }
 
+// Returns `out_past` (P_past . V_cache), or 0 while the cache is empty
+// (param[0] <= 0). With p0 = 0 the runtime bound of the P . V matmul is 0, so
+// the weights converter writes no slice of the V cache, but the matmul still
+// runs one block of its input loop over the unwritten (pooled) weights. Their
+// stale contents can be NaN, and 0 * NaN poisons the attention output even
+// though every past probability is 0. A select (not a multiply) discards it.
+// Being elementwise, it is linked into the epilogue of the P . V matmul.
+TensorHandle ZeroIfCacheEmpty(::ml_drift::GpuModelBuilder* model_builder,
+                              const TensorHandle& out_past,
+                              const TensorHandle& param) {
+  ::ml_drift::ElementwiseDescriptor op_desc;
+  const std::string vec_type =
+      ::ml_drift::ToUclDataType(out_past.tensor_desc.GetDataType(), 4);
+  // The trailing batch coordinate is ignored by tensors without a batch axis.
+  op_desc.code = absl::StrCat(R"(
+  int cache_start = args.src_tensor_1.Read(0, 0, 0, 0).x;
+  out_value = in_value;
+  if (cache_start <= 0) {
+    out_value = ucl::Convert<)",
+                              vec_type, R"(>(ucl::Init<float4>(0.0f));
+  }
+)");
+  TensorHandle dst = model_builder->AddTensor(out_past.tensor_desc);
+  ::ml_drift::OperationDef definition;
+  definition.src_tensors.push_back(out_past.tensor_desc);
+  definition.src_tensors.push_back(param.tensor_desc);
+  definition.dst_tensors.push_back(dst.tensor_desc);
+  auto op = std::make_unique<::ml_drift::GPUOperation>(
+      ::ml_drift::CreateGpuOperation(definition, std::move(op_desc)));
+  model_builder->AddGpuOperation({out_past, param}, {dst}, std::move(op),
+                                 "fused_sdpa_zero_empty_past");
+  return dst;
+}
+
 // A GPUOperation with a fixed grid of work items.
 class FixedGridOp : public ::ml_drift::GPUOperation {
  public:
@@ -643,10 +677,38 @@ absl::Status BuildSdpaCacheUpdateGpuGraph(
                                         v_weights_shape);
   ::ml_drift::ConvRuntimeCheckDesc past_values_check;
   past_values_check.src_end_ch_index = kStartParamIndex;
+
   ABSL_ASSIGN_OR_RETURN(TensorHandle out_past,
                         model_builder->FullyConnectedExternalWeights(
                             probs_past, v_weights, /*biases=*/nullptr,
                             /*src_exp=*/nullptr, past_values_check, &param));
+
+  TensorHandle out_past;
+  if (quant_kv) {
+    ::ml_drift::WeightsDescription v_weights_desc =
+        ::ml_drift::GetFullyConnectedWeightsDesc(::ml_drift::DataType::kUint8,
+                                                 v_weights_shape);
+    v_weights_desc.layout = ::ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+    const ::ml_drift::GpuModelBuilder::Weights v_weights =
+        ::ml_drift::CreateExternalWeights(
+            v_cache_for_fc, v_weights_desc, v_weights_shape,
+            ::ml_drift::OHWI(head_dim, 1, 1, 1), &scale_v_handle);
+    out_past = model_builder->FullyConnectedInt8ExternalWeights(
+        probs_past, v_weights, /*biases=*/nullptr, /*src_exp=*/nullptr,
+        past_values_check, &param);
+  } else {
+    ::ml_drift::WeightsDescription v_weights_desc =
+        ::ml_drift::GetFullyConnectedWeightsDesc(data_type, v_weights_shape);
+    v_weights_desc.layout = ::ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+    const ::ml_drift::GpuModelBuilder::Weights v_weights =
+        ::ml_drift::CreateExternalWeights(v_cache_for_fc, v_weights_desc,
+                                          v_weights_shape);
+    ABSL_ASSIGN_OR_RETURN(out_past,
+                          model_builder->FullyConnectedExternalWeights(
+                              probs_past, v_weights, /*biases=*/nullptr,
+                              /*src_exp=*/nullptr, past_values_check, &param));
+  }
+  out_past = ZeroIfCacheEmpty(model_builder, out_past, param);
   TensorHandle attention = model_builder->Add(out_past, out_new);
 
   ABSL_ASSIGN_OR_RETURN(TensorHandle attention_ref,

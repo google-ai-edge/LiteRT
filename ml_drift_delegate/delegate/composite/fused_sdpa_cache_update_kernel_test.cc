@@ -28,6 +28,8 @@
 #include "testing/base/public/gunit.h"
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -141,6 +143,9 @@ struct TestCase {
   // Masks every column of the last mask row, as LiteRT-LM does for the pending
   // token that is held back from a prefill chunk.
   bool fully_mask_last_row = false;
+  // Fills the converted K/V cache weights with NaN before the converters run,
+  // emulating stale contents of the pooled weights buffer on device.
+  bool poison_cache_weights = false;
 };
 
 // Deterministic values in [-1, 1).
@@ -262,6 +267,95 @@ bool OverwritesFilledSlot(const TestCase& c) {
   return false;
 }
 
+// Writes NaN to every element of a linear BUFFER tensor.
+class FillNanOp : public ::ml_drift::GPUOperation {
+ public:
+  explicit FillNanOp(int total_vec4s) : total_vec4s_(total_vec4s) {}
+  FillNanOp(FillNanOp&&) = default;
+  FillNanOp& operator=(FillNanOp&&) = default;
+  FillNanOp(const FillNanOp&) = delete;
+  FillNanOp& operator=(const FillNanOp&) = delete;
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(total_vec4s_, 1, 1);
+  }
+
+ private:
+  int total_vec4s_ = 1;
+};
+
+// Inserts a node that fills the output of every weights converter reading the
+// K or V cache (`k_cache_id`, `v_cache_id`) with NaN, right before that
+// converter. On device the converted weights live in a pooled buffer whose
+// stale contents can be NaN; a converter with a runtime bound of 0 writes none
+// of it, so any read of the unwritten part shows up as NaN in the output.
+// Returns the number of poisoned converters (0 when the kernels read the
+// caches without converting them).
+absl::StatusOr<int> PoisonCacheWeights(
+    ::ml_drift::TestExecutionEnvironment& env,
+    ::ml_drift::CalculationsPrecision precision,
+    ::ml_drift::TensorStorageType storage, uint32_t k_cache_id,
+    uint32_t v_cache_id, ::ml_drift::GpuModel& gpu_model) {
+  int poisoned = 0;
+  for (int i = 0; i < gpu_model.nodes.size(); ++i) {
+    const ::ml_drift::GpuNode& node = gpu_model.nodes[i];
+    if (!absl::StartsWith(node.name, "weights_convert") ||
+        node.outputs.size() != 1 ||
+        std::none_of(node.inputs.begin(), node.inputs.end(), [&](uint32_t id) {
+          return id == k_cache_id || id == v_cache_id;
+        })) {
+      continue;
+    }
+    const uint32_t weights_id = node.outputs[0];
+    const ::ml_drift::TensorDescriptor& weights_desc =
+        gpu_model.tensors.at(weights_id);
+    if (weights_desc.GetStorageType() !=
+        ::ml_drift::TensorStorageType::kBuffer) {
+      return absl::UnimplementedError("Expected BUFFER converted weights.");
+    }
+    const ::ml_drift::BHWDC shape = weights_desc.GetBHWDCShape();
+    const int total_vec4s =
+        shape.b * shape.h * shape.w * shape.d * ((shape.c + 3) / 4);
+
+    // Builds the fill node in its own model so that its code gets assembled,
+    // then moves it into `gpu_model`, writing the converted weights tensor.
+    ::ml_drift::GpuModelBuilder builder(env.GetGpuInfo(), {}, precision,
+                                        storage);
+    auto dst = builder.AddTensor(weights_desc);
+    FillNanOp op(total_vec4s);
+    op.AddDstTensor("dst", weights_desc);
+    op.args_.AddInt("total_vec4s", total_vec4s);
+    op.args_.AddFloat("nan_value", std::numeric_limits<float>::quiet_NaN());
+    op.code_ = R"(
+MAIN_FUNCTION($0) {
+  int X = ucl::GetGlobalId<0>();
+  if (X >= args.total_vec4s) {
+    return;
+  }
+  args.dst::type v =
+      ucl::Convert<args.dst::type>(ucl::Init<float4>(args.nan_value));
+  args.dst.WriteLinear(v, X);
+}
+)";
+    builder.AddGpuOperation(
+        {}, {dst}, std::make_unique<FillNanOp>(std::move(op)), "fill_nan");
+    ::ml_drift::GpuModel fill_model;
+    ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+        std::vector<std::pair<uint32_t, uint32_t>>{},
+        std::vector<std::pair<uint32_t, uint32_t>>{{dst.id, 0}}, &fill_model));
+    if (fill_model.nodes.size() != 1) {
+      return absl::InternalError("Expected a single fill node.");
+    }
+    ::ml_drift::GpuNode fill_node = std::move(fill_model.nodes[0]);
+    fill_node.inputs.clear();
+    fill_node.outputs = {weights_id};
+    gpu_model.nodes.insert(gpu_model.nodes.begin() + i, std::move(fill_node));
+    ++i;
+    ++poisoned;
+  }
+  return poisoned;
+}
+
 absl::Status RunFusedSdpaCacheUpdateTest(
     ::ml_drift::TestExecutionEnvironment& env,
     ::ml_drift::CalculationsPrecision precision,
@@ -324,6 +418,18 @@ absl::Status RunFusedSdpaCacheUpdateTest(
                                                  {v_new.id, 4},
                                                  {mask_feed.id, 5}},
       model_outputs, &gpu_model));
+
+  if (c.poison_cache_weights) {
+    ABSL_ASSIGN_OR_RETURN(
+        const int poisoned,
+        PoisonCacheWeights(env, precision, storage, k_cache.id, v_cache.id,
+                           gpu_model));
+    // With an empty cache the P . V matmul reads converted V weights, which
+    // is what the poisoned cases test.
+    if (c.start <= 0 && poisoned == 0) {
+      return absl::InternalError("No converted cache weights to poison.");
+    }
+  }
 
   if (c.update_cache) {
     // In LiteRT-LM the updated caches are bound in place to the input caches.
@@ -632,6 +738,47 @@ TEST_P(FusedSdpaCacheUpdateKernelTest, LargeFirstChunk) {
        .head_dim = 64,
        .start = 0,
        .end = 256});
+}
+
+// With an empty cache (param[0] = 0) the P . V matmul has a runtime input
+// bound of 0, so the V converter writes none of the converted weights, but the
+// matmul still reads one block of them. Stale NaN there must not reach the
+// output.
+TEST_P(FusedSdpaCacheUpdateKernelTest, FirstChunkIgnoresStaleCacheWeights) {
+  Run({.heads = 1,
+       .groups = 4,
+       .new_len = 8,
+       .cache_size = 128,
+       .head_dim = 16,
+       .start = 0,
+       .end = 8,
+       .poison_cache_weights = true});
+}
+
+TEST_P(FusedSdpaCacheUpdateKernelTest,
+       LargeFirstChunkIgnoresStaleCacheWeights) {
+  Run({.heads = 1,
+       .groups = 4,
+       .new_len = 256,
+       .cache_size = 512,
+       .head_dim = 64,
+       .start = 0,
+       .end = 256,
+       .poison_cache_weights = true});
+}
+
+// A partly filled ring converts and reads only the filled slots (rounded up),
+// so stale weights past them must not reach the output either.
+TEST_P(FusedSdpaCacheUpdateKernelTest,
+       PartlyFilledRingIgnoresStaleCacheWeights) {
+  Run({.heads = 2,
+       .groups = 2,
+       .new_len = 8,
+       .cache_size = 128,
+       .head_dim = 8,
+       .start = 40,
+       .end = 48,
+       .poison_cache_weights = true});
 }
 
 TEST_P(FusedSdpaCacheUpdateKernelTest, Gemma3LikeFirstChunk) {
