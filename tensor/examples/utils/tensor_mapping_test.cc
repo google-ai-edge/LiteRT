@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/examples/utils/tensor_mapping.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -321,5 +322,33 @@ TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedReloadsHookTensors) {
               ElementsAre(FloatEq(1), FloatEq(2)));
 }
 
+TEST(LazyTensorMappingTest, EvictReloadableCacheDropsCheckpointTensorsOnly) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping mapping,
+                                  CreateMappingTestMapping(file));
+  std::vector<std::string> log;
+  mapping.Register<RecordingHooks>(log, "hooks");
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle loaded, mapping.Get("model.a"));
+  std::weak_ptr<Buffer> weak_loaded = loaded.GetBufferPtr();
+  loaded = TensorHandle::Invalid();
+  EXPECT_FALSE(weak_loaded.expired());
+
+  // Override a tensor via `Set` and ensure eviction preserves it.
+  TensorHandle pinned = MappingTestTensor();
+  std::weak_ptr<Buffer> weak_pinned = pinned.GetBufferPtr();
+  ASSERT_THAT(mapping.Set("model.pinned", std::move(pinned)), IsOk());
+
+  mapping.EvictReloadableCache();
+  EXPECT_TRUE(weak_loaded.expired());
+  EXPECT_FALSE(weak_pinned.expired());
+
+  // Subsequent `Get` transparently reloads the evicted checkpoint tensor.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle reloaded,
+                                  mapping.Get("model.a"));
+  EXPECT_EQ(reloaded.GetName(), "model.a");
+  EXPECT_THAT(log, ElementsAre("hooks.OnLoaded(model.a)",
+                               "hooks.OnLoaded(model.a)"));
+}
 }  // namespace
 }  // namespace litert::tensor::examples
