@@ -22,6 +22,7 @@ limitations under the License.
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "tensor/internal/graph.h"
 
 namespace litert::tensor {
@@ -98,6 +99,29 @@ TEST(AdditiveZeroPointsTest, RejectsMismatchedFloatZeroPointCount) {
       /*quantized_dimension=*/0);
   EXPECT_THAT(AdditiveZeroPoints(pcq, 3),
               StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST(MlDriftBuildContextTest, AddWeightPackStatAccumulatesByKind) {
+  MlDriftBuildContext ctx;
+  ctx.AddWeightPackStat("fp", absl::Milliseconds(10), 1024);
+  ctx.AddWeightPackStat("fp", absl::Milliseconds(25), 2048);
+  ctx.AddWeightPackStat("int4", absl::Milliseconds(5), 512);
+  ctx.AddWeightPackStat("gpu_convert", absl::Milliseconds(7), 4096,
+                        /*count=*/3);
+
+  ASSERT_TRUE(ctx.weight_pack_stats.contains("fp"));
+  EXPECT_EQ(ctx.weight_pack_stats.at("fp").count, 2);
+  EXPECT_EQ(ctx.weight_pack_stats.at("fp").bytes, 3072u);
+  EXPECT_EQ(ctx.weight_pack_stats.at("fp").time, absl::Milliseconds(35));
+
+  ASSERT_TRUE(ctx.weight_pack_stats.contains("int4"));
+  EXPECT_EQ(ctx.weight_pack_stats.at("int4").count, 1);
+  EXPECT_EQ(ctx.weight_pack_stats.at("int4").bytes, 512u);
+  EXPECT_EQ(ctx.weight_pack_stats.at("int4").time, absl::Milliseconds(5));
+
+  ASSERT_TRUE(ctx.weight_pack_stats.contains("gpu_convert"));
+  EXPECT_EQ(ctx.weight_pack_stats.at("gpu_convert").count, 3);
+  EXPECT_EQ(ctx.weight_pack_stats.at("gpu_convert").bytes, 4096u);
 }
 
 }  // namespace

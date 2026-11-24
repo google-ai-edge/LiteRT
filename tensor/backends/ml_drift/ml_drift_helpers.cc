@@ -25,6 +25,8 @@ limitations under the License.
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -36,6 +38,15 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
+
+void MlDriftBuildContext::AddWeightPackStat(absl::string_view kind,
+                                            absl::Duration time, size_t bytes,
+                                            int count) {
+  WeightPackStat& stat = weight_pack_stats[kind];
+  stat.time += time;
+  stat.bytes += bytes;
+  stat.count += count;
+}
 
 static bool IsSub8Bit(ml_drift::DataType type) {
   return type == ml_drift::DataType::kInt4 ||

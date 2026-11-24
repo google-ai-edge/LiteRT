@@ -18,6 +18,7 @@ limitations under the License.
 
 #include <algorithm>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -63,6 +64,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/graph_traversal.h"
+#include "tensor/runners/ml_drift/compiled_ml_drift_model_runner_util.h"
 #include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -182,6 +184,39 @@ class CompiledMlDriftModelRunner {
     bool release_fused_host_buffers = false;
   };
 
+  // Host wall time of the compilation phases of `Prepare()` and
+  // `BuildModel()`. The GPU weight conversion (`SetConvertWeightsOnGpu`,
+  // `RunGpuWeightConversions`) runs between `build_gpu_model` and
+  // `upload_shared_weights` and is in neither: it is reported in
+  // `weight_pack_stats()["gpu_convert"]` and counted in `compilation_time()`.
+  struct CompileTiming {
+    // `RearrangeAndMapConstantWeights()`: packing constant FullyConnected /
+    // EmbeddingLookup weights into kernel layouts on the CPU (see
+    // `weight_pack_stats()` for the split by kind).
+    absl::Duration rearrange_weights;
+    // `AppendGpuModelBuilder()`: lowering the graph ops to ML Drift operations
+    // (including the weight packing of ops that pack their own weights).
+    absl::Duration lower_ops;
+    // `GpuModelBuilder::GetGpuModel()` alone: merging (fusing) the nodes,
+    // generating the kernel source code and resolving the kernel arguments
+    // into the `GpuModel`. CPU only, no GPU work.
+    absl::Duration build_gpu_model;
+    // Creating the GPU tensors of the `SharedWeightsCache` weights that are
+    // not in the cache yet (host -> GPU copies), and their bytes. Only these
+    // are uploaded here: without a `SharedWeightsCache` (and for the other
+    // constants) `InitFromGpuModel` uploads the constants, which is counted
+    // in `init_inference_context`.
+    absl::Duration upload_shared_weights;
+    size_t upload_shared_weights_bytes = 0;
+    // `InitFromGpuModel`: memory allocation, upload of the remaining
+    // constants, kernel compilation and tuning.
+    absl::Duration init_inference_context;
+    size_t num_nodes = 0;
+    // Nodes that convert weights to another layout on every run (e.g. when a
+    // kernel needs another layout than the packed weights).
+    size_t num_nodes_to_convert_weights = 0;
+  };
+
   CompiledMlDriftModelRunner(std::vector<TensorHandle> flat_inputs,
                              std::vector<TensorHandle> flat_outputs,
                              ml_drift::CalculationsPrecision precision =
@@ -250,6 +285,23 @@ class CompiledMlDriftModelRunner {
         shared_weights_ != nullptr ? &shared_weights_->descriptors : nullptr;
   }
 
+  // When true and `ml_drift::WeightsManager::IsGpuWeightsPreparationSupported`
+  // (OpenCL only for now), constant INT4 / INT8 / INT2 FullyConnected and
+  // EmbeddingLookup weights are uploaded as raw OHWI values and rearranged
+  // into the kernel layout (and `sum_i`) by a one-shot ML Drift conversion
+  // model on the GPU instead of on the CPU. Produces the same bytes as the CPU
+  // path. Off by default. Set before `Prepare()`.
+  void SetConvertWeightsOnGpu(bool enable) { convert_weights_on_gpu_ = enable; }
+  // Tests: converts on the GPU even where ML Drift disables it (e.g. a GPU
+  // info faked to select other weight layouts).
+  void ForceGpuWeightConversionForTesting() {
+    convert_weights_on_gpu_ = true;
+    force_gpu_weight_conversion_ = true;
+  }
+  void SetMaxGpuWeightConversionBatchBytesForTesting(size_t bytes) {
+    max_gpu_weight_conversion_batch_bytes_ = bytes;
+  }
+
   void SetSharedWeightsCache(SharedWeightsCache* shared_weights) {
     shared_weights_ = shared_weights;
     conversion_ctx_.shared_weight_descriptors =
@@ -263,14 +315,12 @@ class CompiledMlDriftModelRunner {
     name_to_tensor_map_.clear();
     const absl::Time rearrange_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(RearrangeAndMapConstantWeights());
-    const absl::Time append_start = absl::Now();
+    compile_timing_.rearrange_weights = absl::Now() - rearrange_start;
+    const absl::Time lower_start = absl::Now();
     LRT_TENSOR_ASSIGN_OR_RETURN(
         auto tensor_to_handle,
         AppendGpuModelBuilder(conversion_ctx_, flat_outputs_));
-    ABSL_LOG(INFO) << "LRT_COMPILE_TIMING rearrange_weights_ms="
-                   << absl::ToDoubleMilliseconds(append_start - rearrange_start)
-                   << " convert_ops_ms="
-                   << absl::ToDoubleMilliseconds(absl::Now() - append_start);
+    compile_timing_.lower_ops = absl::Now() - lower_start;
 
     conversion_ctx_.graph_tensor_to_handle = std::move(tensor_to_handle);
 
@@ -318,10 +368,23 @@ class CompiledMlDriftModelRunner {
       }
     }
 
+    const absl::Time gpu_model_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(conversion_ctx_.gpu_model_builder->GetGpuModel(
         graph_input_ids_, graph_output_ids_, &gpu_model_));
+    compile_timing_.build_gpu_model = absl::Now() - gpu_model_start;
+
+    compile_timing_.num_nodes_to_convert_weights = 0;
+    for (const auto& node : gpu_model_.nodes) {
+      if (absl::StartsWith(node.name, "weights_convert")) {
+        ++compile_timing_.num_nodes_to_convert_weights;
+      }
+    }
 
     ml_drift::ExternalTensorsInfo combined_external_tensors = external_tensors;
+    LRT_TENSOR_RETURN_IF_ERROR(
+        RunGpuWeightConversions(&combined_external_tensors));
+
+    const absl::Time upload_start = absl::Now();
     if (shared_weights_ != nullptr) {
       for (const auto& [weight_name, handle] :
            conversion_ctx_.weight_name_to_handle) {
@@ -340,9 +403,25 @@ class CompiledMlDriftModelRunner {
               !shared_desc_it->second.GetData().empty()) {
             upload_desc = &shared_desc_it->second;
           }
+          if (upload_desc->GetData().empty() &&
+              upload_desc->GetMemorySizeInBytes() > 0) {
+            // Neither the model nor the cache has data for these weights and
+            // the cache has no GPU tensor for them. The runners never leave
+            // the cache like that (a descriptor loses its data only when its
+            // GPU tensor is added, and the weights this runner converts on
+            // the GPU are bound above, without publishing dataless
+            // descriptors in `Prepare()`), so this only triggers when the
+            // caller removed entries of `SharedWeightsCache::tensors` or
+            // added `descriptors` without data. Uploading would create an
+            // uninitialized tensor.
+            return absl::FailedPreconditionError(
+                absl::StrCat("No data for the weights '", weight_name, "'"));
+          }
           auto gpu_tensor = std::make_unique<BackendTensor>();
           LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
               env_ptr_, *upload_desc, gpu_tensor.get()));
+          compile_timing_.upload_shared_weights_bytes +=
+              upload_desc->GetData().size();
           if (shared_desc_it != shared_weights_->descriptors.end()) {
             shared_desc_it->second =
                 CopyDescriptorWithoutData(shared_desc_it->second);
@@ -364,19 +443,57 @@ class CompiledMlDriftModelRunner {
             tensor_it->second.get();
       }
     }
+    compile_timing_.upload_shared_weights = absl::Now() - upload_start;
 
     const absl::Time init_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
         &inference_context_, gpu_model_info_, &gpu_model_, env_ptr_,
         combined_external_tensors));
 
-    compilation_time_ = absl::Now() - compilation_start;
-    ABSL_LOG(INFO) << "LRT_COMPILE_TIMING build_model_ms="
-                   << absl::ToDoubleMilliseconds(compilation_time_)
-                   << " init_inference_context_ms="
-                   << absl::ToDoubleMilliseconds(absl::Now() - init_start)
-                   << " nodes=" << gpu_model_.nodes.size();
+    const absl::Time end = absl::Now();
+    compilation_time_ = end - compilation_start;
+    compile_timing_.init_inference_context = end - init_start;
+    compile_timing_.num_nodes = gpu_model_.nodes.size();
     return absl::OkStatus();
+  }
+
+  const CompileTiming& compile_timing() const { return compile_timing_; }
+  const absl::flat_hash_map<std::string, MlDriftBuildContext::WeightPackStat>&
+  weight_pack_stats() const {
+    return conversion_ctx_.weight_pack_stats;
+  }
+
+  // One-line summary of `compile_timing()` and `weight_pack_stats()`.
+  std::string CompileTimingString() const {
+    const CompileTiming& t = compile_timing_;
+    std::string s = absl::StrCat(
+        "rearrange_weights_ms=",
+        absl::ToDoubleMilliseconds(t.rearrange_weights),
+        " lower_ops_ms=", absl::ToDoubleMilliseconds(t.lower_ops),
+        " build_gpu_model_ms=", absl::ToDoubleMilliseconds(t.build_gpu_model),
+        " upload_shared_weights_ms=",
+        absl::ToDoubleMilliseconds(t.upload_shared_weights),
+        " upload_shared_weights_mb=",
+        static_cast<double>(t.upload_shared_weights_bytes) / (1 << 20),
+        " init_context_ms=",
+        absl::ToDoubleMilliseconds(t.init_inference_context),
+        " build_model_ms=", absl::ToDoubleMilliseconds(compilation_time_),
+        " num_nodes=", t.num_nodes,
+        " num_nodes_to_convert_weights=", t.num_nodes_to_convert_weights);
+    std::vector<std::string> kinds;
+    kinds.reserve(conversion_ctx_.weight_pack_stats.size());
+    for (const auto& [kind, stat] : conversion_ctx_.weight_pack_stats) {
+      kinds.push_back(kind);
+    }
+    std::sort(kinds.begin(), kinds.end());
+    for (const std::string& kind : kinds) {
+      const auto& stat = conversion_ctx_.weight_pack_stats.at(kind);
+      absl::StrAppend(&s, " pack_", kind,
+                      "=(ms=", absl::ToDoubleMilliseconds(stat.time),
+                      ",mb=", static_cast<double>(stat.bytes) / (1 << 20),
+                      ",n=", stat.count, ")");
+    }
+    return s;
   }
 
   absl::StatusOr<ml_drift::ProfilingInfo> Profile() {
@@ -408,6 +525,23 @@ class CompiledMlDriftModelRunner {
           absl::StrCat("Tensor handle not found: ", name));
     }
     return it->second.id;
+  }
+
+  // The descriptor (without data) that the graph gives the input or output
+  // tensor `name`, e.g. to check that an external tensor matches it. Valid
+  // after `Prepare()`.
+  absl::StatusOr<ml_drift::TensorDescriptor> GetTensorDescriptor(
+      const std::string& name) const {
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat("Tensor handle not found: ", name));
+    }
+    return CopyDescriptorWithoutData(it->second.tensor_desc);
   }
 
   absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> GetWeightTensors() {
@@ -816,8 +950,36 @@ class CompiledMlDriftModelRunner {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         std::vector<const graph::Operation*> execution_plan,
         GetExecutionPlan(flat_outputs_));
+    if (GpuWeightConversionEnabled()) {
+      const absl::Time register_start = absl::Now();
+      LRT_TENSOR_RETURN_IF_ERROR(RegisterGpuWeightConversions(execution_plan));
+      const absl::Duration register_time = absl::Now() - register_start;
+      if (!gpu_weight_conversions_.empty()) {
+        // Bytes: the raw weights that `RunGpuWeightConversions` uploads.
+        size_t raw_bytes = 0;
+        for (const GpuWeightConversion& c : gpu_weight_conversions_) {
+          raw_bytes += c.raw_bytes;
+        }
+        conversion_ctx_.AddWeightPackStat(
+            "gpu_register", register_time, raw_bytes,
+            static_cast<int>(gpu_weight_conversions_.size()));
+      }
+    }
+    const absl::Time int4_start = absl::Now();
     absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared_int4 =
         PrepareInt4Weights(execution_plan);
+    const absl::Duration int4_time = absl::Now() - int4_start;
+    if (!prepared_int4.empty()) {
+      size_t int4_bytes = 0;
+      for (const auto& [tensor, p] : prepared_int4) {
+        int4_bytes += p.rearranged.size();
+        if (p.sum_i.has_value()) {
+          int4_bytes += p.sum_i->size() * sizeof(int32_t);
+        }
+      }
+      conversion_ctx_.AddWeightPackStat("int4", int4_time, int4_bytes,
+                                        static_cast<int>(prepared_int4.size()));
+    }
 
     for (const graph::Operation* op : execution_plan) {
       if (op->GetName() == "FullyConnected" ||
@@ -893,6 +1055,7 @@ class CompiledMlDriftModelRunner {
               conversion_ctx_.shared_weight_descriptors != nullptr) {
             shared_desc_out = &local_shared_desc;
           }
+          const absl::Time pack_start = absl::Now();
           if (info.type == Type::kFP32) {
             absl::Span<const float> data(
                 reinterpret_cast<const float*>(raw_span.data()),
@@ -903,6 +1066,13 @@ class CompiledMlDriftModelRunner {
                     weights_wrapper, data, conversion_ctx_.default_float_type,
                     shared_desc_out));
           } else if (info.type == Type::kI8 || info.type == Type::kI2) {
+            // `CreateFcWeights<int8_t>` takes the raw bytes (packed for INT2),
+            // unpacks INT2 to one int8 per value and rearranges it like INT8.
+            // INT4 has its own path (`PrepareInt4Weights`) because INT4
+            // weights include the largest tensors (e.g. a tied embedding / LM
+            // head): it rearranges straight from the packed bytes, in
+            // parallel, without full-size INT8 copies. INT2 could do the same
+            // with ML Drift's `RearrangeWeightsUInt2Packed`.
             LRT_TENSOR_ASSIGN_OR_RETURN(
                 gpu_handle,
                 weight_creator.CreateFcWeights<int8_t>(
@@ -913,6 +1083,12 @@ class CompiledMlDriftModelRunner {
                 "Unsupported constant weights type for ", op->GetName(), ": ",
                 info.type, " (tensor '", info.name, "')"));
           }
+          conversion_ctx_.AddWeightPackStat(
+              info.type == Type::kFP32 ? "fp"
+              : info.type == Type::kI8 ? "int8"
+                                       : "int2",
+              absl::Now() - pack_start,
+              gpu_handle.tensor_desc.GetMemorySizeInBytes());
           if (shared_desc_out != nullptr) {
             conversion_ctx_.shared_weight_descriptors->emplace(
                 info.name, std::move(local_shared_desc));
@@ -995,6 +1171,269 @@ class CompiledMlDriftModelRunner {
     return absl::OkStatus();
   }
 
+  bool GpuWeightConversionEnabled() const {
+    if (!convert_weights_on_gpu_) return false;
+    if (force_gpu_weight_conversion_) return true;
+    const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
+    // Only exercised on OpenCL so far.
+    return gpu_info.IsApiOpenCl() &&
+           ml_drift::WeightsManager::IsGpuWeightsPreparationSupported(gpu_info);
+  }
+
+  // Registers the constant INT4 / INT8 / INT2 FullyConnected / EmbeddingLookup
+  // weights that the GPU can rearrange into exactly the tensors of the CPU
+  // paths below (see `GetGpuWeightConversionSpec`; the others keep the CPU
+  // paths). Each one gets a dataless constant tensor in the model, plus a
+  // `sum_i` tensor when a FullyConnected consumer needs it, and
+  // `RunGpuWeightConversions` fills them in `BuildModel()`.
+  absl::Status RegisterGpuWeightConversions(
+      absl::Span<const graph::Operation* const> execution_plan) {
+    const ml_drift_runner_internal::FcAndEmbeddingWeights weights =
+        ml_drift_runner_internal::CollectFcAndEmbeddingWeights(execution_plan);
+    for (const graph::Tensor& weights_tensor : weights.ordered) {
+      if (conversion_ctx_.graph_tensor_to_handle.contains(weights_tensor)) {
+        continue;
+      }
+      absl::StatusOr<const graph::TensorInformation&> tensor_info =
+          graph::GetInfo(weights_tensor);
+      if (!tensor_info.ok()) continue;
+      const graph::TensorInformation& info = *tensor_info;
+      // External weights and weights of the shared cache aren't packed here.
+      if (conversion_ctx_.external_weight_names.contains(info.name) ||
+          (conversion_ctx_.shared_weight_descriptors != nullptr &&
+           conversion_ctx_.shared_weight_descriptors->contains(info.name))) {
+        continue;
+      }
+      // Like the CPU path: `sum_i` for weights with a FullyConnected consumer.
+      const bool wants_sum_i =
+          weights.used_by_fully_connected.contains(weights_tensor) &&
+          WantsWeightsSumI(info);
+      std::optional<ml_drift_runner_internal::GpuWeightConversionSpec> spec =
+          ml_drift_runner_internal::GetGpuWeightConversionSpec(
+              *model_builder_, info, wants_sum_i);
+      if (!spec.has_value()) continue;
+
+      // Keep the raw values alive until `RunGpuWeightConversions`.
+      GpuWeightConversion c;
+      c.raw = info.buffer->Lock().As<const int8_t>();
+      if (c.raw.size() < spec->raw_bytes) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Weights '", info.name, "' have ", c.raw.size(),
+                         " bytes, expected ", spec->raw_bytes));
+      }
+      c.weights_tensor = weights_tensor;
+      c.buffer = info.buffer;
+      c.name = info.name;
+      c.ohwi = spec->ohwi;
+      c.desc = spec->desc;
+      c.src_type = spec->src_type;
+      c.raw_bytes = spec->raw_bytes;
+
+      // Map the weights to a dataless constant tensor of the model.
+      c.handle = model_builder_->AddConstantTensor(std::move(spec->dst_desc));
+      conversion_ctx_.graph_tensor_to_handle[weights_tensor] = c.handle;
+      name_to_tensor_map_[info.name] = weights_tensor;
+      conversion_ctx_.weight_name_to_handle.insert({info.name, c.handle});
+      if (spec->needs_sum_i) {
+        c.sum_i = model_builder_->AddConstantTensor(
+            ml_drift_runner_internal::GpuWeightsSumIDescriptor(c.ohwi.o));
+        conversion_ctx_.weight_sum_i[weights_tensor] = *c.sum_i;
+        conversion_ctx_.weight_name_to_handle.insert(
+            {WeightsSumIName(info.name), *c.sum_i});
+      }
+      gpu_weight_conversions_.push_back(std::move(c));
+    }
+    return absl::OkStatus();
+  }
+
+  // Rearranges the weights of `RegisterGpuWeightConversions` on the GPU into
+  // GPU tensors that become immutable external tensors of the model (through
+  // the `SharedWeightsCache` if there is one).
+  //
+  // Weights that another runner sharing the `SharedWeightsCache` converted in
+  // the meantime (e.g. both runners ran `Prepare()` before either ran
+  // `BuildModel()`) are taken from the cache instead of converted again.
+  //
+  // The conversions run in batches, one batch after another: a batch uploads
+  // the raw weights of at most `max_gpu_weight_conversion_batch_bytes_` (or
+  // of one larger tensor), converts them all together with one ML Drift
+  // conversion model, and waits for it before freeing the raw GPU copies. That
+  // bounds the GPU memory of the raw weights by the batch size instead of the
+  // size of all the weights.
+  absl::Status RunGpuWeightConversions(
+      ml_drift::ExternalTensorsInfo* external_tensors) {
+    if (gpu_weight_conversions_.empty()) return absl::OkStatus();
+    const absl::Time start = absl::Now();
+    // Split off the weights that the cache already has: they are only bound.
+    std::vector<GpuWeightConversion> to_convert;
+    std::vector<GpuWeightConversion> in_cache;
+    for (GpuWeightConversion& c : gpu_weight_conversions_) {
+      const bool cached =
+          shared_weights_ != nullptr &&
+          shared_weights_->tensors.contains(c.name) &&
+          (!c.sum_i.has_value() ||
+           shared_weights_->tensors.contains(WeightsSumIName(c.name)));
+      (cached ? in_cache : to_convert).push_back(std::move(c));
+    }
+    gpu_weight_conversions_.clear();
+
+    const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
+    // The converted tensors, by main model value id.
+    absl::flat_hash_map<ml_drift::ValueId, std::unique_ptr<BackendTensor>>
+        dst_tensors;
+    size_t converted_bytes = 0;
+    // Every batch is non-empty: `GpuWeightConversionBatchEnd` > `begin`.
+    for (size_t begin = 0; begin < to_convert.size();) {
+      const size_t end = ml_drift_runner_internal::GpuWeightConversionBatchEnd(
+          to_convert, begin, max_gpu_weight_conversion_batch_bytes_);
+      const absl::Span<const GpuWeightConversion> batch =
+          absl::MakeConstSpan(to_convert).subspan(begin, end - begin);
+      // Allocate the converted tensors of the batch.
+      for (const GpuWeightConversion& c : batch) {
+        LRT_TENSOR_RETURN_IF_ERROR(
+            AllocateConvertedTensor(c.handle, &dst_tensors, &converted_bytes));
+        if (c.sum_i.has_value()) {
+          LRT_TENSOR_RETURN_IF_ERROR(AllocateConvertedTensor(
+              *c.sum_i, &dst_tensors, &converted_bytes));
+        }
+      }
+      // Bind the raw weights (uploaded now) and the converted tensors to the
+      // conversion model of the batch.
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          ml_drift_runner_internal::GpuWeightConversionModel conversion,
+          ml_drift_runner_internal::CreateGpuWeightConversionModel(gpu_info,
+                                                                   batch));
+      ml_drift::ExternalTensorsInfo conversion_tensors;
+      std::vector<std::unique_ptr<BackendTensor>> raw_tensors;
+      for (const auto& upload : conversion.uploads) {
+        LRT_TENSOR_ASSIGN_OR_RETURN(
+            const ml_drift::TensorDescriptor raw_desc,
+            ml_drift_runner_internal::RawWeightsDescriptor(conversion.model,
+                                                           upload));
+        auto tensor = std::make_unique<BackendTensor>();
+        LRT_TENSOR_RETURN_IF_ERROR(
+            Backend::CreateConstTensor(env_ptr_, raw_desc, tensor.get()));
+        conversion_tensors.immutable_tensors[upload.input_id] = tensor.get();
+        raw_tensors.push_back(std::move(tensor));
+      }
+      for (const auto& [conversion_id, main_id] : conversion.io_mapping) {
+        auto it = dst_tensors.find(main_id);
+        if (it == dst_tensors.end()) {
+          return absl::InternalError("Missing converted weights tensor");
+        }
+        conversion_tensors.immutable_tensors[conversion_id] = it->second.get();
+      }
+      // Convert, and wait before `raw_tensors` frees the raw weights.
+      InferenceContext conversion_context;
+      LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
+          &conversion_context, gpu_model_info_, &conversion.model, env_ptr_,
+          conversion_tensors));
+      LRT_TENSOR_RETURN_IF_ERROR(
+          Backend::AddToQueue(&conversion_context, env_ptr_));
+      LRT_TENSOR_RETURN_IF_ERROR(Backend::WaitForCompletion(env_ptr_));
+      begin = end;
+    }
+    // Bind the converted (or cached) tensors to the model and drop the host
+    // weights. Only the `to_convert` weights have tensors in `dst_tensors`;
+    // the `in_cache` ones bind the tensors of the `SharedWeightsCache`.
+    const auto bind = [&](GpuWeightConversion& c,
+                          bool converted) -> absl::Status {
+      const auto take = [&](const ml_drift::GpuModelBuilder::TensorHandle& h)
+          -> std::unique_ptr<BackendTensor> {
+        if (!converted) return nullptr;
+        return std::move(dst_tensors.at(h.id));
+      };
+      LRT_TENSOR_RETURN_IF_ERROR(BindConvertedWeights(
+          c.name, c.handle, take(c.handle), external_tensors));
+      if (c.sum_i.has_value()) {
+        LRT_TENSOR_RETURN_IF_ERROR(
+            BindConvertedWeights(WeightsSumIName(c.name), *c.sum_i,
+                                 take(*c.sum_i), external_tensors));
+      }
+      c.raw = LockedBufferSpan<const int8_t>::Empty();
+      c.buffer.reset();
+      if (absl::StatusOr<graph::TensorInformation&> info =
+              graph::GetInfo(c.weights_tensor);
+          info.ok()) {
+        MaybeReleaseFusedHostBuffer(c.weights_tensor, *info);
+      }
+      return absl::OkStatus();
+    };
+    for (GpuWeightConversion& c : to_convert) {
+      LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/true));
+    }
+    for (GpuWeightConversion& c : in_cache) {
+      LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/false));
+    }
+    if (!to_convert.empty()) {
+      conversion_ctx_.AddWeightPackStat("gpu_convert", absl::Now() - start,
+                                        converted_bytes,
+                                        static_cast<int>(to_convert.size()));
+    }
+    return absl::OkStatus();
+  }
+
+  // Allocates the GPU tensor (without data) that a conversion model writes the
+  // converted weights (or `sum_i`) of the model tensor `handle` into, in
+  // `dst_tensors` by main model value id, and adds its size to
+  // `converted_bytes`.
+  absl::Status AllocateConvertedTensor(
+      const ml_drift::GpuModelBuilder::TensorHandle& handle,
+      absl::flat_hash_map<ml_drift::ValueId, std::unique_ptr<BackendTensor>>*
+          dst_tensors,
+      size_t* converted_bytes) {
+    auto tensor = std::make_unique<BackendTensor>();
+    LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+        env_ptr_, CopyDescriptorWithoutData(handle.tensor_desc), tensor.get()));
+    *converted_bytes += handle.tensor_desc.GetMemorySizeInBytes();
+    (*dst_tensors)[handle.id] = std::move(tensor);
+    return absl::OkStatus();
+  }
+
+  // Makes the GPU-converted weights (or `sum_i`) `name` of the model tensor
+  // `handle` an immutable external tensor of the model. With a
+  // `SharedWeightsCache`, the cache owns it: the tensor the cache already has
+  // under `name` if any (`tensor`, if not null, is then dropped), else
+  // `tensor`. Without a cache, this runner owns `tensor`.
+  absl::Status BindConvertedWeights(
+      const std::string& name,
+      const ml_drift::GpuModelBuilder::TensorHandle& handle,
+      std::unique_ptr<BackendTensor> tensor,
+      ml_drift::ExternalTensorsInfo* external_tensors) {
+    // The model must not upload (dataless) constant data for it.
+    auto const_it = gpu_model_.const_tensors.find(handle.id);
+    if (const_it != gpu_model_.const_tensors.end()) {
+      gpu_model_.tensors[handle.id] =
+          CopyDescriptorWithoutData(const_it->second);
+      gpu_model_.const_tensors.erase(const_it);
+    }
+    if (shared_weights_ != nullptr) {
+      if (!shared_weights_->tensors.contains(name) && tensor == nullptr) {
+        return absl::InternalError(
+            absl::StrCat("Weights '", name, "' were not converted"));
+      }
+      // One lookup: inserts `tensor` only if no other runner cached it.
+      auto [it, inserted] =
+          shared_weights_->tensors.try_emplace(name, std::move(tensor));
+      if (inserted) {
+        shared_weights_->descriptors.insert_or_assign(
+            name, CopyDescriptorWithoutData(handle.tensor_desc));
+        ++shared_weights_->cache_misses;
+      } else {
+        ++shared_weights_->cache_hits;
+      }
+      external_tensors->immutable_tensors[handle.id] = it->second.get();
+      return absl::OkStatus();
+    }
+    if (tensor == nullptr) {
+      return absl::InternalError(
+          absl::StrCat("Weights '", name, "' were not converted"));
+    }
+    external_tensors->immutable_tensors[handle.id] = tensor.get();
+    converted_weight_tensors_.push_back(std::move(tensor));
+    return absl::OkStatus();
+  }
+
   // Drops the host copy of a fused constant weight once the shared cache holds
   // its packed descriptor, if the cache allows it
   // (`SharedWeightsCache::release_fused_host_buffers`). Released tensors stay
@@ -1034,7 +1473,16 @@ class CompiledMlDriftModelRunner {
   std::vector<ml_drift::ValueId> graph_input_ids_;
   std::vector<ml_drift::ValueId> graph_output_ids_;
 
+  using GpuWeightConversion = ml_drift_runner_internal::GpuWeightConversion;
+  std::vector<GpuWeightConversion> gpu_weight_conversions_;
+  // GPU-converted weights of runners without a `SharedWeightsCache`.
+  std::vector<std::unique_ptr<BackendTensor>> converted_weight_tensors_;
+  size_t max_gpu_weight_conversion_batch_bytes_ = size_t{256} << 20;
+  bool convert_weights_on_gpu_ = false;
+  bool force_gpu_weight_conversion_ = false;
+
   absl::Duration compilation_time_;
+  CompileTiming compile_timing_;
   bool env_initialized_ = false;
   bool prepared_ = false;
 };

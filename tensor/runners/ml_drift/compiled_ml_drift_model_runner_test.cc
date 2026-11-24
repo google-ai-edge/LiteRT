@@ -20,12 +20,15 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <string>
 #include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
@@ -741,6 +744,108 @@ TEST(CompiledMlDriftModelRunnerTest,
   EXPECT_NEAR(actual[0], 16.0f, 1e-3f);
   EXPECT_NEAR(actual[kOut / 2], 0.0f, 1e-3f);
   EXPECT_NEAR(actual[kOut - 1], -32.0f, 1e-3f);
+}
+
+TEST(CompiledMlDriftModelRunnerTest, RecordsCompileTimingAndWeightPackStats) {
+  constexpr int kIn = 8;
+  constexpr int kOut = 4;
+  std::vector<float> fc_weights(kOut * kIn, 0.25f);
+  TensorMLD w({.name = "fc.weight",
+               .type = Type::kFP32,
+               .shape = {kOut, kIn},
+               .buffer = fc_weights});
+
+  // Without SharedWeightsCache: weight_pack_stats still records non-zero bytes.
+  {
+    TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, 2, kIn}});
+    TensorMLD y = FullyConnected(x, w);
+    y.SetName("y");
+
+    Runner runner({x}, {y});
+    ASSERT_THAT(runner.BuildModel(), IsOk());
+
+    const Runner::CompileTiming& timing = runner.compile_timing();
+    EXPECT_GE(timing.rearrange_weights, absl::ZeroDuration());
+    EXPECT_GE(timing.lower_ops, absl::ZeroDuration());
+    EXPECT_GE(timing.build_gpu_model, absl::ZeroDuration());
+    EXPECT_GE(timing.upload_shared_weights, absl::ZeroDuration());
+    EXPECT_EQ(timing.upload_shared_weights_bytes, 0u);
+    EXPECT_GE(timing.init_inference_context, absl::ZeroDuration());
+    EXPECT_GT(timing.num_nodes, 0u);
+
+    ASSERT_TRUE(runner.weight_pack_stats().contains("fp"));
+    EXPECT_EQ(runner.weight_pack_stats().at("fp").count, 1);
+    EXPECT_GT(runner.weight_pack_stats().at("fp").bytes, 0u);
+
+    const std::string timing_str = runner.CompileTimingString();
+    EXPECT_THAT(timing_str, testing::HasSubstr("rearrange_weights_ms="));
+    EXPECT_THAT(timing_str, testing::HasSubstr("num_nodes="));
+    EXPECT_THAT(timing_str, testing::HasSubstr("pack_fp=("));
+    EXPECT_THAT(timing_str, testing::Not(testing::HasSubstr("mb=0,")));
+  }
+
+  // With SharedWeightsCache: first build packs and uploads; second reuses.
+  {
+    MlDriftClBackend::Environment shared_env;
+    ASSERT_THAT(MlDriftClBackend::InitEnvironment(&shared_env), IsOk());
+    Runner::SharedWeightsCache shared_weights;
+
+    TensorMLD x1({.name = "x", .type = Type::kFP32, .shape = {1, 2, kIn}});
+    TensorMLD y1 = FullyConnected(x1, w);
+    y1.SetName("y");
+    Runner first({x1}, {y1}, ml_drift::CalculationsPrecision::kF32, &shared_env,
+                 &shared_weights);
+    ASSERT_THAT(first.BuildModel(), IsOk());
+    ASSERT_TRUE(first.weight_pack_stats().contains("fp"));
+    EXPECT_EQ(first.weight_pack_stats().at("fp").count, 1);
+    EXPECT_GT(first.weight_pack_stats().at("fp").bytes, 0u);
+    EXPECT_GT(first.compile_timing().upload_shared_weights_bytes, 0u);
+    EXPECT_GT(first.compile_timing().num_nodes, 0u);
+    EXPECT_THAT(first.CompileTimingString(), testing::HasSubstr("pack_fp=("));
+
+    TensorMLD x2({.name = "x", .type = Type::kFP32, .shape = {1, 1, kIn}});
+    TensorMLD y2 = FullyConnected(x2, w);
+    y2.SetName("y");
+    Runner second({x2}, {y2}, ml_drift::CalculationsPrecision::kF32,
+                  &shared_env, &shared_weights);
+    ASSERT_THAT(second.BuildModel(), IsOk());
+    EXPECT_TRUE(second.weight_pack_stats().empty());
+    EXPECT_EQ(second.compile_timing().upload_shared_weights_bytes, 0u);
+    EXPECT_GT(second.compile_timing().num_nodes, 0u);
+  }
+}
+
+TEST(CompiledMlDriftModelRunnerTest, GetTensorDescriptor) {
+  constexpr int kIn = 8;
+  constexpr int kOut = 4;
+  constexpr int kTokens = 2;
+  TensorMLD w({.name = "fc.weight",
+               .type = Type::kFP32,
+               .shape = {kOut, kIn},
+               .buffer = std::vector<float>(kOut * kIn, 0.5f)});
+  TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, kTokens, kIn}});
+  TensorMLD y = FullyConnected(x, w);
+  y.SetName("y");
+  Runner runner({x}, {y});
+  ASSERT_THAT(runner.Prepare(), IsOk());
+
+  ASSERT_OK_AND_ASSIGN(const ml_drift::TensorDescriptor input,
+                       runner.GetTensorDescriptor("x"));
+  EXPECT_EQ(input.GetBHWCShape().DimensionsProduct(), kTokens * kIn);
+  EXPECT_TRUE(input.GetData().empty());
+
+  ASSERT_OK_AND_ASSIGN(const ml_drift::TensorDescriptor output,
+                       runner.GetTensorDescriptor("y"));
+  EXPECT_EQ(output.GetBHWCShape().DimensionsProduct(), kTokens * kOut);
+  EXPECT_TRUE(output.GetData().empty());
+
+  // Constant weights are found too, without their packed data.
+  ASSERT_OK_AND_ASSIGN(const ml_drift::TensorDescriptor weights,
+                       runner.GetTensorDescriptor("fc.weight"));
+  EXPECT_TRUE(weights.GetData().empty());
+
+  EXPECT_EQ(runner.GetTensorDescriptor("missing").status().code(),
+            absl::StatusCode::kNotFound);
 }
 
 }  // namespace

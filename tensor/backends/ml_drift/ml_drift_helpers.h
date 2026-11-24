@@ -16,9 +16,9 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_ML_DRIFT_ML_DRIFT_HELPERS_H_
 
+#include <cstddef>
 #include <cstdlib>
 #include <string>
-#include <string_view>
 #include <vector>
 
 #include "absl/base/nullability.h"  // from @com_google_absl
@@ -28,6 +28,8 @@ limitations under the License.
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/model_hints.h"  // from @ml_drift
@@ -85,6 +87,29 @@ struct MlDriftBuildContext {
   // large FullyConnected layers with INT8-quantized activations.
   absl::flat_hash_map<graph::Tensor, ml_drift::GpuModelBuilder::TensorHandle>
       weight_sum_i;
+
+  // Host time and output bytes of packing constant weights into kernel
+  // layouts, by kind (e.g. "int4", "fp"; ops that pack their own weights add
+  // their own kinds), for compile-time breakdowns.
+  struct WeightPackStat {
+    // Host wall time spent at compile time producing the weights of this kind
+    // in their kernel layout: unpacking, rearranging and computing `sum_i` on
+    // the CPU. It doesn't include the host -> GPU upload of the packed weights
+    // (nor anything about paging). Exception: "gpu_convert" is the whole GPU
+    // conversion (upload of the raw weights, conversion models, waiting for
+    // the GPU).
+    absl::Duration time;
+    // Bytes of the weights in their kernel layout.
+    size_t bytes = 0;
+    // Number of weight tensors.
+    int count = 0;
+  };
+  absl::flat_hash_map<std::string, WeightPackStat> weight_pack_stats;
+
+  // Adds `count` weight tensors of `kind` packed in `time` into `bytes`
+  // bytes.
+  void AddWeightPackStat(absl::string_view kind, absl::Duration time,
+                         size_t bytes, int count = 1);
 };
 
 // `LRT_ALLOW_8BIT_CONVS=1`: let ML Drift run large quantized FullyConnected /
@@ -92,7 +117,7 @@ struct MlDriftBuildContext {
 // products.
 inline bool Allow8BitConvsFromEnv() {
   const char* env = std::getenv("LRT_ALLOW_8BIT_CONVS");
-  return env != nullptr && std::string_view(env) == "1";
+  return env != nullptr && absl::string_view(env) == "1";
 }
 
 // The additive float zero points `-scale * zero_point` of the `num_channels`
