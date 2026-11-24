@@ -24,6 +24,7 @@
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
@@ -348,6 +349,98 @@ TEST_F(GpuBackendWebGpuTest,
   }
 
   ASSERT_THAT(backend_.WaitForCompletion(), IsOk());
+}
+
+TEST_F(GpuBackendWebGpuTest, ReadSpatialTensorDataBufferMatchesDescriptor) {
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = ::ml_drift::BHWC(1, 2, 2, 4);
+  src_cpu.data = {1.0f, 2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,
+                  9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
+  ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::kFloat32,
+                                    ::ml_drift::TensorStorageType::kBuffer,
+                                    ::ml_drift::Layout::kBHWC);
+  desc.UploadData(src_cpu);
+
+  ::ml_drift::webgpu::SpatialTensor tensor;
+  ASSERT_THAT(tensor.CreateFromDescriptor(backend_.wgpu_env().device(), desc),
+              IsOk());
+
+  std::vector<uint8_t> dst(desc.GetMemorySizeInBytes());
+  ASSERT_THAT(backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(dst)),
+              IsOk());
+  EXPECT_EQ(dst, desc.GetData());
+
+  std::vector<uint8_t> wrong_size(desc.GetMemorySizeInBytes() - 1);
+  EXPECT_THAT(
+      backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(wrong_size)),
+      StatusIs(absl::StatusCode::kInvalidArgument));
+
+  std::vector<uint8_t> oversized(desc.GetMemorySizeInBytes() + 1);
+  EXPECT_THAT(backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(oversized)),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+}
+
+TEST_F(GpuBackendWebGpuTest, ReadSpatialTensorDataTextureMatchesDescriptor) {
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = ::ml_drift::BHWC(1, 2, 2, 4);
+  src_cpu.data = {1.0f, 2.0f,  3.0f,  4.0f,  5.0f,  6.0f,  7.0f,  8.0f,
+                  9.0f, 10.0f, 11.0f, 12.0f, 13.0f, 14.0f, 15.0f, 16.0f};
+  ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::kFloat32,
+                                    ::ml_drift::TensorStorageType::kTexture2D,
+                                    ::ml_drift::Layout::kBHWC);
+  desc.UploadData(src_cpu);
+
+  ::ml_drift::webgpu::SpatialTensor tensor;
+  ASSERT_THAT(tensor.CreateFromDescriptor(backend_.wgpu_env().device(), desc),
+              IsOk());
+
+  std::vector<uint8_t> dst(desc.GetMemorySizeInBytes());
+  ASSERT_THAT(backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(dst)),
+              IsOk());
+  EXPECT_EQ(dst, desc.GetData());
+}
+
+TEST_F(GpuBackendWebGpuTest,
+       ReadSpatialTensorDataSingleTexture2DWithNonFourChannels) {
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = ::ml_drift::BHWC(1, 2, 2, 2);
+  src_cpu.data = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f};
+  ::ml_drift::TensorDescriptor desc(
+      ::ml_drift::DataType::kFloat32,
+      ::ml_drift::TensorStorageType::kSingleTexture2D,
+      ::ml_drift::Layout::kBHWC);
+  desc.UploadData(src_cpu);
+
+  ::ml_drift::webgpu::SpatialTensor tensor;
+  ASSERT_THAT(tensor.CreateFromDescriptor(backend_.wgpu_env().device(), desc),
+              IsOk());
+
+  std::vector<uint8_t> dst(desc.GetMemorySizeInBytes());
+  ASSERT_THAT(backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(dst)),
+              IsOk());
+  EXPECT_EQ(dst, desc.GetData());
+}
+
+TEST_F(GpuBackendWebGpuTest, ReadSpatialTensorDataReleasedTensorReturnsError) {
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = ::ml_drift::BHWC(1, 2, 2, 4);
+  src_cpu.data.assign(16, 1.0f);
+
+  for (auto storage_type : {::ml_drift::TensorStorageType::kBuffer,
+                            ::ml_drift::TensorStorageType::kTexture2D}) {
+    ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::kFloat32,
+                                      storage_type, ::ml_drift::Layout::kBHWC);
+    desc.UploadData(src_cpu);
+
+    ::ml_drift::webgpu::SpatialTensor tensor;
+    ASSERT_THAT(tensor.CreateFromDescriptor(backend_.wgpu_env().device(), desc),
+                IsOk());
+    ASSERT_THAT(backend_.ReleaseSpatialTensorMemory(&tensor), IsOk());
+
+    std::vector<uint8_t> dst(desc.GetMemorySizeInBytes());
+    EXPECT_THAT(backend_.ReadSpatialTensorData(tensor, absl::MakeSpan(dst)),
+                StatusIs(absl::StatusCode::kInvalidArgument));
+  }
 }
 
 }  // namespace
