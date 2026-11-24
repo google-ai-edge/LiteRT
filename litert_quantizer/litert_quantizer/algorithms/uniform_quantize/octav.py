@@ -283,15 +283,20 @@ def get_tensor_quant_params(
   quantized_dim = common_utils.get_weight_quantized_dim(
       op_info, tensor_content, tensor_quant_config.granularity
   )
+  is_multi_axis = isinstance(quantized_dim, (list, tuple))
   is_blockwise_quant = uniform_quantize_tensor.is_blockwise(
       tensor_quant_config.granularity
   )
   if is_blockwise_quant:
+    # Multi-axis blockwise quantization (e.g. MoE [E, N, K]) splits the last
+    # dimension into blocks.
+    blockwise_quantized_dim = tensor_content.ndim - 1 if is_multi_axis else None
     reshaped_data, reduce_dims = (
         uniform_quantize_tensor.reshape_data_for_blockwise(
             tensor_content,
             op_info.op_name,
             tensor_quant_config.granularity,
+            quantized_dim=blockwise_quantized_dim,
         )
     )
   else:
@@ -345,7 +350,8 @@ def get_tensor_quant_params(
       zero_point=zp,
       num_bits=tensor_quant_config.num_bits,
       symmetric=tensor_quant_config.symmetric,
-      quantized_dimension=quantized_dim,
+      quantized_dimension=(quantized_dim if not is_multi_axis else None),
+      quantized_dimensions=(quantized_dim if is_multi_axis else None),
       block_size=uniform_quantize_tensor.extract_block_size_from_granularity(
           tensor_quant_config.granularity
       ),

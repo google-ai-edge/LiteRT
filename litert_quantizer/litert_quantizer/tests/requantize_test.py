@@ -181,6 +181,80 @@ class RequantizeTest(parameterized.TestCase):
         _get_embedding_lookup_model(), _OpName.EMBEDDING_LOOKUP, algorithm_key
     )
 
+  @parameterized.named_parameters(
+      ('channelwise', 'CHANNELWISE'),
+      ('blockwise_32', 'BLOCKWISE_32'),
+  )
+  def test_requantize_moe_keeps_fp32_scales(self, granularity):
+    float_model = tfl_flatbuffer_utils.get_model_content(
+        pathlib.Path(
+            test_utils.get_path_to_datafile(
+                'models/single_moe_multiaxis.tflite'
+            )
+        )
+    )
+    # First pass: quantize the MoE custom op to INT4, which expands the op from
+    # 7 inputs to 10 inputs with fp32 weight-scale tensors at 4, 6, 8.
+    qt = quantizer.Quantizer(bytes(float_model))
+    qt.load_quantization_recipe([
+        {
+            'regex': '.*',
+            'operation': 'CUSTOM_OP',
+            'algorithm_key': 'OCTAV',
+            'op_config': {
+                'weight_tensor_config': {
+                    'num_bits': 4,
+                    'symmetric': True,
+                    'granularity': granularity,
+                    'dtype': 'INT',
+                    'quantized_dimensions': [0, 1],
+                },
+                'compute_precision': 'INTEGER',
+                'explicit_dequantize': False,
+                'skip_checks': False,
+                'min_weight_elements': 0,
+            },
+        }
+    ])
+    first_pass_model = tfl_flatbuffer_utils.read_model(
+        qt.quantize().quantized_model
+    )
+    first_sg = first_pass_model.subgraphs[0]
+    first_moe_op = first_sg.operators[0]
+    first_buffers = {
+        idx: bytes(
+            first_pass_model.buffers[
+                first_sg.tensors[first_moe_op.inputs[idx]].buffer
+            ].data
+        )
+        for idx in (3, 4, 5, 6, 7, 8, 9)
+    }
+    first_pass_bytes = bytes(
+        flatbuffer_utils.convert_object_to_bytearray(first_pass_model)
+    )
+    # Second pass: dynamic_wi8_afp32 must leave the interleaved INT4 weights
+    # (3, 5, 7) and fp32 weight/per-expert scales (4, 6, 8, 9) untouched.
+    qt2 = quantizer.Quantizer(first_pass_bytes, _DYNAMIC_WI8_AFP32_RECIPE)
+    second_pass_model = tfl_flatbuffer_utils.read_model(
+        qt2.quantize().quantized_model
+    )
+    sg = second_pass_model.subgraphs[0]
+    moe_op = sg.operators[0]
+    self.assertLen(moe_op.inputs, 10)
+    for weight_idx in (3, 5, 7):
+      self.assertEqual(
+          sg.tensors[moe_op.inputs[weight_idx]].type, qtyping.TensorType.INT4
+      )
+    for scale_idx in (4, 6, 8, 9):
+      self.assertEqual(
+          sg.tensors[moe_op.inputs[scale_idx]].type, qtyping.TensorType.FLOAT32
+      )
+    for idx, expected_bytes in first_buffers.items():
+      actual_bytes = bytes(
+          second_pass_model.buffers[sg.tensors[moe_op.inputs[idx]].buffer].data
+      )
+      self.assertEqual(actual_bytes, expected_bytes)
+
 
 if __name__ == '__main__':
   absltest.main()

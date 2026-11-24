@@ -1500,15 +1500,26 @@ def materialize_moe(
     tensor_quant_params_cache: _TensorQuantParamsCache,
 ) -> list[_TensorTransformationParams]:
   """Materialize tensors in the MoE CustomOp."""
+  # An unquantized MoE op has 7 inputs: [x, top_w, top_idx, gate_w, ff1_w,
+  # linear_w, per_expert_scale]. After a quantization pass,
+  # `_update_quantized_moe_ops` expands it to 10 inputs by interleaving the 3
+  # float32 weight-scale tensors at indices 4, 6, 8 (weights at 3, 5, 7 and
+  # per_expert_scale at 9). Ignore all non-activation inputs on subsequent
+  # passes so the quantized weights and fp32 scales stay untouched.
+  num_inputs = len(op_info.op.inputs)
+  if num_inputs == 10:
+    inputs_to_ignore = list(range(1, num_inputs))
+  else:
+    inputs_to_ignore = [
+        1,  # Top-k routing weights.
+        2,  # Top-k expert indices.
+        6,  # Per-expert output multiplier.
+    ]
   return common_utils.materialize_standard_op(
       op_info,
       graph_info,
       tensor_name_to_qsv,
       get_tensor_quant_params_fn,
       tensor_quant_params_cache=tensor_quant_params_cache,
-      inputs_to_ignore=[
-          1,  # Top-k routing weights.
-          2,  # Top-k expert indices.
-          6,  # Per-expert output multiplier.
-      ],
+      inputs_to_ignore=inputs_to_ignore,
   )

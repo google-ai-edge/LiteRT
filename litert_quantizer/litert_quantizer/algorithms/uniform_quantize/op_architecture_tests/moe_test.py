@@ -23,6 +23,7 @@ from litert_quantizer import qtyping
 from litert_quantizer.algorithms.uniform_quantize import common_quantize
 from litert_quantizer.algorithms.uniform_quantize import dequantized_weight_recovery
 from litert_quantizer.algorithms.uniform_quantize import naive_min_max_quantize
+from litert_quantizer.algorithms.uniform_quantize import octav
 from litert_quantizer.algorithms.uniform_quantize.op_architecture_tests import test_utils as op_test_utils
 from litert_quantizer.algorithms.utils import common_utils
 from litert_quantizer.utils import test_utils
@@ -112,6 +113,18 @@ class MoeTest(op_test_utils.BaseQuantizeTest):
           get_tensor_quant_params_fn=(
               dequantized_weight_recovery.get_tensor_quant_params
           ),
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+      ),
+      dict(
+          testcase_name="octav_int4_channelwise",
+          get_tensor_quant_params_fn=octav.get_tensor_quant_params,
+          num_bits=4,
+          granularity=qtyping.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name="octav_int4_blockwise_32",
+          get_tensor_quant_params_fn=octav.get_tensor_quant_params,
           num_bits=4,
           granularity=qtyping.QuantGranularity.BLOCKWISE_32,
       ),
