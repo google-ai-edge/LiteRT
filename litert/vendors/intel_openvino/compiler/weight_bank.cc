@@ -26,11 +26,14 @@
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
+#include "litert/c/litert_common.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 
 namespace litert::openvino {
 
-void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph) {
+LiteRtStatus WeightBank::AddSubgraph(
+    const litert::compiler::Subgraph& subgraph) {
   for (const auto& op : subgraph.Ops()) {
     for (const auto& input : op.Inputs()) {
       if (!input.HasWeights()) {
@@ -47,13 +50,32 @@ void WeightBank::AddSubgraph(const litert::compiler::Subgraph& subgraph) {
       if (buffer_id < 0) {
         continue;
       }
-      buffer_bytes_[buffer_id] = weights.Bytes();
+      absl::Span<const uint8_t> bytes = weights.Bytes();
+      std::optional<WeightEncoding> encoding;
+      if (encoded_weights_) {
+        encoding = EncodedWeightStore::EncodingFor(input);
+        if (encoding) {
+          if (auto encoded = encoded_weights_->GetOrEncode(input, *encoding)) {
+            bytes = *encoded;
+          }
+        }
+      }
+      auto [it, inserted] = encoding_by_buffer_id_.emplace(buffer_id, encoding);
+      if (!inserted && it->second != encoding) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Weight buffer %d (tensor %s) is used with conflicting "
+                   "encodings; the shared pool can hold only one",
+                   buffer_id, std::string(input.Name()).c_str());
+        return kLiteRtStatusErrorInvalidArgument;
+      }
+      buffer_bytes_[buffer_id] = bytes;
       // Record this tensor's name so the matching OpenVINO weight (which takes
       // the tensor name as its friendly_name) can be resolved back to its
       // buffer. Distinct names sharing a buffer all point at the same id.
       name_to_buffer_id_[std::string(input.Name())] = buffer_id;
     }
   }
+  return kLiteRtStatusOk;
 }
 
 size_t WeightBank::TotalBytes() const {

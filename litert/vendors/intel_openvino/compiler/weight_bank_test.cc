@@ -21,12 +21,85 @@
 
 #include <gtest/gtest.h>
 #include "litert/c/internal/litert_compiler_context.h"
+#include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_buffer_ref.h"
 #include "litert/compiler/cc/litert_model.h"
+#include "litert/core/model/model.h"
 #include "litert/test/load_test_model.h"
+#include "litert/vendors/intel_openvino/compiler/encoded_weights_store.h"
 
 namespace litert {
 namespace openvino {
 namespace {
+
+// Encoding i2 as u2 is the offset-binary shift [-2..1] -> [0..3] on each 2-bit
+// element, i.e. flipping its MSB.
+TEST(WeightBankTest, EncodeI2ToU2FlipsEachElementMsb) {
+  // Elements (low bits first) -2,-1,0,1 -> two's complement 10,11,00,01.
+  const uint8_t i2 = 0b01'00'11'10;
+  const std::vector<uint8_t> u2 =
+      EncodedWeightStore::Encode(WeightEncoding::kI2ToU2, {&i2, 1});
+  ASSERT_EQ(u2.size(), 1u);
+  // u2 elements = i2 + 2: 0,1,2,3 -> 00,01,10,11.
+  EXPECT_EQ(u2[0], 0b11'10'01'00);
+  // The transform is an involution, so applying it twice restores the bytes.
+  EXPECT_EQ(EncodedWeightStore::Encode(WeightEncoding::kI2ToU2, u2)[0], i2);
+}
+
+// Non-int2 weights must stay zero-copy views even with an encoded weight store.
+TEST(WeightBankTest, EncodedWeightStoreLeavesNonInt2WeightsUntouched) {
+  auto cc_model = testing::LoadTestFileModel("add_cst.tflite");
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, cc_model.Get());
+  auto graph = model.Subgraph(0);
+  ASSERT_TRUE(graph.HasValue());
+
+  EncodedWeightStore store;
+  WeightBank bank(&store);
+  bank.AddSubgraph(graph.Value());
+
+  EXPECT_EQ(bank.NumBuffers(), 1u);
+  EXPECT_EQ(store.Size(), 0u);
+}
+
+// One buffer used both as plain int8 and as quantized int2 would need two
+// different encodings in the pool, so the bank must reject it.
+TEST(WeightBankTest, ConflictingEncodingsForSameBufferFail) {
+  LiteRtModelT litert_model;
+  auto& subgraph = litert_model.EmplaceSubgraph();
+  std::vector<uint8_t> data(4, 0x1B);
+
+  auto& raw = subgraph.EmplaceTensor();
+  raw.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {16}));
+  SetWeightsFromUnownedBuffer(
+      raw.Weights(), BufferRef<uint8_t>(data.data(), data.size()));
+
+  auto& int2 = subgraph.EmplaceTensor();
+  int2.SetType(MakeRankedTensorType(kLiteRtElementTypeInt2, {16}));
+  int2.SetQarams(MakePerTensorQuantization(1.0f, 0));
+  int2.Weights().SetBufferId(raw.Weights().GetBufferId());
+
+  auto& output = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  internal::AttachInput(&raw, op);
+  internal::AttachInput(&int2, op);
+  internal::AttachOutput(&output, op);
+
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  litert::compiler::Model model(ctx, &litert_model);
+  auto graph = model.Subgraph(0);
+  ASSERT_TRUE(graph.HasValue());
+
+  EncodedWeightStore store;
+  WeightBank bank(&store);
+  EXPECT_EQ(bank.AddSubgraph(graph.Value()), kLiteRtStatusErrorInvalidArgument);
+
+  WeightBank plain_bank;
+  EXPECT_EQ(plain_bank.AddSubgraph(graph.Value()), kLiteRtStatusOk);
+}
 
 // add_cst.tflite has a single constant operand (a 16-byte add constant), so the
 // bank should record exactly that one buffer.
