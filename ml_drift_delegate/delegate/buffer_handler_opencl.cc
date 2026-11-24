@@ -22,6 +22,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_command_queue.h"  // from @ml_drift
@@ -67,6 +68,14 @@ struct OpenClMemoryInfo : public HwMemoryInfo {
   cl_command_queue command_queue;
 };
 
+// Calls `ml_drift::cl` OpenCL function pointers without kCFI checks because
+// they are resolved via dlsym from host libOpenCL.so, which lacks kCFI hashes.
+template <typename Fn, typename... Args>
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI decltype(auto) CallOpenCl(Fn fn,
+                                                         Args&&... args) {
+  return fn(std::forward<Args>(args)...);
+}
+
 }  // namespace
 
 LiteRtStatus LiteRtDestroyOpenClMemory(HwMemoryInfoPtr hw_memory_info) {
@@ -77,16 +86,18 @@ LiteRtStatus LiteRtDestroyOpenClMemory(HwMemoryInfoPtr hw_memory_info) {
   auto* memory_info = static_cast<OpenClMemoryInfo*>(hw_memory_info);
   if (memory_info->host_memory != nullptr) {
     if (memory_info->buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-      ::ml_drift::cl::clEnqueueUnmapMemObject(
-          memory_info->command_queue, memory_info->cl_tensor.GetMemoryPtr(),
-          memory_info->host_memory, 0, nullptr, nullptr);
+      CallOpenCl(::ml_drift::cl::clEnqueueUnmapMemObject,
+                 memory_info->command_queue,
+                 memory_info->cl_tensor.GetMemoryPtr(),
+                 memory_info->host_memory, 0, nullptr, nullptr);
       memory_info->host_memory = nullptr;
     } else {
       litert_aligned_free(memory_info->host_memory);
     }
   }
   if (memory_info->imported_cl_mem) {
-    ml_drift::cl::clReleaseMemObject(memory_info->imported_cl_mem);
+    CallOpenCl(::ml_drift::cl::clReleaseMemObject,
+               memory_info->imported_cl_mem);
   }
   delete memory_info;
   return kLiteRtStatusOk;
@@ -113,10 +124,10 @@ LiteRtStatus LiteRtLockOpenClMemory(HwMemoryInfoPtr hw_memory_info,
     if (memory_info->host_memory == nullptr) {
       // Fallback in case it wasn't mapped at creation
       cl_int error_code = CL_SUCCESS;
-      void* mapped_ptr = ::ml_drift::cl::clEnqueueMapBuffer(
-          memory_info->command_queue, gpu_tensor.GetMemoryPtr(), CL_TRUE,
-          CL_MAP_READ | CL_MAP_WRITE, 0, memory_info->packed_bytes, 0, nullptr,
-          nullptr, &error_code);
+      void* mapped_ptr = CallOpenCl(
+          ::ml_drift::cl::clEnqueueMapBuffer, memory_info->command_queue,
+          gpu_tensor.GetMemoryPtr(), CL_TRUE, CL_MAP_READ | CL_MAP_WRITE, 0,
+          memory_info->packed_bytes, 0, nullptr, nullptr, &error_code);
       if (error_code != CL_SUCCESS) {
         ABSL_LOG(ERROR) << "clEnqueueMapBuffer failed with: " << error_code;
         return kLiteRtStatusErrorRuntimeFailure;
@@ -179,9 +190,9 @@ LiteRtStatus LiteRtUnlockOpenClMemory(HwMemoryInfoPtr hw_memory_info) {
   auto& gpu_tensor = memory_info->cl_tensor;
 
   if (memory_info->buffer_type == kLiteRtTensorBufferTypeOpenClBufferPacked) {
-    ::ml_drift::cl::clEnqueueUnmapMemObject(
-        memory_info->command_queue, gpu_tensor.GetMemoryPtr(),
-        memory_info->host_memory, 0, nullptr, nullptr);
+    CallOpenCl(::ml_drift::cl::clEnqueueUnmapMemObject,
+               memory_info->command_queue, gpu_tensor.GetMemoryPtr(),
+               memory_info->host_memory, 0, nullptr, nullptr);
     memory_info->host_memory = nullptr;
     return kLiteRtStatusOk;
   }
@@ -332,9 +343,9 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
   // Try to infer the source buffer type.
   cl_mem candidate_cl_mem = static_cast<cl_mem>(hw_buffer_handle);
   cl_mem_object_type cl_mem_type;
-  if (ml_drift::cl::clGetMemObjectInfo(candidate_cl_mem, CL_MEM_TYPE,
-                                       sizeof(cl_mem_type), &cl_mem_type,
-                                       nullptr) == CL_SUCCESS) {
+  if (CallOpenCl(::ml_drift::cl::clGetMemObjectInfo, candidate_cl_mem,
+                 CL_MEM_TYPE, sizeof(cl_mem_type), &cl_mem_type,
+                 nullptr) == CL_SUCCESS) {
     cl_memory = candidate_cl_mem;
 #if LITERT_HAS_AHWB_SUPPORT
   } else if (::ml_drift::cl::clImportMemoryARM != nullptr &&
@@ -346,9 +357,9 @@ LiteRtStatus LiteRtImportOpenClMemory(LiteRtGpuDeviceId device_id,
     };
 
     cl_int error = CL_SUCCESS;
-    cl_mem candidate_cl_mem = ::ml_drift::cl::clImportMemoryARM(
-        cl_ctx_handle, CL_MEM_READ_WRITE, properties, hw_buffer_handle, bytes,
-        &error);
+    cl_mem candidate_cl_mem = CallOpenCl(
+        ::ml_drift::cl::clImportMemoryARM, cl_ctx_handle, CL_MEM_READ_WRITE,
+        properties, hw_buffer_handle, bytes, &error);
     if (error == CL_SUCCESS) {
       cl_memory = candidate_cl_mem;
     }
