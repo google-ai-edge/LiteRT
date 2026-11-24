@@ -1259,6 +1259,43 @@ cc_test(
 )
 
 cc_library(
+    name = "block_ffw_parser",
+    srcs = ["block_ffw_parser.cc"],
+    hdrs = ["block_ffw_parser.h"],
+    deps = [
+        "//ml_drift_delegate/tflite:model_builder_helper",
+        "//tflite:util",
+        "//tflite/c:common",
+        "//tflite/kernels:kernel_util",
+        "//tflite/kernels/internal:tensor_utils_no_eigen",
+        "@FP16",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@flatbuffers",
+        "@ml_drift//ml_drift/common:shape",
+    ],
+)
+
+cc_test(
+    name = "block_ffw_parser_test",
+    srcs = ["block_ffw_parser_test.cc"],
+    deps = [
+        ":block_ffw_parser",
+        "//tflite/c:common",
+        "@FP16",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
+        "@flatbuffers",
+    ],
+)
+
+cc_library(
     name = "custom_parsers",
     srcs = ["custom_parsers.cc"],
     hdrs = [
