@@ -21,6 +21,7 @@
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 
 namespace litert::ml_drift {
@@ -66,6 +67,30 @@ absl::Status CreateBlockFfwSiluFromIrOp(
     const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
     const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
     ::ml_drift::GpuModelBuilder* model_builder);
+
+// Single-token decode fusion for an edge stage (U1 or D2) of
+// `odml.blocked_ffw`. Fuses input split/permute + optional input QDQ + K1
+// quantized FullyConnected projections (one `[O, 1, 1, I]` weight tensor per
+// part) + optional output QDQs + output permute/merge into a single GPU kernel
+// dispatch.
+struct BlockFfwEdgeFcSpec {
+  // Number of edge partitions (`K1`) fused into this kernel dispatch.
+  int num_parts = 0;
+  // `num_parts` quantized weight descriptors with `weights.shape.h == 1`.
+  std::vector<::ml_drift::GpuModelBuilder::Weights> part_weights;
+  // Ordered activation QDQ operations applied inline after reading `src`.
+  std::vector<::ml_drift::QuantizeAndDequantizeAttributes> src_qdqs;
+  // Ordered activation QDQ operations applied inline before writing `dst`.
+  std::vector<::ml_drift::QuantizeAndDequantizeAttributes> dst_qdqs;
+};
+
+// Appends a fused single-token `BlockFfwEdgeFcOp` GPU kernel computing all
+// `spec.num_parts` edge projections from `src` into `dst`.
+absl::Status AddBlockFfwEdgeFc(
+    ::ml_drift::GpuModelBuilder* builder,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& src,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& dst,
+    const BlockFfwEdgeFcSpec& spec);
 
 }  // namespace litert::ml_drift
 

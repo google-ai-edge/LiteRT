@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <random>
 #include <set>
 #include <string>
@@ -43,8 +44,10 @@
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/testing_util.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/transformations/ir/transform.h"  // from @ml_drift
+#include "ml_drift_delegate/delegate/composite/block_ffw_kernel.h"
 #include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 #include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
@@ -793,6 +796,495 @@ TEST_P(BlockFfwKernelTest, IrModelSinglePartK1K2MatchesReference) {
   ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
       *exec_env, precision(), storage(), /*tokens=*/2,
       /*distinct_adjacent_scales=*/false, /*k1=*/1, /*k2=*/1));
+}
+
+struct DirectEdgeFcConfig {
+  DataType weight_type = DataType::kInt2;
+  int num_parts = 2;
+  int src_height = 1;
+  int dst_height = 2;
+  int part_i = 16;
+  int part_o = 16;
+  int scale_groups = 1;
+  bool has_zero_point = true;
+  std::vector<float> src_qdq_scales;
+  std::vector<float> dst_qdq_scales;
+};
+
+absl::Status RunDirectEdgeFcTest(::ml_drift::TestExecutionEnvironment& env,
+                                 CalculationsPrecision precision,
+                                 TensorStorageType storage,
+                                 const DirectEdgeFcConfig& cfg, uint32_t seed) {
+  const GpuInfo& gpu_info = env.GetGpuInfo();
+  const DataType dtype = precision == CalculationsPrecision::kF16
+                             ? DataType::kFloat16
+                             : DataType::kFloat32;
+  const int src_row_c = cfg.part_i / cfg.src_height;
+  const int dst_row_c = cfg.part_o / cfg.dst_height;
+  const BHWC src_shape(1, cfg.src_height, 1, cfg.num_parts * src_row_c);
+  const BHWC dst_shape(1, cfg.dst_height, 1, cfg.num_parts * dst_row_c);
+
+  std::mt19937 rng(seed);
+  int q_range = 4;
+  int q_min = -2;
+  float base_scale = 0.08f;
+  if (cfg.weight_type == DataType::kInt4) {
+    q_range = 16;
+    q_min = -8;
+    base_scale = 0.03f;
+  } else if (cfg.weight_type == DataType::kInt8) {
+    q_range = 256;
+    q_min = -128;
+    base_scale = 0.004f;
+  }
+
+  std::vector<float> src_data(src_shape.DimensionsProduct());
+  for (size_t i = 0; i < src_data.size(); ++i) {
+    src_data[i] = 0.7f * std::sin(static_cast<float>(i + 1 + seed) * 0.29f) -
+                  0.35f * std::cos(static_cast<float>(i + 3 + seed) * 0.19f);
+  }
+
+  const OHWI w_shape(cfg.part_o, 1, 1, cfg.part_i);
+  const OHWI scale_shape(cfg.part_o, 1, 1, cfg.scale_groups);
+  ::ml_drift::WeightsDescription w_desc;
+  if (cfg.weight_type == DataType::kInt2) {
+    w_desc = ::ml_drift::GetFullyConnectedInt2WeightsDesc(gpu_info, w_shape);
+  } else if (cfg.weight_type == DataType::kInt4) {
+    w_desc = ::ml_drift::GetFullyConnectedInt4WeightsDesc(gpu_info, w_shape);
+  } else {
+    w_desc = ::ml_drift::GetFullyConnectedInt8WeightsDesc(gpu_info, w_shape);
+  }
+
+  GpuModelBuilder builder(gpu_info,
+                          {.storage = storage,
+                           .use_f32_accum_for_f16_convolutions =
+                               precision == CalculationsPrecision::kF32F16});
+  const GpuModelBuilder::TensorHandle src_h =
+      builder.AddTensor(src_shape, dtype);
+  const GpuModelBuilder::TensorHandle dst_h =
+      builder.AddTensor(dst_shape, dtype);
+
+  BlockFfwEdgeFcSpec spec;
+  spec.num_parts = cfg.num_parts;
+  spec.part_weights.reserve(cfg.num_parts);
+  for (float sc : cfg.src_qdq_scales) {
+    spec.src_qdqs.push_back(QuantizeAndDequantizeAttributes{
+        .min = -128.0f * sc, .max = 127.0f * sc, .scale = sc});
+  }
+  for (float sc : cfg.dst_qdq_scales) {
+    spec.dst_qdqs.push_back(QuantizeAndDequantizeAttributes{
+        .min = -128.0f * sc, .max = 127.0f * sc, .scale = sc});
+  }
+
+  std::vector<float> expected(dst_shape.DimensionsProduct(), 0.0f);
+  const int group_i = cfg.part_i / cfg.scale_groups;
+
+  for (int part = 0; part < cfg.num_parts; ++part) {
+    ::ml_drift::Tensor<OHWI, DataType::kInt8> w_vals;
+    w_vals.shape = w_shape;
+    w_vals.data.resize(w_shape.DimensionsProduct());
+    for (int8_t& v : w_vals.data) {
+      v = static_cast<int8_t>(static_cast<int>(rng() % q_range) + q_min);
+    }
+
+    ::ml_drift::Tensor<OHWI, DataType::kFloat32> scales;
+    scales.shape = scale_shape;
+    scales.data.resize(scale_shape.DimensionsProduct());
+    for (size_t i = 0; i < scales.data.size(); ++i) {
+      scales.data[i] =
+          base_scale * (0.75f + 0.05f * static_cast<float>((i + part) % 7));
+    }
+
+    ::ml_drift::Tensor<OHWI, DataType::kFloat32> zps;
+    if (cfg.has_zero_point) {
+      zps.shape = scale_shape;
+      zps.data.resize(scale_shape.DimensionsProduct());
+      for (size_t i = 0; i < zps.data.size(); ++i) {
+        zps.data[i] = -0.5f + 0.25f * static_cast<float>((i + part) % 5);
+      }
+    }
+
+    // Compute CPU reference for this partition.
+    for (int o = 0; o < cfg.part_o; ++o) {
+      double acc = 0.0;
+      for (int i = 0; i < cfg.part_i; ++i) {
+        const int src_y = i / src_row_c;
+        const int src_c = part * src_row_c + (i % src_row_c);
+        float x_val = src_data[src_y * src_shape.c + src_c];
+        for (float sc : cfg.src_qdq_scales) {
+          x_val = ApplyHostQdq(x_val, sc);
+        }
+        const int g = i / group_i;
+        const int param_idx = o * cfg.scale_groups + g;
+        const float sc = scales.data[param_idx];
+        const float zp = cfg.has_zero_point ? zps.data[param_idx] : 0.0f;
+        const float w_f =
+            sc * (static_cast<float>(w_vals.data[o * cfg.part_i + i]) - zp);
+        acc += static_cast<double>(x_val) * static_cast<double>(w_f);
+      }
+      float out_val = static_cast<float>(acc);
+      for (float sc : cfg.dst_qdq_scales) {
+        out_val = ApplyHostQdq(out_val, sc);
+      }
+      const int dst_y = o / dst_row_c;
+      const int dst_c = part * dst_row_c + (o % dst_row_c);
+      expected[dst_y * dst_shape.c + dst_c] = out_val;
+    }
+
+    const GpuModelBuilder::TensorHandle w_h = builder.AddConstantTensor(
+        ::ml_drift::GetTensorDescriptorForWeightsLayout(w_vals, w_desc));
+    const GpuModelBuilder::TensorHandle s_h = builder.AddConstantTensor(
+        ::ml_drift::ScaleOrZeroPointToTensorDesc(gpu_info, scales, dtype));
+    GpuModelBuilder::TensorHandle zp_h;
+    const GpuModelBuilder::TensorHandle* zp_ptr = nullptr;
+    if (cfg.has_zero_point) {
+      zp_h = builder.AddConstantTensor(
+          ::ml_drift::ScaleOrZeroPointToTensorDesc(gpu_info, zps, dtype));
+      zp_ptr = &zp_h;
+    }
+    spec.part_weights.push_back(::ml_drift::CreateExternalWeights(
+        w_h, w_desc, w_shape, scale_shape, &s_h, zp_ptr, /*sum_i=*/nullptr));
+  }
+
+  ABSL_RETURN_IF_ERROR(AddBlockFfwEdgeFc(&builder, src_h, dst_h, spec));
+  GpuModel gpu_model;
+  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(std::vector<ValueId>{src_h.id},
+                                           std::vector<ValueId>{dst_h.id},
+                                           &gpu_model));
+  EXPECT_EQ(gpu_model.nodes.size(), 1);
+
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = src_shape;
+  src_cpu.data = std::move(src_data);
+  ::ml_drift::TensorFloat32 dst_cpu;
+  dst_cpu.shape = dst_shape;
+  dst_cpu.data.resize(expected.size());
+  ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(
+      {src_cpu}, std::vector<::ml_drift::TensorFloat32*>{&dst_cpu},
+      &gpu_model));
+
+  float tol = precision == CalculationsPrecision::kF16 ? 1e-2f : 1e-4f;
+  if (!cfg.dst_qdq_scales.empty() &&
+      precision == CalculationsPrecision::kF16) {
+    tol = std::max(tol, 2.0f * cfg.dst_qdq_scales.back());
+  }
+  EXPECT_THAT(dst_cpu.data, Pointwise(FloatNear(tol), expected));
+  return absl::OkStatus();
+}
+
+TEST_P(BlockFfwKernelTest, DirectEdgeFcU1LinearAndBlockwiseInt2Int4Int8) {
+  // U1 layout `[1, 1, 1, K1 * I1]` -> `[1, K2, 1, K1 * S]`, linear per-channel
+  // INT2 with zero_point and inline src + chained dst QDQs.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt2,
+                         .num_parts = 2,
+                         .src_height = 1,
+                         .dst_height = 2,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 1,
+                         .has_zero_point = true,
+                         .src_qdq_scales = {0.025f},
+                         .dst_qdq_scales = {0.05f, 0.045f}},
+      /*seed=*/11));
+
+  // U1 layout, blockwise (`scale_groups = 2`) INT4 with zero_point, no QDQ.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt4,
+                         .num_parts = 2,
+                         .src_height = 1,
+                         .dst_height = 2,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 2,
+                         .has_zero_point = true},
+      /*seed=*/22));
+
+  // U1 layout, blockwise (`scale_groups = 2`) symmetric INT8 (no zero_point),
+  // with inline src QDQ only.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt8,
+                         .num_parts = 2,
+                         .src_height = 1,
+                         .dst_height = 2,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 2,
+                         .has_zero_point = false,
+                         .src_qdq_scales = {0.02f}},
+      /*seed=*/33));
+}
+
+TEST_P(BlockFfwKernelTest, DirectEdgeFcD2AndSinglePartInt2Int4Int8) {
+  // D2 layout `[1, K2, 1, K1 * S]` -> `[1, 1, 1, K1 * O4]`, linear per-channel
+  // symmetric INT4 (no zero_point) with inline dst QDQ.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt4,
+                         .num_parts = 2,
+                         .src_height = 2,
+                         .dst_height = 1,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 1,
+                         .has_zero_point = false,
+                         .dst_qdq_scales = {0.04f}},
+      /*seed=*/44));
+
+  // D2 layout, blockwise (`scale_groups = 2`) INT8 with zero_point + src & dst
+  // QDQs.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt8,
+                         .num_parts = 2,
+                         .src_height = 2,
+                         .dst_height = 1,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 2,
+                         .has_zero_point = true,
+                         .src_qdq_scales = {0.025f},
+                         .dst_qdq_scales = {0.05f}},
+      /*seed=*/55));
+
+  // Single-part (`num_parts == 1`) U1 blockwise INT2 with zero_point and inline
+  // QDQs (exercises the wrapper-free single-part codegen path).
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt2,
+                         .num_parts = 1,
+                         .src_height = 1,
+                         .dst_height = 2,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 2,
+                         .has_zero_point = true,
+                         .src_qdq_scales = {0.025f},
+                         .dst_qdq_scales = {0.04f}},
+      /*seed=*/66));
+
+  // Single-part (`num_parts == 1`) D2 linear symmetric INT8, no QDQ.
+  ASSERT_OK(RunDirectEdgeFcTest(
+      *exec_env, precision(), storage(),
+      DirectEdgeFcConfig{.weight_type = DataType::kInt8,
+                         .num_parts = 1,
+                         .src_height = 2,
+                         .dst_height = 1,
+                         .part_i = 16,
+                         .part_o = 16,
+                         .scale_groups = 1,
+                         .has_zero_point = false},
+      /*seed=*/77));
+}
+
+TEST(BlockFfwEdgeFcValidationTest,
+     RejectsInvalidInputsScaleShapesAndBindingLimits) {
+  GpuInfo gpu_info;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  gpu_info.webgpu_info.max_storage_buffers_per_shader_stage = 8;
+  gpu_info.webgpu_info.max_storage_textures_per_shader_stage = 4;
+
+  GpuModelBuilder::TensorHandle src;
+  src.id = 1;
+  src.tensor_desc = TensorDescriptor(
+      DataType::kFloat32, TensorStorageType::kBuffer, ::ml_drift::Layout::kHWC);
+  src.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 16));
+
+  GpuModelBuilder::TensorHandle dst;
+  dst.id = 2;
+  dst.tensor_desc = TensorDescriptor(
+      DataType::kFloat32, TensorStorageType::kBuffer, ::ml_drift::Layout::kHWC);
+  dst.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 16));
+
+  const OHWI w_shape(16, 1, 1, 16);
+  GpuModelBuilder::Weights part_w;
+  part_w.shape = w_shape;
+  part_w.desc = ::ml_drift::GetFullyConnectedInt2WeightsDesc(gpu_info, w_shape);
+  part_w.scale_zp_shape = OHWI(16, 1, 1, 1);
+  GpuModelBuilder::TensorHandle scale_h;
+  scale_h.id = 3;
+  scale_h.tensor_desc = TensorDescriptor(
+      DataType::kFloat32, TensorStorageType::kBuffer, ::ml_drift::Layout::kHWC);
+  part_w.scale = scale_h;
+  GpuModelBuilder::TensorHandle zp_h;
+  zp_h.id = 4;
+  zp_h.tensor_desc = TensorDescriptor(
+      DataType::kFloat32, TensorStorageType::kBuffer, ::ml_drift::Layout::kHWC);
+  part_w.zero_point = zp_h;
+
+  BlockFfwEdgeFcSpec spec;
+  spec.num_parts = 1;
+  spec.part_weights = {part_w};
+
+  // Null builder.
+  EXPECT_EQ(AddBlockFfwEdgeFc(/*builder=*/nullptr, src, dst, spec).code(),
+            absl::StatusCode::kInvalidArgument);
+
+  GpuModelBuilder builder(gpu_info, {.storage = TensorStorageType::kBuffer});
+
+  // Non-positive height.
+  {
+    GpuModelBuilder::TensorHandle bad_src = src;
+    bad_src.tensor_desc.SetBHWCShape(BHWC(1, 0, 1, 16));
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, bad_src, dst, spec).code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // Unsupported weight storage dtype (`kInt8` / `kUnknown`).
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.part_weights[0].desc.type = DataType::kInt8;
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+    bad_spec.part_weights[0].desc.type = DataType::kUnknown;
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+  }
+
+  // Unsupported I4O4-like layout (`k2DX4I4YIsSpatialIAndXIsOOGroupO4` or
+  // `kCustomGroups`) or mismatched `output_group_size`.
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.part_weights[0].desc.layout =
+        ::ml_drift::WeightsLayout::k2DX4I4YIsSpatialIAndXIsOOGroupO4;
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+
+    bad_spec.part_weights[0].desc.layout =
+        ::ml_drift::WeightsLayout::kCustomGroups;
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+
+    bad_spec = spec;
+    bad_spec.part_weights[0].desc.output_group_size = 2;
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+  }
+
+  // Mismatched scale or zero-point data type vs activation data type.
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.part_weights[0].scale->tensor_desc =
+        TensorDescriptor(DataType::kFloat16, TensorStorageType::kBuffer,
+                         ::ml_drift::Layout::kHWC);
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kInvalidArgument);
+
+    bad_spec = spec;
+    bad_spec.part_weights[0].zero_point->tensor_desc =
+        TensorDescriptor(DataType::kFloat16, TensorStorageType::kBuffer,
+                         ::ml_drift::Layout::kHWC);
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // Invalid QDQ attributes (negative scale, NaN scale, min > max).
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.src_qdqs = {QuantizeAndDequantizeAttributes{
+        .min = -1.0f, .max = 1.0f, .scale = -0.01f}};
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kInvalidArgument);
+
+    bad_spec = spec;
+    bad_spec.dst_qdqs = {QuantizeAndDequantizeAttributes{
+        .min = -1.0f,
+        .max = 1.0f,
+        .scale = std::numeric_limits<float>::quiet_NaN()}};
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kInvalidArgument);
+
+    bad_spec = spec;
+    bad_spec.dst_qdqs = {QuantizeAndDequantizeAttributes{
+        .min = 2.0f, .max = 1.0f, .scale = 0.01f}};
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kInvalidArgument);
+  }
+
+  // Batched scale_zp_shape.h != 1.
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.part_weights[0].scale_zp_shape = OHWI(16, 2, 1, 1);
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+  }
+
+  // Per-tensor / non-per-output-channel scale_zp_shape.o == 1.
+  {
+    BlockFfwEdgeFcSpec bad_spec = spec;
+    bad_spec.part_weights[0].scale_zp_shape = OHWI(1, 1, 1, 1);
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, src, dst, bad_spec).code(),
+              absl::StatusCode::kUnimplemented);
+  }
+
+  // Exceeds WebGPU storage buffer limit (2 + 4 * 3 = 14 > 8).
+  {
+    GpuModelBuilder::TensorHandle wide_src = src;
+    wide_src.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 64));
+    GpuModelBuilder::TensorHandle wide_dst = dst;
+    wide_dst.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 64));
+    BlockFfwEdgeFcSpec wide_spec;
+    wide_spec.num_parts = 4;
+    wide_spec.part_weights = {part_w, part_w, part_w, part_w};
+    EXPECT_EQ(AddBlockFfwEdgeFc(&builder, wide_src, wide_dst, wide_spec).code(),
+              absl::StatusCode::kUnimplemented);
+  }
+
+  // Exceeds Metal shared read+write texture slot limit (31 src + 1 dst = 32 >
+  // 31, even though src_image_args == 31 and dst_image_args == 1 individually).
+  {
+    GpuInfo metal_info;
+    metal_info.gpu_api = ::ml_drift::GpuApi::kMetal;
+    GpuModelBuilder metal_builder(metal_info,
+                                  {.storage = TensorStorageType::kTexture2D});
+    GpuModelBuilder::TensorHandle tex_src;
+    tex_src.id = 1;
+    tex_src.tensor_desc = TensorDescriptor(DataType::kFloat32,
+                                           TensorStorageType::kTexture2D,
+                                           ::ml_drift::Layout::kHWC);
+    tex_src.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 160));
+    GpuModelBuilder::TensorHandle tex_dst = tex_src;
+    tex_dst.id = 2;
+
+    GpuModelBuilder::Weights tex_part = part_w;
+    tex_part.desc.layout =
+        ::ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+    tex_part.scale->tensor_desc = TensorDescriptor(
+        DataType::kFloat32, TensorStorageType::kTexture2D,
+        ::ml_drift::Layout::kHWC);
+    tex_part.zero_point->tensor_desc = TensorDescriptor(
+        DataType::kFloat32, TensorStorageType::kTexture2D,
+        ::ml_drift::Layout::kHWC);
+
+    BlockFfwEdgeFcSpec metal_spec;
+    metal_spec.num_parts = 10;
+    metal_spec.part_weights.assign(10, tex_part);
+    EXPECT_EQ(
+        AddBlockFfwEdgeFc(&metal_builder, tex_src, tex_dst, metal_spec).code(),
+        absl::StatusCode::kUnimplemented);
+  }
+
+  // Exceeds Mali 8-part cap even when OpenCL buffer count fits within 128.
+  {
+    GpuInfo mali_info;
+    mali_info.gpu_api = ::ml_drift::GpuApi::kOpenCl;
+    mali_info.vendor = ::ml_drift::GpuVendor::kMali;
+    GpuModelBuilder mali_builder(mali_info,
+                                 {.storage = TensorStorageType::kBuffer});
+    GpuModelBuilder::TensorHandle mali_src = src;
+    mali_src.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 9 * 16));
+    GpuModelBuilder::TensorHandle mali_dst = dst;
+    mali_dst.tensor_desc.SetBHWCShape(BHWC(1, 1, 1, 9 * 16));
+    BlockFfwEdgeFcSpec mali_spec;
+    mali_spec.num_parts = 9;
+    mali_spec.part_weights.assign(9, part_w);
+    EXPECT_EQ(
+        AddBlockFfwEdgeFc(&mali_builder, mali_src, mali_dst, mali_spec).code(),
+        absl::StatusCode::kUnimplemented);
+  }
 }
 
 INSTANTIATE_TEST_SUITE_P(

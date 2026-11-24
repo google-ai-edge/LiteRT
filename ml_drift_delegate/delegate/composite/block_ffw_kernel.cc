@@ -16,23 +16,40 @@
 
 #include <algorithm>
 #include <any>
+#include <cmath>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 #include <vector>
 
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/str_replace.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/strings/substitute.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/flops_util.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/kernel_info.h"  // from @ml_drift
+#include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
+#include "ml_drift/common/kernels/fully_connected_util.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/tuning_type.h"  // from @ml_drift
+#include "ml_drift/common/task/util.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 
@@ -44,15 +61,19 @@ using ::ml_drift::BHWC;
 using ::ml_drift::DataType;
 using ::ml_drift::DivideRoundUp;
 using ::ml_drift::ElementwiseDescriptor;
+using ::ml_drift::ExternalWeights;
 using ::ml_drift::GpuInfo;
 using ::ml_drift::GpuModelBuilder;
 using ::ml_drift::GPUOperation;
 using ::ml_drift::Node;
+using ::ml_drift::OHWI;
 using ::ml_drift::OperationDef;
+using ::ml_drift::QuantizeAndDequantizeAttributes;
 using ::ml_drift::TensorDescriptor;
 using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
+using ::ml_drift::WeightsDescription;
 using ::ml_drift::ir::IrOp;
 using ::ml_drift::ir::IrTensor;
 
@@ -279,6 +300,387 @@ std::unique_ptr<GPUOperation> CreateSiluOperation(const OperationDef& op_def) {
   return op;
 }
 
+// Fused single-token (`B == 1, W == 1`) GPU kernel for an `odml.blocked_ffw`
+// edge stage (`U1` or `D2`). Combines `num_parts` parallel branches of
+// `UnpackPart -> [QDQ] -> Quantized FC -> [QDQ]` plus `PackParts -> [QDQ]` into
+// one 3-D dispatch of grid `(dst_slices, work_group_size.y, num_parts)`, where
+// workgroup dimension Z selects the partition index `part` in `[0, num_parts)`.
+class BlockFfwEdgeFcOp : public GPUOperation {
+ public:
+  BlockFfwEdgeFcOp(int dst_slices, int num_parts)
+      : dst_slices_(dst_slices), num_parts_(num_parts) {}
+  BlockFfwEdgeFcOp(BlockFfwEdgeFcOp&&) = default;
+  BlockFfwEdgeFcOp& operator=(BlockFfwEdgeFcOp&&) = default;
+  BlockFfwEdgeFcOp(const BlockFfwEdgeFcOp&) = delete;
+  BlockFfwEdgeFcOp& operator=(const BlockFfwEdgeFcOp&) = delete;
+
+  std::vector<::ml_drift::int3> GetPossibleKernelWorkGroups(
+      ::ml_drift::TuningType tuning_type, const GpuInfo& gpu_info,
+      const ::ml_drift::KernelInfo& kernel_info) const override {
+    return {work_group_size_};
+  }
+
+  ::ml_drift::int3 GetGridSize() const override {
+    return ::ml_drift::int3(dst_slices_, work_group_size_.y, num_parts_);
+  }
+
+ private:
+  int dst_slices_ = 0;
+  int num_parts_ = 0;
+};
+
+std::string RowOf(absl::string_view slice, int rows, int row_slices) {
+  return rows == 1 ? "0" : absl::StrCat(slice, " / ", row_slices);
+}
+
+std::string SliceOfRow(absl::string_view slice, absl::string_view first_slice,
+                       int rows, int row_slices) {
+  return rows == 1
+             ? absl::StrCat(first_slice, " + ", slice)
+             : absl::StrCat(first_slice, " + (", slice, " % ", row_slices, ")");
+}
+
+struct BindingCounts {
+  int buffer_args = 0;
+  int src_image_args = 0;
+  int dst_image_args = 0;
+
+  void Record(TensorStorageType storage, bool is_dst) {
+    if (storage == TensorStorageType::kBuffer ||
+        storage == TensorStorageType::kImageBuffer ||
+        storage == TensorStorageType::kUnknown) {
+      ++buffer_args;
+    } else if (is_dst) {
+      ++dst_image_args;
+    } else {
+      ++src_image_args;
+    }
+  }
+};
+
+// Returns true if fusing all `spec.num_parts` weight/scale/zero-point bindings
+// plus `src_desc`/`dst_desc` into one dispatch would exceed `gpu_info`'s
+// per-stage buffer or texture/image argument limits.
+bool ExceedsEdgeFcBindingLimits(const GpuInfo& gpu_info,
+                                const TensorDescriptor& src_desc,
+                                const TensorDescriptor& dst_desc,
+                                const BlockFfwEdgeFcSpec& spec) {
+  // Mirror `GetMaxPackPartsInputs`: cap at 8 parts on Mali to avoid
+  // `clEnqueueNDRangeKernel` out-of-resources on wide partition counts.
+  if (gpu_info.IsMali() && spec.num_parts > 8) {
+    return true;
+  }
+  BindingCounts counts;
+  counts.Record(src_desc.GetStorageType(), /*is_dst=*/false);
+  counts.Record(dst_desc.GetStorageType(), /*is_dst=*/true);
+  for (const auto& pw : spec.part_weights) {
+    if (pw.desc.IsLinearLayout()) {
+      ++counts.buffer_args;
+    } else {
+      ++counts.src_image_args;
+    }
+    if (pw.scale.has_value()) {
+      counts.Record(pw.scale->tensor_desc.GetStorageType(), /*is_dst=*/false);
+    }
+    if (pw.zero_point.has_value()) {
+      counts.Record(pw.zero_point->tensor_desc.GetStorageType(),
+                    /*is_dst=*/false);
+    }
+  }
+  // Reserve one buffer slot for kernel uniforms on APIs whose uniform buffer
+  // shares the buffer argument limit (Metal / OpenCL).
+  const int effective_buffer_args =
+      gpu_info.IsApiWebGpu() ? counts.buffer_args : counts.buffer_args + 1;
+  if (effective_buffer_args > gpu_info.GetMaxBufferArguments()) {
+    return true;
+  }
+  if (gpu_info.IsApiWebGpu() || gpu_info.IsApiMetal()) {
+    // WebGPU binds both read-only and write-only non-buffer tensors as storage
+    // textures (`GetMaxImageArguments()`), and Metal shares one
+    // `[[texture(n)]]` slot table for both read and write textures.
+    return counts.src_image_args + counts.dst_image_args >
+           gpu_info.GetMaxImageArguments();
+  }
+  return counts.src_image_args > gpu_info.GetMaxTextureArguments() ||
+         counts.dst_image_args > gpu_info.GetMaxImageArguments();
+}
+
+// Appends exact ML Drift QuantizeAndDequantize math on `var_name` (of UCL type
+// `ToUclDataType(tensor_dtype, 4)`), matching `CreateQuantizeAndOrDequantize`
+// and `UseFp32ForQuantizeAndDequantize` across Metal, OpenCL, WebGPU, Vulkan,
+// and OpenGL ES.
+//
+// Example emitted UCL snippet (`var_name = "v0"`, `prefix = "src_qdq0"`,
+// `tensor_dtype = kFloat16`, Apple Metal `qdq_type = kFloat32`, `scale > 0`):
+//   {
+//     float4 q_in = ucl::Convert<float4>(v0);
+//     float4 clamped_v = min(
+//         ucl::Init<float4>(args.src_qdq0_max),
+//         max(ucl::Init<float4>(args.src_qdq0_min), q_in));
+//     float4 centered_q = floor(
+//         clamped_v * ucl::Init<float4>(args.src_qdq0_inv_scale) +
+//         ucl::Init<float4>(args.src_qdq0_zp_frac_half));
+//     centered_q = min(
+//         ucl::Init<float4>(args.src_qdq0_q_max),
+//         max(ucl::Init<float4>(args.src_qdq0_q_min), centered_q));
+//     float4 q_out = centered_q * ucl::Init<float4>(args.src_qdq0_scale) +
+//                    ucl::Init<float4>(args.src_qdq0_deq_off);
+//     v0 = ucl::Convert<half4>(q_out);
+//   }
+// When `scale == 0`, emits a constant assignment to `args.<prefix>_min`.
+void AppendInlineQuantizeAndDequantize(
+    std::string* code, GPUOperation* op, absl::string_view prefix,
+    absl::string_view var_name, DataType tensor_dtype, const GpuInfo& gpu_info,
+    const QuantizeAndDequantizeAttributes& raw_attr) {
+  const bool use_fp32_qdq = tensor_dtype == DataType::kFloat16 &&
+                            gpu_info.IsApple() && gpu_info.IsApiMetal();
+  const DataType qdq_type = use_fp32_qdq ? DataType::kFloat32 : tensor_dtype;
+  QuantizeAndDequantizeAttributes attr = raw_attr;
+  if (qdq_type == DataType::kFloat16 && attr.scale > 0.0f &&
+      attr.scale < 0.000062f) {
+    // The smallest positive normal FP16 value is `2^-14 ~= 6.1035e-5`
+    // (`~0.000062f`). Smaller positive scales are subnormal in FP16 and would
+    // flush to zero or overflow `1.0f / scale` past FP16 max (65504); matches
+    // `CreateQuantizeAndOrDequantize` while keeping `scale == 0.0f` exact.
+    attr.scale = 0.000062f;
+  }
+  const std::string q_vec = ::ml_drift::ToUclDataType(qdq_type, 4);
+  const std::string t_vec = ::ml_drift::ToUclDataType(tensor_dtype, 4);
+
+  op->args_.AddFloat(absl::StrCat(prefix, "_min"), attr.min, qdq_type);
+  if (attr.scale == 0.0f) {
+    *code += absl::Substitute(
+        "  $0 = ucl::Convert<$1>(ucl::Init<$2>(args.$3_min));\n", var_name,
+        t_vec, q_vec, prefix);
+    return;
+  }
+
+  const float inverse_scale = 1.0f / attr.scale;
+  const float zero_point = -attr.min * inverse_scale;
+  const float zero_point_int = std::round(zero_point);
+  const float zero_point_frac = zero_point - zero_point_int;
+  op->args_.AddFloat(absl::StrCat(prefix, "_max"), attr.max, qdq_type);
+  op->args_.AddFloat(absl::StrCat(prefix, "_scale"), attr.scale, qdq_type);
+  op->args_.AddFloat(absl::StrCat(prefix, "_inv_scale"), inverse_scale,
+                     qdq_type);
+  op->args_.AddFloat(absl::StrCat(prefix, "_zp_frac_half"),
+                     zero_point_frac + 0.5f, qdq_type);
+  op->args_.AddFloat(
+      absl::StrCat(prefix, "_q_min"),
+      std::floor(attr.min * inverse_scale + zero_point_frac + 0.5f), qdq_type);
+  op->args_.AddFloat(
+      absl::StrCat(prefix, "_q_max"),
+      std::floor(attr.max * inverse_scale + zero_point_frac + 0.5f), qdq_type);
+  op->args_.AddFloat(absl::StrCat(prefix, "_deq_off"),
+                     -zero_point_frac * attr.scale, qdq_type);
+
+  *code += absl::Substitute(R"(  {
+    $2 q_in = ucl::Convert<$2>($0);
+    $2 clamped_v = min(ucl::Init<$2>(args.$3_max), max(ucl::Init<$2>(args.$3_min), q_in));
+    $2 centered_q = floor(clamped_v * ucl::Init<$2>(args.$3_inv_scale) + ucl::Init<$2>(args.$3_zp_frac_half));
+    centered_q = min(ucl::Init<$2>(args.$3_q_max), max(ucl::Init<$2>(args.$3_q_min), centered_q));
+    $2 q_out = centered_q * ucl::Init<$2>(args.$3_scale) + ucl::Init<$2>(args.$3_deq_off);
+    $0 = ucl::Convert<$1>(q_out);
+  }
+)",
+                            var_name, t_vec, q_vec, prefix);
+}
+
+void AddIndexedWeightsArguments(const ExternalWeights& weights, int part_idx,
+                                GPUOperation* op) {
+  int element_size = 0;
+  DataType texture_type = DataType::kUnknown;
+  switch (weights.desc.type) {
+    case DataType::kUint8:
+      element_size = 4;
+      texture_type = DataType::kUint32;
+      break;
+    case DataType::kUint4:
+      element_size = 2;
+      texture_type = DataType::kUint16;
+      break;
+    case DataType::kUint2:
+      element_size = 1;
+      texture_type = DataType::kUint8;
+      break;
+    default:
+      ABSL_LOG(FATAL) << "Unsupported BlockFfwEdgeFc quantized weights type: "
+                      << ::ml_drift::ToString(weights.desc.type);
+  }
+  const std::string w_name = absl::StrCat("weights_", part_idx);
+  if (weights.desc.IsLinearLayout()) {
+    ::ml_drift::BufferDescriptor desc;
+    desc.element_type = DataType::kUint32;
+    desc.element_size = element_size;
+    op->AddSrcBuffer(w_name, desc);
+  } else {
+    op->AddSrcTensor(w_name,
+                     TensorDescriptor(texture_type,
+                                      ::ml_drift::TensorStorageType::kTexture2D,
+                                      ::ml_drift::Layout::kHW));
+  }
+  if (weights.scale != nullptr) {
+    op->AddSrcTensor(absl::StrCat("weights_scale_", part_idx), *weights.scale);
+  }
+  if (weights.zero_point != nullptr) {
+    op->AddSrcTensor(absl::StrCat("weights_zero_point_", part_idx),
+                     *weights.zero_point);
+  }
+}
+
+// Emits UCL code to load and unpack one 4x4 `(I4, O4)` tile of "edge weights"
+// into `w0..w3`. Here "edge weights" refers to one partition's 2-D
+// `[O, 1, 1, I]` quantized weight matrix from the `U1` (Stage 1) or `D2`
+// (Stage 4) edge stage of `odml.blocked_ffw`, stored in ML Drift's I4O4 linear
+// buffer (`kOSpatialIOGroupI4O4`) or 2-D texture
+// (`k2DYIsSpatialIOAndXIsOGroupI4O4`) layout with `output_group_size == O / 4`.
+std::string GenerateReadEdgeWeightsCode(DataType weights_type,
+                                        const WeightsDescription& weights_desc,
+                                        absl::string_view weights_obj_name) {
+  std::string c;
+  if (weights_desc.IsLinearLayout()) {
+    c += "    int linear_i4o4 = src_s * args.dst_slices + dst_s;\n";
+    if (weights_type == DataType::kInt2) {
+      absl::StrAppend(&c, "    uint w = args.", weights_obj_name,
+                      ".Read(linear_i4o4);\n");
+      c += "    ucl::U32x1ToU2x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    } else if (weights_type == DataType::kInt4) {
+      absl::StrAppend(&c, "    uint2 w = args.", weights_obj_name,
+                      ".Read(linear_i4o4);\n");
+      c += "    ucl::U32x2ToU4x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    } else {
+      absl::StrAppend(&c, "    uint4 w = args.", weights_obj_name,
+                      ".Read(linear_i4o4);\n");
+      c += "    ucl::U32x4ToU8x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    }
+  } else {
+    const std::string y_c = "src_s";
+    if (weights_type == DataType::kInt8) {
+      absl::StrAppend(&c, "    uint4 w = args.", weights_obj_name,
+                      ".Read(dst_s, ", y_c, ");\n");
+      c += "    ucl::U32x4ToU8x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    } else if (weights_type == DataType::kInt4) {
+      absl::StrAppend(&c, "    ushort4 w = args.", weights_obj_name,
+                      ".Read(dst_s, ", y_c, ");\n");
+      c += "    ucl::U16x4ToU4x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    } else {
+      absl::StrAppend(&c, "    uchar4 w = args.", weights_obj_name,
+                      ".Read(dst_s, ", y_c, ");\n");
+      c += "    ucl::U8x4ToU2x16AsVec4x4<SType>(w, w0, w1, w2, w3);\n";
+    }
+  }
+  return c;
+}
+
+std::string RewriteIndexedScaleZpNames(std::string code, int part_idx) {
+  return absl::StrReplaceAll(
+      code,
+      {{"args.weights_scale", absl::StrCat("args.weights_scale_", part_idx)},
+       {"args.weights_zero_point",
+        absl::StrCat("args.weights_zero_point_", part_idx)}});
+}
+
+// Parameters needed to generate the per-partition inner reduction loop in
+// `BlockFfwEdgeFcOp`.
+struct EdgeFcLoopCodegenParams {
+  bool is_block_quantized = false;
+  bool has_zp = false;
+  bool src_has_batch = false;
+  bool use_fma = false;
+  int src_height = 1;
+  int src_row_slices = 0;
+  DataType weights_type = DataType::kUnknown;
+  ::ml_drift::CalculationsPrecision precision =
+      ::ml_drift::CalculationsPrecision::kF32;
+  OHWI scale_zp_shape;
+  WeightsDescription weights_desc;
+  absl::string_view reduction_size;
+  absl::string_view src_qdq_code;
+};
+
+// Appends the per-partition input-slice reduction loop for partition `part_idx`
+// inside `BlockFfwEdgeFcOp`.
+//
+// Example emitted UCL loop body for `part_idx = 0`, linear per-channel INT2
+// buffer weights with zero-point, `src_height = 1`, `src_row_slices = 4`,
+// `reduction_size = "8"`, no source QDQ, FP32 accumulation without FMA:
+//   w_scale = args.weights_scale_0.Read(dst_s);
+//   float4 w_zp = args.weights_zero_point_0.Read(dst_s);
+//   w_bias = -w_scale * (ucl::Init<float4>(2) + w_zp);
+//   for (int src_s = tid.y; src_s < args.src_slices; src_s += 8) {
+//     float4 v0 = args.src_tensor.Read(0, 0, part * 4 + src_s);
+//     float4 w0, w1, w2, w3;
+//     int linear_i4o4 = src_s * args.dst_slices + dst_s;
+//     uint w = args.weights_0.Read(linear_i4o4);
+//     ucl::U32x1ToU2x16AsVec4x4<float>(w, w0, w1, w2, w3);
+//     w0 = w0 * w_scale + w_bias;
+//     w1 = w1 * w_scale + w_bias;
+//     w2 = w2 * w_scale + w_bias;
+//     w3 = w3 * w_scale + w_bias;
+//     r_sp0 += v0.x * w0;
+//     r_sp0 += v0.y * w1;
+//     r_sp0 += v0.z * w2;
+//     r_sp0 += v0.w * w3;
+//   }
+// For blockwise scales (`is_block_quantized = true`), an outer loop iterates
+// over `src_group_id` (reading `weights_scale_<k>` / `weights_zero_point_<k>`
+// per block) and an inner loop covers `src_sub_id` in
+// `[0, args.src_group_size)`.
+void AppendEdgeFcPartLoopBody(const EdgeFcLoopCodegenParams& params,
+                              int part_idx, std::string* code) {
+  if (!params.is_block_quantized) {
+    *code += RewriteIndexedScaleZpNames(
+        ::ml_drift::fc::ReadScaleZeroPointLinear(
+            "dst_s", params.scale_zp_shape, params.has_zp, params.weights_type),
+        part_idx);
+    absl::StrAppend(code,
+                    "  for (int src_s = tid.y; src_s < args.src_slices; "
+                    "src_s += ",
+                    params.reduction_size, ") {\n");
+  } else {
+    absl::StrAppend(code,
+                    "  for (int src_group_id = tid.y; src_group_id < "
+                    "args.src_groups; src_group_id += ",
+                    params.reduction_size, ") {\n");
+    *code += RewriteIndexedScaleZpNames(
+        ::ml_drift::fc::ReadScaleZeroPointBlock("dst_s", params.scale_zp_shape,
+                                                params.has_zp,
+                                                params.weights_type),
+        part_idx);
+    *code +=
+        "  for (int src_sub_id = 0; src_sub_id < args.src_group_size; "
+        "++src_sub_id) {\n";
+    *code +=
+        "    int src_s = src_group_id * args.src_group_size + src_sub_id;\n";
+  }
+
+  const std::string src_y =
+      RowOf("src_s", params.src_height, params.src_row_slices);
+  const std::string src_first_s =
+      absl::StrCat("part * ", params.src_row_slices);
+  const std::string src_s_expr = SliceOfRow(
+      "src_s", src_first_s, params.src_height, params.src_row_slices);
+  if (params.src_has_batch) {
+    absl::StrAppend(code, "    Type v0 = args.src_tensor.Read(0, ", src_y,
+                    ", ", src_s_expr, ", 0);\n");
+  } else {
+    absl::StrAppend(code, "    Type v0 = args.src_tensor.Read(0, ", src_y,
+                    ", ", src_s_expr, ");\n");
+  }
+  absl::StrAppend(code, params.src_qdq_code);
+  *code += "    Type w0, w1, w2, w3;\n";
+  *code += GenerateReadEdgeWeightsCode(params.weights_type, params.weights_desc,
+                                       absl::StrCat("weights_", part_idx));
+  *code += ::ml_drift::fc::WeightsScaleAddBias("w_scale", "w_bias",
+                                               /*isI4O4=*/true, params.use_fma);
+  *code += ::ml_drift::fc::AccumulateFloat("r_sp0", "v0", params.precision,
+                                           /*isI4O4=*/true, params.use_fma);
+  if (params.is_block_quantized) {
+    *code += "  }\n";
+  }
+  *code += "  }\n";
+}
+
 absl::Status AddBlockFfwUnpackPartImpl(const OperationDef& op_def,
                                        const std::any& attributes,
                                        const std::vector<ValueId>& src_ids,
@@ -451,6 +853,350 @@ absl::Status CreateBlockFfwSiluFromIrOp(
     GpuModelBuilder* model_builder) {
   return AddBlockFfwSiluImpl(op_def, GetValueIds(inputs), GetValueIds(outputs),
                              model_builder);
+}
+
+absl::Status AddBlockFfwEdgeFc(GpuModelBuilder* builder,
+                               const GpuModelBuilder::TensorHandle& src,
+                               const GpuModelBuilder::TensorHandle& dst,
+                               const BlockFfwEdgeFcSpec& spec) {
+  if (builder == nullptr) {
+    return absl::InvalidArgumentError("Null GpuModelBuilder.");
+  }
+  const BHWC src_shape = src.tensor_desc.GetBHWCShape();
+  const BHWC dst_shape = dst.tensor_desc.GetBHWCShape();
+  const DataType data_type = src.tensor_desc.GetDataType();
+  if (src_shape.b != 1 || src_shape.w != 1 || src_shape.h <= 0 ||
+      dst_shape.b != 1 || dst_shape.w != 1 || dst_shape.h <= 0 ||
+      dst.tensor_desc.GetDataType() != data_type ||
+      (data_type != DataType::kFloat16 && data_type != DataType::kFloat32)) {
+    return absl::InvalidArgumentError(
+        "BlockFfwEdgeFc expects single-token [1, H, 1, C] float16/float32 "
+        "tensors of matching type with H > 0.");
+  }
+  if (spec.num_parts < 1 ||
+      static_cast<int>(spec.part_weights.size()) != spec.num_parts) {
+    return absl::InvalidArgumentError(
+        "BlockFfwEdgeFc expects one weight tensor per part.");
+  }
+  const GpuModelBuilder::Weights& w0 = spec.part_weights[0];
+  const OHWI full_shape = w0.shape;
+  if (full_shape.h != 1 || full_shape.w != 1 || full_shape.o <= 0 ||
+      full_shape.o % 4 != 0 || full_shape.i <= 0 || full_shape.i % 4 != 0) {
+    return absl::InvalidArgumentError(
+        "BlockFfwEdgeFc expects quantized weights with O and I divisible by "
+        "4.");
+  }
+  const OHWI part_shape(full_shape.o, 1, 1, full_shape.i);
+  const int src_slices = part_shape.i / 4;
+  const int dst_slices = part_shape.o / 4;
+  if (w0.desc.type != DataType::kUint2 && w0.desc.type != DataType::kUint4 &&
+      w0.desc.type != DataType::kUint8) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc supports only quantized UINT2/UINT4/UINT8 weights.");
+  }
+  const DataType weights_type =
+      ::ml_drift::fc::GetDataTypeForWeights(w0.desc.type);
+  if ((w0.desc.layout != ::ml_drift::WeightsLayout::kOSpatialIOGroupI4O4 &&
+       w0.desc.layout !=
+           ::ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4) ||
+      w0.desc.GetOutputGroupSize() != dst_slices) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc requires I4O4 linear or 2-D texture weights layout "
+        "with output_group_size == O / 4.");
+  }
+
+  for (const auto& pw : spec.part_weights) {
+    if (pw.desc != w0.desc || pw.shape != full_shape ||
+        pw.scale_zp_shape != w0.scale_zp_shape ||
+        pw.scale.has_value() != w0.scale.has_value() ||
+        pw.zero_point.has_value() != w0.zero_point.has_value()) {
+      return absl::InvalidArgumentError(
+          "BlockFfwEdgeFc expects homogeneous weight descriptors across "
+          "parts.");
+    }
+    if (!pw.scale.has_value()) {
+      return absl::UnimplementedError(
+          "BlockFfwEdgeFc expects tensor scales on quantized weights.");
+    }
+    if (pw.scale->tensor_desc.GetDataType() != data_type) {
+      return absl::InvalidArgumentError(
+          "BlockFfwEdgeFc expects weight scale data type to match activation "
+          "data type.");
+    }
+    if (pw.zero_point.has_value() &&
+        pw.zero_point->tensor_desc.GetDataType() != data_type) {
+      return absl::InvalidArgumentError(
+          "BlockFfwEdgeFc expects weight zero-point data type to match "
+          "activation data type.");
+    }
+  }
+
+  auto validate_qdqs =
+      [](const std::vector<QuantizeAndDequantizeAttributes>& qdqs)
+      -> absl::Status {
+    for (const auto& q : qdqs) {
+      if (!std::isfinite(q.scale) || q.scale < 0.0f || !std::isfinite(q.min) ||
+          !std::isfinite(q.max) || q.min > q.max) {
+        return absl::InvalidArgumentError(
+            "BlockFfwEdgeFc received invalid QuantizeAndDequantize "
+            "attributes.");
+      }
+    }
+    return absl::OkStatus();
+  };
+  ABSL_RETURN_IF_ERROR(validate_qdqs(spec.src_qdqs));
+  ABSL_RETURN_IF_ERROR(validate_qdqs(spec.dst_qdqs));
+
+  if (w0.scale_zp_shape.h != 1 || w0.scale_zp_shape.w != 1 ||
+      w0.scale_zp_shape.o != part_shape.o || w0.scale_zp_shape.i <= 0) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc requires per-output-channel or blockwise scales with "
+        "shape (O, 1, 1, G).");
+  }
+  if (w0.scale_zp_shape.i > 1 && src_slices % w0.scale_zp_shape.i != 0) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc requires input slices divisible by block scale "
+        "groups.");
+  }
+
+  if (part_shape.i % src_shape.h != 0 ||
+      (part_shape.i / src_shape.h) % 4 != 0 ||
+      static_cast<int64_t>(src_shape.c) !=
+          static_cast<int64_t>(spec.num_parts) *
+              (part_shape.i / src_shape.h)) {
+    return absl::InvalidArgumentError(
+        "BlockFfwEdgeFc source shape does not match K1 * I.");
+  }
+  if (part_shape.o % dst_shape.h != 0 ||
+      (part_shape.o / dst_shape.h) % 4 != 0 ||
+      static_cast<int64_t>(dst_shape.c) !=
+          static_cast<int64_t>(spec.num_parts) *
+              (part_shape.o / dst_shape.h)) {
+    return absl::InvalidArgumentError(
+        "BlockFfwEdgeFc destination shape does not match K1 * O.");
+  }
+
+  const GpuInfo& gpu_info = builder->gpu_info();
+  if (ExceedsEdgeFcBindingLimits(gpu_info, src.tensor_desc, dst.tensor_desc,
+                                 spec)) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc exceeds device per-stage binding limits.");
+  }
+  const ::ml_drift::CalculationsPrecision precision =
+      builder->GetConvPrecision(data_type);
+
+  // Query ML Drift's own FullyConnected workgroup selector for `num_parts`
+  // output batches so workgroup reduction matches target GPU occupancy.
+  const OHWI ref_weights_shape(part_shape.o, spec.num_parts, 1, part_shape.i);
+  const BHWC ref_dst_shape(1, spec.num_parts, 1, part_shape.o);
+  TensorDescriptor ref_src_desc = src.tensor_desc;
+  ref_src_desc.SetBHWCShape(BHWC(1, spec.num_parts, 1, part_shape.i));
+  TensorDescriptor ref_dst_desc = dst.tensor_desc;
+  ref_dst_desc.SetBHWCShape(ref_dst_shape);
+  ExternalWeights ref_weights;
+  ref_weights.desc = w0.desc;
+  ref_weights.shape = ref_weights_shape;
+  ref_weights.scale_zp_shape =
+      OHWI(w0.scale_zp_shape.o, spec.num_parts, 1, w0.scale_zp_shape.i);
+  ref_weights.scale = &w0.scale->tensor_desc;
+  if (w0.zero_point.has_value()) {
+    ref_weights.zero_point = &w0.zero_point->tensor_desc;
+  }
+  ABSL_ASSIGN_OR_RETURN(
+      const ::ml_drift::FullyConnected reference,
+      ::ml_drift::CreateFullyConnectedExternalWeights(
+          gpu_info, precision, ref_src_desc, ref_dst_desc, ref_weights,
+          /*bias=*/nullptr, &ref_dst_shape));
+  const int wg_y = reference.work_group_size_.y;
+  if (reference.work_group_size_.z != 1 || wg_y <= 1 ||
+      (wg_y & (wg_y - 1)) != 0) {
+    return absl::UnimplementedError(
+        "BlockFfwEdgeFc requires work_group_size.z == 1 and power-of-2 "
+        "work_group_size.y > 1.");
+  }
+
+  auto op = std::make_unique<BlockFfwEdgeFcOp>(dst_slices, spec.num_parts);
+  op->AddSrcTensor("src_tensor", src.tensor_desc);
+  op->AddDstTensor("dst_tensor", dst.tensor_desc);
+  op->args_.AddInt("src_slices", src_slices);
+  op->args_.AddInt("dst_slices", dst_slices);
+
+  const bool is_block_quantized =
+      ::ml_drift::fc::IsBlockQuantized(weights_type, w0.scale_zp_shape);
+  if (is_block_quantized) {
+    op->args_.AddInt("src_groups", w0.scale_zp_shape.i);
+    op->args_.AddInt("src_group_size", src_slices / w0.scale_zp_shape.i);
+  }
+
+  std::vector<ValueId> input_ids = {src.id};
+  for (int k = 0; k < spec.num_parts; ++k) {
+    const auto& pw = spec.part_weights[k];
+    ExternalWeights ext;
+    ext.desc = pw.desc;
+    ext.shape = pw.shape;
+    ext.scale_zp_shape = pw.scale_zp_shape;
+    ext.scale = &pw.scale->tensor_desc;
+    if (pw.zero_point.has_value()) {
+      ext.zero_point = &pw.zero_point->tensor_desc;
+    }
+    AddIndexedWeightsArguments(ext, k, op.get());
+    input_ids.push_back(pw.weights.id);
+    input_ids.push_back(pw.scale->id);
+    if (pw.zero_point.has_value()) {
+      input_ids.push_back(pw.zero_point->id);
+    }
+  }
+
+  const int src_row_slices = src_slices / src_shape.h;
+  const int dst_row_slices = dst_slices / dst_shape.h;
+  const DataType acc_type = precision == ::ml_drift::CalculationsPrecision::kF16
+                                ? DataType::kFloat16
+                                : DataType::kFloat32;
+  const bool use_fma = ::ml_drift::fc::UseFMA(gpu_info);
+  const bool has_zp = w0.zero_point.has_value();
+  const std::string reduction_size =
+      std::to_string(reference.work_group_size_.y);
+  const bool src_has_batch = src.tensor_desc.HasAxis(Axis::kBatch);
+  const bool dst_has_batch = dst.tensor_desc.HasAxis(Axis::kBatch);
+
+  // Example complete expanded UCL shader for U1 (`num_parts = 2`,
+  // `src_shape = [1, 1, 1, 32]`, `dst_shape = [1, 2, 1, 16]`,
+  // `work_group_size = (4, 8, 1)`, linear per-channel INT2 buffer weights with
+  // zero-point, FP32 precision, no inline QDQ):
+  //   MAIN_FUNCTION($0) {
+  //     int dst_s = ucl::GetGlobalId<0>();
+  //     int part = ucl::GetGroupId<2>();
+  //     int dst_end_slice = args.dst_slices;
+  //     int dst_s_wg_offset = ucl::GetGroupId<0>() * ucl::GetGroupSize<0>();
+  //     if (dst_s_wg_offset >= dst_end_slice) return;
+  //     float4 r_sp0 = ucl::Init<float4>(0.0f);
+  //     int2 tid;
+  //     tid.x = ucl::GetLocalId<0>();
+  //     tid.y = ucl::GetLocalId<1>();
+  //     if (dst_s < dst_end_slice) {
+  //       float4 w_scale;
+  //       float4 w_bias;
+  //       if (part == 0) {
+  //         // `AppendEdgeFcPartLoopBody(..., /*part_idx=*/0)`
+  //       } else {
+  //         // `AppendEdgeFcPartLoopBody(..., /*part_idx=*/1)`
+  //       }
+  //     }
+  //     __local float4 temp[32];
+  //     temp[tid.x * 8 + tid.y] = r_sp0;
+  //     for (int stride = 8 / 2; stride > 0; stride /= 2) {
+  //       ucl::SyncThreads<WorkGroup, Local>();
+  //       if (tid.y < stride) {
+  //         r_sp0 += temp[tid.x * 8 + tid.y + stride];
+  //         temp[tid.x * 8 + tid.y] = r_sp0;
+  //       }
+  //     }
+  //     if (dst_s >= dst_end_slice) return;
+  //     if (tid.y != 0) return;
+  //     float4 res_type = ucl::Convert<float4>(r_sp0);
+  //     // Optional inline dst QuantizeAndDequantize blocks on `res_type`.
+  //     args.dst_tensor::type res_value =
+  //         ucl::Convert<args.dst_tensor::type>(res_type);
+  //     args.dst_tensor.Write(res_value, 0, dst_s / 2,
+  //                           part * 2 + (dst_s % 2));
+  //   }
+  std::string c = "MAIN_FUNCTION($0) {\n";
+  c += "  int dst_s = ucl::GetGlobalId<0>();\n";
+  c += "  int part = ucl::GetGroupId<2>();\n";
+  c += "  int dst_end_slice = args.dst_slices;\n";
+  c += "  int dst_s_wg_offset = ucl::GetGroupId<0>() * "
+       "ucl::GetGroupSize<0>();\n";
+  c += "  if (dst_s_wg_offset >= dst_end_slice) return;\n";
+  absl::StrAppend(&c, "  AccType r_sp0 = ucl::Init<AccType>(",
+                  ::ml_drift::GetZeroValue(acc_type), ");\n");
+  c += "  int2 tid;\n";
+  c += "  tid.x = ucl::GetLocalId<0>();\n";
+  c += "  tid.y = ucl::GetLocalId<1>();\n";
+  c += "  if (dst_s < dst_end_slice) {\n";
+  c += "  Type w_scale;\n";
+  c += "  Type w_bias;\n";
+
+  // Pre-emit inline source QDQ uniform arguments once (outside any part loop).
+  std::string src_qdq_code;
+  for (size_t qi = 0; qi < spec.src_qdqs.size(); ++qi) {
+    AppendInlineQuantizeAndDequantize(&src_qdq_code, op.get(),
+                                      absl::StrCat("src_qdq", qi), "v0",
+                                      data_type, gpu_info, spec.src_qdqs[qi]);
+  }
+
+  const EdgeFcLoopCodegenParams loop_params{
+      .is_block_quantized = is_block_quantized,
+      .has_zp = has_zp,
+      .src_has_batch = src_has_batch,
+      .use_fma = use_fma,
+      .src_height = src_shape.h,
+      .src_row_slices = src_row_slices,
+      .weights_type = weights_type,
+      .precision = precision,
+      .scale_zp_shape = w0.scale_zp_shape,
+      .weights_desc = w0.desc,
+      .reduction_size = reduction_size,
+      .src_qdq_code = src_qdq_code,
+  };
+
+  if (spec.num_parts == 1) {
+    AppendEdgeFcPartLoopBody(loop_params, /*part_idx=*/0, &c);
+  } else {
+    for (int k = 0; k < spec.num_parts; ++k) {
+      if (k == 0) {
+        c += "  if (part == 0) {\n";
+      } else if (k + 1 < spec.num_parts) {
+        absl::StrAppend(&c, "  } else if (part == ", k, ") {\n");
+      } else {
+        c += "  } else {\n";
+      }
+      AppendEdgeFcPartLoopBody(loop_params, k, &c);
+    }
+    c += "  }\n";
+  }
+
+  c += "  }\n";  // end if (dst_s < dst_end_slice)
+  absl::StrAppend(&c, "  __local AccType temp[",
+                  reference.work_group_size_.x * reference.work_group_size_.y,
+                  "];\n");
+  c += ::ml_drift::fc::GetReductionCode(/*first=*/0, /*last=*/0,
+                                        /*local_batch_size=*/1, "tid.x",
+                                        "tid.y", reduction_size, "temp");
+  c += "  if (dst_s >= dst_end_slice) return;\n";
+  c += "  if (tid.y != 0) return;\n";
+  c += "  Type res_type = ucl::Convert<Type>(r_sp0);\n";
+  for (size_t qi = 0; qi < spec.dst_qdqs.size(); ++qi) {
+    AppendInlineQuantizeAndDequantize(&c, op.get(), absl::StrCat("dst_qdq", qi),
+                                      "res_type", data_type, gpu_info,
+                                      spec.dst_qdqs[qi]);
+  }
+  c += "  args.dst_tensor::type res_value = "
+       "ucl::Convert<args.dst_tensor::type>(res_type);\n";
+  const std::string dst_y = RowOf("dst_s", dst_shape.h, dst_row_slices);
+  const std::string dst_first_s = absl::StrCat("part * ", dst_row_slices);
+  const std::string dst_s_expr =
+      SliceOfRow("dst_s", dst_first_s, dst_shape.h, dst_row_slices);
+  if (dst_has_batch) {
+    absl::StrAppend(&c, "  args.dst_tensor.Write(res_value, 0, ", dst_y, ", ",
+                    dst_s_expr, ", 0);\n");
+  } else {
+    absl::StrAppend(&c, "  args.dst_tensor.Write(res_value, 0, ", dst_y, ", ",
+                    dst_s_expr, ");\n");
+  }
+  c += "}\n";
+
+  op->work_group_size_ = reference.work_group_size_;
+  op->compiler_options_ = reference.compiler_options_;
+  op->code_ = absl::StrReplaceAll(
+      c, {{"SType", ::ml_drift::ToUclDataType(data_type, 1)},
+          {"Type", ::ml_drift::ToUclDataType(data_type, 4)},
+          {"AccSType", ::ml_drift::ToUclDataType(acc_type, 1)},
+          {"AccType", ::ml_drift::ToUclDataType(acc_type, 4)}});
+  op->flops_ = spec.num_parts * ::ml_drift::GetConvolutionFlops(
+                                    BHWC(1, 1, 1, part_shape.o), part_shape);
+  builder->AddGpuOperation(input_ids, std::vector<ValueId>{dst.id},
+                           std::move(op), "block_ffw_edge_fc");
+  return absl::OkStatus();
 }
 
 }  // namespace litert::ml_drift
