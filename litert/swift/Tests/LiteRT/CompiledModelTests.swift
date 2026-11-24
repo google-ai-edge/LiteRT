@@ -228,6 +228,118 @@ final class CompiledModelTests: XCTestCase {
       XCTAssertEqual(val, 3.0, accuracy: 0.0001)
     }
   }
+
+  func testCreateInputBuffersWithDynamicDimensions() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/dynamic_add_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+
+    // The model declares its input tensors as (?, 2, 3), while the runtime resolves the dynamic
+    // dimension to 1 until the input tensors are resized.
+    XCTAssertEqual(try compiledModel.inputTensorType(inputIndex: 0).layout.dimensions, [-1, 2, 3])
+    XCTAssertEqual(try compiledModel.inputTensorLayout(inputIndex: 0).dimensions, [1, 2, 3])
+
+    // Verify createInputBuffers() sizes input buffers from the runtime layouts:
+    // (1, 2, 3) -> 6 floats = 24 bytes each
+    let inputBuffers = try compiledModel.createInputBuffers()
+    XCTAssertEqual(inputBuffers.count, 2)
+    XCTAssertEqual(inputBuffers[0].tensorType?.layout.dimensions, [1, 2, 3])
+    XCTAssertEqual(inputBuffers[0].size, 6 * MemoryLayout<Float>.stride)
+    XCTAssertEqual(inputBuffers[1].tensorType?.layout.dimensions, [1, 2, 3])
+    XCTAssertEqual(inputBuffers[1].size, 6 * MemoryLayout<Float>.stride)
+
+    // Run inference with the created input buffers
+    let outputBuffers = try compiledModel.createOutputBuffers()
+    try inputBuffers[0].write([Float](repeating: 1.0, count: 6))
+    try inputBuffers[1].write([Float](repeating: 2.0, count: 6))
+    try compiledModel.run(inputs: inputBuffers, outputs: outputBuffers)
+
+    let outputData: [Float] = try outputBuffers[0].read()
+    XCTAssertEqual(outputData, [Float](repeating: 3.0, count: 6))
+  }
+
+  func testCreateInputBuffersWithResizedDynamicDimensions() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/dynamic_add_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+
+    // Resize input tensors from (?, 2, 3) to (4, 2, 3) -> 24 floats = 96 bytes each
+    let newDims = [4, 2, 3]
+    try compiledModel.resizeInputTensor(inputIndex: 0, dimensions: newDims)
+    try compiledModel.resizeInputTensor(inputIndex: 1, dimensions: newDims)
+
+    // Verify createInputBuffers() sizes input buffers from the resized layouts
+    let inputBuffers = try compiledModel.createInputBuffers()
+    XCTAssertEqual(inputBuffers.count, 2)
+    XCTAssertEqual(inputBuffers[0].tensorType?.layout.dimensions, newDims)
+    XCTAssertEqual(inputBuffers[0].size, 24 * MemoryLayout<Float>.stride)
+    XCTAssertEqual(inputBuffers[1].tensorType?.layout.dimensions, newDims)
+    XCTAssertEqual(inputBuffers[1].size, 24 * MemoryLayout<Float>.stride)
+
+    // Run inference with the created input buffers
+    let outputBuffers = try compiledModel.createOutputBuffers()
+    try inputBuffers[0].write([Float](repeating: 1.0, count: 24))
+    try inputBuffers[1].write([Float](repeating: 2.0, count: 24))
+    try compiledModel.run(inputs: inputBuffers, outputs: outputBuffers)
+
+    let outputData: [Float] = try outputBuffers[0].read()
+    XCTAssertEqual(outputData, [Float](repeating: 3.0, count: 24))
+  }
+
+  func testCreateInputBuffersWithNonStrictResize() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+
+    // Resize input tensors from the static shape (2) to (3) -> 3 floats = 12 bytes each. The
+    // model keeps declaring its input tensors as (2).
+    let newDims = [3]
+    try compiledModel.resizeInputTensorNonStrict(inputIndex: 0, dimensions: newDims)
+    try compiledModel.resizeInputTensorNonStrict(inputIndex: 1, dimensions: newDims)
+    XCTAssertEqual(try compiledModel.inputTensorType(inputIndex: 0).layout.dimensions, [2])
+
+    // Verify createInputBuffers() sizes input buffers from the resized layouts
+    let inputBuffers = try compiledModel.createInputBuffers()
+    XCTAssertEqual(inputBuffers.count, 2)
+    XCTAssertEqual(inputBuffers[0].tensorType?.layout.dimensions, newDims)
+    XCTAssertEqual(inputBuffers[0].size, 3 * MemoryLayout<Float>.stride)
+    XCTAssertEqual(inputBuffers[1].tensorType?.layout.dimensions, newDims)
+    XCTAssertEqual(inputBuffers[1].size, 3 * MemoryLayout<Float>.stride)
+
+    // Run inference with the created input buffers
+    let outputBuffers = try compiledModel.createOutputBuffers()
+    try inputBuffers[0].write([1.0, 2.0, 3.0] as [Float])
+    try inputBuffers[1].write([10.0, 20.0, 30.0] as [Float])
+    try compiledModel.run(inputs: inputBuffers, outputs: outputBuffers)
+
+    let outputData: [Float] = try outputBuffers[0].read()
+    XCTAssertEqual(outputData, [11.0, 22.0, 33.0])
+  }
+
+  func testCreateInputBuffersWithUnsupportedRank() throws {
+    let env = try Environment()
+    let modelPath = "litert/test/testdata/simple_model.tflite"
+    let options = try Options()
+    try options.setHardwareAccelerators([.cpu])
+    let compiledModel = try CompiledModel(filePath: modelPath, environment: env, options: options)
+
+    // Resize an input tensor to rank 9, which exceeds the maximum rank of a tensor layout (8), so
+    // the runtime cannot report its layout.
+    try compiledModel.resizeInputTensorNonStrict(
+      inputIndex: 0, dimensions: [1, 1, 1, 1, 1, 1, 1, 1, 2])
+    XCTAssertThrowsError(try compiledModel.inputTensorLayout(inputIndex: 0))
+
+    // Verify createInputBuffers() fails instead of falling back to the declared shape (2)
+    XCTAssertThrowsError(try compiledModel.createInputBuffers()) { error in
+      XCTAssertEqual(error as? LiteRtError, .invalidArgument)
+    }
+  }
 }
 
 

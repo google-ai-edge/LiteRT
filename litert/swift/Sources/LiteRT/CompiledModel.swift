@@ -318,6 +318,10 @@ public final class CompiledModel {
 
   /// Automatically creates input buffers based on compiling requirements.
   ///
+  /// Each buffer has the current runtime layout of its input tensor (see `inputTensorLayout`)
+  /// rather than the shape that the model declares, which can contain dynamic dimensions. To create
+  /// buffers for another input shape, resize the input tensors first (see `resizeInputTensor`).
+  ///
   /// - Parameter signatureIndex: The index of the signature to query. Defaults to 0.
   /// - Returns: An array of newly created input tensor buffers.
   /// - Throws: `LiteRtError` if buffer creation fails.
@@ -327,13 +331,16 @@ public final class CompiledModel {
     for i in 0..<count {
       let requirements = try inputBufferRequirements(
         inputIndex: i, signatureIndex: signatureIndex)
-      let tensorType = try inputTensorType(inputIndex: i, signatureIndex: signatureIndex)
+      let declaredType = try inputTensorType(inputIndex: i, signatureIndex: signatureIndex)
+      // The declared type keeps dynamic dimensions as -1, which a tensor buffer cannot be created
+      // with, and ignores resizing, so take the layout from the runtime instead.
+      let layout = try inputTensorLayout(inputIndex: i, signatureIndex: signatureIndex)
       let bufferType =
         requirements.supportedTypes.first(where: { $0 != .unknown }) ?? .hostMemory
       let buf = try TensorBuffer(
         environment: environment,
         bufferType: bufferType,
-        tensorType: tensorType,
+        tensorType: TensorType(elementType: declaredType.elementType, layout: layout),
         size: requirements.bufferSize
       )
       inputs.append(buf)
