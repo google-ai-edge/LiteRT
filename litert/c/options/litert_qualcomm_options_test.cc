@@ -374,6 +374,31 @@ TEST(LiteRtQualcommOptionsTest, DlcDir) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, LpaiPrepareConfig) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  EXPECT_EQ(LrtQualcommOptionsSetLpaiPrepareConfig(nullptr, "config.json"),
+            kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtQualcommOptionsSetLpaiPrepareConfig(qualcomm_options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  const char* lpai_prepare_config = nullptr;
+  EXPECT_EQ(
+      LrtQualcommOptionsGetLpaiPrepareConfig(nullptr, &lpai_prepare_config),
+      kLiteRtStatusErrorInvalidArgument);
+  EXPECT_EQ(LrtQualcommOptionsGetLpaiPrepareConfig(qualcomm_options, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetLpaiPrepareConfig(
+      qualcomm_options, "/tmp/lpai_prepare.json"));
+
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetLpaiPrepareConfig(),
+            "/tmp/lpai_prepare.json");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, GraphTransform) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -665,6 +690,10 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_EQ(options->GetDlcDir(), "");
   options->SetDlcDir("tmp");
   EXPECT_EQ(options->GetDlcDir(), "tmp");
+
+  EXPECT_EQ(options->GetLpaiPrepareConfig(), "");
+  options->SetLpaiPrepareConfig("tmp/lpai_prepare.json");
+  EXPECT_EQ(options->GetLpaiPrepareConfig(), "tmp/lpai_prepare.json");
 
   EXPECT_EQ(options->GetGraphTransform(), "");
   options->SetGraphTransform("option1,option2");

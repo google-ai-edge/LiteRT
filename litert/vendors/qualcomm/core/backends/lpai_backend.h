@@ -6,6 +6,8 @@
 
 #include <list>
 #include <optional>
+#include <string>
+#include <vector>
 
 #include "LPAI/QnnLpaiBackend.h"  // from @qairt
 #include "LPAI/QnnLpaiCommon.h"   // from @qairt
@@ -48,8 +50,12 @@ class LpaiBackend : public QnnBackend {
                                    const Options& options) override;
 
  private:
-  std::list<QnnLpaiBackend_CustomConfig_t> lpai_backend_custom_configs_;
+  std::optional<std::vector<const QnnBackend_Config_t*>> CreateBackendConfigs(
+      const Options& options, std::optional<SocInfo> soc_info);
+
+  std::string prepare_config_path_;
   std::list<QnnLpaiBackend_CustomConfigHwInfo_t> lpai_hw_infos_;
+  std::list<QnnLpaiBackend_CustomConfig_t> lpai_backend_custom_configs_;
 };
 
 }  // namespace qnn

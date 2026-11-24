@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <string>
 #include <vector>
 
 #include "LPAI/QnnLpaiCommon.h"  // from @qairt
@@ -47,6 +48,7 @@ struct CapturedGraphFinalize {
 struct CapturedBackendConfig {
   bool called = false;
   std::optional<QnnLpaiBackend_CustomConfigHwInfo_t> hw_info;
+  std::optional<std::string> prepare_config_path;
 };
 
 class LpaiBackendTest : public ::testing::Test {
@@ -63,6 +65,7 @@ class LpaiBackendTest : public ::testing::Test {
       auto& t = *self_;
       t.captured_backend_config_.called = true;
       t.captured_backend_config_.hw_info.reset();
+      t.captured_backend_config_.prepare_config_path.reset();
       if (configs != nullptr) {
         for (size_t i = 0; configs[i] != nullptr; ++i) {
           const auto* config = configs[i];
@@ -78,6 +81,14 @@ class LpaiBackendTest : public ::testing::Test {
                 *static_cast<QnnLpaiBackend_CustomConfigHwInfo_t*>(
                     custom->config);
           }
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+          else if (custom->option == QNN_LPAI_BACKEND_CUSTOM_CFG_PREPARE_CFG &&
+                   custom->config != nullptr) {
+            t.captured_backend_config_.prepare_config_path =
+                static_cast<const char*>(custom->config);
+          }
+#endif
         }
       }
       *backend = t.fake_handle_;
@@ -154,7 +165,33 @@ TEST_F(LpaiBackendTest, InitSucceedsForSocWithLpai) {
   Options options;
   options.SetLogLevel(LogLevel::kOff);
   EXPECT_TRUE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  ASSERT_TRUE(captured_backend_config_.called);
+  EXPECT_FALSE(captured_backend_config_.prepare_config_path.has_value());
 }
+
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+TEST_F(LpaiBackendTest, InitForwardsNativePrepareConfigPath) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("/tmp/lpai_prepare.json");
+  EXPECT_TRUE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  ASSERT_TRUE(captured_backend_config_.called);
+  ASSERT_TRUE(captured_backend_config_.prepare_config_path.has_value());
+  EXPECT_EQ(*captured_backend_config_.prepare_config_path,
+            "/tmp/lpai_prepare.json");
+}
+
+#else
+TEST_F(LpaiBackendTest, InitSkipsPrepareConfigWithoutSdkSupport) {
+  Options options;
+  options.SetLogLevel(LogLevel::kOff);
+  options.SetLpaiPrepareConfig("/tmp/lpai_prepare.json");
+  EXPECT_TRUE(backend_->Init(options, FindOrCreateSocInfo("SM8850")));
+  ASSERT_TRUE(captured_backend_config_.called);
+  EXPECT_FALSE(captured_backend_config_.prepare_config_path.has_value());
+}
+#endif
 
 #if !defined(__ANDROID__)
 TEST_F(LpaiBackendTest, InitConfiguresV6HardwareVersion) {

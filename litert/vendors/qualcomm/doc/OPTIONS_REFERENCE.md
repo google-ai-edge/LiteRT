@@ -206,6 +206,23 @@ afterwards. The 300 ms debounce applies to `burst` and
 | LPAI client perf type | `lpai_client_perf_type` | `default` | compile | `default`, `real_time`, `non_real_time`. |
 | LPAI core affinity | `lpai_core_affinity_type` | `default` | compile | `default`, `soft`, `hard`. |
 | LPAI core selection | `lpai_core_selection` | `0` | compile | Core-selection bitmask, `0` leaves SDK default. |
+| LPAI prepare config | `lpai_prepare_config` | empty | compile | Path to a native LPAI prepare JSON file. Requires QAIRT 2.51.1+. |
+
+`--qualcomm_lpai_prepare_config` passes its path directly to
+`QNN_LPAI_BACKEND_CUSTOM_CFG_PREPARE_CFG`; LiteRT does not parse, rewrite, or
+delete the JSON. The JSON schema and the complete set of version-specific keys
+are defined by [the QAIRT LPAI custom-prepare documentation](https://docs.qualcomm.com/nav/home/lpai_backend_custom_prepare.html?product=924033590759186372).
+LiteRT does not validate individual keys. For the EAIX/AIX dump workflow
+validated with QAIRT 2.53.0, use `dump_dir`, `eaix_dump`, and `aix_dump`; for
+example:
+
+```json
+{
+  "dump_dir": "/tmp/lpai_dump",
+  "eaix_dump": true,
+  "aix_dump": true
+}
+```
 
 LPAI accepts `v5` or `v6` directly through `soc_model`. A Snapdragon SoC name
 with an LPAI entry in the LiteRT SoC table is also accepted. For example,

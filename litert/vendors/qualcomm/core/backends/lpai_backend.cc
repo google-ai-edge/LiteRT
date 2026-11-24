@@ -84,21 +84,9 @@ QnnLpaiGraph_CoreAffinityType_t ToQnnCoreAffinity(
 LpaiBackend::LpaiBackend(const QNN_INTERFACE_VER_TYPE* qnn_api)
     : QnnBackend(qnn_api) {}
 
-bool LpaiBackend::Init(const Options& options,
-                       [[maybe_unused]] std::optional<SocInfo> soc_info) {
-  // TODO (chunhsue-qti): Remove after backend fix this issue.
-  QNN_LOG_WARNING(
-      "LPAI backend: the QAIRT SDK will generate an .eaix file regardless of "
-      "the requested output. This is a known limitation and will be fixed in a "
-      "future version.");
-
-  // Log Handle.
-  auto local_log_handle = CreateLogHandle(options.GetLogLevel());
-  if (!local_log_handle && options.GetLogLevel() != LogLevel::kOff) {
-    QNN_LOG_ERROR("Failed to create log handle.");
-    return false;
-  }
-
+std::optional<std::vector<const QnnBackend_Config_t*>>
+LpaiBackend::CreateBackendConfigs(const Options& options,
+                                  std::optional<SocInfo> soc_info) {
   std::vector<const QnnBackend_Config_t*> backend_configs;
 #if defined(__ANDROID__)
   QNN_LOG_INFO(
@@ -117,28 +105,59 @@ bool LpaiBackend::Init(const Options& options,
         "(soc_model %u); cannot initialize the LPAI backend.",
         static_cast<int>(soc_info_.soc_name.size()), soc_info_.soc_name.data(),
         soc_info_.soc_model);
-    return false;
+    return std::nullopt;
   }
 
-  // Backend HW-info custom config.
   auto& hw_info = lpai_hw_infos_.emplace_back();
   hw_info.hwVersion = ToQnnHwVersion(hw_version);
   hw_info.lpaiTarget = ToQnnTarget(options.GetLpaiTarget());
-
-  auto& custom_config = lpai_backend_custom_configs_.emplace_back();
-  custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_HW_INFO;
-  custom_config.config = &hw_info;
-
-  auto& backend_config = AllocateBackendConfig();
-  backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
-  backend_config.customConfig = &custom_config;
-
-  backend_configs.emplace_back(&backend_config);
+  auto& hw_custom_config = lpai_backend_custom_configs_.emplace_back();
+  hw_custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_HW_INFO;
+  hw_custom_config.config = &hw_info;
+  auto& hw_backend_config = AllocateBackendConfig();
+  hw_backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
+  hw_backend_config.customConfig = &hw_custom_config;
+  backend_configs.emplace_back(&hw_backend_config);
 #endif  // defined(__ANDROID__)
+
+#if (QNN_LPAI_API_VERSION_MAJOR > 2) || \
+    (QNN_LPAI_API_VERSION_MAJOR == 2 && QNN_LPAI_API_VERSION_MINOR >= 35)
+  if (!options.GetLpaiPrepareConfig().empty()) {
+    prepare_config_path_ = options.GetLpaiPrepareConfig();
+    auto& prepare_custom_config = lpai_backend_custom_configs_.emplace_back();
+    prepare_custom_config.option = QNN_LPAI_BACKEND_CUSTOM_CFG_PREPARE_CFG;
+    prepare_custom_config.config =
+        const_cast<char*>(prepare_config_path_.c_str());
+    auto& prepare_backend_config = AllocateBackendConfig();
+    prepare_backend_config.option = QNN_BACKEND_CONFIG_OPTION_CUSTOM;
+    prepare_backend_config.customConfig = &prepare_custom_config;
+    backend_configs.emplace_back(&prepare_backend_config);
+  }
+#else
+  if (!options.GetLpaiPrepareConfig().empty()) {
+    QNN_LOG_WARNING(
+        "--qualcomm_lpai_prepare_config is ignored because this LiteRT build "
+        "uses an LPAI API older than 2.35. QAIRT SDK v2.51.1 or newer is "
+        "required.");
+  }
+#endif
   backend_configs.emplace_back(nullptr);
+  return backend_configs;
+}
+
+bool LpaiBackend::Init(const Options& options,
+                       std::optional<SocInfo> soc_info) {
+  auto local_log_handle = CreateLogHandle(options.GetLogLevel());
+  if (!local_log_handle && options.GetLogLevel() != LogLevel::kOff) {
+    QNN_LOG_ERROR("Failed to create log handle.");
+    return false;
+  }
+
+  auto backend_configs = CreateBackendConfigs(options, soc_info);
+  if (!backend_configs.has_value()) return false;
 
   auto local_backend_handle = CreateBackendHandle(
-      local_log_handle.get(), absl::MakeSpan(backend_configs));
+      local_log_handle.get(), absl::MakeSpan(*backend_configs));
   if (!local_backend_handle) {
     QNN_LOG_ERROR("Failed to create backend handle.");
     return false;

@@ -302,6 +302,9 @@ class Options {
   void SetLpaiCoreSelection(std::uint32_t lpai_core_selection);
   std::uint32_t GetLpaiCoreSelection() const;
 
+  void SetLpaiPrepareConfig(absl::string_view lpai_prepare_config);
+  absl::string_view GetLpaiPrepareConfig() const;
+
   // Directory where CPU host QNN shared libraries are located. If not set,
   // falls back to plugin directory and system loader paths.
   void SetQnnLibDir(absl::string_view qnn_lib_dir);
@@ -360,6 +363,7 @@ class Options {
   LpaiCoreAffinityType lpai_core_affinity_type_ =
       LpaiCoreAffinityType::kDefault;
   std::uint32_t lpai_core_selection_ = 0;
+  std::string lpai_prepare_config_;
   std::string qnn_lib_dir_;
   std::string dsp_skel_dir_;
 };
