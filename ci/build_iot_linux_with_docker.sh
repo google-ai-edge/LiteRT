@@ -120,6 +120,9 @@ if [[ "${FORCE_LOCAL_DOCKER_BUILD:-false}" == "true" ]]; then
 elif ! docker image inspect "${DOCKER_IMAGE}" >/dev/null 2>&1; then
   if [[ "${DOCKER_IMAGE}" != "litert-iot-linux:latest" ]] && docker pull "${DOCKER_IMAGE}"; then
     echo "Successfully pulled pre-built container: ${DOCKER_IMAGE}"
+  elif [[ "${DOCKER_IMAGE}" == *"@sha256:"* ]]; then
+    echo "ERROR: Failed to pull digest-pinned container image: ${DOCKER_IMAGE}" >&2
+    exit 1
   else
     echo "Building LiteRT Linux IoT build container (${DOCKER_IMAGE}) from ${DOCKERFILE}..."
     docker build "${SCRIPT_DIR}" -t "${DOCKER_IMAGE}" -f "${DOCKERFILE}"

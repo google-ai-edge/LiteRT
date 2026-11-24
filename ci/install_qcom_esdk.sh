@@ -21,6 +21,16 @@ ESDK_URL="https://artifacts.codelinaro.org/artifactory/qli-ci/flashable-binaries
 ESDK_SHA256="4381fb56f2b47e9691cb72bf937c20e5b199bb304ec4eb3a98ec64bfd875cbe0"
 ESDK_INSTALLER_REL="target/qcs8275-iq-8275-evk-pro-sku/sdk/qcom-wayland-x86_64-qcom-multimedia-image-armv8-2a-qcs8275-iq-8275-evk-pro-sku-toolchain-ext-1.8-ver.1.0.sh"
 
+run_as_esdk_user() {
+  local script="$1"
+  shift
+  if [[ "$(id -u)" -eq 0 ]]; then
+    su -s /bin/bash builder -c "${script}" _ "$@"
+  else
+    bash -c "${script}" _ "$@"
+  fi
+}
+
 install_and_prune_esdk() {
   local esdk_root="${LINUX_AARCH64_ESDK:-${ESDK_DEFAULT_ROOT}}"
   local esdk_gcc="${esdk_root}/tmp/sysroots/x86_64/usr/bin/aarch64-qcom-linux/aarch64-qcom-linux-gcc"
@@ -51,10 +61,32 @@ install_and_prune_esdk() {
     fi
     mkdir -p "${esdk_root}"
     chown -R builder:builder "${esdk_root}" "${tmp_esdk}"
-    su -s /bin/bash builder -c 'sh "$1" -y -d "$2"' _ "${tmp_esdk}/${ESDK_INSTALLER_REL}" "${esdk_root}"
-  else
-    sh "./${ESDK_INSTALLER_REL}" -y -d "${esdk_root}"
   fi
+
+  # Extract without BitBake auto-prep (-n), then populate only the compiler and
+  # C/C++/zlib sysroots offline to avoid unused AUTOREV recipes hitting GitHub.
+  run_as_esdk_user 'sh "$1" -y -n -d "$2"' "${tmp_esdk}/${ESDK_INSTALLER_REL}" "${esdk_root}"
+  cat >> "${esdk_root}/conf/local.conf" <<'EOF'
+
+BB_NO_NETWORK = "1"
+BBMULTICONFIG = ""
+BBMASK += "meta-qcom-qim-product-sdk/ meta-qcom-hwe/recipes-edgegateway/ meta-qcom-hwe/recipes-connectivity/fluoride/"
+EOF
+  run_as_esdk_user '
+    cd "$1" &&
+      . ./buildtools/environment-setup* &&
+      cd "$1/layers/poky" &&
+      . ./oe-init-build-env "$1" &&
+      BB_SETSCENE_ENFORCE=1 bitbake --quiet \
+        binutils-cross-aarch64:do_populate_sysroot \
+        gcc-cross-aarch64:do_populate_sysroot \
+        glibc:do_populate_sysroot \
+        libgcc:do_populate_sysroot \
+        gcc-runtime:do_populate_sysroot \
+        zlib:do_populate_sysroot &&
+      bitbake --quiet build-sysroots -c build_native_sysroot &&
+      bitbake --quiet build-sysroots -c build_target_sysroot
+  ' "${esdk_root}"
   popd > /dev/null
 
   echo "Pruning non-compiler/sysroot overhead in ${esdk_root}..."
