@@ -19,6 +19,7 @@
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 
@@ -43,6 +44,27 @@ absl::Status CreateBlockFfwSiluFromNode(
     const ::ml_drift::OperationDef& op_def,
     const std::vector<::ml_drift::Value*>& inputs,
     const std::vector<::ml_drift::Value*>& outputs,
+    ::ml_drift::GpuModelBuilder* model_builder);
+
+// Lowers an internal `kBlockFfwUnpackPartType` IrModel op into `model_builder`.
+absl::Status CreateBlockFfwUnpackPartFromIrOp(
+    const ::ml_drift::OperationDef& op_def,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
+    const ::ml_drift::ir::IrOp& op, ::ml_drift::GpuModelBuilder* model_builder);
+
+// Lowers an internal `kBlockFfwPackPartsType` IrModel op into `model_builder`.
+absl::Status CreateBlockFfwPackPartsFromIrOp(
+    const ::ml_drift::OperationDef& op_def,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
+    const ::ml_drift::ir::IrOp& op, ::ml_drift::GpuModelBuilder* model_builder);
+
+// Lowers an internal `kBlockFfwSiluType` IrModel op into `model_builder`.
+absl::Status CreateBlockFfwSiluFromIrOp(
+    const ::ml_drift::OperationDef& op_def,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& inputs,
+    const std::vector<const ::ml_drift::ir::IrTensor*>& outputs,
     ::ml_drift::GpuModelBuilder* model_builder);
 
 }  // namespace litert::ml_drift

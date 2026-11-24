@@ -1325,6 +1325,7 @@ cc_library(
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:util",
@@ -1343,13 +1344,16 @@ mld_kernel_test(
     deps = [
         ":block_ffw_parser",
         ":litert_op_selector",
+        "//ml_drift_delegate/delegate/composite/ir:litert_op_selector",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@ml_drift//ml_drift/common:data_type",
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:precision",
@@ -1360,6 +1364,7 @@ mld_kernel_test(
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
         "@ml_drift//ml_drift/common/task:weights_conversion",
+        "@ml_drift//ml_drift/common/transformations/ir:transform",
     ],
 )
 
@@ -1381,6 +1386,7 @@ objc_library(
         ":litert_op_selector",
         "@com_google_googletest//:gtest",
         "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         # Dependency placeholder: apple_frameworks Metal,
@@ -1388,6 +1394,7 @@ objc_library(
         "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
         "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:ir_model",
         "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:precision",
@@ -1398,7 +1405,9 @@ objc_library(
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@ml_drift//ml_drift/common/task:testing_util",
         "@ml_drift//ml_drift/common/task:weights_conversion",
+        "@ml_drift//ml_drift/common/transformations/ir:transform",
         "@ml_drift//ml_drift/metal/testing:test_util",
+        "//ml_drift_delegate/delegate/composite/ir:litert_op_selector",
     ],
 )
 

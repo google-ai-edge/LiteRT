@@ -28,6 +28,7 @@
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
@@ -52,6 +53,8 @@ using ::ml_drift::TensorDescriptor;
 using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
+using ::ml_drift::ir::IrOp;
+using ::ml_drift::ir::IrTensor;
 
 template <typename TensorT>
 std::vector<ValueId> GetValueIds(const std::vector<TensorT*>& values) {
@@ -422,6 +425,30 @@ absl::Status CreateBlockFfwSiluFromNode(const OperationDef& op_def,
                                         const std::vector<Value*>& inputs,
                                         const std::vector<Value*>& outputs,
                                         GpuModelBuilder* model_builder) {
+  return AddBlockFfwSiluImpl(op_def, GetValueIds(inputs), GetValueIds(outputs),
+                             model_builder);
+}
+
+absl::Status CreateBlockFfwUnpackPartFromIrOp(
+    const OperationDef& op_def, const std::vector<const IrTensor*>& inputs,
+    const std::vector<const IrTensor*>& outputs, const IrOp& op,
+    GpuModelBuilder* model_builder) {
+  return AddBlockFfwUnpackPartImpl(op_def, op.attr, GetValueIds(inputs),
+                                   GetValueIds(outputs), model_builder);
+}
+
+absl::Status CreateBlockFfwPackPartsFromIrOp(
+    const OperationDef& op_def, const std::vector<const IrTensor*>& inputs,
+    const std::vector<const IrTensor*>& outputs, const IrOp& op,
+    GpuModelBuilder* model_builder) {
+  return AddBlockFfwPackPartsImpl(op_def, op.attr, GetValueIds(inputs),
+                                  GetValueIds(outputs), model_builder);
+}
+
+absl::Status CreateBlockFfwSiluFromIrOp(
+    const OperationDef& op_def, const std::vector<const IrTensor*>& inputs,
+    const std::vector<const IrTensor*>& outputs,
+    GpuModelBuilder* model_builder) {
   return AddBlockFfwSiluImpl(op_def, GetValueIds(inputs), GetValueIds(outputs),
                              model_builder);
 }

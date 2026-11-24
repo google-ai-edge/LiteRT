@@ -34,6 +34,7 @@
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/custom_parsers.h"
 #include "ml_drift_delegate/tflite/custom_ir_operation_parser.h"
 #include "ml_drift_delegate/tflite/ir_model_builder.h"
 #include "ml_drift_delegate/tflite/ir_model_builder_helper.h"
@@ -206,12 +207,16 @@ std::unique_ptr<::ml_drift::ir::IrModel> RunBuildIrModel(
   delegate_params.nodes_to_replace = nodes_to_replace.ptr;
   delegate_params.input_tensors = node.inputs;
   delegate_params.output_tensors = node.outputs;
-  CustomIrOpMap custom_parsers;
-  custom_parsers[kBlockedFfwCompositeName] = GetBlockFfwParser();
-  custom_parsers[kBlockFfwCompositeName] = GetBlockFfwParser();
+  CustomIrOpMap custom_parsers = GetCustomParsers();
   return std::unique_ptr<::ml_drift::ir::IrModel>(
       BuildIrModel(ctx, delegate_params, /*options=*/{}, &custom_parsers,
                    shared_tensors, buffer_map));
+}
+
+TEST(BlockFfwIrParserTest, CustomParsersRegisterBothCompositeNames) {
+  CustomIrOpMap parsers = GetCustomParsers();
+  EXPECT_TRUE(parsers.contains(kBlockedFfwCompositeName));
+  EXPECT_TRUE(parsers.contains(kBlockFfwCompositeName));
 }
 
 TEST(BlockFfwIrParserTest, ConvertsSharedInt2WeightsAndInfers3dLayouts) {

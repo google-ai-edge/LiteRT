@@ -286,6 +286,7 @@ cc_library(
     hdrs = ["custom_parsers.h"],
     deps = [
         ":add_values_to_cache_parser",
+        ":block_ffw_parser",
         ":fused_sdpa_cache_update_parser",
         ":gated_delta_update_parser",
         ":glu_parser",
@@ -297,6 +298,7 @@ cc_library(
         ":sdpa_transposed_parser",
         ":short_conv_step_parser",
         ":sparse_sdpa_transposed_parser",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//tflite/c:common",
         "@com_google_absl//absl/container:flat_hash_map",
@@ -309,6 +311,8 @@ cc_library(
     hdrs = ["litert_op_selector.h"],
     deps = [
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_kernel",
+        "//ml_drift_delegate/delegate/composite:block_ffw_kernel",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/delegate/composite:fused_sdpa_cache_update_kernel",
         "//ml_drift_delegate/delegate/composite:gated_delta_update_kernel",
         "//ml_drift_delegate/delegate/composite:glu_kernel",
@@ -347,6 +351,7 @@ cc_test(
     deps = [
         ":litert_op_selector",
         "//ml_drift_delegate/delegate/composite:add_values_to_cache_parser",
+        "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/delegate/composite:qsa_indexer_update_parser",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
         "//ml_drift_delegate/delegate/composite:sparse_sdpa_transposed_parser",
@@ -579,6 +584,7 @@ cc_test(
     srcs = ["block_ffw_parser_test.cc"],
     deps = [
         ":block_ffw_parser",
+        ":custom_parsers",
         "//ml_drift_delegate/delegate/composite:block_ffw_parser",
         "//ml_drift_delegate/tflite:custom_ir_operation_parser",
         "//ml_drift_delegate/tflite:ir_model_builder",

@@ -25,12 +25,14 @@
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
+#include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/kernels/tests/kernel_test.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -42,7 +44,9 @@
 #include "ml_drift/common/task/testing_util.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/transformations/ir/transform.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
+#include "ml_drift_delegate/delegate/composite/ir/litert_op_selector.h"
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 
 namespace litert::ml_drift {
@@ -482,6 +486,235 @@ absl::Status RunBlockedFfwEndToEndTest(
   return absl::OkStatus();
 }
 
+::ml_drift::ir::IrTensorId AddIrQdq(::ml_drift::ir::IrModel* ir_model,
+                                    ::ml_drift::ir::IrTensorId src_id,
+                                    float scale) {
+  const auto* src = ir_model->tensor(src_id);
+  const auto dst_id =
+      ir_model->add_tensor(src->desc.GetDataType(), src->desc.GetBHWCShape())
+          ->id;
+  ::ml_drift::ir::IrOp* op = ir_model->add_op();
+  op->name = ToString(OperationType::kQuantizeAndDequantize);
+  QuantizeAndDequantizeAttributes attr{
+      .min = -128.0f * scale, .max = 127.0f * scale, .scale = scale};
+  op->attr = attr;
+  ir_model->AddConsumer(src_id, op->id);
+  ir_model->SetProducer(dst_id, op->id);
+  return dst_id;
+}
+
+::ml_drift::ir::IrTensorId AddPredefinedInt2FcIr(
+    ::ml_drift::ir::IrModel* ir_model,
+    absl::flat_hash_map<ValueId, TensorDescriptor>* const_tensors,
+    const GpuInfo& gpu_info, DataType activation_dtype,
+    ::ml_drift::ir::IrTensorId src_id, const HostInt2Weights& host_w,
+    const BHWC& dst_shape) {
+  const OHWI shape = host_w.values.shape;
+  const auto desc =
+      ::ml_drift::GetFullyConnectedInt2WeightsDesc(gpu_info, shape);
+  TensorDescriptor w_desc =
+      ::ml_drift::GetTensorDescriptorForWeightsLayout(host_w.values, desc);
+  TensorDescriptor s_desc = ::ml_drift::ScaleOrZeroPointToTensorDesc(
+      gpu_info, host_w.scales, activation_dtype);
+  TensorDescriptor zp_desc = ::ml_drift::ScaleOrZeroPointToTensorDesc(
+      gpu_info, host_w.zero_points, activation_dtype);
+
+  const auto w_id =
+      ir_model->add_tensor(w_desc.GetDataType(), w_desc.GetBHWCShape())->id;
+  const auto s_id =
+      ir_model->add_tensor(activation_dtype, s_desc.GetBHWCShape())->id;
+  const auto zp_id =
+      ir_model->add_tensor(activation_dtype, zp_desc.GetBHWCShape())->id;
+  (*const_tensors)[w_id] = std::move(w_desc);
+  (*const_tensors)[s_id] = std::move(s_desc);
+  (*const_tensors)[zp_id] = std::move(zp_desc);
+
+  const auto dst_id = ir_model->add_tensor(activation_dtype, dst_shape)->id;
+  ::ml_drift::ir::IrOp* fc = ir_model->add_op();
+  fc->name = ToString(OperationType::kFullyConnectedInt2);
+  ::ml_drift::FullyConnectedInt2Attributes attr;
+  ::ml_drift::Tensor<OHWI, DataType::kInt2> dummy_w;
+  dummy_w.shape = shape;
+  attr.weights = dummy_w;
+  attr.scale.shape = host_w.scales.shape;
+  attr.zero_point.shape = host_w.zero_points.shape;
+  fc->attr = std::move(attr);
+  ir_model->AddConsumer(src_id, fc->id);
+  ir_model->AddConsumer(w_id, fc->id);
+  ir_model->AddConsumer(s_id, fc->id);
+  ir_model->AddConsumer(zp_id, fc->id);
+  ir_model->SetProducer(dst_id, fc->id);
+  return dst_id;
+}
+
+absl::Status RunBlockedFfwIrModelEndToEndTest(
+    ::ml_drift::TestExecutionEnvironment& env, CalculationsPrecision precision,
+    TensorStorageType storage, int tokens, bool distinct_adjacent_scales,
+    int k1 = 2, int k2 = 4) {
+  const DataType dtype = precision == CalculationsPrecision::kF16
+                             ? DataType::kFloat16
+                             : DataType::kFloat32;
+  const BlockedFfwTestCase tc =
+      MakeBlockedFfwTestCase(tokens, distinct_adjacent_scales, k1, k2);
+
+  ::ml_drift::ir::IrModel ir_model;
+  CreateGpuModelInfo create_info;
+  create_info.precision = precision;
+  create_info.storage_type = storage;
+  absl::flat_hash_map<ValueId, TensorDescriptor> const_tensors;
+
+  const GpuInfo& gpu_info = env.GetGpuInfo();
+  const auto x_id =
+      ir_model.add_tensor(dtype, BHWC(1, 1, tokens, tc.d_model))->id;
+  const auto out_id =
+      ir_model.add_tensor(dtype, BHWC(1, 1, tokens, tc.d_model))->id;
+  ir_model.add_input(x_id);
+  ir_model.add_output(out_id);
+
+  ::ml_drift::ir::IrTensorId u2_in_id = 0;
+  {
+    std::vector<::ml_drift::ir::IrTensorId> parts(tc.k1);
+    for (int k = 0; k < tc.k1; ++k) {
+      const auto unp_id =
+          ir_model.add_tensor(dtype, BHWC(1, 1, tokens, tc.i1))->id;
+      ::ml_drift::ir::IrOp* unp = ir_model.add_op();
+      unp->name = kBlockFfwUnpackPartType;
+      unp->attr = BlockFfwUnpackPartAttributes{.part = k, .num_parts = tc.k1};
+      ir_model.AddConsumer(x_id, unp->id);
+      ir_model.SetProducer(unp_id, unp->id);
+
+      const auto q_in_id = AddIrQdq(&ir_model, unp_id, tc.u1_in_sc);
+      const auto fc_id = AddPredefinedInt2FcIr(
+          &ir_model, &const_tensors, gpu_info, dtype, q_in_id, tc.u1_ws[k],
+          BHWC(1, 1, tokens, tc.o1));
+      parts[k] = AddIrQdq(&ir_model, fc_id, tc.u1_out_sc);
+    }
+    const auto pack_id =
+        ir_model.add_tensor(dtype, BHWC(1, tc.k2, tokens, tc.i2))->id;
+    ::ml_drift::ir::IrOp* pack = ir_model.add_op();
+    pack->name = kBlockFfwPackPartsType;
+    pack->attr = BlockFfwPackPartsAttributes{.num_parts = tc.k1};
+    for (auto p : parts) ir_model.AddConsumer(p, pack->id);
+    ir_model.SetProducer(pack_id, pack->id);
+    u2_in_id = pack_id;
+  }
+  if (tc.distinct_adjacent_scales) {
+    u2_in_id = AddIrQdq(&ir_model, u2_in_id, tc.u2_in_sc);
+  }
+
+  const auto u2_raw_id =
+      AddPredefinedInt2FcIr(&ir_model, &const_tensors, gpu_info, dtype,
+                            u2_in_id, tc.u2_w, BHWC(1, tc.k2, tokens, tc.o2));
+  const auto u2_q_id = AddIrQdq(&ir_model, u2_raw_id, tc.u2_out_sc);
+  const auto act_id =
+      ir_model.add_tensor(dtype, BHWC(1, tc.k2, tokens, tc.o2))->id;
+  ::ml_drift::ir::IrOp* silu = ir_model.add_op();
+  silu->name = kBlockFfwSiluType;
+  ir_model.AddConsumer(u2_q_id, silu->id);
+  ir_model.SetProducer(act_id, silu->id);
+
+  const auto d1_in_id = AddIrQdq(&ir_model, act_id, tc.d1_in_sc);
+  const auto d1_raw_id =
+      AddPredefinedInt2FcIr(&ir_model, &const_tensors, gpu_info, dtype,
+                            d1_in_id, tc.d1_w, BHWC(1, tc.k2, tokens, tc.i2));
+  const auto d1_q_id = AddIrQdq(&ir_model, d1_raw_id, tc.d1_out_sc);
+
+  std::vector<::ml_drift::ir::IrTensorId> parts(tc.k1);
+  for (int k = 0; k < tc.k1; ++k) {
+    const auto unp_id =
+        ir_model.add_tensor(dtype, BHWC(1, 1, tokens, tc.i4))->id;
+    ::ml_drift::ir::IrOp* unp = ir_model.add_op();
+    unp->name = kBlockFfwUnpackPartType;
+    unp->attr = BlockFfwUnpackPartAttributes{.part = k, .num_parts = tc.k1};
+    ir_model.AddConsumer(d1_q_id, unp->id);
+    ir_model.SetProducer(unp_id, unp->id);
+
+    const auto q_in_id = tc.distinct_adjacent_scales
+                             ? AddIrQdq(&ir_model, unp_id, tc.d2_in_sc)
+                             : unp_id;
+    const auto fc_id = AddPredefinedInt2FcIr(
+        &ir_model, &const_tensors, gpu_info, dtype, q_in_id, tc.d2_ws[k],
+        BHWC(1, 1, tokens, tc.o4));
+    parts[k] = AddIrQdq(&ir_model, fc_id, tc.d2_out_sc);
+  }
+  ::ml_drift::ir::IrOp* pack = ir_model.add_op();
+  pack->name = kBlockFfwPackPartsType;
+  pack->attr = BlockFfwPackPartsAttributes{.num_parts = tc.k1};
+  for (auto p : parts) ir_model.AddConsumer(p, pack->id);
+  ir_model.SetProducer(out_id, pack->id);
+
+  // Verify ML Drift's standard IR transformations preserve the topology.
+  ABSL_RETURN_IF_ERROR(::ml_drift::ir::TransformIrModel(&ir_model));
+
+  absl::flat_hash_map<ValueId, TensorDescriptor> runtime_tensors;
+  for (const auto& t : ir_model.tensors()) {
+    if (t == nullptr || const_tensors.contains(t->id)) continue;
+    const BHWC shape = t->desc.GetBHWCShape();
+    TensorDescriptor desc(
+        t->desc.GetDataType(), storage,
+        shape.b == 1 ? ::ml_drift::Layout::kHWC : ::ml_drift::Layout::kBHWC);
+    ABSL_RETURN_IF_ERROR(desc.UpdateToSupportedStorageType(gpu_info, shape));
+    desc.SetBHWCShape(shape);
+    runtime_tensors[t->id] = std::move(desc);
+  }
+
+  GpuModelBuilder builder(gpu_info,
+                          {.storage = storage,
+                           .use_f32_accum_for_f16_convolutions =
+                               precision == CalculationsPrecision::kF32F16},
+                          std::move(runtime_tensors), std::move(const_tensors));
+  ir::LiteRtOpSelector selector(&create_info, &gpu_info);
+  absl::flat_hash_set<::ml_drift::ir::IrOpId> consumed_ops;
+  for (const auto& op_ptr : ir_model.ops()) {
+    if (op_ptr == nullptr || consumed_ops.contains(op_ptr->id)) continue;
+    absl::flat_hash_set<::ml_drift::ir::IrOpId> new_consumed;
+    if (selector
+            .GPUSubgraphFromIrModel(ir_model, op_ptr->id, consumed_ops,
+                                    &new_consumed, &builder)
+            .ok()) {
+      consumed_ops.insert(new_consumed.begin(), new_consumed.end());
+      continue;
+    }
+    std::vector<const ::ml_drift::ir::IrTensor*> ins;
+    std::vector<const ::ml_drift::ir::IrTensor*> outs;
+    ::ml_drift::OperationDef op_def;
+    for (auto in_id : op_ptr->inputs) {
+      ins.push_back(ir_model.tensor(in_id));
+      ABSL_ASSIGN_OR_RETURN(auto th, builder.GetTensor(in_id));
+      op_def.src_tensors.push_back(th.tensor_desc);
+    }
+    for (auto out_id_op : op_ptr->outputs) {
+      outs.push_back(ir_model.tensor(out_id_op));
+      ABSL_ASSIGN_OR_RETURN(auto th, builder.GetTensor(out_id_op));
+      op_def.dst_tensors.push_back(th.tensor_desc);
+    }
+    ABSL_RETURN_IF_ERROR(
+        selector.GPUOperationFromNode(op_def, ins, outs, *op_ptr, &builder));
+    consumed_ops.insert(op_ptr->id);
+  }
+
+  GpuModel gpu_model;
+  ABSL_RETURN_IF_ERROR(builder.GetGpuModel(
+      std::vector<ValueId>{static_cast<ValueId>(x_id)},
+      std::vector<ValueId>{static_cast<ValueId>(out_id)}, &gpu_model));
+
+  ::ml_drift::TensorFloat32 src_cpu;
+  src_cpu.shape = BHWC(1, 1, tokens, tc.d_model);
+  src_cpu.data = tc.x_data;
+  ::ml_drift::TensorFloat32 dst_cpu;
+  dst_cpu.shape = BHWC(1, 1, tokens, tc.d_model);
+  dst_cpu.data.resize(tc.expected.size());
+
+  ABSL_RETURN_IF_ERROR(env.ExecuteGpuModel(
+      {src_cpu}, std::vector<::ml_drift::TensorFloat32*>{&dst_cpu},
+      &gpu_model));
+
+  const float tol =
+      precision == CalculationsPrecision::kF16 ? 2.0f * tc.d2_out_sc : 1e-4f;
+  EXPECT_THAT(dst_cpu.data, Pointwise(FloatNear(tol), tc.expected));
+  return absl::OkStatus();
+}
+
 class BlockFfwKernelTest : public ::ml_drift::FloatTest {
  public:
   void SetUp() override {
@@ -530,6 +763,36 @@ TEST_P(BlockFfwKernelTest, PrefillMultiTokenMatchesReference) {
   ASSERT_OK(RunBlockedFfwEndToEndTest(*exec_env, precision(), storage(),
                                       /*tokens=*/6,
                                       /*distinct_adjacent_scales=*/true));
+}
+
+TEST_P(BlockFfwKernelTest, IrModelDecodeMatchesReference) {
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/1,
+      /*distinct_adjacent_scales=*/false));
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/1,
+      /*distinct_adjacent_scales=*/true));
+}
+
+TEST_P(BlockFfwKernelTest, IrModelPrefillMultiTokenMatchesReference) {
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/5,
+      /*distinct_adjacent_scales=*/false));
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/6,
+      /*distinct_adjacent_scales=*/true));
+}
+
+TEST_P(BlockFfwKernelTest, IrModelLargeK1ChunksPackPartsMatchesReference) {
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/2,
+      /*distinct_adjacent_scales=*/false, /*k1=*/8));
+}
+
+TEST_P(BlockFfwKernelTest, IrModelSinglePartK1K2MatchesReference) {
+  ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
+      *exec_env, precision(), storage(), /*tokens=*/2,
+      /*distinct_adjacent_scales=*/false, /*k1=*/1, /*k2=*/1));
 }
 
 INSTANTIATE_TEST_SUITE_P(
