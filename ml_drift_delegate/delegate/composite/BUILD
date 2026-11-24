@@ -713,6 +713,56 @@ cc_test(
 )
 
 cc_library(
+    name = "fuse_split_sdpa_cache_update",
+    srcs = ["fuse_split_sdpa_cache_update.cc"],
+    hdrs = ["fuse_split_sdpa_cache_update.h"],
+    deps = [
+        ":add_values_to_cache_parser",
+        ":fused_sdpa_cache_update_parser",
+        ":runtime_batched_matmul_parser",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_macros",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+    ],
+)
+
+cc_test(
+    name = "fuse_split_sdpa_cache_update_test",
+    srcs = ["fuse_split_sdpa_cache_update_test.cc"],
+    deps = [
+        ":add_values_to_cache_parser",
+        ":fuse_split_sdpa_cache_update",
+        ":fused_sdpa_cache_update_parser",
+        ":litert_op_selector",
+        ":runtime_batched_matmul_parser",
+        "//ml_drift_delegate/delegate/composite/ir:litert_op_selector",
+        "@com_google_absl//absl/status",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_util",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:ir_model_util",
+        "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:operations",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_library(
     name = "custom_transformations",
     srcs = ["custom_transformations.cc"],
     hdrs = ["custom_transformations.h"],
@@ -720,6 +770,7 @@ cc_library(
         ":fuse_qkv_norm_rope",
         ":fuse_sdpa_transposed_reshape",
         ":fuse_short_conv_step",
+        ":fuse_split_sdpa_cache_update",
         "//ml_drift_delegate/delegate:delegate_options",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
