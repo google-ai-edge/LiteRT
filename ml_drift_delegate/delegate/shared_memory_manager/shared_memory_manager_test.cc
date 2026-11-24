@@ -27,6 +27,7 @@
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -126,6 +127,12 @@ BatchedFcGraph BuildBatchedFcGraph(const OHWI& weights_shape,
   return g;
 }
 
+std::vector<uint8_t> CopyTensorData(const GpuSpatialTensor& tensor) {
+  const TensorDescriptor desc = tensor.GetDescriptor();
+  const absl::Span<const uint8_t> data = desc.GetData();
+  return std::vector<uint8_t>(data.begin(), data.end());
+}
+
 TEST(SharedMemoryManagerHostTest,
      BlockwiseV2BatchedWeightsHioAndHoiProduceMatchingDescriptors) {
   // Logical weights in (O=3, H=2, 1, I=4).
@@ -189,10 +196,12 @@ TEST(SharedMemoryManagerHostTest,
       out = std::make_unique<FakeGpuSpatialTensor>(td);
       return absl::OkStatus();
     };
+    const GpuInfo gpu_info = MakeDefaultGpuInfo();
+    const CreateGpuModelInfo create_info = MakeCreateInfo();
     SharedMemoryManager manager(
-        MakeDefaultGpuInfo(), MakeCreateInfo(),
-        std::make_unique<GraphFloat32Adapter>(g.graph), create_fn, &context,
-        weights_map, params_map, /*has_prepacked_tflite_tensors=*/false,
+        gpu_info, create_info, std::make_unique<GraphFloat32Adapter>(g.graph),
+        create_fn, &context, weights_map, params_map,
+        /*has_prepacked_tflite_tensors=*/false,
         /*serialization_cache=*/nullptr, /*madvise_original_tensors=*/false);
 
     ::litert::ml_drift::SharedTfliteTensor shared_info;
@@ -213,16 +222,11 @@ TEST(SharedMemoryManagerHostTest,
     ASSERT_TRUE(entry.scale_global_tensor_id.has_value());
     ASSERT_TRUE(entry.zero_point_global_tensor_id.has_value());
 
-    const auto w_span = entry.weights->GetDescriptor().GetData();
-    out_weights->assign(w_span.begin(), w_span.end());
-    const auto s_span = params_map.at(*entry.scale_global_tensor_id)
-                            .weights->GetDescriptor()
-                            .GetData();
-    out_scales->assign(s_span.begin(), s_span.end());
-    const auto zp_span = params_map.at(*entry.zero_point_global_tensor_id)
-                             .weights->GetDescriptor()
-                             .GetData();
-    out_zps->assign(zp_span.begin(), zp_span.end());
+    *out_weights = CopyTensorData(*entry.weights);
+    *out_scales =
+        CopyTensorData(*params_map.at(*entry.scale_global_tensor_id).weights);
+    *out_zps = CopyTensorData(
+        *params_map.at(*entry.zero_point_global_tensor_id).weights);
   };
 
   std::vector<uint8_t> hio_weights, hio_scales, hio_zps;
@@ -278,13 +282,16 @@ TEST(SharedMemoryManagerHostTest,
   shared_info.global_id = 77;
   shared_info.oi_transposed = false;
 
+  const GpuInfo gpu_info = MakeDefaultGpuInfo();
+  const CreateGpuModelInfo create_info = MakeCreateInfo();
+
   // Signature 1: creates weights, scale, and zero_point.
   BatchedFcGraph g1 =
       BuildBatchedFcGraph(OHWI(3, 2, 1, 4), OperationType::kFullyConnectedInt2);
   SharedMemoryManager mgr1(
-      MakeDefaultGpuInfo(), MakeCreateInfo(),
-      std::make_unique<GraphFloat32Adapter>(g1.graph), create_fn, &context,
-      weights_map, params_map, /*has_prepacked_tflite_tensors=*/false,
+      gpu_info, create_info, std::make_unique<GraphFloat32Adapter>(g1.graph),
+      create_fn, &context, weights_map, params_map,
+      /*has_prepacked_tflite_tensors=*/false,
       /*serialization_cache=*/nullptr, /*madvise_original_tensors=*/false);
   absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId> ext1;
   ASSERT_OK(
@@ -297,9 +304,9 @@ TEST(SharedMemoryManagerHostTest,
   BatchedFcGraph g2 =
       BuildBatchedFcGraph(OHWI(3, 2, 1, 4), OperationType::kFullyConnectedInt2);
   SharedMemoryManager mgr2(
-      MakeDefaultGpuInfo(), MakeCreateInfo(),
-      std::make_unique<GraphFloat32Adapter>(g2.graph), create_fn, &context,
-      weights_map, params_map, /*has_prepacked_tflite_tensors=*/false,
+      gpu_info, create_info, std::make_unique<GraphFloat32Adapter>(g2.graph),
+      create_fn, &context, weights_map, params_map,
+      /*has_prepacked_tflite_tensors=*/false,
       /*serialization_cache=*/nullptr, /*madvise_original_tensors=*/false);
   absl::flat_hash_map<ValueId, SharedMemoryManager::GlobalId> ext2;
   ASSERT_OK(
@@ -321,6 +328,8 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
                                          .zero_point = kTfLiteOptionalTensor,
                                          .block_shape = bshape.array};
 
+  const GpuInfo gpu_info = MakeDefaultGpuInfo();
+  const CreateGpuModelInfo create_info = MakeCreateInfo();
   auto create_fn = [](TensorDescriptor& td, size_t,
                       ::litert::ml_drift::ReleaseDataCallback,
                       std::unique_ptr<GpuSpatialTensor>& out) {
@@ -343,7 +352,7 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
     BatchedFcGraph g = BuildBatchedFcGraph(OHWI(3, 2, 1, 4),
                                            OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
-    SharedMemoryManager mgr(MakeDefaultGpuInfo(), MakeCreateInfo(),
+    SharedMemoryManager mgr(gpu_info, create_info,
                             std::make_unique<GraphFloat32Adapter>(g.graph),
                             create_fn, &context, weights_map, params_map, false,
                             nullptr, false);
@@ -371,7 +380,7 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
     BatchedFcGraph g = BuildBatchedFcGraph(OHWI(3, 2, 1, 4),
                                            OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
-    SharedMemoryManager mgr(MakeDefaultGpuInfo(), MakeCreateInfo(),
+    SharedMemoryManager mgr(gpu_info, create_info,
                             std::make_unique<GraphFloat32Adapter>(g.graph),
                             create_fn, &context, weights_map, params_map, false,
                             nullptr, false);
@@ -399,9 +408,8 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
                                            OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
     SharedMemoryManager mgr(
-        MakeDefaultGpuInfo(), MakeCreateInfo(),
-        std::make_unique<GraphFloat32Adapter>(g.graph), create_fn, &context,
-        weights_map, params_map, false, nullptr, false,
+        gpu_info, create_info, std::make_unique<GraphFloat32Adapter>(g.graph),
+        create_fn, &context, weights_map, params_map, false, nullptr, false,
         /*experimental_int4_unpacking=*/false,
         /*experimental_int2_unpacking=*/false,
         /*create_tensor_from_device_buffer_func=*/nullptr,
@@ -432,7 +440,7 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
     BatchedFcGraph g = BuildBatchedFcGraph(OHWI(3, 2, 1, 4),
                                            OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
-    SharedMemoryManager mgr(MakeDefaultGpuInfo(), MakeCreateInfo(),
+    SharedMemoryManager mgr(gpu_info, create_info,
                             std::make_unique<GraphFloat32Adapter>(g.graph),
                             create_fn, &context, weights_map, params_map, false,
                             nullptr, false);
@@ -459,7 +467,7 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
     BatchedFcGraph g = BuildBatchedFcGraph(OHWI(3, 0, 1, 4),
                                            OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
-    SharedMemoryManager mgr(MakeDefaultGpuInfo(), MakeCreateInfo(),
+    SharedMemoryManager mgr(gpu_info, create_info,
                             std::make_unique<GraphFloat32Adapter>(g.graph),
                             create_fn, &context, weights_map, params_map, false,
                             nullptr, false);
@@ -487,7 +495,7 @@ TEST(SharedMemoryManagerHostTest, BlockwiseV2ErrorGuards) {
         BuildBatchedFcGraph(OHWI(1 << 20, 1 << 20, 1 << 20, 1 << 20),
                             OperationType::kFullyConnectedInt8);
     ValueIdToSharedTensorMap weights_map, params_map;
-    SharedMemoryManager mgr(MakeDefaultGpuInfo(), MakeCreateInfo(),
+    SharedMemoryManager mgr(gpu_info, create_info,
                             std::make_unique<GraphFloat32Adapter>(g.graph),
                             create_fn, &context, weights_map, params_map, false,
                             nullptr, false);
