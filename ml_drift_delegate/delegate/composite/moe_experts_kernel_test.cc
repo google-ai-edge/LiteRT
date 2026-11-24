@@ -160,10 +160,11 @@ void BuildAndVerifyMoeGpuModel(
        linear_weight.id, per_expert_scale.id},
       {dst.id}, gpu_model));
 
-  for (auto& gpu_node : gpu_model->nodes) {
+  // `GetGpuModel` already invokes `AssembleCode(gpu_info)` on every node.
+  for (const auto& gpu_node : gpu_model->nodes) {
     ASSERT_NE(gpu_node.gpu_operation, nullptr);
-    EXPECT_OK(gpu_node.gpu_operation->AssembleCode(gpu_info))
-        << "Failed to assemble shader code for node: " << gpu_node.name;
+    EXPECT_FALSE(gpu_node.gpu_operation->code_.empty())
+        << "Empty assembled shader code for node: " << gpu_node.name;
   }
 }
 
@@ -233,9 +234,13 @@ TEST(MoeExpertsKernelTest,
       gpu_info);
 
   EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "experts_remap"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "experts_remap_from"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "transpose"));
   EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "gather"));
   EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "batched_matmul"));
-  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids"));
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "build_inverse_experts_remap"));
+  EXPECT_TRUE(
+      HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids_from_packed"));
 }
 
 TEST(MoeExpertsKernelTest,
@@ -244,8 +249,8 @@ TEST(MoeExpertsKernelTest,
   ::ml_drift::GpuModel gpu_model;
 
   // sequence_size = 8, num_active_experts = 2, num_experts = 4 (8 * 2 > 4)
-  // exercises the packed-groups path including `experts_remap_from` (where
-  // `src[0]` has shape [1, 1, 16, 16] and `dst[0]` has shape [1, 2, 8, 16]).
+  // exercises the packed-groups path including custom-grid inverse remap and
+  // packed scale-combine ops.
   BuildAndVerifyMoeGpuModel(
       /*sequence_size=*/8, /*num_experts=*/4, /*num_active_experts=*/2,
       /*model_dim=*/16, /*hidden_dim=*/32,
@@ -270,7 +275,8 @@ TEST(MoeExpertsKernelTest,
                                &restored_model));
   ASSERT_EQ(restored_model.nodes.size(), gpu_model.nodes.size());
 
-  bool saw_remap_from = false;
+  bool saw_inv_remap = false;
+  bool saw_packed_combine = false;
   for (size_t i = 0; i < gpu_model.nodes.size(); ++i) {
     const ::ml_drift::GpuNode& orig_node = gpu_model.nodes[i];
     const ::ml_drift::GpuNode& rest_node = restored_model.nodes[i];
@@ -304,13 +310,155 @@ TEST(MoeExpertsKernelTest,
               orig_node.gpu_operation->GetWorkGroupsCount())
         << "Deserialized work-group count mismatch on node " << i << " ("
         << orig_node.name << ")";
-    if (absl::StrContains(orig_node.name, "experts_remap_from")) {
-      saw_remap_from = true;
+    if (absl::StrContains(orig_node.name, "build_inverse_experts_remap")) {
+      saw_inv_remap = true;
+      EXPECT_EQ(rest_node.gpu_operation->tensor_to_grid_,
+                ::ml_drift::TensorToGrid::kCustom);
+    }
+    if (absl::StrContains(orig_node.name,
+                          "moe_scale_with_batch_ids_from_packed")) {
+      saw_packed_combine = true;
       EXPECT_EQ(rest_node.gpu_operation->tensor_to_grid_,
                 ::ml_drift::TensorToGrid::kCustom);
     }
   }
-  EXPECT_TRUE(saw_remap_from);
+  EXPECT_TRUE(saw_inv_remap);
+  EXPECT_TRUE(saw_packed_combine);
+}
+
+TEST(MoeExpertsKernelTest,
+     PrefillPackedGroupsAppleMppUsesDhwbcc4AndAvoidsManualSrcReading) {
+  ::ml_drift::GpuInfo gpu_info;
+  ::ml_drift::GetGpuInfoFromDeviceDescription(
+      "Apple M5 Max", ::ml_drift::GpuApi::kMetal, &gpu_info);
+  gpu_info.apple_info.gpu_family = ::ml_drift::AppleInfo::Family::kApple10;
+  gpu_info.metal_info.language_version =
+      ::ml_drift::MetalLanguageVersion::kMetal4_0;
+  gpu_info.metal_info.max_work_group_size_x = 1024;
+  gpu_info.metal_info.max_work_group_size_y = 1024;
+  gpu_info.metal_info.max_work_group_size_z = 1024;
+  gpu_info.metal_info.buffer_max_size = 256 * 1024 * 1024;
+
+  ::ml_drift::GpuModelBuilder model_builder(
+      gpu_info, {}, ::ml_drift::CalculationsPrecision::kF16,
+      ::ml_drift::TensorStorageType::kTexture2D);
+
+  constexpr int kSeq = 64;
+  constexpr int kExperts = 4;
+  constexpr int kActive = 2;
+  constexpr int kModelDim = 64;
+  constexpr int kHiddenDim = 64;
+
+  auto src = model_builder.AddTensor(::ml_drift::BHWC(1, 1, kSeq, kModelDim),
+                                     ::ml_drift::DataType::kFloat16);
+  auto top_weights = model_builder.AddTensor(
+      ::ml_drift::BHWC(1, 1, kSeq, kActive), ::ml_drift::DataType::kFloat16);
+  auto top_indices = model_builder.AddTensor(
+      ::ml_drift::BHWC(1, 1, kSeq, kActive), ::ml_drift::DataType::kInt32);
+  auto add_int4_weights = [&](int out_ch, int in_ch) {
+    ::ml_drift::TensorDescriptor desc(::ml_drift::DataType::kInt4,
+                                      ::ml_drift::TensorStorageType::kBuffer,
+                                      ::ml_drift::Layout::kLinear);
+    desc.SetBHWCShape(::ml_drift::BHWC(out_ch, kExperts, 1, in_ch));
+    return model_builder.AddTensor(desc);
+  };
+  auto gate_w = add_int4_weights(kHiddenDim, kModelDim);
+  auto ff1_w = add_int4_weights(kHiddenDim, kModelDim);
+  auto linear_w = add_int4_weights(kModelDim, kHiddenDim);
+  auto expert_scale = model_builder.AddTensor(
+      ::ml_drift::BHWC(1, 1, 1, kExperts), ::ml_drift::DataType::kFloat16);
+  auto dst = model_builder.AddTensor(::ml_drift::BHWC(1, 1, kSeq, kModelDim),
+                                     ::ml_drift::DataType::kFloat16);
+
+  ir::MoeExpertsAttributes attr;
+  attr.num_experts = kExperts;
+  attr.num_active_experts = kActive;
+  attr.model_dim = kModelDim;
+  attr.hidden_dim = kHiddenDim;
+  attr.weight_type = ir::MoeExpertsAttributes::WeightType::kInt4;
+  attr.activation = ir::MoeExpertsAttributes::Activation::kGeluTanh;
+  attr.ff_gate_scale = MakeMoeScale(kHiddenDim, kExperts, 2);
+  attr.ff1_scale = MakeMoeScale(kHiddenDim, kExperts, 2);
+  attr.linear_scale = MakeMoeScale(kModelDim, kExperts, 2);
+
+  auto make_ir_tensor =
+      [](const ::ml_drift::GpuModelBuilder::TensorHandle& handle) {
+        ::ml_drift::ir::IrTensor tensor(handle.id);
+        tensor.desc = handle.tensor_desc;
+        return tensor;
+      };
+  ::ml_drift::ir::IrTensor t_src = make_ir_tensor(src);
+  ::ml_drift::ir::IrTensor t_top_weights = make_ir_tensor(top_weights);
+  ::ml_drift::ir::IrTensor t_top_indices = make_ir_tensor(top_indices);
+  ::ml_drift::ir::IrTensor t_gate = make_ir_tensor(gate_w);
+  ::ml_drift::ir::IrTensor t_ff1 = make_ir_tensor(ff1_w);
+  ::ml_drift::ir::IrTensor t_linear = make_ir_tensor(linear_w);
+  ::ml_drift::ir::IrTensor t_expert_scale = make_ir_tensor(expert_scale);
+  ::ml_drift::ir::IrTensor t_dst = make_ir_tensor(dst);
+
+  ::ml_drift::ir::IrOp node(0);
+  node.attr = std::move(attr);
+  ::ml_drift::CreateGpuModelInfo create_info;
+  create_info.precision = ::ml_drift::CalculationsPrecision::kF16;
+  ASSERT_OK(
+      CreateMoeExpertsFromIrOp(create_info,
+                               {&t_src, &t_top_weights, &t_top_indices, &t_gate,
+                                &t_ff1, &t_linear, &t_expert_scale},
+                               {&t_dst}, node, &model_builder));
+
+  ::ml_drift::GpuModel gpu_model;
+  ASSERT_OK(model_builder.GetGpuModel(
+      {src.id, top_weights.id, top_indices.id, gate_w.id, ff1_w.id, linear_w.id,
+       expert_scale.id},
+      {dst.id}, &gpu_model));
+
+  int mpp_packed_convs = 0;
+  bool saw_remap_to_dhwbcc4 = false;
+  for (const auto& gpu_node : gpu_model.nodes) {
+    ASSERT_NE(gpu_node.gpu_operation, nullptr);
+    EXPECT_FALSE(gpu_node.gpu_operation->code_.empty())
+        << "Empty assembled shader code for node: " << gpu_node.name;
+    if (absl::StrContains(gpu_node.name, "experts_remap_to_dhwbcc4")) {
+      saw_remap_to_dhwbcc4 = true;
+      EXPECT_EQ(gpu_node.gpu_operation->tensor_to_grid_,
+                ::ml_drift::TensorToGrid::kCustom);
+    }
+    if (absl::StrContains(gpu_node.name, "conv_packed_groups_uint4")) {
+      ++mpp_packed_convs;
+      // Direct MPP tensor DMA path uses `a_tensor` instead of threadgroup
+      // `a_loc` staging.
+      EXPECT_TRUE(absl::StrContains(gpu_node.gpu_operation->code_, "a_tensor"))
+          << gpu_node.name;
+      EXPECT_FALSE(absl::StrContains(gpu_node.gpu_operation->code_, "a_loc"))
+          << gpu_node.name;
+    }
+  }
+  EXPECT_EQ(mpp_packed_convs, 3);
+  EXPECT_TRUE(saw_remap_to_dhwbcc4);
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "build_inverse_experts_remap"));
+  EXPECT_TRUE(
+      HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids_from_packed"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "experts_remap_from"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "transpose"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "reshape"));
+}
+
+TEST(MoeExpertsKernelTest, PrefillPackedGroupsAssemblesForWebGpu) {
+  ::ml_drift::GpuInfo gpu_info;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  ::ml_drift::GpuModel gpu_model;
+
+  BuildAndVerifyMoeGpuModel(
+      /*sequence_size=*/8, /*num_experts=*/4, /*num_active_experts=*/2,
+      /*model_dim=*/16, /*hidden_dim=*/32,
+      ir::MoeExpertsAttributes::WeightType::kInt4, /*num_blocks=*/2, &gpu_model,
+      gpu_info);
+
+  EXPECT_TRUE(HasNodeWithSubstring(gpu_model, "build_inverse_experts_remap"));
+  EXPECT_TRUE(
+      HasNodeWithSubstring(gpu_model, "moe_scale_with_batch_ids_from_packed"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "experts_remap_from"));
+  EXPECT_FALSE(HasNodeWithSubstring(gpu_model, "transpose"));
 }
 
 TEST(MoeExpertsKernelTest,

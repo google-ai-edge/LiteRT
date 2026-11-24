@@ -23,23 +23,177 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder_moe_util.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
+#include "ml_drift/common/kernels/elementwise.h"  // from @ml_drift
 #include "ml_drift/common/kernels/special/experts_remap.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/buffer_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/ir/moe_experts_parser.h"
 #include "ml_drift_delegate/delegate/composite/moe_experts_parser.h"
 
 namespace litert::ml_drift {
 namespace {
+
+bool CanUseAppleMppDhwbcc4(const ::ml_drift::GpuModelBuilder& model_builder,
+                           ::ml_drift::DataType src_dtype, int num_dispatches,
+                           int num_experts, int in_channels) {
+  const ::ml_drift::GpuInfo& gpu_info = model_builder.gpu_info();
+  const int average_task_size =
+      ::ml_drift::DivideRoundUp(num_dispatches, num_experts);
+  const int in_slices = ::ml_drift::DivideRoundUp(in_channels, 4);
+  return average_task_size >= 32 && in_slices % 8 == 0 &&
+         model_builder.GetConvPrecision(src_dtype) ==
+             ::ml_drift::CalculationsPrecision::kF16 &&
+         gpu_info.IsApiMetal() && gpu_info.IsApple() &&
+         gpu_info.apple_info.gpu_family >=
+             ::ml_drift::AppleInfo::Family::kApple10 &&
+         gpu_info.metal_info.IsMslVersionEqualOrHigher(4, 0) &&
+         !gpu_info.metal_info.has_bugs_with_mpp;
+}
+
+::ml_drift::GpuModelBuilder::TensorHandle ConvertToDhwbcc4(
+    ::ml_drift::GpuModelBuilder* model_builder,
+    const ::ml_drift::GpuModelBuilder::TensorHandle& src) {
+  ::ml_drift::TensorDescriptor tensor_desc{
+      src.tensor_desc.GetDataType(), ::ml_drift::TensorStorageType::kBuffer,
+      src.tensor_desc.GetLayout(),
+      ::ml_drift::TensorDescriptor::PhysicalLayout1D::kDHWBCC4};
+  tensor_desc.SetBHWCShape(src.tensor_desc.GetBHWCShape());
+  ::ml_drift::GpuModelBuilder::TensorHandle new_tensor =
+      model_builder->AddTensor(tensor_desc);
+  model_builder->AddGpuOperation(
+      {src}, {new_tensor},
+      std::make_unique<::ml_drift::GPUOperation>(
+          ::ml_drift::CreateElementwiseOneInput(
+              model_builder->gpu_info(), src.tensor_desc,
+              new_tensor.tensor_desc, ::ml_drift::OperationType::kCopy)),
+      "to_dhwbcc4");
+  return new_tensor;
+}
+
+// Writes `src` into `dst` in `kDHWBCC4` layout with slices along X so each
+// SIMDgroup shares one `packed_idx` lookup and writes contiguous slices.
+std::unique_ptr<::ml_drift::GPUOperation> CreateExpertsRemapToDhwbcc4Op(
+    const ::ml_drift::TensorDescriptor& src,
+    const ::ml_drift::TensorDescriptor& experts_packed_map,
+    const ::ml_drift::TensorDescriptor& dst) {
+  ::ml_drift::GPUOperation op;
+  op.AddSrcTensor("src", src);
+  op.AddSrcTensor("experts_packed_map", experts_packed_map);
+  op.AddDstTensor("dst", dst);
+  const ::ml_drift::BHWC dst_shape = dst.GetBHWCShape();
+  op.SetGridSize(::ml_drift::int3(::ml_drift::DivideRoundUp(dst_shape.c, 4),
+                                  dst_shape.w, 1));
+  op.work_group_size_ = ::ml_drift::int3(32, 1, 1);
+  op.code_ = R"(
+MAIN_FUNCTION($0) {
+  int s = ucl::GetGlobalId<0>();
+  int packed_idx = ucl::GetGlobalId<1>();
+  if (s >= args.dst.Slices() || packed_idx >= args.dst.Width()) {
+    return;
+  }
+  int4 coords = args.experts_packed_map.Read(packed_idx, 0, 0);
+  int seq_id = coords.y;
+  int expert_id = min(coords.x, args.src.Height() - 1);
+  args.src::type val = args.src.Read(seq_id, expert_id, s);
+  args.dst.Write(val, packed_idx, 0, s);
+}
+)";
+  return std::make_unique<::ml_drift::GPUOperation>(std::move(op));
+}
+
+// Inverts `experts_packed_map` (`packed_idx -> (ae_id, seq_id)`) into a flat
+// int32 buffer `inv_remap[seq_id * num_active_experts + ae_id] = packed_idx`.
+std::unique_ptr<::ml_drift::GPUOperation> CreateBuildInverseExpertsRemapOp(
+    const ::ml_drift::TensorDescriptor& experts_packed_map, int num_dispatches,
+    int num_active_experts) {
+  ::ml_drift::GPUOperation op;
+  op.AddSrcTensor("experts_packed_map", experts_packed_map);
+  ::ml_drift::BufferDescriptor inv_remap_desc;
+  inv_remap_desc.element_type = ::ml_drift::DataType::kInt32;
+  inv_remap_desc.element_size = 1;
+  op.AddDstBuffer("inv_remap", inv_remap_desc);
+  op.args_.AddInt("num_dispatches", num_dispatches);
+  op.args_.AddInt("num_active_experts", num_active_experts);
+  op.SetGridSize(::ml_drift::int3(num_dispatches, 1, 1));
+  op.work_group_size_ = ::ml_drift::int3(32, 1, 1);
+  op.code_ = R"(
+MAIN_FUNCTION($0) {
+  int packed_idx = ucl::GetGlobalId<0>();
+  if (packed_idx >= args.num_dispatches) {
+    return;
+  }
+  int4 coords = args.experts_packed_map.Read(packed_idx, 0, 0);
+  int ae_id = coords.x;
+  int seq_id = coords.y;
+  args.inv_remap.Write(packed_idx, seq_id * args.num_active_experts + ae_id);
+}
+)";
+  return std::make_unique<::ml_drift::GPUOperation>(std::move(op));
+}
+
+// Gathers packed expert outputs directly via `inv_remap` and computes the
+// weighted reduction per token without materializing `[1, AE, S, D]` or
+// running a standalone `[1, AE, S, D] -> [1, S, AE, D]` transpose.
+std::unique_ptr<::ml_drift::GPUOperation> CreateScaleWithBatchIdsFromPacked(
+    const ::ml_drift::TensorDescriptor& input,
+    const ::ml_drift::TensorDescriptor& active_ids,
+    const ::ml_drift::TensorDescriptor& active_scales,
+    const ::ml_drift::TensorDescriptor& scales,
+    const ::ml_drift::TensorDescriptor& dst, int num_active_experts) {
+  ::ml_drift::GPUOperation op;
+  op.AddSrcTensor("input", input);
+  ::ml_drift::BufferDescriptor inv_remap_desc;
+  inv_remap_desc.element_type = ::ml_drift::DataType::kInt32;
+  inv_remap_desc.element_size = 1;
+  op.AddSrcBuffer("inv_remap", inv_remap_desc);
+  op.AddSrcTensor("active_ids", active_ids);
+  op.AddSrcTensor("active_scales", active_scales);
+  op.AddSrcTensor("scales", scales);
+  op.AddDstTensor("dst", dst);
+  op.args_.AddInt("num_active_experts", num_active_experts);
+  const ::ml_drift::BHWC dst_shape = dst.GetBHWCShape();
+  op.SetGridSize(::ml_drift::int3(::ml_drift::DivideRoundUp(dst_shape.c, 4),
+                                  dst_shape.w, 1));
+  op.work_group_size_ = ::ml_drift::int3(32, 1, 1);
+  op.code_ = R"(
+MAIN_FUNCTION($0) {
+  int s = ucl::GetGlobalId<0>();
+  int x = ucl::GetGlobalId<1>();
+  if (s >= args.dst.Slices() || x >= args.dst.Width()) {
+    return;
+  }
+  float4 sum = ucl::Init<float4>(0.0f);
+  for (int ae_id = 0; ae_id < args.num_active_experts; ++ae_id) {
+    int packed_idx = args.inv_remap.Read(x * args.num_active_experts + ae_id);
+    int expert_id;
+    args.active_ids.ReadPerChannel<int>(expert_id, x, 0, ae_id, 0);
+    float scale_value;
+    args.scales.ReadPerChannel<float>(scale_value, 0, 0, expert_id, 0);
+    float4 in_value = ucl::Convert<float4>(args.input.Read(packed_idx, 0, s, 0));
+    float active_scale;
+    args.active_scales.ReadPerChannel<float>(active_scale, x, 0, ae_id, 0);
+    sum += in_value * (scale_value * active_scale);
+  }
+  args.dst::type res_value = ucl::Convert<args.dst::type>(sum);
+  args.dst.Write(res_value, x, 0, s, 0);
+}
+)";
+  return std::make_unique<::ml_drift::GPUOperation>(std::move(op));
+}
 
 class ScaleWithBatchIdsOp : public ::ml_drift::GPUOperation {
  public:
@@ -171,10 +325,10 @@ absl::StatusOr<::ml_drift::GpuModelBuilder::TensorHandle> ScaleWithBatchIds(
   ::ml_drift::WeightsDescription weights_desc =
       weight_type == MoeExpertsAttributes::WeightType::kInt4
           ? model_builder->GetFullyConnectedInt4WeightsDesc(weights_shape)
-          : weight_type == MoeExpertsAttributes::WeightType::kInt8
-                ? model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape)
-                : model_builder->GetFullyConnectedWeightsDesc(
-                      src.tensor_desc.GetDataType(), weights_shape);
+      : weight_type == MoeExpertsAttributes::WeightType::kInt8
+          ? model_builder->GetFullyConnectedInt8WeightsDesc(weights_shape)
+          : model_builder->GetFullyConnectedWeightsDesc(
+                src.tensor_desc.GetDataType(), weights_shape);
 
   ::ml_drift::GpuModelBuilder::TensorHandle scale_handle;
   ::ml_drift::GpuModelBuilder::TensorHandle* scale_handle_ptr = nullptr;
@@ -247,22 +401,54 @@ absl::Status BuildMoeExpertsGpuGraph(
   ::ml_drift::GpuModelBuilder::TensorHandle expert_params;
   ::ml_drift::GpuModelBuilder::TensorHandle experts_packed_remap;
 
+  const bool use_apple_mpp_in_dhwbcc4 =
+      use_packed_groups && src_shape.b == 1 &&
+      CanUseAppleMppDhwbcc4(*model_builder, src.tensor_desc.GetDataType(),
+                            num_dispatches, num_experts, model_dim);
+  const bool use_apple_mpp_hidden_dhwbcc4 =
+      use_packed_groups && src_shape.b == 1 &&
+      CanUseAppleMppDhwbcc4(*model_builder, src.tensor_desc.GetDataType(),
+                            num_dispatches, num_experts, hidden_dim);
+
+  auto maybe_reshape = [&](const ::ml_drift::GpuModelBuilder::TensorHandle& h,
+                           const ::ml_drift::BHWC& target) {
+    if (h.tensor_desc.GetBHWCShape() == target) {
+      return h;
+    }
+    return model_builder->Reshape(h, target);
+  };
+
   if (use_packed_groups) {
     auto vals = ::ml_drift::CreateExpertsRemap(*model_builder, top_indices,
                                                num_experts);
     experts_packed_remap = vals[2];
     expert_params = vals[1];  // experts count and offsets
-    expert_src = ::ml_drift::ExpertsRemapTo(
-        *model_builder, src, experts_packed_remap, num_active_experts);
-  } else {
-    expert_params = model_builder->Reshape(
-        top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
-    if (sequence_size == 1) {
-      expert_src =
-          model_builder->Reshape(src, ::ml_drift::BHWC(1, 1, 1, model_dim));
+    if (use_apple_mpp_in_dhwbcc4) {
+      ::ml_drift::TensorDescriptor remapped_desc{
+          src.tensor_desc.GetDataType(), ::ml_drift::TensorStorageType::kBuffer,
+          ::ml_drift::Layout::kHWC,
+          ::ml_drift::TensorDescriptor::PhysicalLayout1D::kDHWBCC4};
+      remapped_desc.SetBHWCShape(
+          ::ml_drift::BHWC(1, 1, num_dispatches, model_dim));
+      expert_src = model_builder->AddTensor(remapped_desc);
+      model_builder->AddGpuOperation(
+          {src, experts_packed_remap}, {expert_src},
+          CreateExpertsRemapToDhwbcc4Op(src.tensor_desc,
+                                        experts_packed_remap.tensor_desc,
+                                        expert_src.tensor_desc),
+          "experts_remap_to_dhwbcc4");
     } else {
-      auto src_tokens = model_builder->Reshape(
-          src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
+      expert_src = ::ml_drift::ExpertsRemapTo(
+          *model_builder, src, experts_packed_remap, num_active_experts);
+    }
+  } else {
+    expert_params =
+        maybe_reshape(top_indices, ::ml_drift::BHWC(1, 1, 1, num_dispatches));
+    if (sequence_size == 1) {
+      expert_src = maybe_reshape(src, ::ml_drift::BHWC(1, 1, 1, model_dim));
+    } else {
+      auto src_tokens =
+          maybe_reshape(src, ::ml_drift::BHWC(1, sequence_size, 1, model_dim));
       ABSL_ASSIGN_OR_RETURN(
           auto token_indices,
           CreateDispatchTokenIndices(model_builder, sequence_size,
@@ -305,49 +491,76 @@ absl::Status BuildMoeExpertsGpuGraph(
       auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
                                       ff1_shared_scale, model_dim, hidden_dim));
   auto hidden = model_builder->Multiplication(ff1, gate);
+  if (use_apple_mpp_hidden_dhwbcc4) {
+    hidden = ConvertToDhwbcc4(model_builder, hidden);
+  }
 
   ABSL_ASSIGN_OR_RETURN(
       auto expert_outputs,
       run_expert_projection(hidden, linear_weight, linear_scale_ptr,
                             linear_shared_scale, hidden_dim, model_dim));
 
-  if (use_packed_groups) {
-    const ::ml_drift::BHWC shape = expert_outputs.tensor_desc.GetBHWCShape();
-    auto remapped_dst = model_builder->AddTensor(
-        ::ml_drift::BHWC(shape.b, num_active_experts,
-                         shape.w / num_active_experts, shape.c),
-        expert_outputs.tensor_desc.GetDataType());
-    auto remap_from = ::ml_drift::CreateExpertsRemapFromOp(
-        expert_outputs.tensor_desc, experts_packed_remap.tensor_desc,
-        remapped_dst.tensor_desc);
-    // `CreateExpertsRemapFromOp` computes its grid from `src[0]` (`[S * AE, 1,
-    // D/4]`) via a `GPUOperation` subclass override while setting
-    // `kWBToX_HDToY_SToZ`. Program-cache deserialization drops the subclass and
-    // recomputes non-`kCustom` grids from `dst[0]` (`[S, AE, D/4]`), so mark
-    // the grid `kCustom` to keep the `src[0]` grid stored before serialization.
-    remap_from->tensor_to_grid_ = ::ml_drift::TensorToGrid::kCustom;
-    model_builder->AddGpuOperation({expert_outputs, experts_packed_remap},
-                                   {remapped_dst}, std::move(remap_from),
-                                   "experts_remap_from");
-    expert_outputs =
-        model_builder->Transpose(remapped_dst, ::ml_drift::BHWC(0, 2, 1, 3));
-  } else {
-    expert_outputs = model_builder->Reshape(
-        expert_outputs,
-        ::ml_drift::BHWC(1, sequence_size, num_active_experts, model_dim));
-  }
-
-  auto active_ids = model_builder->Reshape(
+  auto active_ids = maybe_reshape(
       top_indices, ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts));
-  auto active_scales = model_builder->Reshape(
+  auto active_scales = maybe_reshape(
       top_weights, ::ml_drift::BHWC(1, 1, sequence_size, num_active_experts));
-  auto expert_scales = model_builder->Reshape(
-      per_expert_scale, ::ml_drift::BHWC(1, 1, 1, num_experts));
+  auto expert_scales =
+      maybe_reshape(per_expert_scale, ::ml_drift::BHWC(1, 1, 1, num_experts));
 
-  ABSL_ASSIGN_OR_RETURN(
-      auto combined,
-      ScaleWithBatchIds(model_builder, expert_outputs, active_ids,
-                        active_scales, expert_scales));
+  ::ml_drift::GpuModelBuilder::TensorHandle combined;
+  if (use_packed_groups && src_shape.b == 1) {
+    // Convert packed outputs to kDHWBCC4 (links into `linear`'s epilogue) so
+    // the fused gather+scale reduction reads contiguous slices per token.
+    expert_outputs = ConvertToDhwbcc4(model_builder, expert_outputs);
+
+    ::ml_drift::TensorDescriptor inv_remap_desc(
+        ::ml_drift::DataType::kInt32, ::ml_drift::TensorStorageType::kBuffer,
+        ::ml_drift::Layout::kHWC);
+    inv_remap_desc.SetBHWCShape(::ml_drift::BHWC(1, 1, 1, num_dispatches));
+    auto inv_remap = model_builder->AddTensor(inv_remap_desc);
+    model_builder->AddGpuOperation(
+        {experts_packed_remap}, {inv_remap},
+        CreateBuildInverseExpertsRemapOp(experts_packed_remap.tensor_desc,
+                                         num_dispatches, num_active_experts),
+        "build_inverse_experts_remap");
+
+    const ::ml_drift::BHWC dst_shape(1, 1, sequence_size, model_dim);
+    combined = model_builder->AddTensor(
+        dst_shape, expert_outputs.tensor_desc.GetDataType());
+    model_builder->AddGpuOperation(
+        {expert_outputs, inv_remap, active_ids, active_scales, expert_scales},
+        {combined},
+        CreateScaleWithBatchIdsFromPacked(
+            expert_outputs.tensor_desc, active_ids.tensor_desc,
+            active_scales.tensor_desc, expert_scales.tensor_desc,
+            combined.tensor_desc, num_active_experts),
+        "moe_scale_with_batch_ids_from_packed");
+  } else {
+    if (use_packed_groups) {
+      const ::ml_drift::BHWC shape = expert_outputs.tensor_desc.GetBHWCShape();
+      auto remapped_dst = model_builder->AddTensor(
+          ::ml_drift::BHWC(shape.b, num_active_experts,
+                           shape.w / num_active_experts, shape.c),
+          expert_outputs.tensor_desc.GetDataType());
+      auto remap_from = ::ml_drift::CreateExpertsRemapFromOp(
+          expert_outputs.tensor_desc, experts_packed_remap.tensor_desc,
+          remapped_dst.tensor_desc);
+      remap_from->tensor_to_grid_ = ::ml_drift::TensorToGrid::kCustom;
+      model_builder->AddGpuOperation({expert_outputs, experts_packed_remap},
+                                     {remapped_dst}, std::move(remap_from),
+                                     "experts_remap_from");
+      expert_outputs =
+          model_builder->Transpose(remapped_dst, ::ml_drift::BHWC(0, 2, 1, 3));
+    } else {
+      expert_outputs = maybe_reshape(
+          expert_outputs,
+          ::ml_drift::BHWC(1, sequence_size, num_active_experts, model_dim));
+    }
+
+    ABSL_ASSIGN_OR_RETURN(
+        combined, ScaleWithBatchIds(model_builder, expert_outputs, active_ids,
+                                    active_scales, expert_scales));
+  }
   if (combined.tensor_desc.GetBHWCShape() != output_shape) {
     combined = model_builder->Reshape(combined, output_shape);
   }
