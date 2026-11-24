@@ -25,12 +25,14 @@ limitations under the License.
 #include <optional>
 #include <string>
 #include <thread>  // NOLINT(build/c++11)
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -157,6 +159,15 @@ inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt4Weights(
   return out;
 }
 
+// Whether `Backend` has `CreateConstTensorFromHostData` (see
+// `MlDriftClBackend`).
+template <typename Backend, typename = void>
+struct HasCreateConstTensorFromHostData : std::false_type {};
+template <typename Backend>
+struct HasCreateConstTensorFromHostData<
+    Backend, std::void_t<decltype(&Backend::CreateConstTensorFromHostData)>>
+    : std::true_type {};
+
 }  // namespace ml_drift_runner_internal
 
 template <typename Backend>
@@ -173,6 +184,33 @@ class CompiledMlDriftModelRunner {
   // constant weight buffers/textures on the GPU.
   struct SharedWeightsCache {
     absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> descriptors;
+    // Optional: the packed bytes of `descriptors` without data, by weight
+    // name, in host memory that `owner` keeps alive (e.g. memory-mapped from
+    // a persistent weight cache). Uploaded like descriptor data and dropped
+    // once uploaded, unless the GPU tensor is created over them (see
+    // `zero_copy_host_data`).
+    struct HostData {
+      absl::Span<const uint8_t> data;
+      // Type-erased owner of the memory of `data` (e.g. a memory mapping):
+      // `std::shared_ptr<const void>` keeps the deleter of the object it was
+      // created from, so the last reference destroys that object (and so
+      // unmaps the memory) whatever its type.
+      std::shared_ptr<const void> owner;
+    };
+    absl::flat_hash_map<std::string, HostData> host_data;
+    // Creates the GPU tensors of `host_data` over the host memory itself
+    // instead of copying it, where the backend and GPU allow it:
+    // `Backend::CreateConstTensorFromHostData` wraps the memory when it can
+    // (e.g. OpenCL `CL_MEM_USE_HOST_PTR` buffers, `Backend::WrapHostData`)
+    // and copies it otherwise. On GPUs that share memory with the CPU
+    // (unified memory, e.g. mobile SoCs), the GPU then reads the weights
+    // straight from the (memory-mapped) host pages, without a second copy.
+    bool zero_copy_host_data = false;
+    // Keeps alive, for each tensor created over `host_data`, the host memory
+    // and the backend objects wrapping it (type-erased, see
+    // `HostData::owner`). Declared before `tensors`, which must be destroyed
+    // first.
+    std::vector<std::shared_ptr<const void>> zero_copy_owners;
     absl::flat_hash_map<std::string, std::unique_ptr<BackendTensor>> tensors;
     size_t cache_hits = 0;
     size_t cache_misses = 0;
@@ -182,6 +220,12 @@ class CompiledMlDriftModelRunner {
     // the runner, so only set it when every graph is compiled with this cache
     // (e.g. a decoder runtime that builds a fresh graph for every pass).
     bool release_fused_host_buffers = false;
+    // Optional: called with the packed descriptor (with data) of every weight
+    // when its GPU tensor is created, e.g. to persist the packed weights for
+    // later runs (which then pre-populate `descriptors`).
+    absl::AnyInvocable<void(const std::string& name,
+                            const ml_drift::TensorDescriptor& desc)>
+        on_upload;
   };
 
   // Host wall time of the compilation phases of `Prepare()` and
@@ -202,12 +246,17 @@ class CompiledMlDriftModelRunner {
     // into the `GpuModel`. CPU only, no GPU work.
     absl::Duration build_gpu_model;
     // Creating the GPU tensors of the `SharedWeightsCache` weights that are
-    // not in the cache yet (host -> GPU copies), and their bytes. Only these
-    // are uploaded here: without a `SharedWeightsCache` (and for the other
-    // constants) `InitFromGpuModel` uploads the constants, which is counted
-    // in `init_inference_context`.
+    // not in the cache yet (host -> GPU copies), and their bytes. The bytes
+    // also count the `host_data` that `zero_copy_host_data` wrapped without
+    // copying (see `num_zero_copy_tensors`). Only these are uploaded here:
+    // without a `SharedWeightsCache` (and for the other constants)
+    // `InitFromGpuModel` uploads the constants, which is counted in
+    // `init_inference_context`.
     absl::Duration upload_shared_weights;
     size_t upload_shared_weights_bytes = 0;
+    // Shared weights whose GPU tensor was created over their host memory
+    // (`SharedWeightsCache::zero_copy_host_data`).
+    size_t num_zero_copy_tensors = 0;
     // `InitFromGpuModel`: memory allocation, upload of the remaining
     // constants, kernel compilation and tuning.
     absl::Duration init_inference_context;
@@ -312,6 +361,8 @@ class CompiledMlDriftModelRunner {
       const absl::flat_hash_set<std::string>& external_weights = {}) {
     if (prepared_) return absl::OkStatus();
     conversion_ctx_.external_weight_names = external_weights;
+    conversion_ctx_.persists_shared_weights =
+        shared_weights_ != nullptr && shared_weights_->on_upload != nullptr;
     name_to_tensor_map_.clear();
     const absl::Time rearrange_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(RearrangeAndMapConstantWeights());
@@ -403,25 +454,48 @@ class CompiledMlDriftModelRunner {
               !shared_desc_it->second.GetData().empty()) {
             upload_desc = &shared_desc_it->second;
           }
+          auto host_it = shared_weights_->host_data.end();
+          if (upload_desc->GetData().empty()) {
+            host_it = shared_weights_->host_data.find(weight_name);
+          }
           if (upload_desc->GetData().empty() &&
+              host_it == shared_weights_->host_data.end() &&
               upload_desc->GetMemorySizeInBytes() > 0) {
-            // Neither the model nor the cache has data for these weights and
-            // the cache has no GPU tensor for them. The runners never leave
-            // the cache like that (a descriptor loses its data only when its
-            // GPU tensor is added, and the weights this runner converts on
-            // the GPU are bound above, without publishing dataless
-            // descriptors in `Prepare()`), so this only triggers when the
-            // caller removed entries of `SharedWeightsCache::tensors` or
-            // added `descriptors` without data. Uploading would create an
-            // uninitialized tensor.
+            // Neither the model nor the cache has data (or `host_data`) for
+            // these weights and the cache has no GPU tensor for them. The
+            // runners never leave the cache like that (a descriptor loses its
+            // data only when its GPU tensor is added, and the weights this
+            // runner converts on the GPU are bound above, without publishing
+            // dataless descriptors in `Prepare()`), so this only triggers
+            // when the caller removed entries of `SharedWeightsCache::tensors`
+            // or added `descriptors` without data or `host_data`. Uploading
+            // would create an uninitialized tensor.
             return absl::FailedPreconditionError(
                 absl::StrCat("No data for the weights '", weight_name, "'"));
           }
           auto gpu_tensor = std::make_unique<BackendTensor>();
-          LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
-              env_ptr_, *upload_desc, gpu_tensor.get()));
-          compile_timing_.upload_shared_weights_bytes +=
-              upload_desc->GetData().size();
+          if (host_it != shared_weights_->host_data.end()) {
+            LRT_TENSOR_RETURN_IF_ERROR(CreateConstTensorFromHostData(
+                *upload_desc, host_it->second, gpu_tensor.get()));
+            compile_timing_.upload_shared_weights_bytes +=
+                host_it->second.data.size();
+            shared_weights_->host_data.erase(host_it);
+          } else {
+            if (upload_desc->GetData().size() <
+                upload_desc->GetMemorySizeInBytes()) {
+              return absl::InvalidArgumentError(absl::StrCat(
+                  "Weights '", weight_name, "' have ",
+                  upload_desc->GetData().size(), " bytes, expected ",
+                  upload_desc->GetMemorySizeInBytes()));
+            }
+            LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+                env_ptr_, *upload_desc, gpu_tensor.get()));
+            compile_timing_.upload_shared_weights_bytes +=
+                upload_desc->GetData().size();
+            if (shared_weights_->on_upload) {
+              shared_weights_->on_upload(weight_name, *upload_desc);
+            }
+          }
           if (shared_desc_it != shared_weights_->descriptors.end()) {
             shared_desc_it->second =
                 CopyDescriptorWithoutData(shared_desc_it->second);
@@ -457,6 +531,46 @@ class CompiledMlDriftModelRunner {
     return absl::OkStatus();
   }
 
+  // Creates the GPU tensor of shared weights from their `host_data`: over the
+  // host memory when `zero_copy_host_data` and the backend allow it, else by
+  // copying it.
+  absl::Status CreateConstTensorFromHostData(
+      const ml_drift::TensorDescriptor& desc,
+      const typename SharedWeightsCache::HostData& host,
+      BackendTensor* tensor) {
+    if constexpr (ml_drift_runner_internal::HasCreateConstTensorFromHostData<
+                      Backend>::value) {
+      std::shared_ptr<const void> gpu_owner;
+      LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
+          env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
+          tensor, &gpu_owner));
+      if (gpu_owner != nullptr) {
+        // Keeps both alive in `zero_copy_owners`. Members are destroyed in
+        // reverse declaration order, so the last reference releases the
+        // backend objects (`gpu`) before the host memory they wrap (`host`).
+        // Each one is a type-erased `shared_ptr` that runs the deleter of the
+        // object it was created from (e.g. `clReleaseMemObject`, unmapping).
+        struct Owners {
+          std::shared_ptr<const void> host;
+          std::shared_ptr<const void> gpu;
+        };
+        shared_weights_->zero_copy_owners.push_back(std::make_shared<Owners>(
+            Owners{.host = host.owner, .gpu = std::move(gpu_owner)}));
+        ++compile_timing_.num_zero_copy_tensors;
+      }
+      return absl::OkStatus();
+    } else {
+      if (host.data.size() < desc.GetMemorySizeInBytes()) {
+        return absl::InvalidArgumentError(
+            absl::StrCat("Constant tensor data has ", host.data.size(),
+                         " bytes, expected ", desc.GetMemorySizeInBytes()));
+      }
+      ml_drift::TensorDescriptor with_data = CopyDescriptorWithoutData(desc);
+      with_data.SetData(
+          std::vector<uint8_t>(host.data.begin(), host.data.end()));
+      return Backend::CreateConstTensor(env_ptr_, with_data, tensor);
+    }
+  }
   const CompileTiming& compile_timing() const { return compile_timing_; }
   const absl::flat_hash_map<std::string, MlDriftBuildContext::WeightPackStat>&
   weight_pack_stats() const {
@@ -475,7 +589,7 @@ class CompiledMlDriftModelRunner {
         absl::ToDoubleMilliseconds(t.upload_shared_weights),
         " upload_shared_weights_mb=",
         static_cast<double>(t.upload_shared_weights_bytes) / (1 << 20),
-        " init_context_ms=",
+        " num_zero_copy_tensors=", t.num_zero_copy_tensors, " init_context_ms=",
         absl::ToDoubleMilliseconds(t.init_inference_context),
         " build_model_ms=", absl::ToDoubleMilliseconds(compilation_time_),
         " num_nodes=", t.num_nodes,
@@ -1408,19 +1522,26 @@ class CompiledMlDriftModelRunner {
       gpu_model_.const_tensors.erase(const_it);
     }
     if (shared_weights_ != nullptr) {
-      if (!shared_weights_->tensors.contains(name) && tensor == nullptr) {
-        return absl::InternalError(
-            absl::StrCat("Weights '", name, "' were not converted"));
-      }
-      // One lookup: inserts `tensor` only if no other runner cached it.
-      auto [it, inserted] =
-          shared_weights_->tensors.try_emplace(name, std::move(tensor));
-      if (inserted) {
+      auto it = shared_weights_->tensors.find(name);
+      if (it != shared_weights_->tensors.end()) {
+        ++shared_weights_->cache_hits;
+      } else {
+        if (tensor == nullptr) {
+          return absl::InternalError(
+              absl::StrCat("Weights '", name, "' were not converted"));
+        }
+        // Read the converted weights back before caching them, so that a
+        // failure leaves the cache unchanged.
+        if (shared_weights_->on_upload) {
+          ml_drift::TensorDescriptor converted;
+          LRT_TENSOR_RETURN_IF_ERROR(
+              Backend::TensorToDescriptor(tensor.get(), env_ptr_, &converted));
+          shared_weights_->on_upload(name, converted);
+        }
         shared_weights_->descriptors.insert_or_assign(
             name, CopyDescriptorWithoutData(handle.tensor_desc));
+        it = shared_weights_->tensors.emplace(name, std::move(tensor)).first;
         ++shared_weights_->cache_misses;
-      } else {
-        ++shared_weights_->cache_hits;
       }
       external_tensors->immutable_tensors[handle.id] = it->second.get();
       return absl::OkStatus();

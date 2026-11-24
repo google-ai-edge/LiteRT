@@ -441,6 +441,51 @@ TEST(GpuWeightConversionSharingTest, SkipsWeightsConvertedSincePrepare) {
   EXPECT_THAT(outputs[1], ElementsAreArray(outputs[0]));
 }
 
+// `SharedWeightsCache::on_upload` gets the GPU-converted weights read back
+// from the GPU: the packed bytes of the CPU path.
+TEST(GpuWeightConversionSharingTest, OnUploadReadsBackConvertedWeights) {
+  using Runner = CompiledMlDriftModelRunner<MlDriftClBackend>;
+  constexpr int kIn = 32;
+  constexpr int kOut = 8;
+  const WeightsCase c{
+      .name = "readback", .type = Type::kI4, .out = kOut, .in = kIn};
+  MlDriftClBackend::Environment env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&env), IsOk());
+  std::vector<uint8_t> packed[2];
+  for (int gpu = 0; gpu < 2; ++gpu) {
+    Runner::SharedWeightsCache shared_weights;
+    shared_weights.on_upload = [&](const std::string& name,
+                                   const ml_drift::TensorDescriptor& desc) {
+      if (name == "w") {
+        packed[gpu].assign(desc.GetData().begin(), desc.GetData().end());
+      }
+    };
+    TensorMLD w(
+        {.name = "w",
+         .type = Type::kI4,
+         .shape = {kOut, kIn},
+         .buffer = MakeWeights(c),
+         .quantization = std::make_shared<PerChannelAffineQuantization>(
+             std::vector<float>(kOut, 0.1f), std::vector<int64_t>(kOut, 0),
+             /*quantized_dimension=*/0)});
+    TensorMLD x({.name = "x", .type = Type::kFP32, .shape = {1, 1, kIn}});
+    TensorMLD y = FullyConnected(x, w);
+    y.SetName("y");
+    Runner runner({x}, {y}, ml_drift::CalculationsPrecision::kF32, &env,
+                  &shared_weights);
+    if (gpu) runner.ForceGpuWeightConversionForTesting();
+    ASSERT_THAT(runner.BuildModel(), IsOk());
+    EXPECT_EQ(runner.weight_pack_stats().contains("gpu_convert"), gpu == 1);
+  }
+  // The CPU path may allocate a longer linear buffer (see
+  // `MatchesCpuPackedWeights`).
+  ASSERT_FALSE(packed[1].empty());
+  ASSERT_LE(packed[1].size(), packed[0].size());
+  EXPECT_THAT(packed[1],
+              ElementsAreArray(packed[0].begin(),
+                               packed[0].begin() + packed[1].size()));
+}
+
 // `SetConvertWeightsOnGpu(true)` respects
 // `WeightsManager::IsGpuWeightsPreparationSupported` (disabled on Mali).
 TEST(GpuWeightConversionSharingTest, RespectsGpuSupportCheck) {

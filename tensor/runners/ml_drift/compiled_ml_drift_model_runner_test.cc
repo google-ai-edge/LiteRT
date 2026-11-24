@@ -20,12 +20,16 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
+#include <tuple>
 #include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -36,12 +40,14 @@ limitations under the License.
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "tensor/arithmetic.h"
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
+#include "tensor/backends/ml_drift/ml_drift_helpers.h"
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/compile.h"
 #include "tensor/internal/graph.h"
 #include "tensor/runners/ml_drift/ml_drift_cl_model_runner.h"
 #include "tensor/tensor.h"
+#include "tensor/utils/macros.h"
 #include "tensor/utils/matchers.h"
 
 namespace litert::tensor {
@@ -847,6 +853,154 @@ TEST(CompiledMlDriftModelRunnerTest, GetTensorDescriptor) {
   EXPECT_EQ(runner.GetTensorDescriptor("missing").status().code(),
             absl::StatusCode::kNotFound);
 }
+
+// `y = FullyConnected(x, w)` with constant FP32 weights "fc.weight".
+struct FcGraph {
+  static constexpr int kIn = 8;
+  static constexpr int kOut = 4;
+  static constexpr int kTokens = 2;
+  TensorMLD x;
+  TensorMLD y;
+};
+
+FcGraph MakeFcGraph() {
+  std::vector<float> weights(FcGraph::kOut * FcGraph::kIn);
+  for (int i = 0; i < weights.size(); ++i) {
+    weights[i] = 0.125f * static_cast<float>(i % 11 - 5);
+  }
+  FcGraph g;
+  TensorMLD w({.name = "fc.weight",
+               .type = Type::kFP32,
+               .shape = {FcGraph::kOut, FcGraph::kIn},
+               .buffer = weights});
+  g.x = TensorMLD({.name = "x",
+                   .type = Type::kFP32,
+                   .shape = {1, FcGraph::kTokens, FcGraph::kIn}});
+  g.y = FullyConnected(g.x, w);
+  g.y.SetName("y");
+  return g;
+}
+
+absl::StatusOr<std::vector<float>> ComputeFcOutput(Runner& runner) {
+  std::vector<float> x_data(FcGraph::kTokens * FcGraph::kIn);
+  for (int i = 0; i < x_data.size(); ++i) {
+    x_data[i] = 0.5f * static_cast<float>(i % 7 - 3);
+  }
+  TensorMLD fed({.name = "x",
+                 .type = Type::kFP32,
+                 .shape = {1, FcGraph::kTokens, FcGraph::kIn},
+                 .buffer = x_data});
+  LRT_TENSOR_RETURN_IF_ERROR(runner.SetInput("x", fed));
+  LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
+  return runner.GetFloatOutput("y");
+}
+
+// `SharedWeightsCache::on_upload` gets the packed weights (with data) of
+// every shared weight uploaded on the CPU path, once per cache.
+TEST(CompiledMlDriftModelRunnerTest, OnUploadGetsThePackedSharedWeights) {
+  MlDriftClBackend::Environment env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&env), IsOk());
+  Runner::SharedWeightsCache shared_weights;
+  absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> uploaded;
+  int num_uploads = 0;
+  shared_weights.on_upload = [&](const std::string& name,
+                                 const ml_drift::TensorDescriptor& desc) {
+    ++num_uploads;
+    uploaded.insert_or_assign(name, desc);
+  };
+  FcGraph g1 = MakeFcGraph();
+  Runner first({g1.x}, {g1.y}, ml_drift::CalculationsPrecision::kF32, &env,
+               &shared_weights);
+  ASSERT_THAT(first.BuildModel(), IsOk());
+  ASSERT_TRUE(uploaded.contains("fc.weight"));
+  const ml_drift::TensorDescriptor& packed = uploaded.at("fc.weight");
+  EXPECT_FALSE(packed.GetData().empty());
+  EXPECT_GE(packed.GetData().size(), packed.GetMemorySizeInBytes());
+  const int first_uploads = num_uploads;
+
+  FcGraph g2 = MakeFcGraph();
+  Runner second({g2.x}, {g2.y}, ml_drift::CalculationsPrecision::kF32, &env,
+                &shared_weights);
+  ASSERT_THAT(second.BuildModel(), IsOk());
+  EXPECT_EQ(num_uploads, first_uploads);
+}
+
+// Shared weights given as `SharedWeightsCache::host_data` (e.g. mapped from
+// a persistent weight cache) are created from that memory: copied, or wrapped
+// with `zero_copy_host_data` when the data is aligned for the GPU.
+class HostDataTest : public ::testing::TestWithParam<
+                         std::tuple</*zero_copy=*/bool, /*misaligned=*/bool>> {
+};
+
+TEST_P(HostDataTest, CreatesSharedWeightsFromHostData) {
+  const auto [zero_copy, misaligned] = GetParam();
+  MlDriftClBackend::Environment env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&env), IsOk());
+  const size_t base_alignment =
+      env.device().GetInfo().opencl_info.base_addr_align_in_bits / 8;
+  if (misaligned && base_alignment <= 1) {
+    GTEST_SKIP() << "Every address is aligned on this GPU";
+  }
+
+  // Reference run, which also gets the packed weights.
+  Runner::SharedWeightsCache reference_weights;
+  std::optional<ml_drift::TensorDescriptor> packed;
+  reference_weights.on_upload = [&](const std::string& name,
+                                    const ml_drift::TensorDescriptor& desc) {
+    if (name == "fc.weight") packed = desc;
+  };
+  FcGraph g1 = MakeFcGraph();
+  Runner reference({g1.x}, {g1.y}, ml_drift::CalculationsPrecision::kF32, &env,
+                   &reference_weights);
+  ASSERT_THAT(reference.BuildModel(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<float> expected,
+                                  ComputeFcOutput(reference));
+  ASSERT_TRUE(packed.has_value());
+
+  // The packed bytes in host memory aligned to 4 KiB (plus 1 byte when
+  // `misaligned`), owned by the cache through `HostData::owner`.
+  constexpr size_t kAlignment = 4096;
+  const absl::Span<const uint8_t> bytes = packed->GetData();
+  auto memory =
+      std::make_shared<std::vector<uint8_t>>(bytes.size() + 2 * kAlignment);
+  const uintptr_t base = reinterpret_cast<uintptr_t>(memory->data());
+  uint8_t* aligned =
+      memory->data() + (kAlignment - base % kAlignment) + (misaligned ? 1 : 0);
+  absl::c_copy(bytes, aligned);
+
+  Runner::SharedWeightsCache shared_weights;
+  shared_weights.zero_copy_host_data = zero_copy;
+  shared_weights.descriptors.emplace("fc.weight",
+                                     CopyDescriptorWithoutData(*packed));
+  shared_weights.host_data.emplace(
+      "fc.weight",
+      Runner::SharedWeightsCache::HostData{
+          .data = absl::MakeConstSpan(aligned, bytes.size()), .owner = memory});
+  memory.reset();
+  FcGraph g2 = MakeFcGraph();
+  Runner runner({g2.x}, {g2.y}, ml_drift::CalculationsPrecision::kF32, &env,
+                &shared_weights);
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+  EXPECT_TRUE(shared_weights.host_data.empty());
+  EXPECT_TRUE(shared_weights.tensors.contains("fc.weight"));
+  EXPECT_EQ(runner.compile_timing().num_zero_copy_tensors,
+            zero_copy && !misaligned ? 1u : 0u);
+  EXPECT_EQ(shared_weights.zero_copy_owners.size(),
+            zero_copy && !misaligned ? 1u : 0u);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<float> actual,
+                                  ComputeFcOutput(runner));
+  EXPECT_THAT(actual, testing::ElementsAreArray(expected));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ZeroCopy, HostDataTest,
+    ::testing::Values(std::make_tuple(false, false),
+                      std::make_tuple(true, false),
+                      std::make_tuple(true, true)),
+    [](const ::testing::TestParamInfo<std::tuple<bool, bool>>& info) {
+      return std::string(std::get<0>(info.param) ? "ZeroCopy" : "Copy") +
+             (std::get<1>(info.param) ? "Misaligned" : "Aligned");
+    });
 
 }  // namespace
 }  // namespace litert::tensor

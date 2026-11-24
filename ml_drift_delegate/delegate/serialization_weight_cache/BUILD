@@ -155,6 +155,9 @@ cc_library(
     name = "cache_builder",
     srcs = ["cache_builder.cc"],
     hdrs = ["cache_builder.h"],
+    visibility = [
+        "//tensor/runners/ml_drift:__pkg__",
+    ],
     deps = [
         ":build_identifier",
         ":file_util",
@@ -197,6 +200,7 @@ cc_library(
     hdrs = ["serialization_weight_cache.h"],
     visibility = [
         "//ml_drift_delegate:__subpackages__",
+        "//tensor/runners/ml_drift:__pkg__",
         "//third_party/odml/infra:__subpackages__",
     ],
     deps = [

@@ -34,6 +34,7 @@ cc_library(
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:inference_context",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
@@ -47,6 +48,7 @@ cc_library(
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@opencl_headers",
     ],
 )
 
@@ -225,6 +227,7 @@ cc_library(
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_map",
+        "@com_google_absl//absl/functional:any_invocable",
         "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
@@ -311,9 +314,13 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/ml_drift:arithmetic_ml_drift",
+        "//tensor/backends/ml_drift:ml_drift_helpers",
         "//tensor/internal:compile",
         "//tensor/internal:graph",
+        "//tensor/utils:macros",
         "//tensor/utils:matchers",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/time",
@@ -383,6 +390,49 @@ objc_library(
         "@com_google_absl//absl/status:statusor",
         "@com_google_absl//absl/time",
         "@ml_drift//ml_drift/common:precision",
+    ],
+)
+
+# Packed GPU weights persisted across runs (`SharedWeightsCache` warm start).
+cc_library(
+    name = "persistent_weight_cache",
+    srcs = ["persistent_weight_cache.cc"],
+    hdrs = ["persistent_weight_cache.h"],
+    deps = [
+        "//ml_drift_delegate/delegate/serialization_weight_cache",
+        "//ml_drift_delegate/delegate/serialization_weight_cache:cache_builder",
+        "@com_google_absl//absl/algorithm:container",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/container:flat_hash_set",
+        "@com_google_absl//absl/crc:crc32c",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+        "@farmhash_archive//:farmhash",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+    ],
+)
+
+cc_test(
+    name = "persistent_weight_cache_test",
+    srcs = ["persistent_weight_cache_test.cc"],
+    # ml_drift headers fail to compile under OSS Linux's libstdc++ 8 sysroot.
+    tags = ["no_oss"],
+    deps = [
+        ":persistent_weight_cache",
+        "//tensor/utils:matchers",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/strings",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
 

@@ -71,6 +71,11 @@ struct MlDriftBuildContext {
   absl::flat_hash_map<std::string, ml_drift::TensorDescriptor>*
       shared_weight_descriptors = nullptr;
 
+  // True when the weights packed into `shared_weight_descriptors` by this
+  // compilation are also persisted for later runs (a persistent weight cache
+  // being built), so that packing costs are paid once.
+  bool persists_shared_weights = false;
+
   // True when the GpuModelBuilder may run large quantized FullyConnected /
   // convolutions with dynamically INT8-quantized activations (i.e. it was
   // created without `ModelHints::kDisallow8bitConvs`).
