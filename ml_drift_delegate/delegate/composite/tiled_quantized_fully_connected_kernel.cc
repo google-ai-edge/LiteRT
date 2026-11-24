@@ -15,6 +15,7 @@
 #include "ml_drift_delegate/delegate/composite/tiled_quantized_fully_connected_kernel.h"
 
 #include <algorithm>
+#include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <string>
@@ -152,6 +153,9 @@ class TiledQuantizedFullyConnected : public ::ml_drift::GPUOperation {
     if (bias) {
       op->AddSrcTensor("biases", *bias);
     }
+    // 2 FLOPs per MAC across dst elements x input channels.
+    op->flops_ = static_cast<uint64_t>(dst_shape.b) * dst_shape.h *
+                 dst_shape.w * dst_shape.c * weights_shape.i * 2ULL;
     return op;
   }
 

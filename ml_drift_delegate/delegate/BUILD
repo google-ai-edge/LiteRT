@@ -126,15 +126,40 @@ cc_library(
         "@ml_drift//ml_drift/cl:environment",
         "@ml_drift//ml_drift/cl:memory_manager",
         "@ml_drift//ml_drift/cl:opencl_wrapper",
+        "@ml_drift//ml_drift/cl:serialization_cc_fbs",
         "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
         "@ml_drift//ml_drift/common:gpu_model",
+        "@ml_drift//ml_drift/common:gpu_model_cc_fbs",
         "@ml_drift//ml_drift/common:model",
+        "@ml_drift//ml_drift/common:precision",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:serialization_base_cc_fbs",
         "@ml_drift//ml_drift/common/task:tensor_desc",
         "@opencl_headers",
     ] + select({
         "@org_tensorflow//tensorflow:android": ["@ml_drift//ml_drift/cl:gl_interop"],
         "//conditions:default": [],
     }) + gles_deps(),
+)
+
+cc_test(
+    name = "gpu_backend_opencl_litert_test",
+    srcs = ["gpu_backend_opencl_litert_test.cc"],
+    tags = [
+        # `gpu_backend_opencl_litert` transitively links `libEGL.so.1` and
+        # `libGLESv2.so.2` via `//third_party/ml_drift/pelong:portable`, which
+        # are unavailable on CPU-only Forge executors.
+        "requires-accel-or-fail-optout",
+        "requires-gpu-sm90",  # OpenCL/MIG-compatible
+    ],
+    deps = [
+        ":gpu_backend_opencl_litert",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:precision",
+    ],
 )
 
 cc_library(

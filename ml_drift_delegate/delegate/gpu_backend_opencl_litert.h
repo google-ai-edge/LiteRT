@@ -17,6 +17,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <utility>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
@@ -25,7 +26,9 @@
 #include "ml_drift/cl/cl_event.h"  // from @ml_drift
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
@@ -41,6 +44,10 @@ namespace internal {
 class GlInteropFabricLiteRt;
 }  // namespace internal
 #endif
+
+// Forward-declared for `GpuInferenceContextOpenClLitert` pointer in
+// `GpuBackendOpenClLitert` private helper.
+class GpuInferenceContextOpenClLitert;
 
 // GpuBackend for OpenCL with litert tensor buffer.
 class GpuBackendOpenClLitert : public GpuBackendOpenCl {
@@ -87,6 +94,29 @@ class GpuBackendOpenClLitert : public GpuBackendOpenCl {
   }
 
  private:
+  friend class GpuBackendOpenClLitertTest;
+
+  // Returns the per-submission FLOPs budget used to flush OpenCL command
+  // batches on Adreno 8xx so long subgraphs don't hit the GMU per-IB hardware
+  // watchdog. Returns 0 on devices where automatic batching is disabled.
+  static uint64_t ComputeMaxFlopsPerKernelBatch(
+      const ::ml_drift::GpuInfo& gpu_info,
+      ::ml_drift::CalculationsPrecision precision);
+
+  // Partitions consecutive nodes into `clFlush`-bounded batches whose estimated
+  // FLOPs stay within `max_flops_per_batch` (a single node exceeding the budget
+  // is isolated in a batch of size 1). Returns an empty vector when batching is
+  // disabled or the entire graph fits in one batch (preserving the
+  // command-buffer dispatch path).
+  static std::vector<int> PartitionNodesByFlops(
+      absl::Span<const uint64_t> node_flops, uint64_t max_flops_per_batch);
+
+  uint64_t ResolveAutoBatchFlopsBudget(
+      ::ml_drift::CalculationsPrecision precision) const;
+  static void MaybeSetAutoKernelBatchSizes(
+      absl::Span<const uint64_t> node_flops, uint64_t max_flops_per_batch,
+      GpuInferenceContextOpenClLitert* ctx, const char* log_prefix);
+
   absl::Status UploadCompiledCache();
 
   const LiteRtEglDisplay egl_display_;
@@ -125,10 +155,22 @@ class GpuInferenceContextOpenClLitert : public GpuInferenceContextOpenCl {
   absl::Status PreConvert(bool input) override;
   absl::Status PostConvert(bool input) override;
 
+  const std::vector<int>& auto_kernel_batch_sizes() const {
+    return auto_kernel_batch_sizes_;
+  }
+  void set_auto_kernel_batch_sizes(std::vector<int> batch_sizes) {
+    auto_kernel_batch_sizes_ = std::move(batch_sizes);
+  }
+
  private:
 #if LITERT_HAS_OPENGL_SUPPORT
   internal::GlInteropFabricLiteRt* const gl_interop_fabric_;
 #endif
+
+  // Automatic per-context FLOPs-bounded batch sizes used when no explicit
+  // backend `kernel_batch_size` is configured. Empty means dispatch via the
+  // default single command-buffer path.
+  std::vector<int> auto_kernel_batch_sizes_;
 
   // Post dispatch event is a marker event that is used to signal the completion
   // of all output events (see GetPostDispatchEvent()) and is not released until

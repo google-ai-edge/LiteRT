@@ -709,6 +709,8 @@ TEST(IsSupportedFlashSdpaTest, AssemblesCrossBackendAndVendorCode) {
         builder.GetGpuModel(model_inputs, {{out.id, 0}}, &gpu_model));
     for (const auto& node : gpu_model.nodes) {
       if (node.name == "flash_sdpa" && node.gpu_operation != nullptr) {
+        EXPECT_EQ(node.gpu_operation->flops_,
+                  uint64_t{1} * 12 * 10080 * 10080 * (4ULL * 64 + 4));
         *out_code = node.gpu_operation->code_;
         return absl::OkStatus();
       }

@@ -27,7 +27,6 @@
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
-#include "absl/strings/str_format.h"  // from @com_google_absl
 #include "absl/strings/str_replace.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -1661,6 +1660,11 @@ CreateFusedFlashDecodeSdpa(const ::ml_drift::GpuInfo& gpu_info,
         is_flattened_dst);
   }
   ResolveWaveSimd(gpu_info, &op.code_);
+  // 2 * B * N_q * T * S * H FLOPs each for QK^T and PV, plus ~4 FLOPs per
+  // score for online softmax (upper-bounded by cache_size).
+  const ::ml_drift::BHWC q_shape = q_desc.GetBHWCShape();
+  op.flops_ = static_cast<uint64_t>(q_shape.b) * q_shape.h * q_shape.w *
+              cache_size * (4ULL * q_shape.c + 4);
   return std::make_unique<FusedFlashDecodeSdpaOp>(std::move(op));
 }
 
@@ -2271,6 +2275,12 @@ MAIN_FUNCTION($0) {
 
   ResolveWaveSimd(gpu_info, &op_code);
   custom_op.code_ = std::move(op_code);
+  // 2 * B * N_q * T * S * H FLOPs each for QK^T and PV, plus ~4 FLOPs per
+  // score for online softmax (upper-bounded by cache_size).
+  const ::ml_drift::BHWC q_shape = q_desc.GetBHWCShape();
+  const int cache_size = k_desc.GetBHWCShape().w;
+  custom_op.flops_ = static_cast<uint64_t>(q_shape.b) * q_shape.h * q_shape.w *
+                     cache_size * (4ULL * q_shape.c + 4);
   return std::make_unique<FusedFlashAttentionPrefillOp>(std::move(custom_op));
 }
 
