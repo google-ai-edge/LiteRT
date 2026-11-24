@@ -35,6 +35,7 @@ limitations under the License.
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -1001,6 +1002,87 @@ INSTANTIATE_TEST_SUITE_P(
       return std::string(std::get<0>(info.param) ? "ZeroCopy" : "Copy") +
              (std::get<1>(info.param) ? "Misaligned" : "Aligned");
     });
+
+// After `BuildModel()` frees the model builder, the metadata queries use what
+// `CaptureCompiledHandlesAndReleaseBuilder()` kept, and `BuildModel()` can't
+// run again.
+TEST(CompiledMlDriftModelRunnerTest, MetadataQueriesWorkAfterBuildModel) {
+  FcGraph g = MakeFcGraph();
+  // An input that no op uses: known to the runner but without a GPU tensor.
+  TensorMLD unused({.name = "unused", .type = Type::kFP32, .shape = {1, 4}});
+  Runner runner({g.x, unused}, {g.y});
+  ASSERT_THAT(runner.Prepare(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const ml_drift::ValueId x_id_before,
+                                  runner.GetTensorValueId("x"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const ml_drift::ValueId w_id_before,
+                                  runner.GetWeightValueId("fc.weight"));
+  ASSERT_THAT(runner.BuildModel(), IsOk());
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const ml_drift::ValueId x_id,
+                                  runner.GetTensorValueId("x"));
+  EXPECT_EQ(x_id, x_id_before);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const ml_drift::TensorDescriptor y_desc,
+                                  runner.GetTensorDescriptor("y"));
+  EXPECT_EQ(y_desc.GetBHWCShape().DimensionsProduct(),
+            FcGraph::kTokens * FcGraph::kOut);
+  EXPECT_TRUE(y_desc.GetData().empty());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const ml_drift::ValueId w_id,
+                                  runner.GetWeightValueId("fc.weight"));
+  EXPECT_EQ(w_id, w_id_before);
+  EXPECT_TRUE(runner.GetWeightTensors().contains(w_id));
+  EXPECT_EQ(runner.GetTensorValueId("missing").status().code(),
+            absl::StatusCode::kNotFound);
+  EXPECT_EQ(runner.GetWeightValueId("missing").status().code(),
+            absl::StatusCode::kNotFound);
+
+  // Setting the unused input is a no-op; unknown names are errors.
+  TensorMLD unused_value({.name = "unused",
+                          .type = Type::kFP32,
+                          .shape = {1, 4},
+                          .buffer = std::vector<float>(4, 1.0f)});
+  EXPECT_THAT(runner.SetInput("unused", unused_value), IsOk());
+  EXPECT_EQ(runner.SetInput("missing", unused_value).code(),
+            absl::StatusCode::kInvalidArgument);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<float> output,
+                                  ComputeFcOutput(runner));
+  EXPECT_EQ(output.size(), FcGraph::kTokens * FcGraph::kOut);
+
+  EXPECT_EQ(runner.BuildModel().code(), absl::StatusCode::kFailedPrecondition);
+}
+
+// With `release_fused_host_buffers`, `BuildModel()` drops the packed data of
+// the shared descriptors whose GPU tensors exist (e.g. descriptors loaded from
+// a persistent weight cache for weights another runner already uploaded);
+// otherwise it keeps it.
+TEST(CompiledMlDriftModelRunnerTest, ReleasesUploadedSharedDescriptorData) {
+  MlDriftClBackend::Environment env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&env), IsOk());
+  for (const bool release : {false, true}) {
+    Runner::SharedWeightsCache shared_weights;
+    std::optional<ml_drift::TensorDescriptor> packed;
+    shared_weights.on_upload = [&](const std::string& name,
+                                   const ml_drift::TensorDescriptor& desc) {
+      if (name == "fc.weight") packed = desc;
+    };
+    FcGraph g1 = MakeFcGraph();
+    Runner first({g1.x}, {g1.y}, ml_drift::CalculationsPrecision::kF32, &env,
+                 &shared_weights);
+    ASSERT_THAT(first.BuildModel(), IsOk());
+    ASSERT_TRUE(packed.has_value());
+    ASSERT_TRUE(shared_weights.tensors.contains("fc.weight"));
+    // The packed data is back in the cache, and the GPU tensor exists.
+    shared_weights.descriptors.insert_or_assign("fc.weight", *packed);
+    shared_weights.release_fused_host_buffers = release;
+
+    FcGraph g2 = MakeFcGraph();
+    Runner second({g2.x}, {g2.y}, ml_drift::CalculationsPrecision::kF32, &env,
+                  &shared_weights);
+    ASSERT_THAT(second.BuildModel(), IsOk());
+    ASSERT_TRUE(shared_weights.descriptors.contains("fc.weight"));
+    EXPECT_EQ(shared_weights.descriptors.at("fc.weight").GetData().empty(),
+              release);
+  }
+}
 
 }  // namespace
 }  // namespace litert::tensor

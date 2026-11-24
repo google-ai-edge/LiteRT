@@ -22,6 +22,7 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -254,6 +255,70 @@ TEST(LazyTensorMappingTest, OnNotFoundErrorStopsTheChain) {
 
   EXPECT_THAT(mapping.Get("model.a"), StatusIs(absl::StatusCode::kInternal));
   EXPECT_THAT(log, IsEmpty());
+}
+
+TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedSkipsPinnedAndInMemory) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping loaded,
+                                  CreateMappingTestMapping(file));
+  ASSERT_THAT(loaded.Get("model.a"), IsOk());
+  ASSERT_THAT(loaded.Set("model.pinned", MappingTestTensor()), IsOk());
+  EXPECT_EQ(loaded.ReleaseTensorsNotPinned(), 1);
+  // Loader-backed tensor is reloaded on demand; pinned tensor stays intact.
+  ASSERT_THAT(loaded.Get("model.a"), IsOk());
+  ASSERT_THAT(loaded.Get("model.pinned"), IsOk());
+
+  // In-memory mappings without a loader never drop preloaded tensors.
+  LazyTensorMapping in_memory({{"model.mem", MappingTestTensor()}});
+  EXPECT_EQ(in_memory.ReleaseTensorsNotPinned(), 0);
+  ASSERT_THAT(in_memory.Get("model.mem"), IsOk());
+}
+
+// With a loader function, `Get()` calls it again for a released tensor.
+TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedReloadsWithLoaderFn) {
+  int num_loads = 0;
+  LazyTensorMapping mapping(
+      {{"checkpoint.x", "model.x"}},
+      [&num_loads](absl::string_view) -> absl::StatusOr<TensorHandle> {
+        ++num_loads;
+        return MappingTestTensor();
+      });
+  ASSERT_THAT(mapping.Get("model.x"), IsOk());
+  ASSERT_THAT(mapping.Get("model.x"), IsOk());
+  EXPECT_EQ(num_loads, 1);
+  EXPECT_EQ(mapping.ReleaseTensorsNotPinned(), 1);
+  ASSERT_THAT(mapping.Get("model.x"), IsOk());
+  EXPECT_EQ(num_loads, 2);
+}
+
+// Without a loader (a null loader function), nothing is released: the cached
+// tensors (here one provided by a hook) couldn't be loaded again.
+TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedIsANoOpWithoutLoader) {
+  LazyTensorMapping mapping(
+      MappingTestNames(),
+      absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>());
+  mapping.Register<AliasHooks>();
+  ASSERT_THAT(mapping.Set("model.a", MappingTestTensor()), IsOk());
+  ASSERT_THAT(mapping.Get("model.alias"), IsOk());
+  EXPECT_EQ(mapping.ReleaseTensorsNotPinned(), 0);
+  ASSERT_THAT(mapping.Get("model.alias"), IsOk());
+}
+
+// A tensor that a hook provided (`OnNotFound`) is released like the loaded
+// ones, and provided again by the next `Get()`.
+TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedReloadsHookTensors) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping mapping,
+                                  CreateMappingTestMapping(file));
+  mapping.Register<AliasHooks>();
+  ASSERT_THAT(mapping.Get("model.alias"), IsOk());
+  // "model.alias" and the "model.a" it was made from.
+  EXPECT_EQ(mapping.ReleaseTensorsNotPinned(), 2);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle alias,
+                                  mapping.Get("model.alias"));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, alias.GetBuffer());
+  EXPECT_THAT(buffer.Lock().As<const float>(),
+              ElementsAre(FloatEq(1), FloatEq(2)));
 }
 
 }  // namespace

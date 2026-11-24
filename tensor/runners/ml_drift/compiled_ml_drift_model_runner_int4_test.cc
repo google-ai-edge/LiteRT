@@ -36,6 +36,7 @@ limitations under the License.
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "tensor/runners/ml_drift/compiled_ml_drift_model_runner.h"
+#include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 #include "tensor/utils/matchers.h"
 
 namespace litert::tensor::ml_drift_runner_internal {
@@ -158,6 +159,67 @@ TEST_P(RearrangeInt4WeightsTest, CanonicalTensorHoldsThePackedBytes) {
       ml_drift::GetTensorDescriptorsForWeightsLayout(ohwi, desc);
   ASSERT_EQ(tensors.size(), 1);
   EXPECT_EQ(tensors[0].GetMemorySizeInBytes(), packed.data.size());
+
+  const ml_drift::TensorDescriptor packed_td =
+      CreatePackedWeightsTensorDescriptor(desc, ohwi, elements_count,
+                                          /*is_embedding=*/false);
+  EXPECT_EQ(packed_td.GetMemorySizeInBytes(), packed.data.size());
+  const ml_drift::TensorDescriptor emb_td = CreatePackedWeightsTensorDescriptor(
+      desc, ohwi, elements_count, /*is_embedding=*/true);
+  EXPECT_EQ(emb_td.GetMemorySizeInBytes(), packed.data.size());
+  // Linear buffers hold exactly the packed bytes (`GetMemorySizeInBytes()`
+  // rounds up to whole 4-channel slices).
+  for (const ml_drift::TensorDescriptor* td : {&packed_td, &emb_td}) {
+    EXPECT_EQ(td->GetStorageType(),
+              desc.IsLinearLayout() ? ml_drift::TensorStorageType::kBuffer
+                                    : ml_drift::TensorStorageType::kTexture2D);
+    if (td->GetStorageType() == ml_drift::TensorStorageType::kBuffer) {
+      EXPECT_EQ(static_cast<size_t>(td->GetBHWDCShape().c), packed.data.size());
+    }
+  }
+}
+
+// Embedding weights keep a linear buffer for 2D texture layouts other than
+// `k2DYIsSpatialIOAndXIsOGroupI4O4`; other weights use a 2D texture.
+TEST(CreatePackedWeightsTensorDescriptorTest,
+     EmbeddingsUseABufferForUnsupportedTextureLayouts) {
+  const ml_drift::OHWI ohwi(8, 1, 1, 32);
+  ml_drift::WeightsDescription desc;
+  desc.type = ml_drift::DataType::kUint4;
+  desc.layout = ml_drift::WeightsLayout::k2DX4I4YIsSpatialIAndXIsOOGroupO4;
+  desc.output_group_size = ml_drift::DivideRoundUp(ohwi.o, 4);
+  ASSERT_FALSE(desc.IsLinearLayout());
+  const size_t elements_count =
+      static_cast<size_t>(ml_drift::GetTotalElementsCountForLayout(desc, ohwi));
+
+  const ml_drift::TensorDescriptor emb_td = CreatePackedWeightsTensorDescriptor(
+      desc, ohwi, elements_count, /*is_embedding=*/true);
+  EXPECT_EQ(emb_td.GetStorageType(), ml_drift::TensorStorageType::kBuffer);
+  EXPECT_EQ(static_cast<size_t>(emb_td.GetBHWDCShape().c),
+            (elements_count * 4 + 7) / 8);
+
+  const ml_drift::TensorDescriptor fc_td = CreatePackedWeightsTensorDescriptor(
+      desc, ohwi, elements_count, /*is_embedding=*/false);
+  EXPECT_EQ(fc_td.GetStorageType(), ml_drift::TensorStorageType::kTexture2D);
+}
+
+// Linear buffers of 8-bit and wider types hold one element per channel.
+TEST(CreatePackedWeightsTensorDescriptorTest, WideTypesAreNotPacked) {
+  const ml_drift::OHWI ohwi(8, 1, 1, 32);
+  for (const ml_drift::DataType type :
+       {ml_drift::DataType::kFloat16, ml_drift::DataType::kFloat32}) {
+    ml_drift::WeightsDescription desc;
+    desc.type = type;
+    desc.layout = ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+    desc.output_group_size = ml_drift::DivideRoundUp(ohwi.o, 4);
+    ASSERT_TRUE(desc.IsLinearLayout());
+    const size_t elements_count = static_cast<size_t>(
+        ml_drift::GetTotalElementsCountForLayout(desc, ohwi));
+    const ml_drift::TensorDescriptor td = CreatePackedWeightsTensorDescriptor(
+        desc, ohwi, elements_count, /*is_embedding=*/false);
+    EXPECT_EQ(td.GetStorageType(), ml_drift::TensorStorageType::kBuffer);
+    EXPECT_EQ(static_cast<size_t>(td.GetBHWDCShape().c), elements_count);
+  }
 }
 
 }  // namespace

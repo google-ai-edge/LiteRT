@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/examples/utils/tensor_mapping.h"
 
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <utility>
@@ -74,8 +75,19 @@ absl::StatusOr<TensorHandle> LazyTensorMapping::Get(
 
 absl::Status LazyTensorMapping::Set(absl::string_view model_name,
                                     TensorHandle tensor) {
+  pinned_names_.insert(std::string(model_name));
   tensors_.insert_or_assign(model_name, std::move(tensor));
   return absl::OkStatus();
+}
+
+size_t LazyTensorMapping::ReleaseTensorsNotPinned() {
+  const bool has_loader = loader_.has_value() || loader_fn_ != nullptr;
+  if (!has_loader || tensors_.empty()) {
+    return 0;
+  }
+  return absl::erase_if(tensors_, [&](const auto& name_and_tensor) {
+    return !pinned_names_.contains(name_and_tensor.first);
+  });
 }
 
 absl::StatusOr<TensorHandle> LazyTensorMapping::Load(
@@ -86,10 +98,14 @@ absl::StatusOr<TensorHandle> LazyTensorMapping::Load(
         absl::StrCat("Could not find a tensor mapping to ", model_name));
   }
 
+  if (!loader_fn_ && !loader_.has_value()) {
+    return absl::NotFoundError(
+        absl::StrCat("No loader for the tensor mapping to ", model_name));
+  }
   LRT_TENSOR_ASSIGN_OR_RETURN(
       TensorHandle tensor,
       loader_fn_ ? loader_fn_(checkpoint_name_it->second)
-                 : loader_.LoadTensor(checkpoint_name_it->second));
+                 : loader_->LoadTensor(checkpoint_name_it->second));
   tensor.SetName(std::string(model_name));
   return tensor;
 }

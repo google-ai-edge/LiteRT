@@ -57,7 +57,6 @@ limitations under the License.
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
-#include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/backends/ml_drift/ml_drift_conversion.h"
@@ -216,9 +215,11 @@ class CompiledMlDriftModelRunner {
     size_t cache_misses = 0;
     // When true, runners drop the host buffers of fused constant weights
     // (`+`-joined names, e.g. from `TryConcatConstantFcWeights`) once this
-    // cache holds their packed descriptor. That mutates the graph passed to
-    // the runner, so only set it when every graph is compiled with this cache
-    // (e.g. a decoder runtime that builds a fresh graph for every pass).
+    // cache holds their packed descriptor, and the packed data of the
+    // `descriptors` whose GPU tensors exist (`BuildModel()`). That mutates the
+    // graph passed to the runner, so only set it when every graph is compiled
+    // with this cache (e.g. a decoder runtime that builds a fresh graph for
+    // every pass).
     bool release_fused_host_buffers = false;
     // Optional: called with the packed descriptor (with data) of every weight
     // when its GPU tensor is created, e.g. to persist the packed weights for
@@ -395,6 +396,11 @@ class CompiledMlDriftModelRunner {
 
   absl::Status BuildModel(
       const ml_drift::ExternalTensorsInfo& external_tensors = {}) {
+    // `CaptureCompiledHandlesAndReleaseBuilder()` freed the model builder.
+    if (build_state_released_) {
+      return absl::FailedPreconditionError(
+          "BuildModel() has already been called");
+    }
     const absl::Time compilation_start = absl::Now();
 
     LRT_TENSOR_RETURN_IF_ERROR(Prepare());
@@ -518,6 +524,7 @@ class CompiledMlDriftModelRunner {
       }
     }
     compile_timing_.upload_shared_weights = absl::Now() - upload_start;
+    ReleaseUploadedSharedDescriptorData();
 
     const absl::Time init_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
@@ -528,6 +535,7 @@ class CompiledMlDriftModelRunner {
     compilation_time_ = end - compilation_start;
     compile_timing_.init_inference_context = end - init_start;
     compile_timing_.num_nodes = gpu_model_.nodes.size();
+    CaptureCompiledHandlesAndReleaseBuilder();
     return absl::OkStatus();
   }
 
@@ -619,6 +627,14 @@ class CompiledMlDriftModelRunner {
 
   absl::StatusOr<ml_drift::ValueId> GetWeightValueId(
       const std::string& name) const {
+    if (build_state_released_) {
+      auto it = weight_name_to_value_id_.find(name);
+      if (it == weight_name_to_value_id_.end()) {
+        return absl::NotFoundError(
+            absl::StrCat("Weight tensor handle not found: ", name));
+      }
+      return it->second;
+    }
     auto it = conversion_ctx_.weight_name_to_handle.find(name);
     if (it == conversion_ctx_.weight_name_to_handle.end()) {
       return absl::NotFoundError(
@@ -629,16 +645,9 @@ class CompiledMlDriftModelRunner {
 
   absl::StatusOr<ml_drift::ValueId> GetTensorValueId(
       const std::string& name) const {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Tensor handle not found: ", name));
-    }
-    return it->second.id;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Tensor"));
+    return th.id;
   }
 
   // The descriptor (without data) that the graph gives the input or output
@@ -646,20 +655,22 @@ class CompiledMlDriftModelRunner {
   // after `Prepare()`.
   absl::StatusOr<ml_drift::TensorDescriptor> GetTensorDescriptor(
       const std::string& name) const {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Tensor handle not found: ", name));
-    }
-    return CopyDescriptorWithoutData(it->second.tensor_desc);
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Tensor"));
+    return CopyDescriptorWithoutData(th.tensor_desc);
   }
 
   absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> GetWeightTensors() {
     absl::flat_hash_map<ml_drift::ValueId, BackendTensor*> tensors;
+    if (build_state_released_) {
+      for (const ml_drift::ValueId id : weight_value_ids_) {
+        if (auto* t = Backend::GetTensor(&inference_context_, id);
+            t != nullptr) {
+          tensors[id] = t;
+        }
+      }
+      return tensors;
+    }
     for (const auto& [graph_tensor, handle] :
          conversion_ctx_.graph_tensor_to_handle) {
       auto info = graph::GetInfo(graph_tensor);
@@ -676,15 +687,16 @@ class CompiledMlDriftModelRunner {
   }
 
   absl::Status SetInput(const std::string& name, TensorHandle& arg) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
+    auto th_or = FindTensorHandle(name, "Input tensor");
+    if (!th_or.ok()) {
+      const bool exists_unmapped = build_state_released_
+                                       ? known_unmapped_tensors_.contains(name)
+                                       : FindTensorByName(name).has_value();
+      if (exists_unmapped) {
+        return absl::OkStatus();
+      }
       return absl::InvalidArgumentError(
           absl::StrCat("Input tensor not found: ", name));
-    }
-
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::OkStatus();
     }
 
     auto buffer_or = arg.GetBuffer();
@@ -693,7 +705,7 @@ class CompiledMlDriftModelRunner {
 
     LRT_TENSOR_RETURN_IF_ERROR(EnsureEnvInitialized());
 
-    const auto& th = it->second;
+    const auto& th = *th_or;
     if (Backend::CopyBufferToTensor(&inference_context_, env_ptr_, th.id,
                                     &buffer_or.value())
             .ok()) {
@@ -742,48 +754,21 @@ class CompiledMlDriftModelRunner {
   }
   absl::StatusOr<std::unique_ptr<Buffer>> GetInputBuffer(
       const std::string& name) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Input tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Input tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Input tensor"));
     return Backend::CreateInputBuffer(&inference_context_, env_ptr_, th.id);
   }
 
   absl::Status GetOutput(const std::string& name, Buffer& buffer) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Output tensor"));
     return Backend::CopyTensorToBuffer(&inference_context_, env_ptr_, th.id,
                                        &buffer);
   }
 
   absl::StatusOr<std::vector<int32_t>> GetInt32Output(const std::string& name) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Output tensor"));
     LRT_TENSOR_RETURN_IF_ERROR(EnsureEnvInitialized());
 
     ml_drift::TensorInt32 t;
@@ -800,17 +785,8 @@ class CompiledMlDriftModelRunner {
   // the backend's padded storage layout, so `GetOutputBuffer` is not a
   // substitute for this).
   absl::StatusOr<std::vector<float>> GetFloatOutput(const std::string& name) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Output tensor"));
     LRT_TENSOR_RETURN_IF_ERROR(EnsureEnvInitialized());
 
     ml_drift::TensorFloat32 t;
@@ -826,31 +802,14 @@ class CompiledMlDriftModelRunner {
   absl::StatusOr<std::shared_ptr<Buffer>> GetOutputBuffer(
 
       const std::string& name) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Output tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Output tensor"));
     return Backend::CreateOutputBuffer(&inference_context_, env_ptr_, th.id);
   }
 
   absl::StatusOr<BackendTensor*> GetBackendTensor(const std::string& name) {
-    auto raw_tensor_ptr = FindTensorByName(name);
-    if (!raw_tensor_ptr) {
-      return absl::NotFoundError(absl::StrCat("Tensor not found: ", name));
-    }
-    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
-    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
-      return absl::NotFoundError(
-          absl::StrCat("Tensor handle not found: ", name));
-    }
-    const auto& th = it->second;
+    LRT_TENSOR_ASSIGN_OR_RETURN(const auto th,
+                                FindTensorHandle(name, "Tensor"));
     BackendTensor* tensor = Backend::GetTensor(&inference_context_, th.id);
     if (tensor == nullptr) {
       return absl::InternalError(
@@ -1233,33 +1192,10 @@ class CompiledMlDriftModelRunner {
               AddWeightsSumI(weights_tensor, info, std::move(*prepared.sum_i)));
         }
 
-        ml_drift::TensorDescriptor weights_td;
-        bool is_embedding = (op->GetName() == "EmbeddingLookup");
-        bool is_supported_texture =
-            desc.layout ==
-            ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
-
-        if (desc.IsLinearLayout() || (is_embedding && !is_supported_texture)) {
-          weights_td = ml_drift::TensorDescriptor(
-              desc.type, ml_drift::TensorStorageType::kBuffer,
-              ml_drift::Layout::kLinear);
-          weights_td.SetBHWDCShape(
-              ml_drift::BHWDC(1, 1, 1, 1, static_cast<int>(elements_count)));
-        } else {
-          ml_drift::DataType texture_type = ml_drift::DataType::kUint32;
-          if (desc.type == ml_drift::DataType::kUint4) {
-            texture_type = ml_drift::DataType::kUint16;
-          } else if (desc.type == ml_drift::DataType::kUint2) {
-            texture_type = ml_drift::DataType::kUint8;
-          }
-          weights_td = ml_drift::TensorDescriptor(
-              texture_type, ml_drift::TensorStorageType::kTexture2D,
-              ml_drift::Layout::kHW);
-          ml_drift::uint2 tex_size =
-              ml_drift::Get2dResourceSize(desc, weights_ohwi);
-          weights_td.SetBHWDCShape(
-              ml_drift::BHWDC(1, tex_size.y, tex_size.x / 4, 1, 4));
-        }
+        ml_drift::TensorDescriptor weights_td =
+            CreatePackedWeightsTensorDescriptor(
+                desc, weights_ohwi, static_cast<size_t>(elements_count),
+                /*is_embedding=*/(op->GetName() == "EmbeddingLookup"));
 
         weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));
 
@@ -1571,11 +1507,118 @@ class CompiledMlDriftModelRunner {
     released_weight_tensors_.insert(weights_tensor);
   }
 
+  absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> FindTensorHandle(
+      const std::string& name, absl::string_view tensor_role = "Tensor") const {
+    if (build_state_released_) {
+      auto it = compiled_tensor_handles_.find(name);
+      if (it != compiled_tensor_handles_.end()) {
+        return it->second;
+      }
+      if (known_unmapped_tensors_.contains(name)) {
+        return absl::NotFoundError(
+            absl::StrCat(tensor_role, " handle not found: ", name));
+      }
+      return absl::NotFoundError(
+          absl::StrCat(tensor_role, " not found: ", name));
+    }
+    auto raw_tensor_ptr = FindTensorByName(name);
+    if (!raw_tensor_ptr) {
+      return absl::NotFoundError(
+          absl::StrCat(tensor_role, " not found: ", name));
+    }
+    auto it = conversion_ctx_.graph_tensor_to_handle.find(*raw_tensor_ptr);
+    if (it == conversion_ctx_.graph_tensor_to_handle.end()) {
+      return absl::NotFoundError(
+          absl::StrCat(tensor_role, " handle not found: ", name));
+    }
+    return it->second;
+  }
+
+  // Drops the host copy of the packed data of the `SharedWeightsCache`
+  // descriptors whose GPU tensors exist, keeping the dataless descriptors
+  // (which later runners still use to map the weights). Only when the cache
+  // allows releasing host buffers (`release_fused_host_buffers`), and not for
+  // weights still uploaded from `host_data`.
+  void ReleaseUploadedSharedDescriptorData() {
+    if (shared_weights_ == nullptr ||
+        !shared_weights_->release_fused_host_buffers) {
+      return;
+    }
+    for (auto& [weight_name, desc] : shared_weights_->descriptors) {
+      if (!desc.GetData().empty() &&
+          shared_weights_->tensors.contains(weight_name) &&
+          !shared_weights_->host_data.contains(weight_name)) {
+        desc = CopyDescriptorWithoutData(desc);
+      }
+    }
+  }
+
+  // After `BuildModel()`: keeps what `Run()` and the tensor accessors still
+  // need (the dataless handles of the named tensors, the names without a
+  // handle, the weight name -> value id map `weight_name_to_value_id_` and the
+  // value ids of the weight tensors `weight_value_ids_`), then
+  // frees the model builder, the `GpuModel` and the graph bookkeeping of the
+  // compilation (`build_state_released_` makes the accessors use what was
+  // kept).
+  void CaptureCompiledHandlesAndReleaseBuilder() {
+    compiled_tensor_handles_.reserve(name_to_tensor_map_.size());
+    for (const auto& [name, graph_tensor] : name_to_tensor_map_) {
+      auto it = conversion_ctx_.graph_tensor_to_handle.find(graph_tensor);
+      if (it != conversion_ctx_.graph_tensor_to_handle.end()) {
+        ml_drift::GpuModelBuilder::TensorHandle h = it->second;
+        h.tensor_desc = CopyDescriptorWithoutData(h.tensor_desc);
+        compiled_tensor_handles_.emplace(name, std::move(h));
+      } else {
+        known_unmapped_tensors_.insert(name);
+      }
+    }
+    weight_name_to_value_id_.reserve(
+        conversion_ctx_.weight_name_to_handle.size());
+    for (const auto& [name, handle] : conversion_ctx_.weight_name_to_handle) {
+      weight_name_to_value_id_.emplace(name, handle.id);
+    }
+    for (const auto& [graph_tensor, handle] :
+         conversion_ctx_.graph_tensor_to_handle) {
+      auto info = graph::GetInfo(graph_tensor);
+      if ((info.ok() && info->buffer != nullptr) ||
+          released_weight_tensors_.contains(graph_tensor)) {
+        weight_value_ids_.push_back(handle.id);
+      }
+    }
+    build_state_released_ = true;
+
+    model_builder_.reset();
+    gpu_model_ = ml_drift::GpuModel{};
+    flat_inputs_.clear();
+    flat_inputs_.shrink_to_fit();
+    flat_outputs_.clear();
+    flat_outputs_.shrink_to_fit();
+    name_to_tensor_map_.clear();
+    released_weight_tensors_.clear();
+    graph_input_ids_.clear();
+    graph_input_ids_.shrink_to_fit();
+    graph_output_ids_.clear();
+    graph_output_ids_.shrink_to_fit();
+    conversion_ctx_.gpu_model_builder = nullptr;
+    conversion_ctx_.shared_weight_descriptors = nullptr;
+    conversion_ctx_.graph_tensor_to_handle.clear();
+    conversion_ctx_.constant_handles_in_tensor_layout.clear();
+    conversion_ctx_.weight_name_to_handle.clear();
+    conversion_ctx_.external_weight_names.clear();
+    conversion_ctx_.weight_sum_i.clear();
+  }
+
  protected:
   std::vector<TensorHandle> flat_inputs_;
   std::vector<TensorHandle> flat_outputs_;
 
   absl::flat_hash_map<std::string, graph::Tensor> name_to_tensor_map_;
+  absl::flat_hash_map<std::string, ml_drift::GpuModelBuilder::TensorHandle>
+      compiled_tensor_handles_;
+  absl::flat_hash_set<std::string> known_unmapped_tensors_;
+  absl::flat_hash_map<std::string, ml_drift::ValueId> weight_name_to_value_id_;
+  std::vector<ml_drift::ValueId> weight_value_ids_;
+  bool build_state_released_ = false;
   // Fused weights whose host buffers `MaybeReleaseFusedHostBuffer` dropped.
   absl::flat_hash_set<graph::Tensor> released_weight_tensors_;
 

@@ -244,7 +244,6 @@ cc_library(
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
-        "@ml_drift//ml_drift/common:types",
         "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:profiling_info",
         "@ml_drift//ml_drift/common/task:tensor_desc",
@@ -261,6 +260,7 @@ cc_test(
     tags = ["no_oss"],
     deps = [
         ":compiled_ml_drift_model_runner",
+        ":ml_drift_dummy_weight_creator",
         "//tensor/utils:matchers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
@@ -327,6 +327,7 @@ cc_test(
         "@com_google_absl//absl/types:span",
         "@com_google_googletest//:gtest_main",
         "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:model",
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common/task:tensor_desc",

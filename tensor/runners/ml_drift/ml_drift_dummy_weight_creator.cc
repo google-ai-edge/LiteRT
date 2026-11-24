@@ -82,6 +82,39 @@ absl::StatusOr<ml_drift::OHWI> ShapeToOHWI(const T& shape) {
 }
 }  // namespace
 
+ml_drift::TensorDescriptor CreatePackedWeightsTensorDescriptor(
+    const ml_drift::WeightsDescription& desc,
+    const ml_drift::OHWI& weights_shape, size_t elements_count,
+    bool is_embedding) {
+  const bool is_supported_texture =
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+  if (desc.IsLinearLayout() || (is_embedding && !is_supported_texture)) {
+    ml_drift::TensorDescriptor weights_td(desc.type,
+                                          ml_drift::TensorStorageType::kBuffer,
+                                          ml_drift::Layout::kLinear);
+    // Sub-byte types are packed: the buffer holds bytes, not elements.
+    const size_t bits = ml_drift::SizeInBitsOf(desc.type);
+    const int linear_shape_c =
+        bits > 0 && bits < 8 ? static_cast<int>((elements_count * bits + 7) / 8)
+                             : static_cast<int>(elements_count);
+    weights_td.SetBHWDCShape(ml_drift::BHWDC(1, 1, 1, 1, linear_shape_c));
+    return weights_td;
+  }
+  ml_drift::DataType texture_type = ml_drift::DataType::kUint32;
+  if (desc.type == ml_drift::DataType::kUint4) {
+    texture_type = ml_drift::DataType::kUint16;
+  } else if (desc.type == ml_drift::DataType::kUint2) {
+    texture_type = ml_drift::DataType::kUint8;
+  }
+  ml_drift::TensorDescriptor weights_td(texture_type,
+                                        ml_drift::TensorStorageType::kTexture2D,
+                                        ml_drift::Layout::kHW);
+  ml_drift::uint2 tex_size = ml_drift::Get2dResourceSize(desc, weights_shape);
+  weights_td.SetBHWDCShape(
+      ml_drift::BHWDC(1, tex_size.y, tex_size.x / 4, 1, 4));
+  return weights_td;
+}
+
 MlDriftDummyWeightCreator::MlDriftDummyWeightCreator(
     ml_drift::GpuModelBuilder* model_builder)
     : model_builder_(model_builder) {}
@@ -234,31 +267,9 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       RearrangeWeights(weights, desc, data);
     }
 
-    ml_drift::TensorDescriptor weights_td;
-    bool is_embedding = (t_info.name == "model.embed_tokens.weight");
-    bool is_supported_texture =
-        desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
-    if (desc.IsLinearLayout() || (is_embedding && !is_supported_texture)) {
-      weights_td = ml_drift::TensorDescriptor(
-          desc.type, ml_drift::TensorStorageType::kBuffer,
-          ml_drift::Layout::kLinear);
-      weights_td.SetBHWDCShape(
-          ml_drift::BHWDC(1, 1, 1, 1, static_cast<int>(elements_count)));
-    } else {
-      ml_drift::DataType texture_type = ml_drift::DataType::kUint32;
-      if (desc.type == ml_drift::DataType::kUint4) {
-        texture_type = ml_drift::DataType::kUint16;
-      } else if (desc.type == ml_drift::DataType::kUint2) {
-        texture_type = ml_drift::DataType::kUint8;
-      }
-      weights_td = ml_drift::TensorDescriptor(
-          texture_type, ml_drift::TensorStorageType::kTexture2D,
-          ml_drift::Layout::kHW);
-      ml_drift::uint2 tex_size =
-          ml_drift::Get2dResourceSize(desc, weights.shape);
-      weights_td.SetBHWDCShape(
-          ml_drift::BHWDC(1, tex_size.y, tex_size.x / 4, 1, 4));
-    }
+    ml_drift::TensorDescriptor weights_td = CreatePackedWeightsTensorDescriptor(
+        desc, weights.shape, elements_count,
+        t_info.name == "model.embed_tokens.weight");
     const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
     if (mld_mem_size > data_size) {
       std::vector<uint8_t> safe_data(mld_mem_size, 0);

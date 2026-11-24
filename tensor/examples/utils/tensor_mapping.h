@@ -16,13 +16,16 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_TENSOR_MAPPING_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_EXAMPLES_UTILS_TENSOR_MAPPING_H_
 
+#include <cstddef>
 #include <memory>
+#include <optional>
 #include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
 
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/functional/any_invocable.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -153,6 +156,17 @@ class LazyTensorMapping : public TensorMapping {
   // the hooks.
   absl::Status Set(absl::string_view model_name, TensorHandle tensor) override;
 
+  // Drops the cached tensors that are not pinned, i.e. that `Get()` loaded
+  // from the checkpoint (or the loader function), or that a hook provided
+  // (`TensorMappingHooks::OnNotFound()`), rather than `Set()`, so that
+  // their host copies don't stay resident after the backend uploaded them;
+  // `Get()` loads them again on demand. No-op for mappings without a loader
+  // (whose tensors couldn't be loaded again). Returns the number of dropped
+  // tensors. Dropping the handles is enough: whatever a loader allocated for
+  // a tensor (e.g. a memory-mapped lazy buffer) is owned by its `Buffer` and
+  // freed with the last reference, so no unloader is needed.
+  size_t ReleaseTensorsNotPinned();
+
  private:
   // Loads the tensor that maps to `model_name` from the checkpoint.
   //
@@ -161,9 +175,12 @@ class LazyTensorMapping : public TensorMapping {
 
   // Maps the graph building names to the checkpoint names.
   absl::flat_hash_map<std::string, std::string> name_mapping_;
-  SafetensorLoader loader_;
+  // The loader of the checkpoint, or the loader function (at most one).
+  std::optional<SafetensorLoader> loader_;
   absl::AnyInvocable<absl::StatusOr<TensorHandle>(absl::string_view)>
       loader_fn_;
+  // The names mapped by `Set()`, which `ReleaseTensorsNotPinned()` keeps.
+  absl::flat_hash_set<std::string> pinned_names_;
   std::vector<std::unique_ptr<TensorMappingHooks>> hooks_;
   absl::flat_hash_map<std::string, TensorHandle> tensors_;
 };
