@@ -39,6 +39,34 @@ cc_library(
 )
 
 cc_library(
+    name = "ring_buffer",
+    srcs = ["ring_buffer.cc"],
+    hdrs = ["ring_buffer.h"],
+    deps = [
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/log:absl_log",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "ring_buffer_test",
+    srcs = ["ring_buffer_test.cc"],
+    deps = [
+        ":ring_buffer",
+        "@com_google_absl//absl/log:absl_check",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/types:span",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "safetensors",
     srcs = ["safetensors.cc"],
     hdrs = ["safetensors.h"],

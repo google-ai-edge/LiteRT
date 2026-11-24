@@ -97,5 +97,34 @@ TEST(Gemma4ConfigTest, TestE2BConfig) {
   }
 }
 
+TEST(Gemma4ConfigTest, LocalLayersOnlyKeepTheSlidingWindow) {
+  const Config config = Config::E2B();
+  constexpr size_t kLocalLayer = 0;
+  constexpr size_t kGlobalLayer = 4;
+  ASSERT_EQ(config.GetLayerType(kLocalLayer), Config::LayerType::kLocalSliding);
+  ASSERT_EQ(config.GetLayerType(kGlobalLayer), Config::LayerType::kGlobal);
+
+  EXPECT_EQ(config.KvCacheWindow(kLocalLayer), 511);
+  EXPECT_EQ(config.KvCacheWindow(kGlobalLayer), 0);
+
+  EXPECT_EQ(config.KvCacheLen(kLocalLayer, 0), 0);
+  EXPECT_EQ(config.KvCacheLen(kLocalLayer, 200), 200);
+  EXPECT_EQ(config.KvCacheLen(kLocalLayer, 511), 511);
+  EXPECT_EQ(config.KvCacheLen(kLocalLayer, 2000), 511);
+  EXPECT_EQ(config.KvCacheLen(kGlobalLayer, 2000), 2000);
+
+  EXPECT_EQ(config.SlidingWindowKvCacheLen(200), 200);
+  EXPECT_EQ(config.SlidingWindowKvCacheLen(2000), 511);
+}
+
+TEST(Gemma4ConfigTest, NoSlidingWindowKeepsEveryToken) {
+  Config config = Config::E2B();
+  config.sliding_window_size = 0;
+
+  EXPECT_EQ(config.KvCacheWindow(0), 0);
+  EXPECT_EQ(config.KvCacheLen(0, 2000), 2000);
+  EXPECT_EQ(config.SlidingWindowKvCacheLen(2000), 2000);
+}
+
 }  // namespace
 }  // namespace litert::tensor::examples::gemma4
