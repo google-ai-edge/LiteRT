@@ -1,3 +1,4 @@
 graft ai_edge_litert_sdk_google_tensor/data
+graft ai_edge_litert_sdk_google_tensor/vendors
 include ai_edge_litert_sdk_google_tensor/__init__.py
 include ai_edge_litert_sdk_google_tensor/TERMS_OF_USE.md

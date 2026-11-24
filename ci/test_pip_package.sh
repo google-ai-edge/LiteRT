@@ -88,17 +88,26 @@ function configure_litert_environment {
 }
 
 function install_sdk {
+  # SKIP_SDK_DOWNLOAD skips the (large) vendor SDKs; the LiteRT compiler plugin
+  # and dispatch libraries are still fetched. Locally built SDKs carry a version
+  # that may not be on GCS yet, so default to the latest nightly archive.
+  local prebuilts_url="${LITERT_PREBUILTS_URL:-https://storage.googleapis.com/litert/binaries/nightly/litert_prebuilts.zip}"
+
   local qc_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_qualcomm*.tar.gz)"
-  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${qc_dist_pkg?} --ignore-installed
+  SKIP_SDK_DOWNLOAD="true" LITERT_PREBUILTS_URL="${prebuilts_url}" \
+    ${PYTHON_BIN} -m pip install ${qc_dist_pkg?} --ignore-installed
 
   local mtk_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_mediatek*.tar.gz)"
-  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
+  SKIP_SDK_DOWNLOAD="true" LITERT_PREBUILTS_URL="${prebuilts_url}" \
+    ${PYTHON_BIN} -m pip install ${mtk_dist_pkg?} --ignore-installed
 
   local gt_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_google_tensor*.tar.gz)"
-  SKIP_SDK_DOWNLOAD="true" ${PYTHON_BIN} -m pip install ${gt_dist_pkg?} --ignore-installed
+  SKIP_SDK_DOWNLOAD="true" LITERT_PREBUILTS_URL="${prebuilts_url}" \
+    ${PYTHON_BIN} -m pip install ${gt_dist_pkg?} --ignore-installed
 
   local intel_dist_pkg="$(ls ./dist/ai_edge_litert_sdk_intel*.tar.gz)"
-  ${PYTHON_BIN} -m pip install --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly ${intel_dist_pkg?} --ignore-installed
+  LITERT_PREBUILTS_URL="${prebuilts_url}" \
+    ${PYTHON_BIN} -m pip install --pre --extra-index-url https://storage.openvinotoolkit.org/simple/wheels/nightly ${intel_dist_pkg?} --ignore-installed
 
   echo
 }
@@ -147,8 +156,8 @@ function test_import {
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_google_tensor"
   ${PYTHON_BIN} -c "import ai_edge_litert_sdk_intel"
 
-  # Intel OpenVINO backend imports (the OpenVINO plugin is not packaged for
-  # macOS or Linux aarch64).
+  # Intel OpenVINO backend imports (no Intel OpenVINO support on macOS or
+  # Linux aarch64).
   if [[ "$(uname -s)" != "Darwin" && "$(uname -m)" != "aarch64" ]]; then
     ${PYTHON_BIN} -c "from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend; print('Intel OpenVINO backend ID:', intel_openvino_backend.IntelOpenVinoBackend.id())"
     ${PYTHON_BIN} -c "
@@ -157,6 +166,42 @@ from ai_edge_litert.aot.vendors.intel_openvino import intel_openvino_backend
 d = intel_openvino_backend.get_dispatch_dir()
 assert d and os.path.isdir(d), f'Dispatch dir not found: {d}'
 print('Dispatch dir:', d)
+"
+  fi
+
+  # Vendor compiler plugins / dispatch libraries installed by the SDK sdists
+  # (no longer in the ai-edge-litert wheel), and found by runtime discovery.
+  if [[ "$(uname -s)" == "Linux" ]]; then
+    ${PYTHON_BIN} -c "
+import importlib, os, pathlib, platform
+from ai_edge_litert import environment
+from ai_edge_litert.aot.core import common
+expected = {
+    'x86_64': [
+        ('qualcomm', 'compiler/libLiteRtCompilerPlugin_Qualcomm.so'),
+        ('mediatek', 'compiler/libLiteRtCompilerPlugin_MediaTek.so'),
+        ('google_tensor', 'compiler/libLiteRtCompilerPlugin_google_tensor.so'),
+        ('intel', 'compiler/libLiteRtCompilerPlugin_IntelOpenvino.so'),
+        ('intel', 'dispatch/libLiteRtDispatch_IntelOpenvino.so'),
+    ],
+    'aarch64': [
+        ('qualcomm', 'compiler/libLiteRtCompilerPlugin_Qualcomm.so'),
+        ('qualcomm', 'dispatch/libLiteRtDispatch_Qualcomm.so'),
+    ],
+}[platform.machine()]
+vendor_dirs = {'intel': 'intel_openvino'}
+for sdk, rel in expected:
+  pkg = importlib.import_module('ai_edge_litert_sdk_' + sdk)
+  lib = os.path.join(os.path.dirname(pkg.__file__), 'vendors',
+                     vendor_dirs.get(sdk, sdk), rel)
+  assert os.path.isfile(lib), f'Missing vendor library: {lib}'
+  found = common.get_resource(
+      pathlib.Path('vendors', vendor_dirs.get(sdk, sdk), rel))
+  assert os.path.samefile(found, lib), f'get_resource found {found}, not {lib}'
+  print('OK:', lib)
+dispatch = environment._autodiscover_dispatch_library_path()
+assert 'ai_edge_litert_sdk_' in dispatch, f'Bad dispatch dir: {dispatch!r}'
+print('Autodiscovered dispatch dir:', dispatch)
 "
   fi
 
@@ -170,19 +215,10 @@ assert os.access(tool, os.X_OK), f'apply_plugin_main is not executable: {tool}'
 "
   fi
 
-  # Qualcomm on-device NPU artifacts in the Linux aarch64 wheel.
   if [[ "$(uname -s)" == "Linux" && "$(uname -m)" == "aarch64" ]]; then
     ${PYTHON_BIN} -c "
-import glob, os
-import ai_edge_litert
-root = os.path.dirname(ai_edge_litert.__file__)
-plugin = os.path.join(root, 'vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so')
-assert os.path.isfile(plugin), f'Missing Qualcomm compiler plugin: {plugin}'
-dispatch = glob.glob(os.path.join(root, 'vendors/qualcomm/dispatch/*.so'))
-assert dispatch, 'Missing Qualcomm dispatch library'
 from ai_edge_litert.aot.vendors.qualcomm import target
 assert target.SocModel.QCS8275
-print('Qualcomm aarch64 artifacts OK:', plugin, dispatch[0])
 "
   fi
   echo

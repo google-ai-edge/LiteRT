@@ -19,6 +19,8 @@ and embedded devices. It enables on-device machine learning inference with low
 latency and a small binary size on Android, iOS, and other operating systems.
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import sys
@@ -226,6 +228,40 @@ def _download_and_extract(
       raise SystemExit('Install SDK failed. Aborting installation.') from e
 
 
+def _download_litert_prebuilts(*unused_args):  # {{ LITERT_PREBUILTS_HELPER }}
+  raise NotImplementedError
+
+
+def _prebuilt_members() -> dict[str, str]:
+  """Returns the LiteRT Qualcomm prebuilt files needed for the current host."""
+  machine = platform.machine().lower()
+  if IS_LINUX and machine in ('x86_64', 'amd64'):
+    return {
+        'linux_x86_64/libLiteRtCompilerPlugin_Qualcomm.so': (
+            'ai_edge_litert_sdk_qualcomm/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so'
+        ),
+    }
+  if IS_LINUX and machine in ('aarch64', 'arm64'):
+    return {
+        'linux_arm64/libLiteRtCompilerPlugin_Qualcomm.so': (
+            'ai_edge_litert_sdk_qualcomm/vendors/qualcomm/compiler/libLiteRtCompilerPlugin_Qualcomm.so'
+        ),
+        'linux_arm64/libLiteRtDispatch_Qualcomm.so': (
+            'ai_edge_litert_sdk_qualcomm/vendors/qualcomm/dispatch/libLiteRtDispatch_Qualcomm.so'
+        ),
+    }
+  if IS_WINDOWS_ARM64:
+    return {
+        'windows_arm64/LiteRtCompilerPlugin_Qualcomm.dll': (
+            'ai_edge_litert_sdk_qualcomm/vendors/qualcomm/compiler/LiteRtCompilerPlugin_Qualcomm.dll'
+        ),
+        'windows_arm64/LiteRtDispatch_Qualcomm.dll': (
+            'ai_edge_litert_sdk_qualcomm/vendors/qualcomm/dispatch/LiteRtDispatch_Qualcomm.dll'
+        ),
+    }
+  return {}
+
+
 class CustomBuildPy(_build_py):
   """Command to replace import statements."""
 
@@ -236,6 +272,9 @@ class CustomBuildPy(_build_py):
       print('Skipping SDK download...')
     else:
       _download_and_extract(QAIRT_URL, QAIRT_CONTENT_DIR, QAIRT_TARGET_DIR)
+    # LiteRT's own plugin/dispatch libraries are fetched even with
+    # SKIP_SDK_DOWNLOAD (which only skips the vendor SDK).
+    _download_litert_prebuilts(PACKAGE_VERSION, _prebuilt_members())
 
     super().run()
 

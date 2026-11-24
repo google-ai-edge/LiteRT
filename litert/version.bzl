@@ -10,20 +10,22 @@ LITERT_FULL_VERSION = "1.5.0"
 # alpha. Once leaving alpha, the version is 2.1.0.
 LITERT_EXPERIMENTAL_VERSION = "2.5.0"
 
+# The ai-edge-litert-sdk-<vendor> versions below must equal
+# LITERT_EXPERIMENTAL_VERSION: the `ai-edge-litert` wheel pins its `npu-*`
+# extras to `ai-edge-litert-sdk-<vendor>==<wheel version>`, and each SDK fetches
+# `binaries/<its version>/litert_prebuilts.zip` at install time.
+
 # The next version of LiteRT SDK for Qualcomm.
-# The minor version code should be bumped after every release.
 # It contains QAIRT 2.52.1.261105
-LITERT_SDK_QUALCOMM_FULL_VERSION = "2.5.0"
+LITERT_SDK_QUALCOMM_FULL_VERSION = LITERT_EXPERIMENTAL_VERSION
 
 # The next version of LiteRT SDK for MediaTek version.
-# The minor version code should be bumped after every release.
 # It contains NeuroPilot 8.0.10 and 9.0.3 VERSION
-LITERT_SDK_MEDIATEK_FULL_VERSION = "2.5.0"
+LITERT_SDK_MEDIATEK_FULL_VERSION = LITERT_EXPERIMENTAL_VERSION
 
 # The next version of LiteRT SDK for Google Tensor version.
-# The minor version code should be bumped after every release.
 # It contains Google Tensor ML SDK UNKNOWN VERSION
-LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "2.5.0"
+LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = LITERT_EXPERIMENTAL_VERSION
 
 # The next version of LiteRT SDK for MediaTek version.
 # The minor version code should be bumped after every release.
@@ -31,8 +33,7 @@ LITERT_SDK_GOOGLE_TENSOR_FULL_VERSION = "2.5.0"
 LITERT_SDK_SAMSUNG_FULL_VERSION = "2.5.0"
 
 # The next version of LiteRT SDK for Intel version.
-# The minor version code should be bumped after every release.
-LITERT_SDK_INTEL_FULL_VERSION = "2.5.0"
+LITERT_SDK_INTEL_FULL_VERSION = LITERT_EXPERIMENTAL_VERSION
 
 # The next version of LiteRT Converter version.
 # The minor version code should be bumped after every release.

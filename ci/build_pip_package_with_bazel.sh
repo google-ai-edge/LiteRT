@@ -198,22 +198,55 @@ fi
 
 # Vendor SDKs
 
+## Pin the LiteRT prebuilt archive (immutable URL + SHA-256 of every vendor
+## library) into the SDK sdists; setup.py then only installs verified files.
+## LITERT_PREBUILTS_PIN:
+##   required: wait up to LITERT_PREBUILTS_PIN_WAIT_SECONDS (default 3600) for
+##     the archive (nightly/archive/litert_prebuilts_<date>.zip or
+##     <version>/litert_prebuilts.zip). If it never appears, skip the SDK
+##     sdists (the wheels are still built). Set by the publishing jobs.
+##   auto (default): try once; if unavailable, build unpinned sdists, which
+##     need LITERT_PREBUILTS_URL at install time and must not be published.
+PREBUILTS_PIN_FILE="$(mktemp)"
+trap 'rm -f "${PREBUILTS_PIN_FILE}"' EXIT
+BUILD_SDK_SDISTS=true
+SDK_PIN_FLAGS=()
+PIN_ARGS=(pin --version_bzl litert/version.bzl --out "${PREBUILTS_PIN_FILE}")
+if [[ -n "${NIGHTLY_RELEASE_DATE}" ]]; then
+  PIN_ARGS+=(--nightly_date "${NIGHTLY_RELEASE_DATE}")
+fi
+if [[ "${LITERT_PREBUILTS_PIN:-auto}" == "required" ]]; then
+  PIN_ARGS+=(--wait_seconds "${LITERT_PREBUILTS_PIN_WAIT_SECONDS:-3600}")
+fi
+if "${CI_BUILD_PYTHON:-python3}" ci/tools/python/vendor_sdk/sdist_wrapper.py "${PIN_ARGS[@]}"; then
+  SDK_PIN_FLAGS=("--//ci/tools/python/vendor_sdk:litert_prebuilts_pin=$(cat "${PREBUILTS_PIN_FILE}")")
+elif [[ "${LITERT_PREBUILTS_PIN:-auto}" == "required" ]]; then
+  echo "ERROR: LiteRT prebuilt archive unavailable; skipping SDK sdists."
+  BUILD_SDK_SDISTS=false
+else
+  echo "WARNING: Building unpinned SDK sdists (not publishable)."
+fi
+
+if [[ "${BUILD_SDK_SDISTS}" == "true" ]]; then
 ## Qualcomm SDK
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} "${SDK_PIN_FLAGS[@]}" \
+    //ci/tools/python/vendor_sdk/qualcomm:ai_edge_litert_sdk_qualcomm_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/qualcomm/ai_edge_litert_sdk_qualcomm*.tar.gz dist/
 
 ## Mediatek SDK
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} "${SDK_PIN_FLAGS[@]}" \
+    //ci/tools/python/vendor_sdk/mediatek:ai_edge_litert_sdk_mediatek_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/mediatek/ai_edge_litert_sdk_mediatek*.tar.gz dist/
 
 ## Google Tensor SDK
 if [[ -d "ci/tools/python/vendor_sdk/google_tensor" ]]; then
   bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist
+    ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} "${SDK_PIN_FLAGS[@]}" \
+    //ci/tools/python/vendor_sdk/google_tensor:ai_edge_litert_sdk_google_tensor_sdist
 
   mv bazel-bin/ci/tools/python/vendor_sdk/google_tensor/ai_edge_litert_sdk_google_tensor*.tar.gz dist/
 fi
@@ -223,9 +256,12 @@ fi
 
 ## Intel SDK
 bazel ${BAZEL_STARTUP_OPTIONS} build -c opt \
-  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} //ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist
+  ${BAZEL_FLAGS} ${CUSTOM_BAZEL_FLAGS} "${SDK_PIN_FLAGS[@]}" \
+    //ci/tools/python/vendor_sdk/intel:ai_edge_litert_sdk_intel_sdist
 
 mv bazel-bin/ci/tools/python/vendor_sdk/intel/ai_edge_litert_sdk_intel*.tar.gz dist/
+
+fi  # BUILD_SDK_SDISTS
 
 echo "Output can be found here:"
 find "./dist/"

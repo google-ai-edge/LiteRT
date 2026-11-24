@@ -43,6 +43,8 @@ if [ ! -d /root_dir ]; then
     -e TEST_WHEEL=${TEST_WHEEL:-false} \
     -e TENSORFLOW_TARGET=${TENSORFLOW_TARGET:-} \
     -e LITERT_PACKAGE_MODE=${LITERT_PACKAGE_MODE:-wheel} \
+    -e LITERT_PREBUILTS_PIN=${LITERT_PREBUILTS_PIN:-auto} \
+    -e LITERT_PREBUILTS_PIN_WAIT_SECONDS=${LITERT_PREBUILTS_PIN_WAIT_SECONDS:-3600} \
     -e HOST_UID=$(id -u) \
     -e HOST_GID=$(id -g) \
     --entrypoint /script_dir/build_pip_package_with_docker.sh \

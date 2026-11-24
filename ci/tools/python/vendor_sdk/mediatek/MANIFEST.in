@@ -1,2 +1,3 @@
 graft ai_edge_litert_sdk_mediatek/data
+graft ai_edge_litert_sdk_mediatek/vendors
 include ai_edge_litert_sdk_mediatek/__init__.py

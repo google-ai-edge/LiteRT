@@ -338,6 +338,35 @@ def _download_and_extract_compiler(target_dir: str) -> None:
       )
 
 
+def _download_litert_prebuilts(*unused_args):  # {{ LITERT_PREBUILTS_HELPER }}
+  raise NotImplementedError
+
+
+def _prebuilt_members() -> dict[str, str]:
+  """Returns the LiteRT Intel prebuilt files needed for the current host."""
+  if platform.machine() not in ('x86_64', 'AMD64'):
+    return {}
+  if IS_LINUX:
+    return {
+        'linux_x86_64/libLiteRtCompilerPlugin_IntelOpenvino.so': (
+            'ai_edge_litert_sdk_intel/vendors/intel_openvino/compiler/libLiteRtCompilerPlugin_IntelOpenvino.so'
+        ),
+        'linux_x86_64/libLiteRtDispatch_IntelOpenvino.so': (
+            'ai_edge_litert_sdk_intel/vendors/intel_openvino/dispatch/libLiteRtDispatch_IntelOpenvino.so'
+        ),
+    }
+  if IS_WINDOWS:
+    return {
+        'windows_x86_64/LiteRtCompilerPlugin_IntelOpenvino.dll': (
+            'ai_edge_litert_sdk_intel/vendors/intel_openvino/compiler/LiteRtCompilerPlugin_IntelOpenvino.dll'
+        ),
+        'windows_x86_64/LiteRtDispatch_IntelOpenvino.dll': (
+            'ai_edge_litert_sdk_intel/vendors/intel_openvino/dispatch/LiteRtDispatch_IntelOpenvino.dll'
+        ),
+    }
+  return {}
+
+
 class CustomBuildPy(_build_py):
   """Runs the NPU compiler download as part of build_py."""
 
@@ -347,6 +376,9 @@ class CustomBuildPy(_build_py):
       print('SKIP_SDK_DOWNLOAD set; skipping NPU compiler download.')
     else:
       _download_and_extract_compiler(_TARGET_DIR)
+    # LiteRT's own plugin/dispatch libraries are fetched even with
+    # SKIP_SDK_DOWNLOAD (which only skips the vendor SDK).
+    _download_litert_prebuilts(PACKAGE_VERSION, _prebuilt_members())
     super().run()
 
 

@@ -113,6 +113,10 @@ jobs:
           CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
           TEST_MANYLINUX_COMPLIANCE: "true"
           BAZEL_CONFIG_FLAGS: ${{ env.BAZEL_CONFIG_FLAGS }}
+          # Pin the SDK sdists to today's nightly/archive/litert_prebuilts_<date>.zip
+          # (URL + SHA-256). If it is not on GCS within an hour, the SDK sdists
+          # are skipped and only the wheels are published.
+          LITERT_PREBUILTS_PIN: "required"
         run: |
           export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
@@ -177,6 +181,17 @@ jobs:
       - name: List downloaded wheels
         run: ls -R dist
 
+      - name: Refuse unpinned SDK sdists
+        shell: bash
+        run: |
+          shopt -s nullglob
+          for sdist in dist/ai_edge_litert_sdk_*.tar.gz; do
+            if ! tar -xzOf "${sdist}" --wildcards '*/setup.py' | grep -q '^_LITERT_PREBUILTS_PIN = {'; then
+              echo "::error::${sdist} has no pinned LiteRT prebuilts; not publishing it."
+              rm -f "${sdist}"
+            fi
+          done
+
       - name: Authenticate to Google Cloud (OSS Exit Gate)
         uses: google-github-actions/auth@c200f3691d83b41bf9bbd8638997a462592937ed # v2.1.13
         with:
@@ -191,6 +206,7 @@ jobs:
           RUN_ATTEMPT: ${{ github.run_attempt }}
         run: |
           set -euo pipefail
+          shopt -s nullglob
           python3 - <<'PY'
           import email
           import glob

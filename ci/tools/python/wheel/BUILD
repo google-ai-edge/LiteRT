@@ -141,30 +141,12 @@ ALL_PY_SRC_MODULES = [
 PACKAGE_DATA = select({
     "//litert:linux_x86_64": [
         "//litert/tools:apply_plugin_main",
-        "//litert/vendors/google_tensor/compiler:google_tensor_compiler_plugin_so",
-        "//litert/vendors/intel_openvino/compiler:intel_openvino_compiler_plugin_so",
-        "//litert/vendors/intel_openvino/dispatch:dispatch_api_so",
-        "//litert/vendors/mediatek/compiler:compiler_plugin_so",
-        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        # The Samsung compiler plugin is intentionally not packaged: LiteRT does
-        # not publish Samsung (Exynos) NPU binaries to PyPI.
     ],
     "//litert:linux_aarch64": [
         "//litert/tools:apply_plugin_main",
-        "//litert/vendors/qualcomm/compiler:qnn_compiler_plugin_so",
-        "//litert/vendors/qualcomm/dispatch:dispatch_api_so",
-    ],
-    # `:windows_arm64` is a specialization of `:windows`, so it wins on ARM64.
-    # Intel OpenVINO has no Windows ARM64 build; Snapdragon devices use QNN.
-    "//litert:windows_arm64": [
-        "//litert/tools:apply_plugin_main",
-        "//litert/vendors/qualcomm/compiler:LiteRtCompilerPlugin_Qualcomm",
-        "//litert/vendors/qualcomm/dispatch:LiteRtDispatch_Qualcomm",
     ],
     "//litert:windows": [
         "//litert/tools:apply_plugin_main",
-        "//litert/vendors/intel_openvino/compiler:LiteRtCompilerPlugin",
-        "//litert/vendors/intel_openvino/dispatch:LiteRtDispatch",
     ],
     "//conditions:default": [],
 })

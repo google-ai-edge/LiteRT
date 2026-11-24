@@ -17,6 +17,7 @@
 import dataclasses
 import enum
 import glob
+from importlib import util as importlib_util
 import os
 import sys
 from typing import Optional, Union
@@ -33,6 +34,14 @@ else:
 # pylint: enable=g-import-not-at-top,g-bad-import-order
 
 
+_SDK_MODULES = (
+    "ai_edge_litert_sdk_qualcomm",
+    "ai_edge_litert_sdk_intel",
+    "ai_edge_litert_sdk_mediatek",
+    "ai_edge_litert_sdk_google_tensor",
+)
+
+
 def _vendors_dir() -> str:
   """Returns `<ai_edge_litert>/vendors`, or "" when the package is missing."""
   try:
@@ -47,13 +56,47 @@ def _vendors_dir() -> str:
   return path if os.path.isdir(path) else ""
 
 
+def _sdk_vendors_dirs() -> list[str]:
+  """Returns `<sdk_pkg>/vendors` directories from installed vendor SDKs.
+
+  Uses `sys.modules` or `importlib.util.find_spec` so that discovery does not
+  import (execute) the SDK packages.
+  """
+  dirs = []
+  for module_name in _SDK_MODULES:
+    if module_name in sys.modules:
+      origin = getattr(sys.modules[module_name], "__file__", None)
+    else:
+      try:
+        spec = importlib_util.find_spec(module_name)
+      except (ImportError, ValueError):
+        continue
+      origin = spec.origin if spec is not None else None
+    if not isinstance(origin, (str, os.PathLike)):
+      continue
+    path = os.path.join(os.path.dirname(os.path.abspath(origin)), "vendors")
+    if os.path.isdir(path):
+      dirs.append(path)
+  return dirs
+
+
+def _all_vendors_dirs() -> list[str]:
+  """Returns candidate `vendors/` roots (SDK packages first, then wheel)."""
+  dirs = _sdk_vendors_dirs()
+  wheel_vendors = _vendors_dir()
+  if wheel_vendors and wheel_vendors not in dirs:
+    dirs.append(wheel_vendors)
+  return dirs
+
+
 def _vendor_subdir_if_has_lib(
-    vendor: str, subdir: str, win_glob: str, nix_glob: str
+    vendor: str,
+    subdir: str,
+    win_glob: str,
+    nix_glob: str,
+    bases: Optional[list[str]] = None,
 ) -> str:
   """Returns `<vendors>/<vendor>/<subdir>/` iff it has a matching library."""
-  base = _vendors_dir()
-  if not base:
-    return ""
   if sys.platform == "win32":
     lib_globs = [win_glob]
   elif sys.platform == "darwin":
@@ -61,64 +104,42 @@ def _vendor_subdir_if_has_lib(
     lib_globs = [nix_glob, os.path.splitext(nix_glob)[0] + ".dylib"]
   else:
     lib_globs = [nix_glob]
-  path = os.path.join(base, vendor, subdir)
-  if os.path.isdir(path) and any(
-      glob.glob(os.path.join(path, lib_glob)) for lib_glob in lib_globs
-  ):
-    return path
+  for base in _all_vendors_dirs() if bases is None else bases:
+    path = os.path.join(base, vendor, subdir)
+    if os.path.isdir(path) and any(
+        glob.glob(os.path.join(path, lib_glob)) for lib_glob in lib_globs
+    ):
+      return path
   return ""
 
 
-def _find_first_vendor_with_library(
+def _find_first_vendor_subdir_with_library(
     subdir: str, win_glob: str, nix_glob: str
 ) -> str:
-  """Returns the vendor name of the first `<vendors>/<vendor>/<subdir>/` dir.
-
-  that contains a matching library, or "" when none is found.
-
-  Args:
-    subdir: The subdirectory within the vendor directory to search.
-    win_glob: The glob pattern for the library file on Windows.
-    nix_glob: The glob pattern for the library file on Unix-like systems.
-  """
-  base = _vendors_dir()
-  if not base:
-    return ""
-  try:
-    entries = sorted(os.listdir(base))
-  except OSError:
-    return ""
-  for entry in entries:
-    if _vendor_subdir_if_has_lib(entry, subdir, win_glob, nix_glob):
-      return entry
+  """Returns the first `<vendors>/<vendor>/<subdir>/` dir with a matching lib."""
+  for base in _all_vendors_dirs():
+    try:
+      entries = sorted(os.listdir(base))
+    except OSError:
+      continue
+    for entry in entries:
+      path = _vendor_subdir_if_has_lib(
+          entry, subdir, win_glob, nix_glob, bases=[base]
+      )
+      if path:
+        return path
   return ""
 
 
 def _autodiscover_dispatch_library_path() -> str:
-  """Returns a vendor dispatch directory under the installed ai_edge_litert."""
-  vendor = _find_first_vendor_with_library(
+  """Returns a vendor dispatch directory under an installed SDK or wheel."""
+  return _find_first_vendor_subdir_with_library(
       "dispatch", "LiteRtDispatch*.dll", "libLiteRtDispatch_*.so"
-  )
-  if not vendor:
-    return ""
-  return _vendor_subdir_if_has_lib(
-      vendor, "dispatch", "LiteRtDispatch*.dll", "libLiteRtDispatch_*.so"
   )
 
 
 def _autodiscover_compiler_plugin_path(preferred_vendor: str = "") -> str:
-  """Returns a vendor compiler-plugin directory under the installed.
-
-  ai_edge_litert.
-
-  When `preferred_vendor` is set, prefer that vendor's compiler plugin so the
-  compiler and dispatch libraries come from the same vendor. Falls back to the
-  first vendor with a compiler plugin otherwise.
-
-  Args:
-    preferred_vendor: The vendor to prefer when searching for the compiler
-      plugin.
-  """
+  """Returns a vendor compiler-plugin directory under an installed SDK or wheel."""
   compiler_win = "LiteRtCompilerPlugin*.dll"
   compiler_nix = "libLiteRtCompilerPlugin_*.so"
   if preferred_vendor:
@@ -127,13 +148,8 @@ def _autodiscover_compiler_plugin_path(preferred_vendor: str = "") -> str:
     )
     if path:
       return path
-  vendor = _find_first_vendor_with_library(
+  return _find_first_vendor_subdir_with_library(
       "compiler", compiler_win, compiler_nix
-  )
-  if not vendor:
-    return ""
-  return _vendor_subdir_if_has_lib(
-      vendor, "compiler", compiler_win, compiler_nix
   )
 
 
@@ -218,15 +234,16 @@ class Environment:
         shortcut is mutually exclusive with options.
       compiler_plugin_path: Optional path to compiler plugin libraries. This
         shortcut is mutually exclusive with options. When omitted or empty,
-        auto-discovers a vendor compiler-plugin directory under the installed
-        `ai_edge_litert` package (the first `vendors/<vendor>/compiler/` dir
-        that contains a compiler-plugin shared library). Needed for JIT
+        auto-discovers the first `vendors/<vendor>/compiler/` dir that contains
+        a compiler-plugin shared library, searching installed
+        `ai_edge_litert_sdk_*` packages first, then `ai_edge_litert`. The vendor
+        of the selected dispatch library is preferred. Needed for JIT
         compilation of raw .tflite models.
       dispatch_library_path: Optional path to dispatch libraries. This shortcut
-        is mutually exclusive with options. When omitted or empty, auto-
-        discovers a vendor dispatch directory under the installed
-        `ai_edge_litert` package (the first `vendors/<vendor>/dispatch/` dir
-        that contains a dispatch shared library).
+        is mutually exclusive with options. When omitted or empty,
+        auto-discovers the first `vendors/<vendor>/dispatch/` dir that contains
+        a dispatch shared library, searching installed `ai_edge_litert_sdk_*`
+        packages first, then `ai_edge_litert`.
       compiler_cache_dir: Optional directory path used to cache on-device
         compiled models across runs. This shortcut is mutually exclusive with
         options. When empty (the default, same as the C++ API), compiled models

@@ -16,8 +16,10 @@
 """Constants and other small generic utilities."""
 
 from importlib import resources
+from importlib import util as importlib_util
 import os
 import pathlib
+import sys
 
 TFLITE = "tflite"
 DOT_TFLITE = f".{TFLITE}"
@@ -26,6 +28,14 @@ NPU = "npu"
 
 _WORKSPACE_PREFIX = "litert"
 _AI_EDGE_LITERT_PREFIX = "ai_edge_litert"
+# Vendor SDK packages that install `vendors/<vendor>/{compiler,dispatch}/`.
+_SDK_PREFIXES = (
+    "ai_edge_litert_sdk_qualcomm",
+    "ai_edge_litert_sdk_mediatek",
+    "ai_edge_litert_sdk_google_tensor",
+    "ai_edge_litert_sdk_intel",
+)
+_VENDORS_DIR = "vendors"
 _LITERT_ROOT = ""
 _PYTHON_ROOT = "python/aot"
 
@@ -36,10 +46,28 @@ MODULE_ROOT = ".".join([
 ])
 
 
+def _installed_package_dir(name: str) -> pathlib.Path | None:
+  """Returns the directory of top-level package `name` without importing it."""
+  if name in sys.modules:
+    origin = getattr(sys.modules[name], "__file__", None)
+  else:
+    try:
+      spec = importlib_util.find_spec(name)
+    except (ImportError, ValueError):
+      return None
+    origin = spec.origin if spec is not None else None
+  if not isinstance(origin, (str, os.PathLike)):
+    return None
+  return pathlib.Path(origin).resolve().parent
+
+
 def get_resource(
     litert_relative_path: pathlib.Path, is_dir=False
 ) -> pathlib.Path:
   """Returns the path to a resource in the Litert workspace.
+
+  Resources under `vendors/` are looked up in the installed
+  `ai_edge_litert_sdk_*` packages first, then in the LiteRT package.
 
   Args:
     litert_relative_path: The path to the resource relative to the Litert root.
@@ -51,6 +79,15 @@ def get_resource(
   Raises:
     FileNotFoundError: If the resource could not be found.
   """
+
+  if litert_relative_path.parts[:1] == (_VENDORS_DIR,):
+    for sdk_prefix in _SDK_PREFIXES:
+      sdk_dir = _installed_package_dir(sdk_prefix)
+      if sdk_dir is None:
+        continue
+      candidate = sdk_dir / litert_relative_path
+      if candidate.is_dir() if is_dir else candidate.is_file():
+        return candidate
 
   for prefix in [_WORKSPACE_PREFIX, _AI_EDGE_LITERT_PREFIX]:
     try:

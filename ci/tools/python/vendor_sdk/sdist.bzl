@@ -54,6 +54,12 @@ def _sdist_impl(ctx):
     for key, value in ctx.attr.substitutions.items():
         args.add("--substitution", "{}={}".format(key, value))
 
+    # Optional pin (JSON): bakes the LiteRT prebuilt archive URL and per-file
+    # SHA-256 into setup.py.
+    prebuilts_pin = ctx.attr.prebuilts_pin[BuildSettingInfo].value
+    if prebuilts_pin:
+        args.add("--prebuilts_pin_json", prebuilts_pin)
+
     all_input_files = depset(
         direct = [ctx.file.setup_py, ctx.file.manifest_in],
         transitive = [depset(ctx.files.package_srcs)],
@@ -111,5 +117,14 @@ sdist_rule = rule(
             doc = "The py_binary wrapper script for sdist creation.",
         ),
         "nightly_suffix": attr.label(),
+        "prebuilts_pin": attr.label(
+            default = Label("//ci/tools/python/vendor_sdk:litert_prebuilts_pin"),
+            providers = [BuildSettingInfo],
+            doc = """
+            string_flag holding the JSON written by `sdist_wrapper.py pin` (see
+            build_pip_package_with_bazel.sh). When set, setup.py only installs
+            prebuilts from that archive whose SHA-256 match.
+            """,
+        ),
     },
 )

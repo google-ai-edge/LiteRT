@@ -19,6 +19,8 @@ and embedded devices. It enables on-device machine learning inference with low
 latency and a small binary size on Android, iOS, and other operating systems.
 """
 
+from __future__ import annotations
+
 import os
 import platform
 import sys
@@ -43,7 +45,7 @@ IS_X86_ARCHITECTURE = platform.machine() in ('x86_64')
 
 # --- Configuration for Google Tensor ML SDK Download ---
 # Google Tensor ML SDK version doesn't necessarily match the SDK version though.
-# TODO: b/475410468 - Remove this environment variable when we want to deprecate
+# TODO(b/475410468): Remove this environment variable when we want to deprecate
 # the beta version. Currently the BETA version will still be supported for
 # existing users.
 GOOGLE_TENSOR_SDK_BETA = os.environ.get('GOOGLE_TENSOR_SDK_BETA', None)
@@ -122,7 +124,7 @@ def _download_and_extract(
         )
         raise SystemExit('Install SDK failed. Aborting installation.')
 
-      # TODO: b/475410468 - Revisit whether zip files support is required.
+      # TODO(b/475410468): Revisit whether zip files support is required.
       if archive_type == 'zip':
         with zipfile.ZipFile(archive_name_local, 'r') as zipf:
           content_dir_found = False
@@ -231,6 +233,20 @@ def _download_and_extract(
       raise SystemExit('Install SDK failed. Aborting installation.') from e
 
 
+def _download_litert_prebuilts(*unused_args):  # {{ LITERT_PREBUILTS_HELPER }}
+  raise NotImplementedError
+
+
+def _prebuilt_members() -> dict[str, str]:
+  if IS_LINUX and IS_X86_ARCHITECTURE:
+    return {
+        'linux_x86_64/libLiteRtCompilerPlugin_google_tensor.so': (
+            'ai_edge_litert_sdk_google_tensor/vendors/google_tensor/compiler/libLiteRtCompilerPlugin_google_tensor.so'
+        ),
+    }
+  return {}
+
+
 class CustomBuildPy(_build_py):
   """Command to replace import statements."""
 
@@ -278,6 +294,9 @@ class CustomBuildPy(_build_py):
           GOOGLE_TENSOR_ML_SDK_TARGET_DIR,
           tarball_is_local_file,
       )
+    # LiteRT's own plugin/dispatch libraries are fetched even with
+    # SKIP_SDK_DOWNLOAD (which only skips the vendor SDK).
+    _download_litert_prebuilts(PACKAGE_VERSION, _prebuilt_members())
 
     super().run()
 
@@ -295,7 +314,7 @@ setuptools.setup(
     include_package_data=True,
     has_ext_modules=lambda: True,
     keywords='litert tflite tensorflow tensor machine learning',
-    # TODO: b/475410468 - Revisit Python version support: 3.8, 3.9, 3.10, 3.12.
+    # TODO(b/475410468): Revisit Python version support: 3.8, 3.9, 3.10, 3.12.
     classifiers=[
         'Development Status :: 5 - Production/Stable',
         'Intended Audience :: Developers',
