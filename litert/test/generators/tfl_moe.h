@@ -279,7 +279,8 @@ class TflMoe : public TestGraph {
       float factor = 0.75f + 0.05f * static_cast<float>((c + seed * 3) % 11);
       quant->scales[c] = base_scale * factor;
     }
-    quant->zero_points.assign(num_channels, 0);
+    quant->zero_points =
+        litert::tensor::ZeroPoints::Int(std::vector<int64_t>(num_channels, 0));
     quant->quantized_dimension = 0;
     return quant;
   }

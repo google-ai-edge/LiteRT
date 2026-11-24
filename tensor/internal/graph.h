@@ -170,13 +170,6 @@ class ZeroPoints {
       : ZeroPoints(FromVector(std::vector<int64_t>(values))) {}
   ~ZeroPoints() = default;
 
-  // Preserved for pre-existing integer callers (e.g., `zero_points.assign(n,
-  // 0)`). New callers should assign `ZeroPoints::Int(...)` or
-  // `ZeroPoints::Float(...)`.
-  void assign(size_t count, int64_t value) {
-    *this = Int(std::vector<int64_t>(count, value));
-  }
-
   bool empty() const { return size() == 0; }
 
   // Returns true when no zero points are stored or all stored values are 0.
