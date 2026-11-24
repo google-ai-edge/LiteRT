@@ -40,9 +40,22 @@ _TensorTransformationParams = qtyping.TensorTransformationParams
 
 
 def check_if_quantized(tensor: Any) -> bool:
-  """Checks if the tensor is quantized."""
-  return (
-      tensor.quantization is not None and tensor.quantization.scale is not None
+  """Checks if the tensor is quantized.
+
+  Tensorwise and channelwise quantization store `scale` in the quantization
+  parameters, while blockwise quantization leaves `scale` unset and stores the
+  scales in a separate tensor referenced by `details`.
+
+  Args:
+    tensor: The tensor to check.
+
+  Returns:
+    True if the tensor has quantization scales or quantization details.
+  """
+  quantization = tensor.quantization
+  return quantization is not None and (
+      quantization.scale is not None
+      or quantization.detailsType != qtyping.QuantizationDetails.NONE
   )
 
 
@@ -353,6 +366,12 @@ def _materialize_bias_for_fc_conv_ops(
       )
       if weight_consumer_params is None and check_if_quantized(weight_tensor):
         quant_params = weight_tensor.quantization
+        if quant_params.scale is None:
+          raise ValueError(
+              "Static-range bias quantization is not supported for"
+              " blockwise-quantized weights without per-tensor/per-channel"
+              " scales."
+          )
         if op_info.op_quant_config.weight_tensor_config is None:
           raise ValueError(
               "weight_tensor_config cannot be None when weight tensor is"
