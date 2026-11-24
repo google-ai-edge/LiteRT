@@ -56,6 +56,51 @@ TEST(ModelTest, GetMetadata) {
   EXPECT_EQ(found_metadata->StrView(), kMetadata);
 }
 
+TEST(ModelTest, SetMetadataAddsAndReplaces) {
+  static constexpr absl::string_view kKey = "KEY";
+
+  LiteRtModelT model;
+  model.SetMetadata(kKey, absl::string_view("FIRST"));
+  auto found_metadata = model.FindMetadata(kKey);
+  ASSERT_TRUE(found_metadata);
+  EXPECT_EQ(found_metadata->StrView(), "FIRST");
+
+  model.SetMetadata(kKey, absl::string_view("SECOND"));
+  found_metadata = model.FindMetadata(kKey);
+  ASSERT_TRUE(found_metadata);
+  EXPECT_EQ(found_metadata->StrView(), "SECOND");
+
+  size_t num_entries = 0;
+  for (auto it = model.MetadataBegin(); it != model.MetadataEnd(); ++it) {
+    ++num_entries;
+  }
+  EXPECT_EQ(num_entries, 1);
+  EXPECT_EQ(model.PushMetadata(kKey, absl::string_view("THIRD")),
+            kLiteRtStatusErrorAlreadyExists);
+}
+
+TEST(ModelTest, SetMetadataOverwriteReplacesSlotInPlace) {
+  static constexpr absl::string_view kKey = "KEY";
+  static constexpr absl::string_view kOtherKey = "OTHER";
+
+  LiteRtModelT model;
+  LITERT_ASSERT_OK(model.PushMetadata(kOtherKey, absl::string_view("OTHER")));
+  model.SetMetadata(kKey, absl::string_view("FIRST"));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto other_view, model.FindMetadata(kOtherKey));
+  const size_t num_buffers = model.Buffers()->NumBuffers();
+
+  // Overwriting an existing key reuses its slot, so no buffer is registered
+  // and views of other keys stay valid.
+  for (int i = 0; i < 16; ++i) {
+    const std::string value = absl::StrFormat("VALUE_%d", i);
+    model.SetMetadata(kKey, absl::string_view(value));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto view, model.FindMetadata(kKey));
+    EXPECT_EQ(view.StrView(), value);
+  }
+  EXPECT_EQ(model.Buffers()->NumBuffers(), num_buffers);
+  EXPECT_EQ(other_view.StrView(), "OTHER");
+}
+
 TEST(ModelTest, MetadataDNE) {
   LiteRtModelT model;
   auto res = model.FindMetadata("FOO");
