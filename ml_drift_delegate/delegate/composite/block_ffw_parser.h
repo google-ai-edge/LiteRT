@@ -15,13 +15,19 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_BLOCK_FFW_PARSER_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_BLOCK_FFW_PARSER_H_
 
+#include <any>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <vector>
 
+#include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/object_reader.h"
+#include "ml_drift_delegate/tflite/operation_parser.h"
 #include "tflite/c/common.h"
 
 namespace litert::ml_drift {
@@ -141,6 +147,30 @@ absl::StatusOr<ResolvedBlockFfwPlan> ResolveBlockFfwPlan(
 std::vector<float> ExtractBlockFfwHostFallback(
     const TfLiteTensor* tensors, size_t tensors_size,
     const BlockFfwWeightOperandSpec& spec);
+
+// Operation type and attributes for a shared quantized FullyConnected op
+// (INT2/INT4/INT8) emitted by both the GraphFloat32 and IrModel parsers.
+struct BlockFfwQuantizedFcOpSpec {
+  std::string op_type;
+  std::any attributes;
+};
+
+// Builds the ML Drift quantized FullyConnected op type and attributes for a
+// shared INT2/INT4/INT8 weight operand.
+BlockFfwQuantizedFcOpSpec BuildBlockFfwQuantizedFcOpSpec(
+    const BlockFfwWeightOperandSpec& spec);
+
+// GraphFloat32 operation parser for `odml.blocked_ffw` / `odml.block_ffw`
+// StableHLO composite ops.
+class BlockFfwOperationParser : public TFLiteOperationParser {
+ public:
+  absl::Status IsSupported(const TfLiteContext* context,
+                           const TfLiteNode* tflite_node,
+                           const TfLiteRegistration* registration) final;
+  void Parse(const TfLiteNode* tflite_node,
+             const TfLiteRegistration* registration,
+             ::ml_drift::GraphFloat32* graph, ObjectReader* reader) final;
+};
 
 }  // namespace litert::ml_drift
 

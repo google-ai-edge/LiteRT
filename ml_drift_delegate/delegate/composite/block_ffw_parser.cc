@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "fp16.h"  // from @FP16
+#include "xnnpack.h"  // from @XNNPACK
 #include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
@@ -31,9 +32,16 @@
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift_delegate/tflite/model_builder_helper.h"
+#include "ml_drift_delegate/tflite/object_reader.h"
+#include "ml_drift_delegate/tflite/operation_parser.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 #include "tflite/kernels/internal/portable_tensor_utils.h"
@@ -43,7 +51,14 @@
 namespace litert::ml_drift {
 namespace {
 
+using ::ml_drift::BHWC;
+using ::ml_drift::DataType;
+using ::ml_drift::GraphFloat32;
+using ::ml_drift::Node;
 using ::ml_drift::OHWI;
+using ::ml_drift::OperationType;
+using ::ml_drift::QuantizeAndDequantizeAttributes;
+using ::ml_drift::Value;
 
 bool IsFloatTensorType(TfLiteType type) {
   return type == kTfLiteFloat16 || type == kTfLiteFloat32;
@@ -404,6 +419,239 @@ std::vector<float> MaybeTransposeBatchedWeightsToHio(
   return out;
 }
 
+// Pre-resolved weight state (shared GPU buffer handle or host float fallback)
+// captured before `ObjectReader` mutations can reallocate TFLite tensors.
+struct PreparedWeight {
+  BlockFfwWeightOperandSpec spec;
+  bool is_shared = false;
+  int preferred_global_id = -1;
+  std::vector<float> host_fallback;
+};
+
+PreparedWeight PrepareWeight(absl::Span<const TfLiteTensor> tensors,
+                             ObjectReader* reader,
+                             const BlockFfwWeightOperandSpec& spec) {
+  PreparedWeight prepared;
+  prepared.spec = spec;
+  if (IsBlockFfwQuantizedWeightType(spec.type)) {
+    reader->AllowSharingInput(spec.node_input_index);
+    const ObjectReader::ConstantInputSharingInfo share =
+        reader->GetSharingInfoByNodeInputIndex(spec.node_input_index);
+    if (share.IsShared()) {
+      prepared.is_shared = true;
+      prepared.preferred_global_id = share.PreferredId();
+    }
+  }
+  if (!prepared.is_shared) {
+    prepared.host_fallback =
+        ExtractBlockFfwHostFallback(tensors.data(), tensors.size(), spec);
+  }
+  return prepared;
+}
+
+template <typename FcAttrT, DataType kWeightType>
+BlockFfwQuantizedFcOpSpec MakeQuantizedFcOpSpec(
+    OperationType op_type, const BlockFfwWeightOperandSpec& spec) {
+  FcAttrT attr;
+  ::ml_drift::Tensor<OHWI, kWeightType> weights;
+  weights.shape = spec.shape;
+  attr.weights = std::move(weights);
+  attr.scale.shape = spec.scale_shape;
+  if (spec.has_zero_point) {
+    attr.zero_point.shape = spec.scale_shape;
+  }
+  return BlockFfwQuantizedFcOpSpec{
+      .op_type = ToString(op_type),
+      .attributes = std::move(attr),
+  };
+}
+
+Value* BuildIntermediateValue(GraphFloat32* graph, DataType type,
+                              const BHWC& shape) {
+  Value* v = graph->NewValue();
+  v->tensor.type = type;
+  v->tensor.shape = shape;
+  return v;
+}
+
+// Inserts a zero-point-0 signed `int8_t` (`[-128, 127]`) QuantizeAndDequantize
+// node when `scale` is present, matching `PopulateQuantParams` in
+// `model_builder_helper.cc` (`min = -128 * scale`, `max = 127 * scale`).
+Value* MaybeAddInt8QuantizeAndDequantize(GraphFloat32* graph, Value* src,
+                                         std::optional<float> scale) {
+  if (!scale.has_value()) {
+    return src;
+  }
+  Value* dst =
+      BuildIntermediateValue(graph, src->tensor.type, src->tensor.shape);
+  Node* qdq = graph->NewNode();
+  qdq->operation.type = ToString(OperationType::kQuantizeAndDequantize);
+  QuantizeAndDequantizeAttributes attr;
+  attr.min = -128.0f * (*scale);
+  attr.max = 127.0f * (*scale);
+  attr.scale = *scale;
+  qdq->operation.attributes = attr;
+  graph->AddConsumer(qdq->id, src->id);
+  graph->SetProducer(qdq->id, dst->id);
+  return dst;
+}
+
+void AddSharedQuantizedFcOp(GraphFloat32* graph, ObjectReader* reader,
+                            Value* src, Value* dst,
+                            const BlockFfwWeightOperandSpec& spec,
+                            int preferred_global_id) {
+  Node* node = graph->NewNode();
+  graph->AddConsumer(node->id, src->id);
+  Value* weights = nullptr;
+  reader->ReadQuantizedValueByTensorIdx(
+      spec.tensor_id,
+      BHWC(spec.shape.o, spec.shape.h, spec.shape.w, spec.shape.i), &weights);
+  graph->AddConsumer(node->id, weights->id);
+  reader->SetSharedTensor(weights->id, preferred_global_id, spec.tensor_id,
+                          /*dequant_forced=*/false, /*layout=*/std::nullopt,
+                          spec.oi_transposed);
+  BlockFfwQuantizedFcOpSpec fc_spec = BuildBlockFfwQuantizedFcOpSpec(spec);
+  node->operation.type = std::move(fc_spec.op_type);
+  node->operation.attributes = std::move(fc_spec.attributes);
+  graph->SetProducer(node->id, dst->id);
+}
+
+void AddHostFloatFcOp(GraphFloat32* graph, Value* src, Value* dst,
+                      const BlockFfwWeightOperandSpec& spec,
+                      std::vector<float> host_fallback) {
+  Node* node = graph->NewNode();
+  node->operation.type = ToString(OperationType::kFullyConnected);
+  ::ml_drift::FullyConnectedAttributes attr;
+  attr.weights.shape = spec.shape;
+  attr.weights.data = std::move(host_fallback);
+  // `ml_drift::RearrangeWeights` expects a flat linear float buffer with
+  // `XNN_EXTRA_BYTES` of trailing padding (no per-row strided padding) for
+  // XNNPACK transpose kernels.
+  attr.weights.data.resize(
+      attr.weights.shape.DimensionsProduct() + XNN_EXTRA_BYTES / sizeof(float),
+      0.0f);
+  node->operation.attributes = std::move(attr);
+  graph->AddConsumer(node->id, src->id);
+  graph->SetProducer(node->id, dst->id);
+}
+
+void AddBatchedMatmulFallbackOp(GraphFloat32* graph, Value* src, Value* dst,
+                                const BlockFfwWeightOperandSpec& spec,
+                                std::vector<float> host_fallback) {
+  // Non-shared batched `[1, H, I, O]` fallback via Constant + BatchedMatmul so
+  // `different_weights_for_height` holds for arbitrary sequence lengths T.
+  const BHWC rhs_shape(1, spec.shape.h, spec.shape.i, spec.shape.o);
+  Value* rhs_val = BuildIntermediateValue(graph, src->tensor.type, rhs_shape);
+  Node* const_node = graph->NewNode();
+  const_node->operation.type = ToString(OperationType::kConstant);
+  ::ml_drift::ConstTensorAttributes const_attr;
+  auto& rhs_tensor =
+      const_attr.tensor.emplace<::ml_drift::Tensor<BHWC, DataType::kFloat32>>();
+  rhs_tensor.shape = rhs_shape;
+  rhs_tensor.data = std::move(host_fallback);
+  const_node->operation.attributes = std::move(const_attr);
+  graph->SetProducer(const_node->id, rhs_val->id);
+
+  Node* bmm = graph->NewNode();
+  bmm->operation.type = ToString(OperationType::kBatchedMatmul);
+  bmm->operation.attributes = ::ml_drift::BatchedMatMulAttributes{};
+  graph->AddConsumer(bmm->id, src->id);
+  graph->AddConsumer(bmm->id, rhs_val->id);
+  graph->SetProducer(bmm->id, dst->id);
+}
+
+Value* AddLinearProjection(GraphFloat32* graph, ObjectReader* reader,
+                           Value* src, PreparedWeight& weight,
+                           const BHWC& dst_shape) {
+  Value* dst = BuildIntermediateValue(graph, src->tensor.type, dst_shape);
+  if (weight.is_shared) {
+    AddSharedQuantizedFcOp(graph, reader, src, dst, weight.spec,
+                           weight.preferred_global_id);
+  } else if (!weight.spec.is_batched) {
+    AddHostFloatFcOp(graph, src, dst, weight.spec,
+                     std::move(weight.host_fallback));
+  } else {
+    AddBatchedMatmulFallbackOp(graph, src, dst, weight.spec,
+                               std::move(weight.host_fallback));
+  }
+  return dst;
+}
+
+bool SameScale(std::optional<float> a, std::optional<float> b) {
+  return a.has_value() && b.has_value() && *a == *b;
+}
+
+// Emits an edge stage (Stage 1 U1 or Stage 4 D2): `K1` parallel branches of
+// UnpackPart -> optional QDQ -> LinearProjection -> optional QDQ -> PackParts.
+void BuildEdgeStage(GraphFloat32* graph, ObjectReader* reader, Value* src,
+                    Value* dst, absl::Span<PreparedWeight> weights, int tokens,
+                    int part_in_channels, int part_out_channels,
+                    std::optional<float> in_scale,
+                    std::optional<float> out_scale) {
+  const DataType dtype = src->tensor.type;
+  const int k1 = static_cast<int>(weights.size());
+  std::vector<Value*> parts(k1);
+  for (int k = 0; k < k1; ++k) {
+    Value* part_in = BuildIntermediateValue(
+        graph, dtype, BHWC(1, 1, tokens, part_in_channels));
+    Node* unpack = graph->NewNode();
+    unpack->operation.type = kBlockFfwUnpackPartType;
+    unpack->operation.attributes =
+        BlockFfwUnpackPartAttributes{.part = k, .num_parts = k1};
+    graph->AddConsumer(unpack->id, src->id);
+    graph->SetProducer(unpack->id, part_in->id);
+
+    Value* q_in = MaybeAddInt8QuantizeAndDequantize(graph, part_in, in_scale);
+    Value* fc_out = AddLinearProjection(
+        graph, reader, q_in, weights[k], BHWC(1, 1, tokens, part_out_channels));
+    parts[k] = MaybeAddInt8QuantizeAndDequantize(graph, fc_out, out_scale);
+  }
+  Node* pack_node = graph->NewNode();
+  pack_node->operation.type = kBlockFfwPackPartsType;
+  pack_node->operation.attributes =
+      BlockFfwPackPartsAttributes{.num_parts = k1};
+  for (Value* part : parts) {
+    graph->AddConsumer(pack_node->id, part->id);
+  }
+  graph->SetProducer(pack_node->id, dst->id);
+}
+
+// Emits Stage 2 (U2) + SiLU activation, deduplicating `u2.in_scale` when it
+// matches `u1.out_scale`.
+Value* BuildU2AndSiluStage(GraphFloat32* graph, ObjectReader* reader,
+                           Value* u2_in, PreparedWeight& u2_prepared,
+                           const ResolvedBlockFfwPlan& plan) {
+  if (plan.attrs.u2.in_scale.has_value() &&
+      !SameScale(plan.attrs.u2.in_scale, plan.attrs.u1.out_scale)) {
+    u2_in = MaybeAddInt8QuantizeAndDequantize(graph, u2_in,
+                                              plan.attrs.u2.in_scale);
+  }
+  const BHWC u2_out_shape(1, plan.k2, plan.tokens, plan.o2);
+  Value* u2_raw =
+      AddLinearProjection(graph, reader, u2_in, u2_prepared, u2_out_shape);
+  Value* u2_out = MaybeAddInt8QuantizeAndDequantize(graph, u2_raw,
+                                                    plan.attrs.u2.out_scale);
+  Value* act_out =
+      BuildIntermediateValue(graph, u2_in->tensor.type, u2_out_shape);
+  Node* silu_node = graph->NewNode();
+  silu_node->operation.type = kBlockFfwSiluType;
+  graph->AddConsumer(silu_node->id, u2_out->id);
+  graph->SetProducer(silu_node->id, act_out->id);
+  return act_out;
+}
+
+// Emits Stage 3 (D1): optional QDQ -> LinearProjection -> optional QDQ.
+Value* BuildD1Stage(GraphFloat32* graph, ObjectReader* reader, Value* act_out,
+                    PreparedWeight& d1_prepared,
+                    const ResolvedBlockFfwPlan& plan) {
+  Value* d1_in = MaybeAddInt8QuantizeAndDequantize(graph, act_out,
+                                                   plan.attrs.d1.in_scale);
+  Value* d1_raw = AddLinearProjection(
+      graph, reader, d1_in, d1_prepared,
+      BHWC(1, plan.k2, plan.tokens, plan.k1 * plan.s));
+  return MaybeAddInt8QuantizeAndDequantize(graph, d1_raw,
+                                           plan.attrs.d1.out_scale);
+}
 }  // namespace
 
 bool IsBlockFfwQuantizedWeightType(TfLiteType type) {
@@ -652,6 +900,92 @@ std::vector<float> ExtractBlockFfwHostFallback(
   ABSL_LOG(FATAL) << "Unsupported host fallback quantization type "
                   << tensor.quantization.type << " for weight type "
                   << TfLiteTypeGetName(tensor.type);
+}
+
+BlockFfwQuantizedFcOpSpec BuildBlockFfwQuantizedFcOpSpec(
+    const BlockFfwWeightOperandSpec& spec) {
+  switch (spec.type) {
+    case kTfLiteInt8:
+      return MakeQuantizedFcOpSpec<::ml_drift::FullyConnectedInt8Attributes,
+                                   DataType::kInt8>(
+          OperationType::kFullyConnectedInt8, spec);
+    case kTfLiteInt4:
+      return MakeQuantizedFcOpSpec<::ml_drift::FullyConnectedInt4Attributes,
+                                   DataType::kInt4>(
+          OperationType::kFullyConnectedInt4, spec);
+    case kTfLiteInt2:
+      return MakeQuantizedFcOpSpec<::ml_drift::FullyConnectedInt2Attributes,
+                                   DataType::kInt2>(
+          OperationType::kFullyConnectedInt2, spec);
+    default:
+      ABSL_LOG(FATAL) << "Unsupported quantized FullyConnected weight type: "
+                      << TfLiteTypeGetName(spec.type);
+  }
+}
+
+absl::Status BlockFfwOperationParser::IsSupported(const TfLiteContext* context,
+                                                  const TfLiteNode* tflite_node,
+                                                  const TfLiteRegistration*) {
+  ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
+  ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+  return ResolveBlockFfwPlan(context->tensors, context->tensors_size,
+                             *tflite_node)
+      .status();
+}
+
+void BlockFfwOperationParser::Parse(const TfLiteNode* tflite_node,
+                                    const TfLiteRegistration*,
+                                    GraphFloat32* graph, ObjectReader* reader) {
+  const absl::Span<const TfLiteTensor> tensors = reader->GetTensors();
+  const absl::StatusOr<ResolvedBlockFfwPlan> plan =
+      ResolveBlockFfwPlan(tensors.data(), tensors.size(), *tflite_node);
+  ABSL_CHECK_OK(plan.status());
+
+  // Allow sharing on quantized constant weight inputs and prepare any host
+  // fallbacks before `ReadValue` / `AddOutputs` can reallocate TFLite tensors.
+  std::vector<PreparedWeight> u1_prepared;
+  u1_prepared.reserve(plan->u1_weights.size());
+  for (const auto& w : plan->u1_weights) {
+    u1_prepared.push_back(PrepareWeight(tensors, reader, w));
+  }
+  PreparedWeight u2_prepared = PrepareWeight(tensors, reader, plan->u2_weight);
+  PreparedWeight d1_prepared = PrepareWeight(tensors, reader, plan->d1_weight);
+  std::vector<PreparedWeight> d2_prepared;
+  d2_prepared.reserve(plan->d2_weights.size());
+  for (const auto& w : plan->d2_weights) {
+    d2_prepared.push_back(PrepareWeight(tensors, reader, w));
+  }
+
+  Value* x_val = reader->ReadValue(0);
+  Value* out_val = reader->ReadValueByTensorIdx(tflite_node->outputs->data[0]);
+  const DataType dtype = x_val->tensor.type;
+  const int tokens = plan->tokens;
+  const int i2 = plan->k1 * plan->s;
+  const int i4 = plan->k2 * plan->s;
+
+  // Stage 1 (U1) + permutation into U2's input `[1, K2, T, K1 * S]`.
+  Value* u2_in =
+      BuildIntermediateValue(graph, dtype, BHWC(1, plan->k2, tokens, i2));
+  BuildEdgeStage(graph, reader, x_val, u2_in, absl::MakeSpan(u1_prepared),
+                 tokens, plan->i1, plan->o1, plan->attrs.u1.in_scale,
+                 plan->attrs.u1.out_scale);
+
+  // Stage 2 (U2) + SiLU activation.
+  Value* act_out =
+      BuildU2AndSiluStage(graph, reader, u2_in, u2_prepared, *plan);
+
+  // Stage 3 (D1).
+  Value* d1_out = BuildD1Stage(graph, reader, act_out, d1_prepared, *plan);
+
+  // Stage 4 (D2) + merge into `[1, 1, T, D]`, deduplicating `d2.in_scale`
+  // when it matches `d1.out_scale`.
+  const std::optional<float> d2_in_scale =
+      (plan->attrs.d2.in_scale.has_value() &&
+       !SameScale(plan->attrs.d2.in_scale, plan->attrs.d1.out_scale))
+          ? plan->attrs.d2.in_scale
+          : std::nullopt;
+  BuildEdgeStage(graph, reader, d1_out, out_val, absl::MakeSpan(d2_prepared),
+                 tokens, i4, plan->o4, d2_in_scale, plan->attrs.d2.out_scale);
 }
 
 }  // namespace litert::ml_drift

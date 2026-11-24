@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/block_ffw_parser.h"
 
+#include <any>
 #include <cstddef>
 #include <cstdint>
 #include <initializer_list>
@@ -21,14 +22,24 @@
 #include <string>
 #include <tuple>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
 #include "fp16.h"  // from @FP16
+#include "xnnpack.h"  // from @XNNPACK
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
+#include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
+#include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift_delegate/tflite/object_reader.h"
+#include "ml_drift_delegate/tflite/shared_const_tensor_map.h"
 #include "tflite/c/builtin_op_data.h"
 #include "tflite/c/common.h"
 
@@ -36,6 +47,7 @@ namespace litert::ml_drift {
 namespace {
 
 using ::absl_testing::StatusIs;
+using ::testing::ElementsAre;
 using ::testing::FloatNear;
 using ::testing::Pointwise;
 
@@ -292,6 +304,165 @@ TEST(BlockFfwParserTest, ResolvesPlanAndExtractsHostFallback) {
   }
 }
 
+TEST(BlockFfwParserTest, ParsesSharedInt2Weights) {
+  // K1 = 2, K2 = 2, S = 4 -> 7 inputs (x, u1_0, u1_1, u2, d1, d2_0, d2_1).
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int w_u1_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  // U2 and D1 are stored as [K2, I, O] with block shape [1, I, 1].
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  std::vector<uint8_t> fb_attrs =
+      BuildFlexAttrs("silu", /*include_scales=*/true,
+                     /*distinct_adjacent_scales=*/true);
+  TfLiteStablehloCompositeParams params{};
+  params.name = kBlockFfwCompositeName.data();
+  params.attributes = fb_attrs.data();
+  params.attributes_size = fb_attrs.size();
+
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+  node.builtin_data = &params;
+
+  TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  ASSERT_OK(parser.IsSupported(&ctx, &node, &reg));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  TensorIndexToBufferIdMap buffer_map = {{w_u1_0, 1}, {w_u1_1, 2}, {w_u2, 3},
+                                         {w_d1, 4},   {w_d2_0, 5}, {w_d2_1, 6}};
+  SharedConstTensorsMap shared_map;
+  ObjectReader reader(&graph, &ctx, &node, &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr, &buffer_map,
+                      /*tensor_to_external_buffer_id_map=*/nullptr,
+                      &shared_map);
+  parser.Parse(&node, &reg, &graph, &reader);
+
+  ASSERT_EQ(shared_map.size(), 6);
+  for (const auto& [val_id, shared_info] : shared_map) {
+    const bool is_middle = shared_info.tflite_tensor_id == w_u2 ||
+                           shared_info.tflite_tensor_id == w_d1;
+    EXPECT_EQ(shared_info.oi_transposed, is_middle);
+  }
+
+  std::vector<std::string> op_types;
+  for (const auto* n : graph.nodes()) {
+    op_types.push_back(n->operation.type);
+  }
+  const std::string qdq =
+      ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
+  const std::string fc2 =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt2);
+  // Distinct adjacent scales (u2_in != u1_out, d2_in != d1_out) keep their own
+  // QuantizeAndDequantize nodes.
+  EXPECT_THAT(op_types,
+              ElementsAre(kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwPackPartsType, qdq, fc2, qdq,
+                          kBlockFfwSiluType, qdq, fc2, qdq,
+                          kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwPackPartsType));
+}
+
+TEST(BlockFfwParserTest, HostFallbackPadsFullyConnectedWeightsForXnnpack) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat32, {1, 2, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat32, {1, 2, 16});
+  const int w_u1_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  std::vector<uint8_t> fb_attrs =
+      BuildFlexAttrs("silu", /*include_scales=*/false);
+  TfLiteStablehloCompositeParams params{};
+  params.name = kBlockedFfwCompositeName.data();
+  params.attributes = fb_attrs.data();
+  params.attributes_size = fb_attrs.size();
+
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+  node.builtin_data = &params;
+
+  TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  ASSERT_OK(parser.IsSupported(&ctx, &node, &reg));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, &ctx, &node, &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*tensor_to_external_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser.Parse(&node, &reg, &graph, &reader);
+
+  int fc_count = 0;
+  int const_count = 0;
+  int bmm_count = 0;
+  std::vector<::ml_drift::BHWC> const_shapes;
+  const std::string fc = ToString(::ml_drift::OperationType::kFullyConnected);
+  const std::string constant = ToString(::ml_drift::OperationType::kConstant);
+  const std::string bmm = ToString(::ml_drift::OperationType::kBatchedMatmul);
+  for (const auto* n : graph.nodes()) {
+    if (n->operation.type == fc) {
+      ++fc_count;
+      const auto* attr = std::any_cast<::ml_drift::FullyConnectedAttributes>(
+          &n->operation.attributes);
+      ASSERT_NE(attr, nullptr);
+      EXPECT_GE(attr->weights.data.size(),
+                attr->weights.shape.DimensionsProduct() +
+                    XNN_EXTRA_BYTES / sizeof(float));
+    } else if (n->operation.type == constant) {
+      ++const_count;
+      const auto* attr = std::any_cast<::ml_drift::ConstTensorAttributes>(
+          &n->operation.attributes);
+      ASSERT_NE(attr, nullptr);
+      const auto* t = std::get_if<
+          ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
+          &attr->tensor);
+      ASSERT_NE(t, nullptr);
+      const_shapes.push_back(t->shape);
+    } else if (n->operation.type == bmm) {
+      ++bmm_count;
+    }
+  }
+  EXPECT_EQ(fc_count, 4);
+  EXPECT_EQ(const_count, 2);
+  EXPECT_EQ(bmm_count, 2);
+  EXPECT_THAT(const_shapes, ElementsAre(::ml_drift::BHWC(1, 2, 8, 12),
+                                        ::ml_drift::BHWC(1, 2, 12, 8)));
+}
+
 TEST(BlockFfwParserTest, Rejects3dEdgeWeights) {
   SyntheticCompositeArena arena;
   const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
@@ -320,7 +491,9 @@ TEST(BlockFfwParserTest, Rejects3dEdgeWeights) {
   node.builtin_data = &params;
 
   TfLiteContext ctx = arena.BuildContext();
-  EXPECT_THAT(ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node),
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  EXPECT_THAT(parser.IsSupported(&ctx, &node, &reg),
               StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
@@ -344,6 +517,8 @@ TEST(BlockFfwParserTest, RejectsUnsupportedActivationAndDynamicQuantSpec) {
   IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
   IntArrayHolder outputs({out_id});
   TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
 
   {
     std::vector<uint8_t> bad_act = BuildFlexAttrs("gelu", false);
@@ -354,7 +529,7 @@ TEST(BlockFfwParserTest, RejectsUnsupportedActivationAndDynamicQuantSpec) {
     node.inputs = inputs.ptr;
     node.outputs = outputs.ptr;
     node.builtin_data = &params;
-    EXPECT_THAT(ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node),
+    EXPECT_THAT(parser.IsSupported(&ctx, &node, &reg),
                 StatusIs(absl::StatusCode::kUnimplemented));
   }
   {
@@ -366,7 +541,7 @@ TEST(BlockFfwParserTest, RejectsUnsupportedActivationAndDynamicQuantSpec) {
     node.inputs = inputs.ptr;
     node.outputs = outputs.ptr;
     node.builtin_data = &params;
-    EXPECT_THAT(ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node),
+    EXPECT_THAT(parser.IsSupported(&ctx, &node, &reg),
                 StatusIs(absl::StatusCode::kUnimplemented));
   }
 }
@@ -954,6 +1129,245 @@ TEST(BlockFfwParserTest, NullHostDataRulesFor2dAnd3dBlockwiseV2Weights) {
     EXPECT_THAT(ResolveBlockFfwPlan(ctx.tensors, ctx.tensors_size, node),
                 StatusIs(absl::StatusCode::kInvalidArgument));
   }
+}
+
+TEST(BlockFfwParserTest, IsSupportedRejectsMalformedWeightIndexAndBuffer) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int w_u1_0 = arena.AddConstFloatTensor({8, 8}, 0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  IntArrayHolder outputs({out_id});
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+
+  // Negative weight index (`kTfLiteOptionalTensor == -1`).
+  {
+    IntArrayHolder inputs(
+        {x_id, w_u1_0, w_u1_1, kTfLiteOptionalTensor, w_d1, w_d2_0, w_d2_1});
+    TfLiteNode node{};
+    node.inputs = inputs.ptr;
+    node.outputs = outputs.ptr;
+    TfLiteContext ctx = arena.BuildContext();
+    EXPECT_THAT(parser.IsSupported(&ctx, &node, &reg),
+                StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+
+  // Float weight with truncated host buffer.
+  {
+    arena.MutableTensor(w_u1_0).bytes -= 1;
+    IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+    TfLiteNode node{};
+    node.inputs = inputs.ptr;
+    node.outputs = outputs.ptr;
+    TfLiteContext ctx = arena.BuildContext();
+    EXPECT_THAT(parser.IsSupported(&ctx, &node, &reg),
+                StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+}
+
+TEST(BlockFfwParserTest, DeduplicatesIdenticalAdjacentScales) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int w_u1_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u1_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 8, 12}, {1, 8, 1},
+                                                  {2, 1, 12}, 0.1f, -0.5f);
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+  const int w_d2_1 =
+      arena.AddBlockwiseV2Int2Tensor({8, 8}, {1, 8}, {8, 1}, 0.1f, -0.5f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  std::vector<uint8_t> fb_attrs =
+      BuildFlexAttrs("silu", /*include_scales=*/true,
+                     /*distinct_adjacent_scales=*/false);
+  TfLiteStablehloCompositeParams params{};
+  params.name = kBlockedFfwCompositeName.data();
+  params.attributes = fb_attrs.data();
+  params.attributes_size = fb_attrs.size();
+
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+  node.builtin_data = &params;
+
+  TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  ASSERT_OK(parser.IsSupported(&ctx, &node, &reg));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  TensorIndexToBufferIdMap buffer_map = {{w_u1_0, 1}, {w_u1_1, 2}, {w_u2, 3},
+                                         {w_d1, 4},   {w_d2_0, 5}, {w_d2_1, 6}};
+  SharedConstTensorsMap shared_map;
+  ObjectReader reader(&graph, &ctx, &node, &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr, &buffer_map,
+                      /*tensor_to_external_buffer_id_map=*/nullptr,
+                      &shared_map);
+  parser.Parse(&node, &reg, &graph, &reader);
+
+  std::vector<std::string> op_types;
+  for (const auto* n : graph.nodes()) {
+    op_types.push_back(n->operation.type);
+  }
+  const std::string qdq =
+      ToString(::ml_drift::OperationType::kQuantizeAndDequantize);
+  const std::string fc2 =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt2);
+  // Identical adjacent scales (u2_in == u1_out, d2_in == d1_out) omit the
+  // redundant u2_in and d2_in QuantizeAndDequantize nodes.
+  EXPECT_THAT(op_types,
+              ElementsAre(kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwUnpackPartType, qdq, fc2, qdq,
+                          kBlockFfwPackPartsType, fc2, qdq, kBlockFfwSiluType,
+                          qdq, fc2, qdq, kBlockFfwUnpackPartType, fc2, qdq,
+                          kBlockFfwUnpackPartType, fc2, qdq,
+                          kBlockFfwPackPartsType));
+}
+
+TEST(BlockFfwParserTest, K2OneNonSharedMiddleWeightsUseBatchedMatmulFallback) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat32, {1, 2, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat32, {1, 2, 16});
+  const int w_u1_0 = arena.AddConstFloatTensor({4, 8}, 1.0f);
+  const int w_u1_1 = arena.AddConstFloatTensor({4, 8}, 1.0f);
+  // K2 = 1 middle weights: U2 is `[1, O=12, I=8]` (HOI), D1 is `[1, I=12, O=8]`
+  // (HIO). Both must route to Constant + BatchedMatmul, never kFullyConnected.
+  const int w_u2 = arena.AddConstFloatTensor({1, 12, 8}, 1.0f);
+  const int w_d1 = arena.AddConstFloatTensor({1, 12, 8}, 1.0f);
+  const int w_d2_0 = arena.AddConstFloatTensor({8, 4}, 1.0f);
+  const int w_d2_1 = arena.AddConstFloatTensor({8, 4}, 1.0f);
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+
+  TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  ASSERT_OK(parser.IsSupported(&ctx, &node, &reg));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, &ctx, &node, &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*tensor_to_external_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser.Parse(&node, &reg, &graph, &reader);
+
+  int fc_count = 0;
+  int bmm_count = 0;
+  std::vector<::ml_drift::BHWC> const_shapes;
+  const std::string fc = ToString(::ml_drift::OperationType::kFullyConnected);
+  const std::string constant = ToString(::ml_drift::OperationType::kConstant);
+  const std::string bmm = ToString(::ml_drift::OperationType::kBatchedMatmul);
+  for (const auto* n : graph.nodes()) {
+    if (n->operation.type == fc) {
+      ++fc_count;
+    } else if (n->operation.type == constant) {
+      const auto* attr = std::any_cast<::ml_drift::ConstTensorAttributes>(
+          &n->operation.attributes);
+      ASSERT_NE(attr, nullptr);
+      const auto* t = std::get_if<
+          ::ml_drift::Tensor<::ml_drift::BHWC, ::ml_drift::DataType::kFloat32>>(
+          &attr->tensor);
+      ASSERT_NE(t, nullptr);
+      const_shapes.push_back(t->shape);
+    } else if (n->operation.type == bmm) {
+      ++bmm_count;
+    }
+  }
+  EXPECT_EQ(fc_count, 4);
+  EXPECT_EQ(bmm_count, 2);
+  EXPECT_THAT(const_shapes, ElementsAre(::ml_drift::BHWC(1, 1, 8, 12),
+                                        ::ml_drift::BHWC(1, 1, 12, 8)));
+}
+
+TEST(BlockFfwParserTest, PropagatesHoiAndSupportsSharedInt4AndInt8Weights) {
+  SyntheticCompositeArena arena;
+  const int x_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  const int out_id = arena.AddRuntimeTensor(kTfLiteFloat16, {1, 1, 16});
+  // Mix shared affine int8, affine int4, and BlockwiseV2 int2 `[H, O, I]`.
+  const int w_u1_0 = arena.AddAffineQuantizedInt8Tensor({8, 8});
+  const int w_u1_1 = arena.AddAffineQuantizedTensor(
+      kTfLiteInt4, {8, 8}, std::vector<int8_t>(32, 0x12), {0.1f}, {0});
+  // U2 stored as `[H=2, O=12, I=8]` (`oi_transposed == false`).
+  const int w_u2 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 1, 8},
+                                                  {2, 12, 1}, 0.1f, -0.5f);
+  // D1 stored as `[H=2, I=12, O=8]` (`oi_transposed == true`).
+  const int w_d1 = arena.AddBlockwiseV2Int2Tensor({2, 12, 8}, {1, 12, 1},
+                                                  {2, 1, 8}, 0.1f, -0.5f);
+  const int w_d2_0 = arena.AddAffineQuantizedTensor(
+      kTfLiteInt4, {8, 8}, std::vector<int8_t>(32, 0x12), {0.1f}, {0});
+  const int w_d2_1 = arena.AddAffineQuantizedInt8Tensor({8, 8});
+
+  IntArrayHolder inputs({x_id, w_u1_0, w_u1_1, w_u2, w_d1, w_d2_0, w_d2_1});
+  IntArrayHolder outputs({out_id});
+  TfLiteNode node{};
+  node.inputs = inputs.ptr;
+  node.outputs = outputs.ptr;
+
+  TfLiteContext ctx = arena.BuildContext();
+  TfLiteRegistration reg{};
+  BlockFfwOperationParser parser;
+  ASSERT_OK(parser.IsSupported(&ctx, &node, &reg));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  TensorIndexToBufferIdMap buffer_map = {{w_u1_0, 1}, {w_u1_1, 2}, {w_u2, 3},
+                                         {w_d1, 4},   {w_d2_0, 5}, {w_d2_1, 6}};
+  SharedConstTensorsMap shared_map;
+  ObjectReader reader(&graph, &ctx, &node, &tensor_to_value,
+                      /*quant_conversion_map=*/nullptr, &buffer_map,
+                      /*tensor_to_external_buffer_id_map=*/nullptr,
+                      &shared_map);
+  parser.Parse(&node, &reg, &graph, &reader);
+
+  ASSERT_EQ(shared_map.size(), 6);
+  for (const auto& [val_id, shared_info] : shared_map) {
+    if (shared_info.tflite_tensor_id == w_u2) {
+      EXPECT_FALSE(shared_info.oi_transposed);
+    } else if (shared_info.tflite_tensor_id == w_d1) {
+      EXPECT_TRUE(shared_info.oi_transposed);
+    }
+  }
+
+  std::vector<std::string> op_types;
+  for (const auto* n : graph.nodes()) {
+    op_types.push_back(n->operation.type);
+  }
+  const std::string fc8 =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt8);
+  const std::string fc4 =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt4);
+  const std::string fc2 =
+      ToString(::ml_drift::OperationType::kFullyConnectedInt2);
+  EXPECT_THAT(op_types,
+              ElementsAre(kBlockFfwUnpackPartType, fc8, kBlockFfwUnpackPartType,
+                          fc4, kBlockFfwPackPartsType, fc2, kBlockFfwSiluType,
+                          fc2, kBlockFfwUnpackPartType, fc4,
+                          kBlockFfwUnpackPartType, fc8,
+                          kBlockFfwPackPartsType));
 }
 
 }  // namespace
