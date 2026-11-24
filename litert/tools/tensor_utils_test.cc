@@ -738,9 +738,11 @@ TEST(TensorUtilsTest, FillInputBuffersFromFileListRejectsDuplicateInputs) {
   const std::string file_path =
       (std::filesystem::path(std::string(temp_dir.Str())) / "input.raw")
           .string();
-  const std::vector<char> raw_data(input_size, 1);
-  std::ofstream ofs(file_path, std::ios::binary);
-  ofs.write(raw_data.data(), raw_data.size());
+  {
+    const std::vector<char> raw_data(input_size, 1);
+    std::ofstream ofs(file_path, std::ios::binary);
+    ofs.write(raw_data.data(), raw_data.size());
+  }
 
   const std::vector<std::string> file_paths = {
       absl::StrFormat("%s:=%s", input_names[0], file_path),
