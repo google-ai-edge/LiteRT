@@ -101,6 +101,16 @@ std::string DimsToString(const TfLiteIntArray& dims) {
 
 }  // namespace
 
+absl::Status ValidateShortConvLCache(int conv_l_cache) {
+  if (conv_l_cache < kMinShortConvLCache ||
+      conv_l_cache > kMaxShortConvLCache) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "ShortConvStep supports conv_L_cache in [", kMinShortConvLCache, ", ",
+        kMaxShortConvLCache, "], but got ", conv_l_cache));
+  }
+  return absl::OkStatus();
+}
+
 absl::Status CheckShortConvStepSupported(const TfLiteContext* context,
                                          const TfLiteNode* tflite_node) {
   if (tflite_node->inputs->size < 3 || tflite_node->inputs->size > 5) {
@@ -115,11 +125,7 @@ absl::Status CheckShortConvStepSupported(const TfLiteContext* context,
   }
   const ShortConvStepAttributes attr =
       ParseShortConvStepAttributes(*tflite_node);
-  if (attr.conv_L_cache < 2 || attr.conv_L_cache > 4) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep supports conv_L_cache in [2, 4], but got ",
-                     attr.conv_L_cache));
-  }
+  ABSL_RETURN_IF_ERROR(ValidateShortConvLCache(attr.conv_L_cache));
   if (!attr.channels_last) {
     return absl::UnimplementedError(
         "ShortConvStep supports only channels-last conv_state and "

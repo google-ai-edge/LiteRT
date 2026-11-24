@@ -26,6 +26,14 @@
 namespace litert::ml_drift {
 
 constexpr const char kShortConvStepType[] = "odml.short_conv_step";
+// Inclusive bounds on `conv_L_cache` (causal conv1d kernel size) supported by
+// the fused GPU kernel. The upper bound is a hardware-independent shader
+// unrolling cap (not a `GpuInfo` limit): `CreateFusedShortConvStep` uses no
+// shared memory or wave ops, but unrolls `L = conv_L_cache` taps into
+// per-thread `float4` registers (`wt*`, `st*`, `bx*`, `ns*`) and an O(L^2)
+// `if/else if` state-shift ladder in work-item `X == 0`.
+inline constexpr int kMinShortConvLCache = 2;
+inline constexpr int kMaxShortConvLCache = 8;
 
 // Attributes of `odml.short_conv_step`. Its conv_state is channels-last
 // [1, L - 1, H] and its conv_weight channels-last [1, L, H], with
@@ -42,11 +50,17 @@ struct ShortConvStepAttributes {
 ShortConvStepAttributes ParseShortConvStepAttributes(
     const TfLiteNode& tflite_node);
 
+// Validates that `conv_l_cache` is within
+// [kMinShortConvLCache, kMaxShortConvLCache]. Returns an
+// `absl::InvalidArgumentError` otherwise.
+absl::Status ValidateShortConvLCache(int conv_l_cache);
+
 // Checks that `tflite_node` is a channels-last `odml.short_conv_step` the GPU
-// kernel supports: conv_L_cache in [2, 4], `channels_last` not false,
-// conv_state (input 1) [1, L - 1, H], conv_weight (input 2) [1, L, H] and
-// output 0 with H channels. Channels-first exports ([1, H, L - 1] state) are
-// rejected so they fall back to the CPU decomposition.
+// kernel supports: conv_L_cache in [kMinShortConvLCache, kMaxShortConvLCache],
+// `channels_last` not false, conv_state (input 1) [1, L - 1, H], conv_weight
+// (input 2) [1, L, H] and output 0 with H channels. Channels-first exports
+// ([1, H, L - 1] state) are rejected so they fall back to the CPU
+// decomposition.
 absl::Status CheckShortConvStepSupported(const TfLiteContext* context,
                                          const TfLiteNode* tflite_node);
 

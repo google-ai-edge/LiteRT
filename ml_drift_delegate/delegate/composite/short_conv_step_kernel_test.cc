@@ -560,7 +560,7 @@ TEST_P(ShortConvStepFloatTest, PrefillWithoutNumValidTokensConvLCache2) {
 }
 
 TEST_P(ShortConvStepFloatTest, DecodeAllOptionCombinationsAndConvLengths) {
-  for (int conv_l_cache : {2, 3, 4}) {
+  for (int conv_l_cache : {2, 3, 4, 7, 8}) {
     for (bool is_gated : {false, true}) {
       for (bool use_silu : {false, true}) {
         for (bool with_bias : {false, true}) {
@@ -571,6 +571,40 @@ TEST_P(ShortConvStepFloatTest, DecodeAllOptionCombinationsAndConvLengths) {
       }
     }
   }
+}
+
+TEST_P(ShortConvStepFloatTest, DecodeConvLCache7Hidden2048) {
+  EXPECT_OK(RunShortConvStepTest(*exec_env, precision(), storage(),
+                                 /*hidden_size=*/2048, /*with_bias=*/false,
+                                 /*conv_L_cache=*/7, /*is_gated=*/true,
+                                 /*use_silu=*/false));
+}
+
+TEST_P(ShortConvStepFloatTest, PrefillConvLCache7Hidden2048PaddedAndShort) {
+  EXPECT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 2048,
+                                     .seq_len = 16,
+                                     .num_valid_tokens = 11,
+                                     .conv_l_cache = 7,
+                                     .with_bias = false,
+                                     .is_gated = true,
+                                     .use_silu = false}));
+  EXPECT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 16,
+                                     .seq_len = 10,
+                                     .num_valid_tokens = 3,
+                                     .conv_l_cache = 7,
+                                     .with_bias = false,
+                                     .is_gated = true,
+                                     .use_silu = false}));
+  EXPECT_OK(RunShortConvPrefillTest(*exec_env, precision(), storage(),
+                                    {.hidden_size = 16,
+                                     .seq_len = 4,
+                                     .num_valid_tokens = 2,
+                                     .conv_l_cache = 7,
+                                     .with_bias = true,
+                                     .is_gated = true,
+                                     .use_silu = false}));
 }
 
 TEST_P(ShortConvStepFloatTest, DecodeHiddenSizeCornerCases) {
@@ -594,7 +628,7 @@ TEST_P(ShortConvStepFloatTest, DecodeHiddenSizeCornerCases) {
 }
 
 TEST_P(ShortConvStepFloatTest, PrefillAllOptionCombinationsAndConvLengths) {
-  for (int conv_l_cache : {2, 3, 4}) {
+  for (int conv_l_cache : {2, 3, 4, 7, 8}) {
     for (bool is_gated : {false, true}) {
       for (bool use_silu : {false, true}) {
         for (bool with_bias : {false, true}) {

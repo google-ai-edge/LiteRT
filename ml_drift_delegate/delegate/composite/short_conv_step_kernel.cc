@@ -24,6 +24,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/log/absl_check.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -132,8 +133,8 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
     const ::ml_drift::TensorDescriptor& state_in_out_desc, int num_slices,
     int hidden_size, int conv_L_cache, bool is_gated, bool use_silu,
     const ::ml_drift::TensorDescriptor* num_valid_tokens_desc) {
-  const int clamped_L_cache = std::clamp(conv_L_cache, 2, 4);
-  const int num_state_taps = clamped_L_cache - 1;
+  ABSL_DCHECK_OK(ValidateShortConvLCache(conv_L_cache));
+  const int num_state_taps = conv_L_cache - 1;
   const int seq_len = dst_desc.GetBHWCShape().w;
   // Tokens [0, num_head_tokens) convolve windows that reach into conv_state.
   const int num_head_tokens = std::min(seq_len, num_state_taps);
@@ -141,7 +142,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   FusedShortConvStepOp custom_op;
   custom_op.args_.AddInt("num_slices", num_slices);
   custom_op.args_.AddInt("hidden_size", hidden_size);
-  custom_op.args_.AddInt("conv_L_cache", clamped_L_cache);
+  custom_op.args_.AddInt("conv_L_cache", conv_L_cache);
   custom_op.args_.AddInt("has_bias", conv_bias_desc != nullptr ? 1 : 0);
 
   custom_op.AddSrcTensor("in_proj", in_proj_desc);
@@ -214,7 +215,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
 
   // Load `wt<k>` holding tap k across the 4 channels of slice S from the
   // channels-last weight BHWC(1, 1, L, H).
-  for (int k = 0; k < clamped_L_cache; ++k) {
+  for (int k = 0; k < conv_L_cache; ++k) {
     absl::StrAppend(&c, "  float4 wt", k,
                     " = ucl::Convert<float4>(args.conv_weight.Read(", k,
                     ", 0, S));\n");
@@ -225,7 +226,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   if (seq_len > num_state_taps) {
     absl::StrAppend(&c, "  if (X >= ", num_state_taps, ") {\n");
     c += "    float4 acc = bias;\n";
-    for (int k = 0; k < clamped_L_cache; ++k) {
+    for (int k = 0; k < conv_L_cache; ++k) {
       const int offset = num_state_taps - k;
       const std::string token =
           offset == 0 ? "X" : absl::StrCat("X - ", offset);
@@ -263,7 +264,7 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedShortConvStep(
   };
   for (int t = 0; t < num_head_tokens; ++t) {
     absl::StrAppend(&c, "  float4 acc", t, " = bias;\n");
-    for (int k = 0; k < clamped_L_cache; ++k) {
+    for (int k = 0; k < conv_L_cache; ++k) {
       absl::StrAppend(&c, "  acc", t, " += wt", k, " * ", padded(t + k), ";\n");
     }
     const std::string acc_var = absl::StrCat("acc", t);
@@ -352,11 +353,7 @@ absl::Status BuildShortConvStepGpuGraph(
   if (output_ids.size() != 2) {
     return absl::InvalidArgumentError("ShortConvStep expects 2 outputs.");
   }
-  if (attr.conv_L_cache < 2 || attr.conv_L_cache > 4) {
-    return absl::InvalidArgumentError(
-        absl::StrCat("ShortConvStep supports conv_L_cache in [2, 4], but got ",
-                     attr.conv_L_cache));
-  }
+  ABSL_RETURN_IF_ERROR(ValidateShortConvLCache(attr.conv_L_cache));
 
   ABSL_ASSIGN_OR_RETURN(auto in_proj, model_builder->GetTensor(input_ids[0]));
   ABSL_ASSIGN_OR_RETURN(auto conv_weight,

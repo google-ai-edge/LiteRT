@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/litert_op_selector.h"
 
+#include <algorithm>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,6 +23,7 @@
 #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -48,6 +50,7 @@
 namespace litert::ml_drift {
 namespace {
 
+using ::absl_testing::StatusIs;
 using ::ml_drift::BHWC;
 using ::ml_drift::CalculationsPrecision;
 using ::ml_drift::CreateGpuModelInfo;
@@ -64,6 +67,7 @@ using ::ml_drift::OHWI;
 using ::ml_drift::OperationDef;
 using ::ml_drift::SliceAttributes;
 using ::ml_drift::TensorDescriptor;
+using ::ml_drift::TensorHandle;
 using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
@@ -476,7 +480,7 @@ TEST(LiteRtOpSelectorTest, ShortConvStepAllOptionCombinationsAndConvLengths) {
   create_info.storage_type = TensorStorageType::kTexture2D;
 
   constexpr int kHiddenSize = 6144;
-  for (int filter_size : {2, 3, 4}) {
+  for (int filter_size : {2, 3, 4, 7, 8}) {
     const int state_cache_size = filter_size - 1;
     for (bool is_gated : {false, true}) {
       for (bool use_silu : {false, true}) {
@@ -628,6 +632,69 @@ TEST(LiteRtOpSelectorTest, ShortConvStepRejectsChannelsFirstStateOrWeight) {
                                            &builder)
                      .ok());
   }
+}
+
+TEST(LiteRtOpSelectorTest, ShortConvStepRejectsOutOfRangeConvLCache) {
+  auto select_with_conv_l_cache = [](int conv_l_cache) -> absl::Status {
+    const GpuInfo gpu_info = GetTestGpuInfo();
+    CreateGpuModelInfo create_info;
+    create_info.precision = CalculationsPrecision::kF32;
+    create_info.storage_type = TensorStorageType::kTexture2D;
+
+    GpuModelBuilderOptions options;
+    options.storage = TensorStorageType::kTexture2D;
+    GpuModelBuilder builder(gpu_info, options);
+
+    constexpr int kHiddenSize = 64;
+    const BHWC weight_shape(1, 1, conv_l_cache, kHiddenSize);
+    const BHWC state_shape(1, 1, std::max(1, conv_l_cache - 1), kHiddenSize);
+
+    TensorDescriptor in_proj_desc(DataType::kFloat32,
+                                  TensorStorageType::kTexture2D, Layout::kHWC);
+    in_proj_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+    TensorDescriptor conv_weight_desc(
+        DataType::kFloat32, TensorStorageType::kTexture2D, Layout::kHWC);
+    conv_weight_desc.SetBHWCShape(weight_shape);
+    TensorDescriptor out_desc(DataType::kFloat32, TensorStorageType::kTexture2D,
+                              Layout::kHWC);
+    out_desc.SetBHWCShape(BHWC(1, 1, 1, kHiddenSize));
+    TensorDescriptor next_state_desc(DataType::kFloat32,
+                                     TensorStorageType::kBuffer, Layout::kHWC);
+    next_state_desc.SetBHWCShape(state_shape);
+
+    const TensorHandle in_proj = builder.AddTensor(in_proj_desc);
+    const TensorHandle conv_weight = builder.AddTensor(conv_weight_desc);
+    const TensorHandle out = builder.AddTensor(out_desc);
+    const TensorHandle next_state = builder.AddTensor(next_state_desc);
+
+    Value v_in_proj{in_proj.id,
+                    {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+    Value v_conv_weight{conv_weight.id, {DataType::kFloat32, weight_shape}};
+    Value v_out{out.id, {DataType::kFloat32, BHWC(1, 1, 1, kHiddenSize)}};
+    Value v_next_state{next_state.id, {DataType::kFloat32, state_shape}};
+
+    OperationDef op_def;
+    op_def.src_tensors = {in_proj.tensor_desc, conv_weight.tensor_desc};
+    op_def.dst_tensors = {out.tensor_desc, next_state.tensor_desc};
+
+    GraphFloat32 graph;
+    Node* conv_node = graph.NewNode();
+    conv_node->operation.type = kShortConvStepType;
+    ShortConvStepAttributes attr;
+    attr.conv_L_cache = conv_l_cache;
+    attr.is_gated = false;
+    conv_node->operation.attributes = attr;
+
+    LiteRtOpSelector selector(&create_info, &gpu_info);
+    return selector.GPUOperationFromNode(op_def, {&v_in_proj, &v_conv_weight},
+                                         {&v_out, &v_next_state}, *conv_node,
+                                         &builder);
+  };
+
+  EXPECT_THAT(select_with_conv_l_cache(kMinShortConvLCache - 1),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(select_with_conv_l_cache(kMaxShortConvLCache + 1),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 TEST(LiteRtOpSelectorTest, ScaledDotProductAttentionUsesFlashSdpaKernel) {

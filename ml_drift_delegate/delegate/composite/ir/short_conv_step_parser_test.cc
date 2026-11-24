@@ -14,6 +14,7 @@
 
 #include "ml_drift_delegate/delegate/composite/ir/short_conv_step_parser.h"
 
+#include <algorithm>
 #include <any>
 #include <cstdlib>
 #include <cstring>
@@ -24,6 +25,8 @@
 
 #include "testing/base/public/gmock.h"
 #include "testing/base/public/gunit.h"
+#include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/composite/short_conv_step_parser.h"
@@ -37,19 +40,26 @@
 namespace litert::ml_drift::ir {
 namespace {
 
+using ::absl_testing::IsOk;
+using ::absl_testing::StatusIs;
 using ::testing::Eq;
+using ::testing::IsNull;
+using ::testing::NotNull;
 using ::testing::SizeIs;
+using ::testing::Values;
 
 constexpr int kSeqLen = 1;
 constexpr int kHiddenSize = 64;
 constexpr int kConvLCache = 3;
 
-// Builds a single ungated `odml.short_conv_step` node with the given conv_state
-// and conv_weight shapes and optional `channels_last` attribute. `builder` owns
-// the custom options, so it must outlive the interpreter.
+// Builds a single ungated `odml.short_conv_step` node with the given
+// `conv_state` and `conv_weight` shapes, `conv_l_cache` tap count, and optional
+// `channels_last` attribute. `builder` owns the custom options, so it must
+// outlive the interpreter.
 std::unique_ptr<::tflite::Interpreter> BuildShortConvStep(
     SingleOpInterpreterBuilder& builder, const std::vector<int>& state_shape,
-    const std::vector<int>& weight_shape, std::optional<bool> channels_last) {
+    const std::vector<int>& weight_shape, std::optional<bool> channels_last,
+    int conv_l_cache = kConvLCache) {
   builder.SetCustomName("odml.short_conv_step");
   builder.AddInput(kTfLiteFloat32, {1, kSeqLen, kHiddenSize});   // in_proj
   builder.AddInput(kTfLiteFloat32, state_shape);                 // conv_state
@@ -59,7 +69,7 @@ std::unique_ptr<::tflite::Interpreter> BuildShortConvStep(
 
   flexbuffers::Builder fbb;
   fbb.Map([&]() {
-    fbb.Int("conv_L_cache", kConvLCache);
+    fbb.Int("conv_L_cache", conv_l_cache);
     fbb.Bool("is_gated", false);
     fbb.Bool("use_silu", true);
     if (channels_last.has_value()) {
@@ -145,6 +155,65 @@ TEST_F(ConvertShortConvStepTest, RejectsChannelsLastFalse) {
   ASSERT_NE(interpreter, nullptr);
   ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
   EXPECT_EQ(GetIrModel(delegate_), nullptr);
+}
+
+class ConvertShortConvStepValidConvLCacheTest
+    : public ConvertShortConvStepTest,
+      public testing::WithParamInterface<int> {};
+
+TEST_P(ConvertShortConvStepValidConvLCacheTest, ConvertsSupportedConvLCache) {
+  const int conv_l_cache = GetParam();
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  std::unique_ptr<::tflite::Interpreter> interpreter = BuildShortConvStep(
+      builder, /*state_shape=*/{1, conv_l_cache - 1, kHiddenSize},
+      /*weight_shape=*/{1, conv_l_cache, kHiddenSize},
+      /*channels_last=*/true, conv_l_cache);
+  ASSERT_THAT(interpreter, NotNull());
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_);
+  ASSERT_THAT(ir_model, NotNull());
+  ASSERT_THAT(ir_model->ops(), SizeIs(1));
+  const ShortConvStepAttributes* attr =
+      std::any_cast<ShortConvStepAttributes>(&ir_model->ops()[0]->attr);
+  ASSERT_THAT(attr, NotNull());
+  EXPECT_EQ(attr->conv_L_cache, conv_l_cache);
+}
+
+INSTANTIATE_TEST_SUITE_P(SupportedConvLCaches,
+                         ConvertShortConvStepValidConvLCacheTest,
+                         Values(2, 3, 4, 7, 8));
+
+class ConvertShortConvStepInvalidConvLCacheTest
+    : public ConvertShortConvStepTest,
+      public testing::WithParamInterface<int> {};
+
+TEST_P(ConvertShortConvStepInvalidConvLCacheTest, RejectsOutOfRangeConvLCache) {
+  const int invalid_conv_l_cache = GetParam();
+  SingleOpInterpreterBuilder builder(kTfLiteBuiltinCustom);
+  std::unique_ptr<::tflite::Interpreter> interpreter = BuildShortConvStep(
+      builder,
+      /*state_shape=*/{1, std::max(1, invalid_conv_l_cache - 1), kHiddenSize},
+      /*weight_shape=*/{1, invalid_conv_l_cache, kHiddenSize},
+      /*channels_last=*/true, invalid_conv_l_cache);
+  ASSERT_THAT(interpreter, NotNull());
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_), kTfLiteOk);
+  EXPECT_THAT(GetIrModel(delegate_), IsNull());
+}
+
+INSTANTIATE_TEST_SUITE_P(OutOfRangeConvLCaches,
+                         ConvertShortConvStepInvalidConvLCacheTest,
+                         Values(kMinShortConvLCache - 1,
+                                kMaxShortConvLCache + 1));
+
+TEST(ShortConvStepOperationParserTest, ValidateShortConvLCacheBounds) {
+  EXPECT_THAT(ValidateShortConvLCache(kMinShortConvLCache), IsOk());
+  EXPECT_THAT(ValidateShortConvLCache(7), IsOk());
+  EXPECT_THAT(ValidateShortConvLCache(kMaxShortConvLCache), IsOk());
+  EXPECT_THAT(ValidateShortConvLCache(kMinShortConvLCache - 1),
+              StatusIs(absl::StatusCode::kInvalidArgument));
+  EXPECT_THAT(ValidateShortConvLCache(kMaxShortConvLCache + 1),
+              StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 // The GraphFloat32 parser shares the check with the IR parser.
