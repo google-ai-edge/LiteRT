@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/runners/xnnpack/runner.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -128,6 +129,8 @@ absl::Status XnnpackRunner::CreateRuntime() {
                             &raw_runtime),
       "xnn_create_runtime_v4"));
   runtime_.reset(raw_runtime);
+  setup_dirty_ = true;
+  last_externals_.clear();
   // `xnn_create_runtime_v4` copies `subgraph->values` into `runtime->values`,
   // and blockwise FP16/BF16 scale buffers are only consumed when packing
   // weights during `xnn_create_runtime_v4`; release them now so multi-signature
@@ -153,6 +156,7 @@ absl::Status XnnpackRunner::SetExternalValueShape(
 }
 
 absl::Status XnnpackRunner::ReshapeRuntime() {
+  setup_dirty_ = true;
   return XnnStatusToAbsl(xnn_reshape_runtime(runtime_.get()),
                          "xnn_reshape_runtime");
 }
@@ -174,8 +178,8 @@ absl::Status XnnpackRunner::SetupExternalValues(
     const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
         external_buffers,
     std::vector<LockedBufferSpan<const std::byte>>& locks) {
-  std::vector<xnn_external_value> externals;
-  externals.reserve(values.size());
+  scratch_externals_.clear();
+  scratch_externals_.reserve(values.size());
   locks.reserve(values.size());
   for (NnpackValue& value : values) {
     if (value.flags == 0) {
@@ -191,13 +195,28 @@ absl::Status XnnpackRunner::SetupExternalValues(
       return absl::FailedPreconditionError(
           absl::StrFormat("External value %u could not be locked", value.id));
     }
-    externals.push_back(
+    scratch_externals_.push_back(
         {.id = value.id, .data = const_cast<std::byte*>(lock.data())});
     locks.push_back(std::move(lock));
   }
-  return XnnStatusToAbsl(
-      xnn_setup_runtime_v2(runtime_.get(), externals.size(), externals.data()),
-      "xnn_setup_runtime_v2");
+  const bool same_externals =
+      !setup_dirty_ && scratch_externals_.size() == last_externals_.size() &&
+      std::equal(scratch_externals_.begin(), scratch_externals_.end(),
+                 last_externals_.begin(),
+                 [](const xnn_external_value& a, const xnn_external_value& b) {
+                   return a.id == b.id && a.data == b.data;
+                 });
+  if (same_externals) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(XnnStatusToAbsl(
+      xnn_setup_runtime_v2(runtime_.get(), scratch_externals_.size(),
+                           scratch_externals_.data()),
+      "xnn_setup_runtime_v2"));
+  last_externals_ = scratch_externals_;
+  setup_dirty_ = false;
+  ++setup_count_;
+  return absl::OkStatus();
 }
 
 absl::Status XnnpackRunner::InvokeRuntime() {

@@ -27,6 +27,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/runners/common_nnpack/runner_test_suite.h"
 #include "tensor/tensor.h"
+#include "pthreadpool.h"  // from @pthreadpool
 
 namespace litert::tensor {
 
@@ -124,6 +125,63 @@ TEST(XnnpackRunnerTest, SharesWeightsCacheAndWorkspaceAcrossRunners) {
   ASSERT_EQ(decode_out->size(), 2u);
   EXPECT_FLOAT_EQ(decode_out->data()[0], -0.5f);
   EXPECT_FLOAT_EQ(decode_out->data()[1], 1.0f);
+}
+
+TEST(XnnpackRunnerTest, SharesNonOwningThreadpoolAndSkipsRedundantSetup) {
+  std::unique_ptr<pthreadpool, decltype(&pthreadpool_destroy)> pool(
+      pthreadpool_create(/*threads_count=*/2), &pthreadpool_destroy);
+  ASSERT_NE(pool, nullptr);
+
+  const std::vector<float> weights = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  Tensor<XnnpackMixinTag> w(
+      {.name = "w", .type = Type::kFP32, .shape = {2, 3}, .buffer = weights});
+  Tensor<XnnpackMixinTag> x(
+      {.name = "x", .type = Type::kFP32, .shape = {1, 3}});
+  Tensor<XnnpackMixinTag> y = FullyConnected(x, w);
+
+  auto runner1 = XnnpackRunner::Create({y});
+  ASSERT_TRUE(runner1.ok());
+  ASSERT_TRUE(runner1->SetThreadpool(pool.get()).ok());
+  EXPECT_EQ(runner1->threadpool(), pool.get());
+
+  auto runner2 = XnnpackRunner::Create({y});
+  ASSERT_TRUE(runner2.ok());
+  ASSERT_TRUE(runner2->SetThreadpool(pool.get()).ok());
+  EXPECT_EQ(runner2->threadpool(), pool.get());
+
+  std::vector<float> in1 = {1.0f, 0.0f, 2.0f};
+  ASSERT_TRUE(runner1->SetInput(x, in1).ok());
+  ASSERT_TRUE(runner1->Run().ok());
+  EXPECT_EQ(runner1->setup_count(), 1u);
+  auto out1 = runner1->ReadOutputAs<float>(y);
+  ASSERT_TRUE(out1.ok());
+  EXPECT_FLOAT_EQ(out1->data()[0], 7.0f);
+  EXPECT_FLOAT_EQ(out1->data()[1], 16.0f);
+
+  // Updating input data in place keeps pointers and shapes stable, so
+  // `xnn_setup_runtime_v2` is skipped while updated values are observed.
+  in1 = {0.5f, 1.0f, -1.0f};
+  ASSERT_TRUE(runner1->SetInput(x, in1).ok());
+  ASSERT_TRUE(runner1->Run().ok());
+  EXPECT_EQ(runner1->setup_count(), 1u);
+  out1 = runner1->ReadOutputAs<float>(y);
+  ASSERT_TRUE(out1.ok());
+  EXPECT_FLOAT_EQ(out1->data()[0], -0.5f);
+  EXPECT_FLOAT_EQ(out1->data()[1], 1.0f);
+
+  // Switching to a different input buffer pointer triggers re-setup.
+  std::vector<float> in2 = {2.0f, 1.0f, 0.0f};
+  ASSERT_TRUE(runner1->SetInput(x, in2).ok());
+  ASSERT_TRUE(runner1->Run().ok());
+  EXPECT_EQ(runner1->setup_count(), 2u);
+  out1 = runner1->ReadOutputAs<float>(y);
+  ASSERT_TRUE(out1.ok());
+  EXPECT_FLOAT_EQ(out1->data()[0], 4.0f);
+  EXPECT_FLOAT_EQ(out1->data()[1], 13.0f);
+
+  // Second runner shares the same threadpool safely.
+  ASSERT_TRUE(runner2->SetInput(x, in2).ok());
+  ASSERT_TRUE(runner2->Run().ok());
 }
 
 }  // namespace litert::tensor
