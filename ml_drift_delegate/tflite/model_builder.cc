@@ -6248,24 +6248,46 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
 
-    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
-    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
-
     const auto* params = static_cast<const TfLiteTransposeConvParams*>(
         tflite_node->builtin_data);
     if (!params) {
       return absl::InvalidArgumentError("Missing TfLiteTransposeConvParams.");
     }
 
-    const int runtime_inputs =
-        GetNumberOfRuntimeInputsForNode(context, tflite_node);
-    if (runtime_inputs == 2) {
+    const TfLiteTensor* input_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 2, &input_tensor));
+    if (tflite::IsConstantTensor(input_tensor)) {
+      return absl::InvalidArgumentError("input must be a runtime tensor.");
+    }
+    ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 2));
+    ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+
+    const TfLiteTensor* weights_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &weights_tensor));
+    if (!tflite::IsConstantTensor(weights_tensor)) {
       ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 1));
+      ABSL_RETURN_IF_ERROR(
+          CheckAllDimensions<::ml_drift::OHWI>(weights_tensor->dims));
     } else {
       ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
           dummy_weights;
       ABSL_RETURN_IF_ERROR(
           PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
+    }
+
+    if (tflite_node->inputs->size > 3 && tflite_node->inputs->data[3] >= 0) {
+      const TfLiteTensor* bias_tensor = nullptr;
+      ABSL_RETURN_IF_ERROR(
+          PreGetInputTensor(context, tflite_node, 3, &bias_tensor));
+      if (!tflite::IsConstantTensor(bias_tensor)) {
+        return absl::InvalidArgumentError("bias must be a constant tensor.");
+      }
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+          dummy_bias;
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadTensor(context, tflite_node, 3, &dummy_bias));
     }
 
     return absl::OkStatus();
@@ -6277,8 +6299,7 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     auto* node = graph->NewNode();
     node->operation.type =
         ToString(::ml_drift::OperationType::kConvolutionTransposed);
-    ::ml_drift::Value* input = reader->ReadValue(2);
-    graph->AddConsumer(node->id, input->id);
+    reader->AddInput(node, 2);
     reader->AddOutputs(node);
 
     const auto* params = static_cast<const TfLiteTransposeConvParams*>(
@@ -6288,13 +6309,12 @@ class TransposeConvBuiltinOperationParser : public TFLiteOperationParser {
     attr.stride =
         params ? ::ml_drift::HW(params->stride_height, params->stride_width)
                : ::ml_drift::HW(1, 1);
-    const int runtime_inputs = reader->GetNumberOfRuntimeInputs();
-    if (runtime_inputs == 2) {
+    if (!reader->IsConstantTensor(1)) {
       reader->AddInput(node, 1);
       auto weights_shape = graph->FindInputs(node->id)[1]->tensor.shape;
       attr.weights.shape = ::ml_drift::OHWI(weights_shape.b, weights_shape.h,
                                             weights_shape.w, weights_shape.c);
-    } else {  // runtime_inputs == 1;
+    } else {
       reader->ReadTensor(1, &attr.weights, ReadTensorFlags::kExtraBytes);
     }
     if (reader->IsNodeInputTensorPresent(3)) {
@@ -6314,12 +6334,38 @@ class TransposeConvCustomOperationParser : public TFLiteOperationParser {
                            const TfLiteRegistration* registration) final {
     ABSL_RETURN_IF_ERROR(tflite::CheckGpuDelegateCompatibility(
         context, tflite_node, registration));
+    const TfLiteTensor* input_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 0, &input_tensor));
+    if (tflite::IsConstantTensor(input_tensor)) {
+      return absl::InvalidArgumentError("input must be a runtime tensor.");
+    }
     ABSL_RETURN_IF_ERROR(PreCheckReadValue(context, tflite_node, 0));
     ABSL_RETURN_IF_ERROR(PreCheckOutputs(context, tflite_node));
+
+    const TfLiteTensor* weights_tensor = nullptr;
+    ABSL_RETURN_IF_ERROR(
+        PreGetInputTensor(context, tflite_node, 1, &weights_tensor));
+    if (!tflite::IsConstantTensor(weights_tensor)) {
+      return absl::InvalidArgumentError("weights must be a constant tensor.");
+    }
     ::ml_drift::Tensor<::ml_drift::OHWI, ::ml_drift::DataType::kFloat32>
         dummy_weights;
     ABSL_RETURN_IF_ERROR(
         PreCheckReadTensor(context, tflite_node, 1, &dummy_weights));
+
+    if (tflite_node->inputs->size > 2 && tflite_node->inputs->data[2] >= 0) {
+      const TfLiteTensor* bias_tensor = nullptr;
+      ABSL_RETURN_IF_ERROR(
+          PreGetInputTensor(context, tflite_node, 2, &bias_tensor));
+      if (!tflite::IsConstantTensor(bias_tensor)) {
+        return absl::InvalidArgumentError("bias must be a constant tensor.");
+      }
+      ::ml_drift::Tensor<::ml_drift::Linear, ::ml_drift::DataType::kFloat32>
+          dummy_bias;
+      ABSL_RETURN_IF_ERROR(
+          PreCheckReadTensor(context, tflite_node, 2, &dummy_bias));
+    }
     return absl::OkStatus();
   }
 

@@ -5149,6 +5149,157 @@ TEST(TransposeConvBuiltinOperationParserTest, TestIsSupported) {
           .ok());
 }
 
+TEST(TransposeConvBuiltinOperationParserTest,
+     RejectsConstantInputWithRuntimeBias) {
+  // Constant output_shape, constant weights, constant input, and runtime bias
+  // (with unallocated data.f == nullptr).
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTransposeConv,
+      /*op_version=*/3,
+      /*num_inputs=*/4,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  TfLiteTransposeConvParams* tf_options =
+      static_cast<TfLiteTransposeConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  // input[0] = output_shape (const int32), input[1] = weights (const),
+  // input[2] = input (const), input[3] = bias (runtime, unallocated).
+  context->ChangeTensorShape(1, {4});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  context->SetTensorType(3, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(4, {1});
+  delete[] context->tensor(4)->data.f;
+  context->tensor(4)->data.f = nullptr;
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_THAT(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("input must be a runtime tensor")));
+}
+
+TEST(TransposeConvBuiltinOperationParserTest, RejectsRuntimeBias) {
+  // Runtime input + constant weights + runtime bias has 2 runtime inputs total,
+  // which previously bypassed checks and crashed in Parse().
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTransposeConv,
+      /*op_version=*/3,
+      /*num_inputs=*/4,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  TfLiteTransposeConvParams* tf_options =
+      static_cast<TfLiteTransposeConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  context->ChangeTensorShape(1, {4});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(4, {1});
+  delete[] context->tensor(4)->data.f;
+  context->tensor(4)->data.f = nullptr;
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_THAT(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("bias must be a constant tensor")));
+}
+
+TEST(TransposeConvBuiltinOperationParserTest, RejectsInvalidConstantBias) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTransposeConv,
+      /*op_version=*/3,
+      /*num_inputs=*/4,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  TfLiteTransposeConvParams* tf_options =
+      static_cast<TfLiteTransposeConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  context->ChangeTensorShape(1, {4});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  // Non-linear 2D shape for constant bias.
+  context->ChangeTensorShape(4, {2, 2});
+  context->SetTensorType(4, kTfLiteFloat32, kTfLiteMmapRo);
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  EXPECT_FALSE(
+      parser
+          ->IsSupported(context.get(), context->node(), context->registration())
+          .ok());
+}
+
+TEST(TransposeConvBuiltinOperationParserTest,
+     SupportsAndParsesWithConstantBias) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTransposeConv,
+      /*op_version=*/3,
+      /*num_inputs=*/4,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  TfLiteTransposeConvParams* tf_options =
+      static_cast<TfLiteTransposeConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  tf_options->padding = kTfLitePaddingSame;
+  context->ChangeTensorShape(1, {4});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  context->ChangeTensorShape(4, {1});
+  context->SetTensorType(4, kTfLiteFloat32, kTfLiteMmapRo);
+  context->tensor(4)->data.f[0] = 2.5f;
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 1);
+  const auto& attr = std::any_cast<::ml_drift::ConvolutionTransposedAttributes>(
+      graph.nodes()[0]->operation.attributes);
+  EXPECT_EQ(attr.bias.shape, ::ml_drift::Linear(1));
+  ASSERT_EQ(attr.bias.data.size(), 1);
+  EXPECT_FLOAT_EQ(attr.bias.data[0], 2.5f);
+}
+
+TEST(TransposeConvBuiltinOperationParserTest,
+     SupportsAndParsesRuntimeWeightsWithConstantBias) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinTransposeConv,
+      /*op_version=*/3,
+      /*num_inputs=*/4,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  TfLiteTransposeConvParams* tf_options =
+      static_cast<TfLiteTransposeConvParams*>(context->node()->builtin_data);
+  tf_options->stride_width = 1;
+  tf_options->stride_height = 1;
+  tf_options->padding = kTfLitePaddingSame;
+  context->ChangeTensorShape(1, {4});
+  context->SetTensorType(1, kTfLiteInt32, kTfLiteMmapRo);
+  // weights (tensor 2) and input (tensor 3) remain kTfLiteArenaRw.
+  context->ChangeTensorShape(4, {1});
+  context->SetTensorType(4, kTfLiteFloat32, kTfLiteMmapRo);
+  context->tensor(4)->data.f[0] = 3.0f;
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+  ASSERT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
+
+  ::ml_drift::GraphFloat32 graph;
+  absl::flat_hash_map<int, ::ml_drift::Value*> tensor_to_value;
+  ObjectReader reader(&graph, context.get(), context->node(), &tensor_to_value);
+  parser->Parse(context->node(), context->registration(), &graph, &reader);
+  ASSERT_EQ(graph.nodes().size(), 1);
+  EXPECT_EQ(graph.FindInputs(graph.nodes()[0]->id).size(), 2);
+  const auto& attr = std::any_cast<::ml_drift::ConvolutionTransposedAttributes>(
+      graph.nodes()[0]->operation.attributes);
+  EXPECT_EQ(attr.bias.shape, ::ml_drift::Linear(1));
+  ASSERT_EQ(attr.bias.data.size(), 1);
+  EXPECT_FLOAT_EQ(attr.bias.data[0], 3.0f);
+}
+
 TEST(TransposeConvCustomOperationParserTest, TestIsSupported) {
   // Invalid num_inputs
   auto context = std::make_unique<StubTfLiteContext>(
@@ -5181,6 +5332,7 @@ TEST(TransposeConvCustomOperationParserTest, TestIsSupported) {
       /*num_inputs=*/2,
       /*shape=*/std::vector<int>({1, 1, 1, 1}));
   context->registration()->custom_name = "Convolution2DTransposeBias";
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
   TfLiteTransposeConvParams tf_options;
   context->node()->custom_initial_data = &tf_options;
   tf_options.stride_width = 0;
@@ -5196,6 +5348,53 @@ TEST(TransposeConvCustomOperationParserTest, TestIsSupported) {
       parser
           ->IsSupported(context.get(), context->node(), context->registration())
           .ok());
+}
+
+TEST(TransposeConvCustomOperationParserTest,
+     RejectsConstantInputRuntimeWeightsAndRuntimeBias) {
+  auto context = std::make_unique<StubTfLiteContext>(
+      kTfLiteBuiltinCustom,
+      /*op_version=*/1,
+      /*num_inputs=*/3,
+      /*shape=*/std::vector<int>({1, 1, 1, 1}));
+  context->registration()->custom_name = "Convolution2DTransposeBias";
+  TfLiteTransposeConvParams tf_options;
+  tf_options.stride_width = 1;
+  tf_options.stride_height = 1;
+  tf_options.padding = kTfLitePaddingSame;
+  context->node()->custom_initial_data = &tf_options;
+  context->ChangeTensorShape(3, {1});
+
+  auto parser = NewOperationParser(context->node(), context->registration());
+
+  // Runtime weights rejected.
+  EXPECT_THAT(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("weights must be a constant tensor")));
+
+  // Constant weights + runtime bias rejected.
+  context->SetTensorType(2, kTfLiteFloat32, kTfLiteMmapRo);
+  delete[] context->tensor(3)->data.f;
+  context->tensor(3)->data.f = nullptr;
+  EXPECT_THAT(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("bias must be a constant tensor")));
+
+  // Constant input rejected even when weights and bias are constant.
+  context->ChangeTensorShape(3, {1});
+  context->SetTensorType(3, kTfLiteFloat32, kTfLiteMmapRo);
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteMmapRo);
+  EXPECT_THAT(parser->IsSupported(context.get(), context->node(),
+                                  context->registration()),
+              StatusIs(absl::StatusCode::kInvalidArgument,
+                       HasSubstr("input must be a runtime tensor")));
+
+  // Runtime input + constant weights + constant bias succeeds.
+  context->SetTensorType(1, kTfLiteFloat32, kTfLiteArenaRw);
+  EXPECT_OK(parser->IsSupported(context.get(), context->node(),
+                                context->registration()));
 }
 
 TEST(SpaceToDepthOperationParserTest, TestIsSupported) {
