@@ -327,6 +327,11 @@ absl::Status LiteRtOpSelector::GPUSubgraphFromGraph(
     const std::set<::ml_drift::NodeId>& consumed_nodes,
     std::set<::ml_drift::NodeId>* new_consumed_nodes,
     ::ml_drift::GpuModelBuilder* model_builder) {
+  if (TryBlockFfwEdgeFc(create_info_, gpu_info_, graph, first_node_id,
+                        consumed_nodes, new_consumed_nodes, model_builder)
+          .ok()) {
+    return absl::OkStatus();
+  }
   return ::ml_drift::GPUSubgraphFromGraph(create_info_.hints, gpu_info_, graph,
                                           first_node_id, consumed_nodes,
                                           new_consumed_nodes, model_builder);

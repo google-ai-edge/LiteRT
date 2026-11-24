@@ -20,8 +20,11 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
+#include <set>
 #include <string>
 #include <utility>
+#include <variant>
 #include <vector>
 
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -34,12 +37,14 @@
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/flops_util.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernel_info.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected.h"  // from @ml_drift
 #include "ml_drift/common/kernels/fully_connected_util.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/model_hints.h"  // from @ml_drift
 #include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
@@ -65,9 +70,12 @@ using ::ml_drift::ExternalWeights;
 using ::ml_drift::GpuInfo;
 using ::ml_drift::GpuModelBuilder;
 using ::ml_drift::GPUOperation;
+using ::ml_drift::GraphFloat32;
 using ::ml_drift::Node;
+using ::ml_drift::NodeId;
 using ::ml_drift::OHWI;
 using ::ml_drift::OperationDef;
+using ::ml_drift::OperationType;
 using ::ml_drift::QuantizeAndDequantizeAttributes;
 using ::ml_drift::TensorDescriptor;
 using ::ml_drift::TensorStorageType;
@@ -681,6 +689,257 @@ void AppendEdgeFcPartLoopBody(const EdgeFcLoopCodegenParams& params,
   *code += "  }\n";
 }
 
+absl::Status EdgeFcNotMatched() {
+  return absl::UnimplementedError("Not a fusible BlockFfw edge stage.");
+}
+
+bool IsOpName(absl::string_view op_name, OperationType type) {
+  return op_name == ToString(type);
+}
+
+bool IsQuantizedFcOpName(absl::string_view op_name) {
+  return IsOpName(op_name, OperationType::kFullyConnectedInt2) ||
+         IsOpName(op_name, OperationType::kFullyConnectedInt4) ||
+         IsOpName(op_name, OperationType::kFullyConnectedInt8);
+}
+
+template <typename... Ts>
+OHWI GetWeightsShape(const std::variant<Ts...>& weights) {
+  return std::visit([](const auto& w) { return w.shape; }, weights);
+}
+
+template <typename TensorT>
+OHWI GetWeightsShape(const TensorT& weights) {
+  return weights.shape;
+}
+
+struct QuantizedFcAttrSpec {
+  OHWI weights_shape;
+  OHWI scale_shape;
+  bool has_zp = false;
+  WeightsDescription weights_desc;
+};
+
+template <typename FcAttrT, typename DescFn>
+std::optional<QuantizedFcAttrSpec> ExtractFcAttrSpec(
+    const std::any& attributes, const GpuInfo& gpu_info, bool prefer_textures,
+    DescFn get_weights_desc) {
+  const auto* attr = std::any_cast<FcAttrT>(&attributes);
+  if (attr == nullptr || !attr->bias.data.empty() || attr->bias.shape.v != 0) {
+    return std::nullopt;
+  }
+  const OHWI weights_shape = GetWeightsShape(attr->weights);
+  return QuantizedFcAttrSpec{
+      .weights_shape = weights_shape,
+      .scale_shape = attr->scale.shape,
+      .has_zp = attr->zero_point.shape.o != 0,
+      .weights_desc =
+          get_weights_desc(gpu_info, weights_shape, prefer_textures),
+  };
+}
+
+std::optional<GpuModelBuilder::Weights> ExtractQuantizedFcWeightsFromSpec(
+    const GpuInfo& gpu_info, bool prefer_textures, absl::string_view op_name,
+    const std::any& attributes, const std::vector<ValueId>& input_ids,
+    const GpuModelBuilder& builder) {
+  if (input_ids.size() != 3 && input_ids.size() != 4) {
+    return std::nullopt;
+  }
+
+  std::optional<QuantizedFcAttrSpec> fc_spec;
+  if (IsOpName(op_name, OperationType::kFullyConnectedInt2)) {
+    fc_spec = ExtractFcAttrSpec<::ml_drift::FullyConnectedInt2Attributes>(
+        attributes, gpu_info, prefer_textures,
+        ::ml_drift::GetFullyConnectedInt2WeightsDesc);
+  } else if (IsOpName(op_name, OperationType::kFullyConnectedInt4)) {
+    fc_spec = ExtractFcAttrSpec<::ml_drift::FullyConnectedInt4Attributes>(
+        attributes, gpu_info, prefer_textures,
+        ::ml_drift::GetFullyConnectedInt4WeightsDesc);
+  } else if (IsOpName(op_name, OperationType::kFullyConnectedInt8)) {
+    fc_spec = ExtractFcAttrSpec<::ml_drift::FullyConnectedInt8Attributes>(
+        attributes, gpu_info, prefer_textures,
+        ::ml_drift::GetFullyConnectedInt8WeightsDesc);
+  } else {
+    return std::nullopt;
+  }
+  if (!fc_spec.has_value()) return std::nullopt;
+
+  if (fc_spec->has_zp ? (input_ids.size() != 4) : (input_ids.size() != 3)) {
+    return std::nullopt;
+  }
+  auto w_handle = builder.GetTensor(input_ids[1]);
+  auto s_handle = builder.GetTensor(input_ids[2]);
+  if (!w_handle.ok() || !s_handle.ok()) return std::nullopt;
+
+  GpuModelBuilder::TensorHandle zp_handle;
+  GpuModelBuilder::TensorHandle* zp_ptr = nullptr;
+  if (fc_spec->has_zp) {
+    auto zp_tensor = builder.GetTensor(input_ids[3]);
+    if (!zp_tensor.ok()) return std::nullopt;
+    zp_handle = *std::move(zp_tensor);
+    zp_ptr = &zp_handle;
+  }
+
+  return ::ml_drift::CreateExternalWeights(
+      *w_handle, fc_spec->weights_desc, fc_spec->weights_shape,
+      fc_spec->scale_shape, &(*s_handle), zp_ptr, /*sum_i=*/nullptr);
+}
+
+std::optional<GpuModelBuilder::Weights> ExtractQuantizedFcWeights(
+    const GpuInfo& gpu_info, bool prefer_textures, const GraphFloat32& graph,
+    const Node& fc_node, const GpuModelBuilder& builder) {
+  const std::vector<Value*> inputs = graph.FindInputs(fc_node.id);
+  for (size_t i = 1; i < inputs.size(); ++i) {
+    if (graph.FindProducer(inputs[i]->id) != nullptr) return std::nullopt;
+  }
+  return ExtractQuantizedFcWeightsFromSpec(
+      gpu_info, prefer_textures, fc_node.operation.type,
+      fc_node.operation.attributes, GetValueIds(inputs), builder);
+}
+
+struct GraphFloat32EdgeAdapter {
+  using GraphT = GraphFloat32;
+  using OpT = Node;
+  using OpIdT = NodeId;
+  using TensorT = Value;
+
+  static const OpT* GetOp(const GraphT& g, OpIdT id) { return g.GetNode(id); }
+  static OpIdT GetOpId(const OpT* op) { return op->id; }
+  static absl::string_view OpName(const OpT* op) { return op->operation.type; }
+  static const std::any& OpAttributes(const OpT* op) {
+    return op->operation.attributes;
+  }
+  static ValueId TensorValueId(const TensorT* t) { return t->id; }
+  static BHWC TensorShape(const TensorT* t) { return t->tensor.shape; }
+  static const OpT* FindProducer(const GraphT& g, const TensorT* t) {
+    return g.FindProducer(t->id);
+  }
+  static std::vector<const TensorT*> FindInputs(const GraphT& g,
+                                                const OpT* op) {
+    const std::vector<Value*> ins = g.FindInputs(op->id);
+    return std::vector<const TensorT*>(ins.begin(), ins.end());
+  }
+  static const TensorT* SingleInput(const GraphT& g, const OpT* op) {
+    if (op == nullptr) return nullptr;
+    const std::vector<Value*> ins = g.FindInputs(op->id);
+    return ins.size() == 1 ? ins[0] : nullptr;
+  }
+  static const TensorT* SingleOutput(const GraphT& g, const OpT* op) {
+    if (op == nullptr) return nullptr;
+    const std::vector<Value*> outs = g.FindOutputs(op->id);
+    return outs.size() == 1 ? outs[0] : nullptr;
+  }
+  static const OpT* SingleConsumer(const GraphT& g, const TensorT* t) {
+    if (t == nullptr || g.IsGraphOutput(t->id)) return nullptr;
+    const std::vector<Node*> consumers = g.FindConsumers(t->id);
+    return consumers.size() == 1 ? consumers[0] : nullptr;
+  }
+  static std::optional<GpuModelBuilder::Weights> ExtractFcWeights(
+      const GpuInfo& gpu_info, bool prefer_textures, const GraphT& g,
+      const OpT& fc_op, const GpuModelBuilder& builder) {
+    return ExtractQuantizedFcWeights(gpu_info, prefer_textures, g, fc_op,
+                                     builder);
+  }
+};
+
+template <typename Adapter>
+struct MatchedEdgeBranch {
+  const typename Adapter::TensorT* root = nullptr;
+  bool saw_first = false;
+  GpuModelBuilder::Weights part_weights;
+  std::vector<QuantizeAndDequantizeAttributes> src_qdqs;
+  std::vector<QuantizeAndDequantizeAttributes> dst_qdqs;
+  std::vector<const typename Adapter::OpT*> ops;
+  std::vector<const typename Adapter::TensorT*> interm_tensors;
+};
+
+// Matches one partition branch `UnpackPart(part_idx, num_parts) -> [QDQ] ->
+// Quantized FC -> [QDQ]` feeding `pack_op`'s `part_idx`-th input. Strictly
+// read-only (`const GpuModelBuilder&`); produces no side effects on failure.
+template <typename Adapter>
+std::optional<MatchedEdgeBranch<Adapter>> MatchEdgeBranch(
+    const typename Adapter::GraphT& graph, const typename Adapter::OpT* pack_op,
+    const typename Adapter::OpT* first_op,
+    const typename Adapter::TensorT* branch_tensor, int part_idx, int num_parts,
+    const GpuInfo& gpu_info, bool prefer_textures,
+    const GpuModelBuilder& model_builder) {
+  using OpT = typename Adapter::OpT;
+  using TensorT = typename Adapter::TensorT;
+  auto is_qdq = [](const OpT* op) {
+    return op != nullptr && IsOpName(Adapter::OpName(op),
+                                     OperationType::kQuantizeAndDequantize);
+  };
+
+  if (Adapter::SingleConsumer(graph, branch_tensor) != pack_op) {
+    return std::nullopt;
+  }
+  MatchedEdgeBranch<Adapter> result;
+  result.interm_tensors.push_back(branch_tensor);
+  const OpT* prod = Adapter::FindProducer(graph, branch_tensor);
+  if (is_qdq(prod)) {
+    const auto* qdq_attr = std::any_cast<QuantizeAndDequantizeAttributes>(
+        &Adapter::OpAttributes(prod));
+    if (qdq_attr == nullptr) return std::nullopt;
+    result.dst_qdqs.push_back(*qdq_attr);
+    result.ops.push_back(prod);
+    branch_tensor = Adapter::SingleInput(graph, prod);
+    if (Adapter::SingleConsumer(graph, branch_tensor) != prod) {
+      return std::nullopt;
+    }
+    result.interm_tensors.push_back(branch_tensor);
+    prod = Adapter::FindProducer(graph, branch_tensor);
+  }
+
+  if (prod == nullptr || !IsQuantizedFcOpName(Adapter::OpName(prod))) {
+    return std::nullopt;
+  }
+  std::optional<GpuModelBuilder::Weights> part_weights =
+      Adapter::ExtractFcWeights(gpu_info, prefer_textures, graph, *prod,
+                                model_builder);
+  if (!part_weights.has_value()) {
+    return std::nullopt;
+  }
+  result.part_weights = *std::move(part_weights);
+  result.ops.push_back(prod);
+  const std::vector<const TensorT*> fc_ins = Adapter::FindInputs(graph, prod);
+  if (fc_ins.empty()) return std::nullopt;
+  branch_tensor = fc_ins[0];
+  if (Adapter::SingleConsumer(graph, branch_tensor) != prod) {
+    return std::nullopt;
+  }
+  result.interm_tensors.push_back(branch_tensor);
+  prod = Adapter::FindProducer(graph, branch_tensor);
+
+  if (is_qdq(prod)) {
+    const auto* qdq_attr = std::any_cast<QuantizeAndDequantizeAttributes>(
+        &Adapter::OpAttributes(prod));
+    if (qdq_attr == nullptr) return std::nullopt;
+    result.src_qdqs.push_back(*qdq_attr);
+    result.ops.push_back(prod);
+    branch_tensor = Adapter::SingleInput(graph, prod);
+    if (Adapter::SingleConsumer(graph, branch_tensor) != prod) {
+      return std::nullopt;
+    }
+    result.interm_tensors.push_back(branch_tensor);
+    prod = Adapter::FindProducer(graph, branch_tensor);
+  }
+
+  if (prod == nullptr || Adapter::OpName(prod) != kBlockFfwUnpackPartType) {
+    return std::nullopt;
+  }
+  const auto* unpack_attr =
+      std::any_cast<BlockFfwUnpackPartAttributes>(&Adapter::OpAttributes(prod));
+  if (unpack_attr == nullptr || unpack_attr->num_parts != num_parts ||
+      unpack_attr->part != part_idx) {
+    return std::nullopt;
+  }
+  result.saw_first = (prod == first_op);
+  result.ops.push_back(prod);
+  result.root = Adapter::SingleInput(graph, prod);
+  if (result.root == nullptr) return std::nullopt;
+  return result;
+}
+
 absl::Status AddBlockFfwUnpackPartImpl(const OperationDef& op_def,
                                        const std::any& attributes,
                                        const std::vector<ValueId>& src_ids,
@@ -801,6 +1060,18 @@ absl::Status AddBlockFfwSiluImpl(const OperationDef& op_def,
   model_builder->AddGpuOperation(src_ids, dst_ids, CreateSiluOperation(op_def),
                                  std::string(kBlockFfwSiluType));
   return absl::OkStatus();
+}
+
+bool SameQdqList(const std::vector<QuantizeAndDequantizeAttributes>& a,
+                 const std::vector<QuantizeAndDequantizeAttributes>& b) {
+  if (a.size() != b.size()) return false;
+  for (size_t i = 0; i < a.size(); ++i) {
+    if (a[i].min != b[i].min || a[i].max != b[i].max ||
+        a[i].scale != b[i].scale) {
+      return false;
+    }
+  }
+  return true;
 }
 
 }  // namespace
@@ -1197,6 +1468,164 @@ absl::Status AddBlockFfwEdgeFc(GpuModelBuilder* builder,
   builder->AddGpuOperation(input_ids, std::vector<ValueId>{dst.id},
                            std::move(op), "block_ffw_edge_fc");
   return absl::OkStatus();
+}
+
+namespace {
+
+// Matches and fuses `K1` parallel branches of
+// `UnpackPart -> [QDQ] -> Quantized FC -> [QDQ]` feeding `PackParts -> [QDQ]`
+// into a single `BlockFfwEdgeFcOp` dispatch for single-token decode
+// (`B == 1, W == 1`). All inspection before `AddBlockFfwEdgeFc` uses
+// `const GpuModelBuilder&`, so a rejected match has zero side effects.
+template <typename Adapter, typename ConsumedSetT>
+absl::Status TryBlockFfwEdgeFcImpl(
+    const ::ml_drift::CreateGpuModelInfo& create_info, const GpuInfo& gpu_info,
+    const typename Adapter::GraphT& graph,
+    typename Adapter::OpIdT first_op_id, const ConsumedSetT& consumed_ops,
+    ConsumedSetT* new_consumed_ops, GpuModelBuilder* model_builder) {
+  if (new_consumed_ops == nullptr || model_builder == nullptr) {
+    return absl::InvalidArgumentError(
+        "Null consumed set or GpuModelBuilder.");
+  }
+  using OpT = typename Adapter::OpT;
+  using TensorT = typename Adapter::TensorT;
+  auto is_qdq = [](const OpT* op) {
+    return op != nullptr && IsOpName(Adapter::OpName(op),
+                                     OperationType::kQuantizeAndDequantize);
+  };
+
+  const OpT* first = Adapter::GetOp(graph, first_op_id);
+  if (first == nullptr || consumed_ops.count(Adapter::GetOpId(first)) != 0 ||
+      Adapter::OpName(first) != kBlockFfwUnpackPartType) {
+    return EdgeFcNotMatched();
+  }
+  const bool prefer_textures =
+      create_info.hints.Check(::ml_drift::ModelHints::kPreferTextureWeights);
+
+  const OpT* cur =
+      Adapter::SingleConsumer(graph, Adapter::SingleOutput(graph, first));
+  if (is_qdq(cur)) {
+    cur = Adapter::SingleConsumer(graph, Adapter::SingleOutput(graph, cur));
+  }
+  if (cur == nullptr || !IsQuantizedFcOpName(Adapter::OpName(cur))) {
+    return EdgeFcNotMatched();
+  }
+  cur = Adapter::SingleConsumer(graph, Adapter::SingleOutput(graph, cur));
+  if (is_qdq(cur)) {
+    cur = Adapter::SingleConsumer(graph, Adapter::SingleOutput(graph, cur));
+  }
+  if (cur == nullptr || Adapter::OpName(cur) != kBlockFfwPackPartsType) {
+    return EdgeFcNotMatched();
+  }
+
+  const OpT* pack_op = cur;
+  const auto* pack_attr = std::any_cast<BlockFfwPackPartsAttributes>(
+      &Adapter::OpAttributes(pack_op));
+  const std::vector<const TensorT*> pack_inputs =
+      Adapter::FindInputs(graph, pack_op);
+  const TensorT* dst_tensor = Adapter::SingleOutput(graph, pack_op);
+  if (pack_attr == nullptr || pack_attr->num_parts < 1 ||
+      static_cast<int>(pack_inputs.size()) != pack_attr->num_parts ||
+      dst_tensor == nullptr) {
+    return EdgeFcNotMatched();
+  }
+
+  const int num_parts = pack_attr->num_parts;
+  BlockFfwEdgeFcSpec spec;
+  spec.num_parts = num_parts;
+  spec.part_weights.resize(num_parts);
+  std::vector<const OpT*> ops = {pack_op};
+  std::vector<const TensorT*> interm_tensors;
+  const TensorT* root = nullptr;
+  bool saw_first = false;
+  const GpuModelBuilder& readonly_builder = *model_builder;
+
+  for (int k = 0; k < num_parts; ++k) {
+    std::optional<MatchedEdgeBranch<Adapter>> branch = MatchEdgeBranch<Adapter>(
+        graph, pack_op, first, pack_inputs[k], k, num_parts, gpu_info,
+        prefer_textures, readonly_builder);
+    if (!branch.has_value()) return EdgeFcNotMatched();
+    spec.part_weights[k] = std::move(branch->part_weights);
+    ops.insert(ops.end(), branch->ops.begin(), branch->ops.end());
+    interm_tensors.insert(interm_tensors.end(), branch->interm_tensors.begin(),
+                          branch->interm_tensors.end());
+    saw_first = saw_first || branch->saw_first;
+    if (k == 0) {
+      root = branch->root;
+      spec.src_qdqs = std::move(branch->src_qdqs);
+      spec.dst_qdqs = std::move(branch->dst_qdqs);
+    } else if (branch->root != root ||
+               !SameQdqList(spec.src_qdqs, branch->src_qdqs) ||
+               !SameQdqList(spec.dst_qdqs, branch->dst_qdqs)) {
+      return EdgeFcNotMatched();
+    }
+  }
+
+  if (!saw_first || root == nullptr) {
+    return EdgeFcNotMatched();
+  }
+  const BHWC root_shape = Adapter::TensorShape(root);
+  if (root_shape.b != 1 || root_shape.w != 1) {
+    return EdgeFcNotMatched();
+  }
+
+  // Absorb optional trailing QDQ after PackParts.
+  if (const OpT* next_qdq = Adapter::SingleConsumer(graph, dst_tensor);
+      is_qdq(next_qdq) &&
+      consumed_ops.count(Adapter::GetOpId(next_qdq)) == 0 &&
+      Adapter::SingleInput(graph, next_qdq) == dst_tensor) {
+    if (const auto* qdq_attr = std::any_cast<QuantizeAndDequantizeAttributes>(
+            &Adapter::OpAttributes(next_qdq));
+        qdq_attr != nullptr) {
+      if (const TensorT* next_out = Adapter::SingleOutput(graph, next_qdq);
+          next_out != nullptr) {
+        interm_tensors.push_back(dst_tensor);
+        ops.push_back(next_qdq);
+        spec.dst_qdqs.push_back(*qdq_attr);
+        dst_tensor = next_out;
+      }
+    }
+  }
+
+  for (const OpT* op : ops) {
+    if (consumed_ops.count(Adapter::GetOpId(op)) != 0) {
+      return EdgeFcNotMatched();
+    }
+  }
+  auto src_handle = readonly_builder.GetTensor(Adapter::TensorValueId(root));
+  auto dst_handle =
+      readonly_builder.GetTensor(Adapter::TensorValueId(dst_tensor));
+  if (!src_handle.ok() || !dst_handle.ok()) return EdgeFcNotMatched();
+  for (const TensorT* t : interm_tensors) {
+    auto th = readonly_builder.GetTensor(Adapter::TensorValueId(t));
+    if (!th.ok() || th->tensor_desc.GetDataType() !=
+                        src_handle->tensor_desc.GetDataType()) {
+      return EdgeFcNotMatched();
+    }
+  }
+
+  // All matching above is strictly read-only (`const GpuModelBuilder&`), and
+  // `AddBlockFfwEdgeFc` only mutates `model_builder` on its final
+  // `AddGpuOperation` call once all validation succeeds.
+  if (!AddBlockFfwEdgeFc(model_builder, *src_handle, *dst_handle, spec).ok()) {
+    return EdgeFcNotMatched();
+  }
+  for (const OpT* op : ops) {
+    new_consumed_ops->insert(Adapter::GetOpId(op));
+  }
+  return absl::OkStatus();
+}
+
+}  // namespace
+
+absl::Status TryBlockFfwEdgeFc(
+    const ::ml_drift::CreateGpuModelInfo& create_info, const GpuInfo& gpu_info,
+    const GraphFloat32& graph, NodeId first_node_id,
+    const std::set<NodeId>& consumed_nodes,
+    std::set<NodeId>* new_consumed_nodes, GpuModelBuilder* model_builder) {
+  return TryBlockFfwEdgeFcImpl<GraphFloat32EdgeAdapter>(
+      create_info, gpu_info, graph, first_node_id, consumed_nodes,
+      new_consumed_nodes, model_builder);
 }
 
 }  // namespace litert::ml_drift

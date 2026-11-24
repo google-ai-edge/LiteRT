@@ -332,7 +332,7 @@ BlockedFfwTestCase MakeBlockedFfwTestCase(int tokens,
 absl::Status RunBlockedFfwEndToEndTest(
     ::ml_drift::TestExecutionEnvironment& env, CalculationsPrecision precision,
     TensorStorageType storage, int tokens, bool distinct_adjacent_scales,
-    int k1 = 2, int k2 = 4) {
+    int k1 = 2, int k2 = 4, bool expect_four_dispatches = true) {
   const DataType dtype = precision == CalculationsPrecision::kF16
                              ? DataType::kFloat16
                              : DataType::kFloat32;
@@ -442,7 +442,7 @@ absl::Status RunBlockedFfwEndToEndTest(
   LiteRtOpSelector selector(&create_info, &gpu_info);
   std::set<::ml_drift::NodeId> consumed_nodes;
   for (const Node* node : graph.nodes()) {
-    if (consumed_nodes.contains(node->id)) continue;
+    if (consumed_nodes.count(node->id) != 0) continue;
     std::set<::ml_drift::NodeId> new_consumed;
     if (selector
             .GPUSubgraphFromGraph(graph, node->id, consumed_nodes,
@@ -471,6 +471,12 @@ absl::Status RunBlockedFfwEndToEndTest(
   ABSL_RETURN_IF_ERROR(builder.GetGpuModel(std::vector<ValueId>{x_val->id},
                                            std::vector<ValueId>{out_val->id},
                                            &gpu_model));
+
+  if (tokens == 1 && expect_four_dispatches) {
+    // Single-token decode must fuse U1 and D2 edge subgraphs + all QDQs + SiLU
+    // down to exactly 4 GPU kernel dispatches.
+    EXPECT_EQ(gpu_model.nodes.size(), 4);
+  }
 
   ::ml_drift::TensorFloat32 src_cpu;
   src_cpu.shape = BHWC(1, 1, tokens, tc.d_model);
@@ -747,16 +753,32 @@ TEST_P(BlockFfwKernelTest, SinglePartK1K2MatchesReference) {
                                       /*k1=*/1, /*k2=*/1));
 }
 
-TEST_P(BlockFfwKernelTest, DecodeMatchesReference) {
+TEST_P(BlockFfwKernelTest, DecodeFusesToFourDispatches) {
   ASSERT_OK(RunBlockedFfwEndToEndTest(*exec_env, precision(), storage(),
                                       /*tokens=*/1,
                                       /*distinct_adjacent_scales=*/false));
 }
 
-TEST_P(BlockFfwKernelTest, DecodeWithDistinctScalesMatchesReference) {
+TEST_P(BlockFfwKernelTest, DecodeWithDistinctScalesFusesToFourDispatches) {
   ASSERT_OK(RunBlockedFfwEndToEndTest(*exec_env, precision(), storage(),
                                       /*tokens=*/1,
                                       /*distinct_adjacent_scales=*/true));
+}
+
+TEST_P(BlockFfwKernelTest, DecodeSinglePartK1OneFusesToFourDispatches) {
+  ASSERT_OK(RunBlockedFfwEndToEndTest(*exec_env, precision(), storage(),
+                                      /*tokens=*/1,
+                                      /*distinct_adjacent_scales=*/false,
+                                      /*k1=*/1, /*k2=*/2,
+                                      /*expect_four_dispatches=*/true));
+}
+
+TEST_P(BlockFfwKernelTest, DecodeLargeK1BindingLimitFallbackMatchesReference) {
+  ASSERT_OK(RunBlockedFfwEndToEndTest(*exec_env, precision(), storage(),
+                                      /*tokens=*/1,
+                                      /*distinct_adjacent_scales=*/false,
+                                      /*k1=*/8, /*k2=*/2,
+                                      /*expect_four_dispatches=*/false));
 }
 
 TEST_P(BlockFfwKernelTest, PrefillMultiTokenMatchesReference) {
@@ -1284,6 +1306,377 @@ TEST(BlockFfwEdgeFcValidationTest,
     EXPECT_EQ(
         AddBlockFfwEdgeFc(&mali_builder, mali_src, mali_dst, mali_spec).code(),
         absl::StatusCode::kUnimplemented);
+  }
+}
+
+struct TryEdgeGraphOptions {
+  int k1 = 2;
+  int tokens = 1;
+  DataType weight_type = DataType::kInt2;
+  bool has_zero_point = true;
+  bool mismatch_src_qdq = false;
+  bool mismatch_dst_qdq = false;
+  bool extra_consumer_after_unpack = false;
+  bool extra_consumer_after_fc = false;
+  bool pack_out_is_graph_output = false;
+  bool trailing_qdq = true;
+  bool trailing_qdq_extra_input = false;
+  bool bias_with_data = false;
+  bool bias_shape_without_data = false;
+  bool produced_weight = false;
+  bool swap_unpack_parts = false;
+  int max_storage_buffers = 32;
+};
+
+struct TryEdgeMatchResult {
+  absl::Status status;
+  std::set<::ml_drift::NodeId> consumed;
+  ::ml_drift::NodeId trailing_qdq_id = 0;
+  size_t builder_nodes = 0;
+};
+
+TryEdgeMatchResult RunSyntheticTryBlockFfwEdgeFc(
+    const TryEdgeGraphOptions& opts) {
+  GpuInfo gpu_info;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  gpu_info.webgpu_info.max_storage_buffers_per_shader_stage =
+      opts.max_storage_buffers;
+  gpu_info.webgpu_info.max_storage_textures_per_shader_stage = 16;
+
+  GraphFloat32 graph;
+  absl::flat_hash_map<ValueId, TensorDescriptor> runtime_tensors;
+  absl::flat_hash_map<ValueId, TensorDescriptor> const_tensors;
+
+  auto add_rt = [&](const BHWC& shape) {
+    Value* v = AddGraphValue(&graph, DataType::kFloat32, shape);
+    TensorDescriptor desc(DataType::kFloat32, TensorStorageType::kBuffer,
+                          ::ml_drift::Layout::kHWC);
+    desc.SetBHWCShape(shape);
+    runtime_tensors[v->id] = std::move(desc);
+    return v;
+  };
+  auto add_const = [&](const BHWC& shape, DataType dt) {
+    Value* v = AddGraphValue(&graph, dt, shape);
+    TensorDescriptor desc(dt, TensorStorageType::kBuffer,
+                          ::ml_drift::Layout::kLinear);
+    desc.SetBHWCShape(shape);
+    const_tensors[v->id] = std::move(desc);
+    return v;
+  };
+
+  Value* x_val = add_rt(BHWC(1, 1, opts.tokens, opts.k1 * 8));
+  std::vector<Value*> parts(opts.k1);
+  ::ml_drift::NodeId first_node_id = 0;
+
+  for (int k = 0; k < opts.k1; ++k) {
+    Value* unp_out = add_rt(BHWC(1, 1, opts.tokens, 8));
+    Node* unp = graph.NewNode();
+    if (k == 0) first_node_id = unp->id;
+    unp->operation.type = kBlockFfwUnpackPartType;
+    const int part_idx =
+        (opts.swap_unpack_parts && opts.k1 == 2) ? (1 - k) : k;
+    unp->operation.attributes =
+        BlockFfwUnpackPartAttributes{.part = part_idx, .num_parts = opts.k1};
+    graph.AddConsumer(unp->id, x_val->id);
+    graph.SetProducer(unp->id, unp_out->id);
+
+    if (opts.extra_consumer_after_unpack && k == 0) {
+      Value* sink = add_rt(BHWC(1, 1, opts.tokens, 8));
+      Node* extra = graph.NewNode();
+      extra->operation.type = kBlockFfwSiluType;
+      graph.AddConsumer(extra->id, unp_out->id);
+      graph.SetProducer(extra->id, sink->id);
+    }
+
+    const float src_sc = (opts.mismatch_src_qdq && k == 1) ? 0.03f : 0.025f;
+    Value* q_in = add_rt(BHWC(1, 1, opts.tokens, 8));
+    Node* q_in_n = graph.NewNode();
+    q_in_n->operation.type = ToString(OperationType::kQuantizeAndDequantize);
+    q_in_n->operation.attributes = QuantizeAndDequantizeAttributes{
+        .min = -128.0f * src_sc, .max = 127.0f * src_sc, .scale = src_sc};
+    graph.AddConsumer(q_in_n->id, unp_out->id);
+    graph.SetProducer(q_in_n->id, q_in->id);
+
+    Value* w_val = add_const(BHWC(1, 1, 1, 16), DataType::kUint32);
+    if (opts.produced_weight && k == 0) {
+      Node* prod = graph.NewNode();
+      prod->operation.type = ToString(OperationType::kConstant);
+      graph.SetProducer(prod->id, w_val->id);
+    }
+    Value* s_val = add_const(BHWC(1, 1, 1, 8), DataType::kFloat32);
+    Value* zp_val = opts.has_zero_point
+                        ? add_const(BHWC(1, 1, 1, 8), DataType::kFloat32)
+                        : nullptr;
+    Value* fc_out = add_rt(BHWC(1, 1, opts.tokens, 8));
+    Node* fc = graph.NewNode();
+    const OHWI w_shape(8, 1, 1, 8);
+    const OHWI param_shape(8, 1, 1, 1);
+    if (opts.weight_type == DataType::kInt2) {
+      fc->operation.type = ToString(OperationType::kFullyConnectedInt2);
+      ::ml_drift::FullyConnectedInt2Attributes attr;
+      ::ml_drift::Tensor<OHWI, DataType::kInt2> w;
+      w.shape = w_shape;
+      attr.weights = w;
+      attr.scale.shape = param_shape;
+      if (opts.has_zero_point) attr.zero_point.shape = param_shape;
+      if (opts.bias_with_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+        attr.bias.data.assign(8, 1.0f);
+      } else if (opts.bias_shape_without_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+      }
+      fc->operation.attributes = std::move(attr);
+    } else if (opts.weight_type == DataType::kInt4) {
+      fc->operation.type = ToString(OperationType::kFullyConnectedInt4);
+      ::ml_drift::FullyConnectedInt4Attributes attr;
+      ::ml_drift::Tensor<OHWI, DataType::kInt4> w;
+      w.shape = w_shape;
+      attr.weights = w;
+      attr.scale.shape = param_shape;
+      if (opts.has_zero_point) attr.zero_point.shape = param_shape;
+      if (opts.bias_with_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+        attr.bias.data.assign(8, 1.0f);
+      } else if (opts.bias_shape_without_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+      }
+      fc->operation.attributes = std::move(attr);
+    } else {
+      fc->operation.type = ToString(OperationType::kFullyConnectedInt8);
+      ::ml_drift::FullyConnectedInt8Attributes attr;
+      attr.weights.shape = w_shape;
+      attr.scale.shape = param_shape;
+      if (opts.has_zero_point) attr.zero_point.shape = param_shape;
+      if (opts.bias_with_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+        attr.bias.data.assign(8, 1.0f);
+      } else if (opts.bias_shape_without_data) {
+        attr.bias.shape = ::ml_drift::Linear(8);
+      }
+      fc->operation.attributes = std::move(attr);
+    }
+    graph.AddConsumer(fc->id, q_in->id);
+    graph.AddConsumer(fc->id, w_val->id);
+    graph.AddConsumer(fc->id, s_val->id);
+    if (zp_val != nullptr) graph.AddConsumer(fc->id, zp_val->id);
+    graph.SetProducer(fc->id, fc_out->id);
+
+    if (opts.extra_consumer_after_fc && k == 0) {
+      Value* sink = add_rt(BHWC(1, 1, opts.tokens, 8));
+      Node* extra = graph.NewNode();
+      extra->operation.type = kBlockFfwSiluType;
+      graph.AddConsumer(extra->id, fc_out->id);
+      graph.SetProducer(extra->id, sink->id);
+    }
+
+    const float dst_sc = (opts.mismatch_dst_qdq && k == 1) ? 0.06f : 0.05f;
+    parts[k] = add_rt(BHWC(1, 1, opts.tokens, 8));
+    Node* q_out_n = graph.NewNode();
+    q_out_n->operation.type = ToString(OperationType::kQuantizeAndDequantize);
+    q_out_n->operation.attributes = QuantizeAndDequantizeAttributes{
+        .min = -128.0f * dst_sc, .max = 127.0f * dst_sc, .scale = dst_sc};
+    graph.AddConsumer(q_out_n->id, fc_out->id);
+    graph.SetProducer(q_out_n->id, parts[k]->id);
+  }
+
+  Value* packed = add_rt(BHWC(1, 2, opts.tokens, opts.k1 * 4));
+  Node* pack = graph.NewNode();
+  pack->operation.type = kBlockFfwPackPartsType;
+  pack->operation.attributes =
+      BlockFfwPackPartsAttributes{.num_parts = opts.k1};
+  for (Value* p : parts) graph.AddConsumer(pack->id, p->id);
+  graph.SetProducer(pack->id, packed->id);
+
+  if (opts.pack_out_is_graph_output) {
+    graph.AddKnownGraphOutput(packed);
+  }
+
+  Value* final_out = packed;
+  ::ml_drift::NodeId trail_id = 0;
+  if (opts.trailing_qdq) {
+    final_out = add_rt(BHWC(1, 2, opts.tokens, opts.k1 * 4));
+    Node* trail = graph.NewNode();
+    trail_id = trail->id;
+    trail->operation.type = ToString(OperationType::kQuantizeAndDequantize);
+    trail->operation.attributes = QuantizeAndDequantizeAttributes{
+        .min = -7.68f, .max = 7.62f, .scale = 0.06f};
+    graph.AddConsumer(trail->id, packed->id);
+    if (opts.trailing_qdq_extra_input) {
+      Value* extra_in = add_rt(BHWC(1, 2, opts.tokens, opts.k1 * 4));
+      graph.AddConsumer(trail->id, extra_in->id);
+    }
+    graph.SetProducer(trail->id, final_out->id);
+  }
+
+  GpuModelBuilder builder(gpu_info, {.storage = TensorStorageType::kBuffer},
+                          std::move(runtime_tensors), std::move(const_tensors));
+  CreateGpuModelInfo create_info{.precision = CalculationsPrecision::kF32,
+                                 .storage_type = TensorStorageType::kBuffer};
+  std::set<::ml_drift::NodeId> already_consumed;
+  TryEdgeMatchResult result;
+  result.trailing_qdq_id = trail_id;
+  result.status = TryBlockFfwEdgeFc(create_info, gpu_info, graph, first_node_id,
+                                    already_consumed, &result.consumed,
+                                    &builder);
+  GpuModel gpu_model;
+  if (result.status.ok()) {
+    const ValueId out_id =
+        result.consumed.count(trail_id) != 0 ? final_out->id : packed->id;
+    EXPECT_OK(builder.GetGpuModel({x_val->id}, {out_id}, &gpu_model));
+    result.builder_nodes = gpu_model.nodes.size();
+  }
+  return result;
+}
+
+TEST(TryBlockFfwEdgeFcTest, RejectsNullArgsAndNonUnpackFirstNode) {
+  GpuInfo gpu_info;
+  gpu_info.gpu_api = ::ml_drift::GpuApi::kWebGpu;
+  gpu_info.webgpu_info.max_storage_buffers_per_shader_stage = 32;
+  CreateGpuModelInfo create_info{.precision = CalculationsPrecision::kF32,
+                                 .storage_type = TensorStorageType::kBuffer};
+  GraphFloat32 graph;
+  Node* silu = graph.NewNode();
+  silu->operation.type = kBlockFfwSiluType;
+  GpuModelBuilder builder(gpu_info, {.storage = TensorStorageType::kBuffer});
+  std::set<::ml_drift::NodeId> consumed;
+  std::set<::ml_drift::NodeId> new_consumed;
+
+  EXPECT_EQ(TryBlockFfwEdgeFc(create_info, gpu_info, graph, silu->id, consumed,
+                              /*new_consumed_nodes=*/nullptr, &builder)
+                .code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(TryBlockFfwEdgeFc(create_info, gpu_info, graph, silu->id, consumed,
+                              &new_consumed, /*model_builder=*/nullptr)
+                .code(),
+            absl::StatusCode::kInvalidArgument);
+  EXPECT_EQ(TryBlockFfwEdgeFc(create_info, gpu_info, graph, silu->id, consumed,
+                              &new_consumed, &builder)
+                .code(),
+            absl::StatusCode::kUnimplemented);
+  EXPECT_TRUE(new_consumed.empty());
+}
+
+TEST(TryBlockFfwEdgeFcTest, MatchesSinglePartSymmetricInt4AndInt8) {
+  // Single-part (`k1 = 1`) INT2 with trailing QDQ: 4 branch nodes + Pack + QDQ
+  // = 6 consumed nodes -> 1 fused dispatch.
+  {
+    TryEdgeGraphOptions opts;
+    opts.k1 = 1;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    ASSERT_OK(res.status);
+    EXPECT_EQ(res.consumed.size(), 6);
+    EXPECT_EQ(res.builder_nodes, 1);
+  }
+  // Symmetric INT4 (no zero_point, 3 FC inputs).
+  {
+    TryEdgeGraphOptions opts;
+    opts.weight_type = DataType::kInt4;
+    opts.has_zero_point = false;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    ASSERT_OK(res.status);
+    EXPECT_EQ(res.consumed.size(), 10);
+    EXPECT_EQ(res.builder_nodes, 1);
+  }
+  // Symmetric INT8 (no zero_point, 3 FC inputs).
+  {
+    TryEdgeGraphOptions opts;
+    opts.weight_type = DataType::kInt8;
+    opts.has_zero_point = false;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    ASSERT_OK(res.status);
+    EXPECT_EQ(res.consumed.size(), 10);
+    EXPECT_EQ(res.builder_nodes, 1);
+  }
+}
+
+TEST(TryBlockFfwEdgeFcTest, HandlesRejectionAndGraphOutputEdgeCases) {
+  // Mismatched branch src QDQ scales.
+  {
+    TryEdgeGraphOptions opts;
+    opts.mismatch_src_qdq = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    EXPECT_EQ(res.status.code(), absl::StatusCode::kUnimplemented);
+    EXPECT_TRUE(res.consumed.empty());
+  }
+  // Mismatched branch dst QDQ scales.
+  {
+    TryEdgeGraphOptions opts;
+    opts.mismatch_dst_qdq = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    EXPECT_EQ(res.status.code(), absl::StatusCode::kUnimplemented);
+    EXPECT_TRUE(res.consumed.empty());
+  }
+  // Extra consumer on intermediate values (after UnpackPart and after FC).
+  {
+    TryEdgeGraphOptions opts;
+    opts.extra_consumer_after_unpack = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    EXPECT_EQ(res.status.code(), absl::StatusCode::kUnimplemented);
+    EXPECT_TRUE(res.consumed.empty());
+  }
+  {
+    TryEdgeGraphOptions opts;
+    opts.extra_consumer_after_fc = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    EXPECT_EQ(res.status.code(), absl::StatusCode::kUnimplemented);
+    EXPECT_TRUE(res.consumed.empty());
+  }
+  // PackParts output is a known graph output before trailing QDQ: core stage
+  // still fuses, while trailing QDQ is NOT absorbed.
+  {
+    TryEdgeGraphOptions opts;
+    opts.pack_out_is_graph_output = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    ASSERT_OK(res.status);
+    EXPECT_EQ(res.consumed.size(), 9);
+    EXPECT_EQ(res.consumed.count(res.trailing_qdq_id), 0);
+    EXPECT_EQ(res.builder_nodes, 1);
+  }
+  // Trailing QDQ with extra second input: core stage fuses, trailing QDQ is
+  // NOT absorbed (`SingleInput(graph, next_qdq) != dst_val`).
+  {
+    TryEdgeGraphOptions opts;
+    opts.trailing_qdq_extra_input = true;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    ASSERT_OK(res.status);
+    EXPECT_EQ(res.consumed.size(), 9);
+    EXPECT_EQ(res.consumed.count(res.trailing_qdq_id), 0);
+  }
+  // Non-empty bias (both populated data and shape-only without host data).
+  {
+    TryEdgeGraphOptions opts;
+    opts.bias_with_data = true;
+    EXPECT_EQ(RunSyntheticTryBlockFfwEdgeFc(opts).status.code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  {
+    TryEdgeGraphOptions opts;
+    opts.bias_shape_without_data = true;
+    EXPECT_EQ(RunSyntheticTryBlockFfwEdgeFc(opts).status.code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // Produced (non-constant) weight tensor.
+  {
+    TryEdgeGraphOptions opts;
+    opts.produced_weight = true;
+    EXPECT_EQ(RunSyntheticTryBlockFfwEdgeFc(opts).status.code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // Misordered `part != k`.
+  {
+    TryEdgeGraphOptions opts;
+    opts.swap_unpack_parts = true;
+    EXPECT_EQ(RunSyntheticTryBlockFfwEdgeFc(opts).status.code(),
+              absl::StatusCode::kUnimplemented);
+  }
+  // `k1 = 8` decode fallback when WebGPU buffer limit (8) is exceeded.
+  {
+    TryEdgeGraphOptions opts;
+    opts.k1 = 8;
+    opts.max_storage_buffers = 8;
+    TryEdgeMatchResult res = RunSyntheticTryBlockFfwEdgeFc(opts);
+    EXPECT_EQ(res.status.code(), absl::StatusCode::kUnimplemented);
+    EXPECT_TRUE(res.consumed.empty());
   }
 }
 

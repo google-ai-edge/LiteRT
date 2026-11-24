@@ -15,9 +15,12 @@
 #ifndef THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_BLOCK_FFW_KERNEL_H_
 #define THIRD_PARTY_ODML_LITERT_ML_DRIFT_DELEGATE_COMPOSITE_BLOCK_FFW_KERNEL_H_
 
+#include <set>
 #include <vector>
 
 #include "absl/status/status.h"  // from @com_google_absl
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
@@ -91,6 +94,16 @@ absl::Status AddBlockFfwEdgeFc(
     const ::ml_drift::GpuModelBuilder::TensorHandle& src,
     const ::ml_drift::GpuModelBuilder::TensorHandle& dst,
     const BlockFfwEdgeFcSpec& spec);
+
+// Matches and fuses single-token (`B == 1, W == 1`) U1 or D2 subgraphs emitted
+// by BlockFfwOperationParser into a single GPU kernel via AddBlockFfwEdgeFc.
+absl::Status TryBlockFfwEdgeFc(
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    const ::ml_drift::GpuInfo& gpu_info, const ::ml_drift::GraphFloat32& graph,
+    ::ml_drift::NodeId first_node_id,
+    const std::set<::ml_drift::NodeId>& consumed_nodes,
+    std::set<::ml_drift::NodeId>* new_consumed_nodes,
+    ::ml_drift::GpuModelBuilder* model_builder);
 
 }  // namespace litert::ml_drift
 
