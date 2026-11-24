@@ -165,6 +165,30 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "transformer_ops_ynnpack",
+    srcs = ["transformer_ops_ynnpack.cc"],
+    hdrs = ["transformer_ops_ynnpack.h"],
+    deps = [
+        ":transformer_ops_graph",
+        "//tensor",
+        "//tensor:arithmetic",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "//tensor/backends/common_nnpack:conversion",
+        "//tensor/backends/ynnpack:arithmetic",
+        "//tensor/backends/ynnpack:conversion",
+        "//tensor/internal:graph",
+        "//tensor/internal:mixin",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:str_format",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+)
+
 # copybara:uncomment_begin(google-only)
 # cc_test(
 #     name = "transformer_ops_numerical_test",
