@@ -132,6 +132,32 @@ class TransformationUtilsTest(parameterized.TestCase):
         expected_buffer_data,
     )
 
+  def test_get_constant_buffer_does_not_reuse_model_buffers(self):
+    model_buffer_idx = 1
+    data = np.array(self.model.buffers[model_buffer_idx].data, dtype=np.uint8)
+    num_buffers = len(self.model.buffers)
+
+    # The model's buffer may later be quantized in place, so it is not shared.
+    new_buffer_idx = transformation_utils.get_constant_buffer(data, self.model)
+    self.assertEqual(new_buffer_idx, num_buffers)
+    # Buffers added by `get_constant_buffer` are shared.
+    self.assertEqual(
+        transformation_utils.get_constant_buffer(data, self.model),
+        new_buffer_idx,
+    )
+
+  def test_get_constant_buffer_force_duplicate_is_not_reused(self):
+    data = np.array([1, 2, 3, 4], dtype=np.uint8)
+    dup_idx = transformation_utils.get_constant_buffer(
+        data, self.model, force_duplicate_buffer=True
+    )
+    shared_idx = transformation_utils.get_constant_buffer(data, self.model)
+    self.assertNotEqual(shared_idx, dup_idx)
+    self.assertEqual(
+        transformation_utils.get_constant_buffer(data, self.model),
+        shared_idx,
+    )
+
   @parameterized.named_parameters(
       dict(
           testcase_name="float32",
