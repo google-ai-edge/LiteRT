@@ -123,6 +123,7 @@ def _gemma4_graph(
     attention_pattern_size: int = 6,
     global_key_size: int = 4,
     attn_logits_soft_cap: float | None = None,
+    last_token_logits_only: bool = False,
 ) -> _Gemma4GraphOutputs:
   """Computes full Gemma 4 model graph outputs.
 
@@ -165,11 +166,14 @@ def _gemma4_graph(
       Nth layer is a global layer).
     global_key_size: Key dimension size for global attention layers.
     attn_logits_soft_cap: Threshold value for soft-capping attention logits.
+    last_token_logits_only: Whether to only compute the logits of the last
+      position of the sequence.
 
   Returns:
     A tuple of `(logits, updated_key_caches, updated_value_caches)` containing:
       - logits: Output prediction logits of shape `(batch_size, seq_len,
-        vocab_size)`.
+        vocab_size)`, or `(batch_size, 1, vocab_size)` when
+        `last_token_logits_only` is set.
       - updated_key_caches: List of updated key cache arrays per layer after
         execution.
       - updated_value_caches: List of updated value cache arrays per layer after
@@ -279,6 +283,9 @@ def _gemma4_graph(
     computed_values[layer_idx] = v_untiled
     updated_key_caches.append(updated_k)
     updated_value_caches.append(updated_v)
+
+  if last_token_logits_only:
+    hidden_states = hidden_states[:, -1:, :]
 
   final_norm_scale = weights["model.norm.weight"]
   _, final_output = rmsnorm.rms_norm(
@@ -778,6 +785,37 @@ def _generate_expected_values_for_per_layer_inputs_with_projection_graph_test() 
   utils.cpp_print("Logits (per-layer inputs with projection):", logits)
 
 
+def _generate_expected_values_for_last_token_logits_only_graph_test() -> None:
+  """Generates the expected results when only computing the last logits."""
+  print("\n=== Last Token Logits Only Graph ===")
+  embedded_input = np.array(
+      [[[1.0, 2.0, 3.0, 4.0], [5.0, 6.0, 7.0, 8.0]]], dtype=np.float32
+  )
+  sliding_mask = np.array([[[[0.0, -1e9], [0.0, 0.0]]]], dtype=np.float32)
+  cos = np.array(
+      [[[[0.8660254, 0.5, 0.8660254, 0.5], [0.7071068, 0.0, 0.7071068, 0.0]]]],
+      dtype=np.float32,
+  )
+  sin = np.array(
+      [[[[0.5, 0.8660254, 0.5, 0.8660254], [0.7071068, 1.0, 0.7071068, 1.0]]]],
+      dtype=np.float32,
+  )
+  weights = _create_test_weights(num_layers=2)
+
+  logits, kc, vc = _gemma4_graph(
+      embedded_input=embedded_input,
+      weights=weights,
+      sliding_attention_mask=sliding_mask,
+      rope_local_cos=cos,
+      rope_local_sin=sin,
+      num_layers=2,
+      last_token_logits_only=True,
+  )
+  utils.cpp_print("Logits (last token only):", logits)
+  utils.cpp_print("Key Cache Layer 1:", kc[1])
+  utils.cpp_print("Value Cache Layer 1:", vc[1])
+
+
 def main() -> None:
   _generate_expected_values_for_default_gemma4_graph_test()
   _generate_expected_values_for_global_layer_graph_test()
@@ -788,6 +826,7 @@ def main() -> None:
   _generate_expected_values_for_no_softcap_graph_test()
   _generate_expected_values_for_disabled_post_norms_graph_test()
   _generate_expected_values_for_attn_logits_soft_cap_graph_test()
+  _generate_expected_values_for_last_token_logits_only_graph_test()
 
 
 if __name__ == "__main__":

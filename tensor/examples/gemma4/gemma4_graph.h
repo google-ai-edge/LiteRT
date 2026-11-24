@@ -57,8 +57,22 @@ struct Gemma4Inputs {
   std::vector<Tensor<Mixins...>> value_caches;
 };
 
+// Positions of the input sequence that `BuildGemma4Graph` computes the logits
+// of.
+enum class LogitsMode {
+  // Every position: the logits are `[batch, seq_len, vocab_size]`.
+  kAllTokens,
+  // The last position only: the logits are `[batch, 1, vocab_size]`. The final
+  // norm, the LM head and the logit soft capping then run on a single position
+  // instead of the whole sequence. Use it for prefill, which only needs the
+  // logits of the last prompt token to predict the next one.
+  kLastTokenOnly,
+};
+
 template <class... Mixins>
 struct Gemma4Outputs {
+  // `[batch, seq_len, vocab_size]`, or `[batch, 1, vocab_size]` when the graph
+  // is built with `LogitsMode::kLastTokenOnly`.
   Tensor<Mixins...> logits;
   std::vector<Tensor<Mixins...>> key_caches;
   std::vector<Tensor<Mixins...>> value_caches;
@@ -238,10 +252,14 @@ absl::StatusOr<TransformerBlockWeights<Mixins...>> BuildGemma4BlockWeights(
 
 }  // namespace internal
 
+// Builds the Gemma 4 graph.
+//
+// - `logits_mode`: which positions of the input sequence get logits. See
+//   `LogitsMode`. The KV cache outputs always hold every position.
 template <class... Mixins>
 absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
     const Gemma4Inputs<Mixins...>& inputs, TensorMapping& weights,
-    const Config& config) {
+    const Config& config, LogitsMode logits_mode = LogitsMode::kAllTokens) {
   if (config.num_layers <= 0) {
     return absl::InvalidArgumentError(absl::StrCat(
         "BuildGemma4Graph requires config.num_layers > 0, got ",
@@ -435,6 +453,15 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
     updated_value_caches.push_back(block_out.updated_kv_cache_v);
   }
 
+  // Only keep the last position when the other ones aren't needed.
+  Tensor<Mixins...> final_input = hidden_states;
+  const Shape& hidden_shape = hidden_states.GetShape();
+  if (logits_mode == LogitsMode::kLastTokenOnly && hidden_shape[1] > 1) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        final_input, Slice(hidden_states, {0, hidden_shape[1] - 1, 0},
+                           {hidden_shape[0], 1, hidden_shape[2]}));
+  }
+
   // Final RMSNorm
   LRT_TENSOR_ASSIGN_OR_RETURN(Tensor<Mixins...> final_norm_scale,
                               weights.Get("model.norm.weight"));
@@ -446,7 +473,7 @@ absl::StatusOr<Gemma4Outputs<Mixins...>> BuildGemma4Graph(
   }
   LRT_TENSOR_ASSIGN_OR_RETURN(
       Tensor<Mixins...> final_output,
-      RmsNorm(hidden_states, final_norm_scale, eps_tensor));
+      RmsNorm(final_input, final_norm_scale, eps_tensor));
 
   // LM Head.
   LRT_TENSOR_ASSIGN_OR_RETURN(Tensor<Mixins...> lm_head,
