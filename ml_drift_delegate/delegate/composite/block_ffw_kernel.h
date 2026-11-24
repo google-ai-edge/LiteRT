@@ -18,6 +18,7 @@
 #include <set>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -103,6 +104,15 @@ absl::Status TryBlockFfwEdgeFc(
     ::ml_drift::NodeId first_node_id,
     const std::set<::ml_drift::NodeId>& consumed_nodes,
     std::set<::ml_drift::NodeId>* new_consumed_nodes,
+    ::ml_drift::GpuModelBuilder* model_builder);
+
+// Same as TryBlockFfwEdgeFc for an ML Drift IrModel.
+absl::Status TryBlockFfwEdgeFcFromIrModel(
+    const ::ml_drift::CreateGpuModelInfo& create_info,
+    const ::ml_drift::GpuInfo& gpu_info,
+    const ::ml_drift::ir::IrModel& ir_model, ::ml_drift::ir::IrOpId first_op_id,
+    const absl::flat_hash_set<::ml_drift::ir::IrOpId>& consumed_ops,
+    absl::flat_hash_set<::ml_drift::ir::IrOpId>* new_consumed_ops,
     ::ml_drift::GpuModelBuilder* model_builder);
 
 }  // namespace litert::ml_drift

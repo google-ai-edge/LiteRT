@@ -253,6 +253,12 @@ absl::Status LiteRtOpSelector::GPUSubgraphFromIrModel(
     const absl::flat_hash_set<::ml_drift::ir::IrOpId>& consumed_ops,
     absl::flat_hash_set<::ml_drift::ir::IrOpId>* new_consumed_ops,
     ::ml_drift::GpuModelBuilder* model_builder) {
+  if (TryBlockFfwEdgeFcFromIrModel(create_info_, gpu_info_, ir_model,
+                                   first_op_id, consumed_ops, new_consumed_ops,
+                                   model_builder)
+          .ok()) {
+    return absl::OkStatus();
+  }
   return ::ml_drift::GPUSubgraphFromIrModel(create_info_.hints, gpu_info_,
                                             ir_model, first_op_id, consumed_ops,
                                             new_consumed_ops, model_builder);

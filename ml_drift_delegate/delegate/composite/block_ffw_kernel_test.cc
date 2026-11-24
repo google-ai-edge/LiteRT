@@ -707,6 +707,10 @@ absl::Status RunBlockedFfwIrModelEndToEndTest(
       std::vector<ValueId>{static_cast<ValueId>(x_id)},
       std::vector<ValueId>{static_cast<ValueId>(out_id)}, &gpu_model));
 
+  if (tokens == 1) {
+    EXPECT_EQ(gpu_model.nodes.size(), 4);
+  }
+
   ::ml_drift::TensorFloat32 src_cpu;
   src_cpu.shape = BHWC(1, 1, tokens, tc.d_model);
   src_cpu.data = tc.x_data;
@@ -790,7 +794,7 @@ TEST_P(BlockFfwKernelTest, PrefillMultiTokenMatchesReference) {
                                       /*distinct_adjacent_scales=*/true));
 }
 
-TEST_P(BlockFfwKernelTest, IrModelDecodeMatchesReference) {
+TEST_P(BlockFfwKernelTest, IrModelDecodeFusesToFourDispatches) {
   ASSERT_OK(RunBlockedFfwIrModelEndToEndTest(
       *exec_env, precision(), storage(), /*tokens=*/1,
       /*distinct_adjacent_scales=*/false));

@@ -27,6 +27,7 @@
 #include <variant>
 #include <vector>
 
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -82,7 +83,9 @@ using ::ml_drift::TensorStorageType;
 using ::ml_drift::Value;
 using ::ml_drift::ValueId;
 using ::ml_drift::WeightsDescription;
+using ::ml_drift::ir::IrModel;
 using ::ml_drift::ir::IrOp;
+using ::ml_drift::ir::IrOpId;
 using ::ml_drift::ir::IrTensor;
 
 template <typename TensorT>
@@ -797,6 +800,22 @@ std::optional<GpuModelBuilder::Weights> ExtractQuantizedFcWeights(
       fc_node.operation.attributes, GetValueIds(inputs), builder);
 }
 
+std::optional<GpuModelBuilder::Weights> ExtractQuantizedFcWeights(
+    const GpuInfo& gpu_info, bool prefer_textures, const IrModel& ir_model,
+    const IrOp& fc_op, const GpuModelBuilder& builder) {
+  std::vector<ValueId> input_ids;
+  input_ids.reserve(fc_op.inputs.size());
+  for (size_t i = 0; i < fc_op.inputs.size(); ++i) {
+    if (i >= 1 && ir_model.FindProducer(fc_op.inputs[i]) != nullptr) {
+      return std::nullopt;
+    }
+    input_ids.push_back(static_cast<ValueId>(fc_op.inputs[i]));
+  }
+  return ExtractQuantizedFcWeightsFromSpec(gpu_info, prefer_textures,
+                                           fc_op.name, fc_op.attr, input_ids,
+                                           builder);
+}
+
 struct GraphFloat32EdgeAdapter {
   using GraphT = GraphFloat32;
   using OpT = Node;
@@ -833,6 +852,54 @@ struct GraphFloat32EdgeAdapter {
     if (t == nullptr || g.IsGraphOutput(t->id)) return nullptr;
     const std::vector<Node*> consumers = g.FindConsumers(t->id);
     return consumers.size() == 1 ? consumers[0] : nullptr;
+  }
+  static std::optional<GpuModelBuilder::Weights> ExtractFcWeights(
+      const GpuInfo& gpu_info, bool prefer_textures, const GraphT& g,
+      const OpT& fc_op, const GpuModelBuilder& builder) {
+    return ExtractQuantizedFcWeights(gpu_info, prefer_textures, g, fc_op,
+                                     builder);
+  }
+};
+
+struct IrModelEdgeAdapter {
+  using GraphT = IrModel;
+  using OpT = IrOp;
+  using OpIdT = IrOpId;
+  using TensorT = IrTensor;
+
+  static const OpT* GetOp(const GraphT& g, OpIdT id) { return g.op(id); }
+  static OpIdT GetOpId(const OpT* op) { return op->id; }
+  static absl::string_view OpName(const OpT* op) { return op->name; }
+  static const std::any& OpAttributes(const OpT* op) { return op->attr; }
+  static ValueId TensorValueId(const TensorT* t) {
+    return static_cast<ValueId>(t->id);
+  }
+  static BHWC TensorShape(const TensorT* t) { return t->desc.GetBHWCShape(); }
+  static const OpT* FindProducer(const GraphT& g, const TensorT* t) {
+    return g.FindProducer(t->id);
+  }
+  static std::vector<const TensorT*> FindInputs(const GraphT& g,
+                                                const OpT* op) {
+    std::vector<const TensorT*> ins;
+    ins.reserve(op->inputs.size());
+    for (::ml_drift::ir::IrTensorId id : op->inputs) {
+      ins.push_back(g.tensor(id));
+    }
+    return ins;
+  }
+  static const TensorT* SingleInput(const GraphT& g, const OpT* op) {
+    if (op == nullptr || op->inputs.size() != 1) return nullptr;
+    return g.tensor(op->inputs[0]);
+  }
+  static const TensorT* SingleOutput(const GraphT& g, const OpT* op) {
+    if (op == nullptr || op->outputs.size() != 1) return nullptr;
+    return g.tensor(op->outputs[0]);
+  }
+  static const OpT* SingleConsumer(const GraphT& g, const TensorT* t) {
+    if (t == nullptr || g.IsGraphOutput(t->id) || t->consumers.size() != 1) {
+      return nullptr;
+    }
+    return g.op(*t->consumers.begin());
   }
   static std::optional<GpuModelBuilder::Weights> ExtractFcWeights(
       const GpuInfo& gpu_info, bool prefer_textures, const GraphT& g,
@@ -1626,6 +1693,17 @@ absl::Status TryBlockFfwEdgeFc(
   return TryBlockFfwEdgeFcImpl<GraphFloat32EdgeAdapter>(
       create_info, gpu_info, graph, first_node_id, consumed_nodes,
       new_consumed_nodes, model_builder);
+}
+
+absl::Status TryBlockFfwEdgeFcFromIrModel(
+    const ::ml_drift::CreateGpuModelInfo& create_info, const GpuInfo& gpu_info,
+    const IrModel& ir_model, IrOpId first_op_id,
+    const absl::flat_hash_set<IrOpId>& consumed_ops,
+    absl::flat_hash_set<IrOpId>* new_consumed_ops,
+    GpuModelBuilder* model_builder) {
+  return TryBlockFfwEdgeFcImpl<IrModelEdgeAdapter>(
+      create_info, gpu_info, ir_model, first_op_id, consumed_ops,
+      new_consumed_ops, model_builder);
 }
 
 }  // namespace litert::ml_drift

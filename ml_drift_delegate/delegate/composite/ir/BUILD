@@ -355,6 +355,7 @@ cc_test(
         "//ml_drift_delegate/delegate/composite:qsa_indexer_update_parser",
         "//ml_drift_delegate/delegate/composite:sdpa_transposed_parser",
         "//ml_drift_delegate/delegate/composite:sparse_sdpa_transposed_parser",
+        "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings:string_view",

@@ -1322,6 +1322,7 @@ cc_library(
     hdrs = ["block_ffw_kernel.h"],
     deps = [
         ":block_ffw_parser",
+        "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
