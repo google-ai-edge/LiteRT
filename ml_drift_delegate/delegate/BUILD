@@ -406,12 +406,34 @@ objc_library(
 #     srcs = ["shared_vulkan_env.cc"],
 #     hdrs = ["shared_vulkan_env.h"],
 #     deps = [
+#         "@com_google_absl//absl/functional:function_ref",
+#         "@com_google_absl//absl/log:absl_log",
 #         "@com_google_absl//absl/status",
 #         "@com_google_absl//absl/status:status_macros",
 #         "@com_google_absl//absl/status:statusor",
 #         "@ml_drift//ml_drift/syrtis:command_buffer",
 #         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:queue",
+#         "@ml_drift//ml_drift/syrtis:vulkan_device",
 #         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+#     ],
+# )
+#
+# cc_test(
+#     name = "shared_vulkan_env_test",
+#     srcs = ["shared_vulkan_env_test.cc"],
+#     tags = ["requires-gpu-sm90-full"],  # Vulkan/WebGPU: no driver on MIG
+#     deps = [
+#         ":shared_vulkan_env",
+#         "@com_google_googletest//:gtest_main_no_heapcheck",
+#         "@com_google_absl//absl/cleanup",
+#         "@com_google_absl//absl/status",
+#         "@com_google_absl//absl/status:status_matchers",
+#         "@ml_drift//ml_drift/common:gpu_info",
+#         "@ml_drift//ml_drift/syrtis:environment",
+#         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
+#         "@arm_vulkan_ml_dep_vulkan_headers//:vulkan_headers",
+#         # copybara:uncomment "//third_party/vulkan_loader",
 #     ],
 # )
 #
@@ -1239,7 +1261,6 @@ objc_library(
 #         "@com_google_absl//absl/synchronization",
 #         "@ml_drift//ml_drift/common:precision",
 #         "@ml_drift//ml_drift/syrtis:environment",
-#         "@ml_drift//ml_drift/syrtis:vulkan_wrapper",
 #         "//litert/c:litert_any",
 #         "//litert/c:litert_common",
 #         "//litert/c:litert_environment_options_header",
