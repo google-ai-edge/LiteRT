@@ -439,6 +439,10 @@ MAIN_FUNCTION($0) {
   args.scores_tmp.Write(score_out, b, q_pos, 0, 0);
 }
 )");
+    // `index_n_heads` dot products of length `idx_dim` plus ReLU and accumulate
+    // per (query token, block) pair.
+    flops_ = static_cast<uint64_t>(seq_len) * max_blocks * index_n_heads *
+             (2ULL * idx_dim + 2);
   }
 
   ::ml_drift::int3 GetGridSize() const override {

@@ -18,6 +18,7 @@
 #include <any>
 #include <cmath>
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -1352,6 +1353,10 @@ CreateGatedDeltaUpdate(const ::ml_drift::OperationDef& definition, int mode,
   }
 
   op->code_ = std::move(code);
+  // Per step and state entry [D_k, D_v]: decay (1) + k^T S (2) +
+  // rank-1 update (2) + q^T S (2) = 7 FLOPs.
+  op->flops_ =
+      7ULL * static_cast<uint64_t>(B) * H * seq_len * D_k * D_v;
   return op;
 }
 
@@ -2157,6 +2162,10 @@ CreateGatedDeltaNetDecode(const ::ml_drift::OperationDef& definition,
                             output.GetDataType(), &code);
   }
   op->code_ = std::move(code);
+  // Single decode step per state entry [head_k_dim, head_v_dim]: decay (1) +
+  // k^T S (2) + rank-1 update (2) + q^T S (2) = 7 FLOPs.
+  op->flops_ = 7ULL * static_cast<uint64_t>(attr.num_v_heads) *
+               attr.head_k_dim * attr.head_v_dim;
   return op;
 }
 
@@ -2334,6 +2343,10 @@ CreateGatedDeltaNetRecurrence(const ::ml_drift::OperationDef& definition,
     ResolveWaveSimd(gpu_info, &code);
   }
   op->code_ = std::move(code);
+  // Per step and state entry [head_k_dim, head_v_dim]: decay (1) + k^T S (2) +
+  // rank-1 update (2) + q^T S (2) = 7 FLOPs.
+  op->flops_ = 7ULL * static_cast<uint64_t>(attr.num_v_heads) * dims.seq_len *
+               attr.head_k_dim * attr.head_v_dim;
   return op;
 }
 

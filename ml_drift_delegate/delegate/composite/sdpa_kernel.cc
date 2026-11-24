@@ -854,6 +854,10 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateFusedFlashSdpa(
   }
   op.code_ = GenerateFlashSdpaCode(gpu_info, config, gqa_ratio, has_batch,
                                    has_mask, is_bool_mask, mask_has_batch);
+  // 2 * B * N_q * T * S * H FLOPs each for QK^T and PV, plus ~4 FLOPs per
+  // score for scaling and online softmax.
+  op.flops_ = static_cast<uint64_t>(q_shape.b) * q_shape.h * q_shape.w *
+              k_shape.w * (4ULL * q_shape.c + 4);
   return std::make_unique<FusedFlashSdpaOp>(std::move(op));
 }
 

@@ -607,6 +607,13 @@ class SparseSdpaOp : public ::ml_drift::GPUOperation {
     }
     code += "}\n";
     code_ = std::move(code);
+    // Upper bound on attended tokens: `prep_slices` slices x 4 block IDs x 4
+    // tokens per block, capped by `cache_len`.
+    const uint64_t attended_tokens =
+        std::min(static_cast<uint64_t>(cache_len),
+                 static_cast<uint64_t>(prep_slices) * 16);
+    flops_ = static_cast<uint64_t>(num_q_heads) * seq_len * attended_tokens *
+             (4ULL * head_dim + 4);
   }
 
   ::ml_drift::int3 GetGridSize() const override {

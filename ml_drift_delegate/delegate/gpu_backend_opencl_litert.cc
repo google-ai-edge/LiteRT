@@ -16,7 +16,9 @@
 
 #include <fcntl.h>  // IWYU pragma: keep b/332641196
 
+#include <algorithm>
 #include <cstdint>
+#include <limits>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -32,8 +34,14 @@
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/memory_manager.h"  // from @ml_drift
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
+#include "ml_drift/cl/serialization_generated.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
+#include "ml_drift/common/gpu_model_generated.h"  // from @ml_drift
+#include "ml_drift/common/precision.h"  // from @ml_drift
+#include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
+#include "ml_drift/common/task/serialization_base_generated.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -61,7 +69,136 @@ namespace {
 // A heuristic to flush the compiled shader program cache after a few invokes.
 constexpr int kInvokeCountToFlushCompiledCache = 5;
 
+uint64_t SaturatingAdd(uint64_t a, uint64_t b) {
+  if (b > std::numeric_limits<uint64_t>::max() - a) {
+    return std::numeric_limits<uint64_t>::max();
+  }
+  return a + b;
+}
+
+uint64_t SumFlops(absl::Span<const uint64_t> node_flops) {
+  uint64_t total = 0;
+  for (uint64_t flops : node_flops) {
+    total = SaturatingAdd(total, flops);
+  }
+  return total;
+}
+
+std::vector<uint64_t> CollectNodeFlops(const ::ml_drift::GpuModel& gpu_model) {
+  std::vector<uint64_t> node_flops;
+  node_flops.reserve(gpu_model.nodes.size());
+  for (const auto& node : gpu_model.nodes) {
+    node_flops.push_back(node.gpu_operation ? node.gpu_operation->flops_ : 0);
+  }
+  return node_flops;
+}
+
+std::vector<uint64_t> CollectSerializedNodeFlops(
+    absl::Span<const uint8_t> serialized_model) {
+  if (serialized_model.empty()) {
+    return {};
+  }
+  const auto* decoded_fb =
+      ::ml_drift::cl::data::GetInferenceContext(serialized_model.data());
+  if (decoded_fb == nullptr || decoded_fb->gpu_model() == nullptr ||
+      decoded_fb->gpu_model()->nodes() == nullptr) {
+    return {};
+  }
+  const auto* nodes = decoded_fb->gpu_model()->nodes();
+  std::vector<uint64_t> node_flops;
+  node_flops.reserve(nodes->size());
+  for (const auto* node : *nodes) {
+    node_flops.push_back(node != nullptr && node->gpu_op() != nullptr
+                             ? node->gpu_op()->flops()
+                             : 0);
+  }
+  return node_flops;
+}
+
 }  // namespace
+
+uint64_t GpuBackendOpenClLitert::ResolveAutoBatchFlopsBudget(
+    ::ml_drift::CalculationsPrecision precision) const {
+  if (kernel_batch_size_ > 0) {
+    return 0;
+  }
+  return ComputeMaxFlopsPerKernelBatch(cl_env()->device().GetInfo(), precision);
+}
+
+void GpuBackendOpenClLitert::MaybeSetAutoKernelBatchSizes(
+    absl::Span<const uint64_t> node_flops, uint64_t max_flops_per_batch,
+    GpuInferenceContextOpenClLitert* ctx, const char* log_prefix) {
+  if (max_flops_per_batch == 0 || node_flops.empty()) {
+    return;
+  }
+  std::vector<int> auto_batch_sizes =
+      PartitionNodesByFlops(node_flops, max_flops_per_batch);
+  if (auto_batch_sizes.empty()) {
+    return;
+  }
+  LITERT_LOG(LITERT_INFO,
+             "%s into %zu FLOPs-bounded batches "
+             "(nodes=%zu, total_flops=%llu, budget=%llu).",
+             log_prefix, auto_batch_sizes.size(), node_flops.size(),
+             static_cast<unsigned long long>(SumFlops(node_flops)),
+             static_cast<unsigned long long>(max_flops_per_batch));
+  ctx->set_auto_kernel_batch_sizes(std::move(auto_batch_sizes));
+}
+
+uint64_t GpuBackendOpenClLitert::ComputeMaxFlopsPerKernelBatch(
+    const ::ml_drift::GpuInfo& gpu_info,
+    ::ml_drift::CalculationsPrecision precision) {
+  if (!gpu_info.IsAdreno() || !gpu_info.adreno_info.IsAdreno8xx()) {
+    return 0;
+  }
+  // On Adreno Gen 8 (8xx), `cl_qcom_recordable_queues` packs the entire graph
+  // into a single IB1 submission (`ts`), which can trip the GMU long-IB
+  // hardware watchdog (~9-10 s, `Fault id: 2`) on compute-heavy graphs such as
+  // high-resolution ViT encoders (`vision_1120`, ~8.16 TFLOPs) in both FP32
+  // and thermally throttled FP16 (`902 MHz` -> ~70 GFLOP/s/CU effective on
+  // 12-CU Adreno 840). A per-CU budget of 50 GFLOPs (FP16) / 20 GFLOPs (FP32 /
+  // F32F16) targets ~0.5-0.7 s per flushed batch, keeping small and decode
+  // subgraphs (e.g. multi-thousand-node LLM decode) on the single-recording
+  // fast path.
+  constexpr uint64_t kFp16FlopsPerCu = 50ULL * 1000 * 1000 * 1000;
+  constexpr uint64_t kFp32FlopsPerCu = 20ULL * 1000 * 1000 * 1000;
+  int raw_cu_count = gpu_info.GetComputeUnitsCount();
+  if (raw_cu_count <= 0) {
+    raw_cu_count = gpu_info.adreno_info.compute_units;
+  }
+  const uint64_t cu_count = static_cast<uint64_t>(std::max(1, raw_cu_count));
+  const uint64_t flops_per_cu =
+      (precision == ::ml_drift::CalculationsPrecision::kF16) ? kFp16FlopsPerCu
+                                                             : kFp32FlopsPerCu;
+  return cu_count * flops_per_cu;
+}
+
+std::vector<int> GpuBackendOpenClLitert::PartitionNodesByFlops(
+    absl::Span<const uint64_t> node_flops, uint64_t max_flops_per_batch) {
+  if (max_flops_per_batch == 0 || node_flops.empty()) {
+    return {};
+  }
+  std::vector<int> batch_sizes;
+  int current_count = 0;
+  uint64_t current_flops = 0;
+  for (uint64_t flops : node_flops) {
+    if (current_count > 0 && (current_flops >= max_flops_per_batch ||
+                              flops > max_flops_per_batch - current_flops)) {
+      batch_sizes.push_back(current_count);
+      current_count = 0;
+      current_flops = 0;
+    }
+    ++current_count;
+    current_flops = SaturatingAdd(current_flops, flops);
+  }
+  if (batch_sizes.empty()) {
+    // Entire graph fits in one submission; stay on the single command-buffer
+    // fast path.
+    return {};
+  }
+  batch_sizes.push_back(current_count);
+  return batch_sizes;
+}
 
 #if LITERT_HAS_OPENGL_SUPPORT
 namespace internal {
@@ -340,8 +477,18 @@ GpuBackendOpenClLitert::CreateInferenceContext(
   auto ctx = std::make_unique<GpuInferenceContextOpenClLitert>(
       this, may_share_memory_manager ? &memory_manager() : nullptr,
       gl_interop_fabric);
+  const uint64_t max_flops_per_batch =
+      ResolveAutoBatchFlopsBudget(create_info.precision);
+  // Collect per-node FLOPs before InitFromGpuModel() because it calls
+  // std::move() on each `gpu_model.nodes[i].gpu_operation` (leaving them
+  // null), and ml_drift::cl::InferenceContext does not expose node FLOPs.
+  const std::vector<uint64_t> node_flops = max_flops_per_batch > 0
+                                               ? CollectNodeFlops(gpu_model)
+                                               : std::vector<uint64_t>{};
   ABSL_RETURN_IF_ERROR(ctx->cl_ctx().InitFromGpuModel(
       create_info, &gpu_model, cl_env(), serialized_model));
+  MaybeSetAutoKernelBatchSizes(node_flops, max_flops_per_batch, ctx.get(),
+                               "Splitting OpenCL dispatch");
   return std::move(ctx);
 }
 
@@ -357,6 +504,13 @@ GpuBackendOpenClLitert::RestoreInferenceContext(
       this, &memory_manager(), gl_interop_fabric);
   ABSL_RETURN_IF_ERROR(ctx->cl_ctx().RestoreDeserialized(
       serialized_model, cl_env(), &create_info));
+  const uint64_t max_flops_per_batch =
+      ResolveAutoBatchFlopsBudget(create_info.precision);
+  if (max_flops_per_batch > 0) {
+    MaybeSetAutoKernelBatchSizes(CollectSerializedNodeFlops(serialized_model),
+                                 max_flops_per_batch, ctx.get(),
+                                 "Splitting restored OpenCL dispatch");
+  }
   return std::move(ctx);
 }
 
@@ -441,20 +595,35 @@ absl::Status GpuInferenceContextOpenClLitert::Dispatch() {
       static_cast<GpuBackendOpenClLitert*>(backend());
   current_backend->FlushCompiledCacheIfNeeded();
 
-  // If kernel_batch_size is not set, dispatch all kernels in one batch.
-  if (current_backend->kernel_batch_size() <= 0) {
-    return cl_ctx().AddToQueue(cl_env()->queue());
+  // 1. Explicit caller-configured batch size always takes precedence.
+  if (current_backend->kernel_batch_size() > 0) {
+    int offset = 0;
+    do {
+      ABSL_ASSIGN_OR_RETURN(
+          offset, cl_ctx().AddToQueue(cl_env()->queue(), offset,
+                                      current_backend->kernel_batch_size()));
+      ::ml_drift::cl::clFlush(cl_env()->queue()->queue());
+    } while (offset != -1);
+    return absl::OkStatus();
   }
 
-  // Otherwise, dispatch kernels in batches of size kernel_batch_size.
-  int offset = 0;
-  do {
-    ABSL_ASSIGN_OR_RETURN(
-        offset, cl_ctx().AddToQueue(cl_env()->queue(), offset,
-                                    current_backend->kernel_batch_size()));
-    ::ml_drift::cl::clFlush(cl_env()->queue()->queue());
-  } while (offset != -1);
-  return absl::OkStatus();
+  // 2. Per-context automatic FLOPs-bounded batching (Adreno 8xx heavy graphs).
+  if (!auto_kernel_batch_sizes_.empty()) {
+    int offset = 0;
+    for (int count : auto_kernel_batch_sizes_) {
+      ABSL_ASSIGN_OR_RETURN(
+          offset, cl_ctx().AddToQueue(cl_env()->queue(), offset, count));
+      ::ml_drift::cl::clFlush(cl_env()->queue()->queue());
+      if (offset == -1) {
+        break;
+      }
+    }
+    return absl::OkStatus();
+  }
+
+  // 3. Default fast path: dispatch the whole graph (uses recorded command
+  // buffers when supported).
+  return cl_ctx().AddToQueue(cl_env()->queue());
 }
 
 absl::Status GpuInferenceContextOpenClLitert::PreConvert(bool input) {

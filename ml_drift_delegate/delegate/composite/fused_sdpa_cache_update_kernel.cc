@@ -303,6 +303,12 @@ MAIN_FUNCTION($0) {
   op.code_ = absl::StrReplaceAll(
       code, {{"ROWS_PER_GROUP", std::to_string(rows_per_group)},
              {"THREADS_PER_ROW", std::to_string(threads_per_row)}});
+  // Online softmax: ~7 FLOPs per logit element over past and new columns.
+  const ::ml_drift::BHWC past_shape = probs_past.GetBHWCShape();
+  const uint64_t num_rows =
+      static_cast<uint64_t>(past_shape.b) * past_shape.h * past_shape.w;
+  op.flops_ =
+      num_rows * (static_cast<uint64_t>(cache_size) + new_len) * 7ULL;
   return std::make_unique<FixedWorkGroupOp>(std::move(op));
 }
 
