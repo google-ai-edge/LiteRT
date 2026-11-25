@@ -33,6 +33,7 @@
 #else
 #define XNN_EXTRA_BYTES 16
 #endif
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
@@ -152,7 +153,7 @@ LiteRtTensorBufferT::LiteRtTensorBufferT(
 #endif  // __EMSCRIPTEN__
 }
 
-LiteRtTensorBufferT::~LiteRtTensorBufferT() {
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI LiteRtTensorBufferT::~LiteRtTensorBufferT() {
 #ifndef __EMSCRIPTEN__
   LITERT_LOG(LITERT_DEBUG, "Destroying tensor buffer %p of type %s", this,
              BufferTypeToString(buffer_type_).data());
