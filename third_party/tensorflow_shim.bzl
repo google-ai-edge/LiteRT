@@ -242,11 +242,12 @@ def tensorflow_shim_dependencies(with_tensorflow = False):
         http_archive(
             name = "zlib",
             build_file = "@com_google_protobuf//third_party:zlib.BUILD",
-            sha256 = "38ef96b8dfe510d42707d9c781877914792541133e1870841463bfa73f883e32",
+            sha256 = "9a93b2b7dfdac77ceba5a558a580e74667dd6fede4585b91eefb60f03b72df23",
             strip_prefix = "zlib-1.3.1",
             urls = [
-                "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.xz",
-                "https://zlib.net/zlib-1.3.1.tar.xz",
+                "https://storage.googleapis.com/mirror.tensorflow.org/zlib.net/fossils/zlib-1.3.1.tar.gz",
+                "https://github.com/madler/zlib/releases/download/v1.3.1/zlib-1.3.1.tar.gz",
+                "https://zlib.net/fossils/zlib-1.3.1.tar.gz",
             ],
         )
 

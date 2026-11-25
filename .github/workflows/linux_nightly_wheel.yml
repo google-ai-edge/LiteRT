@@ -5,6 +5,12 @@ on:
     - cron: '0 20 * * *'
       timezone: 'America/Los_Angeles'
   workflow_dispatch:
+    inputs:
+      nightly_date:
+        description: 'Optional YYYYMMDD date override (America/Los_Angeles); defaults to today'
+        required: false
+        type: string
+        default: ''
 
 concurrency:
   group: ${{ github.workflow }}-nightly
@@ -14,8 +20,33 @@ permissions:
   contents: read
 
 jobs:
+  init:
+    name: "Determine Nightly Release Date"
+    runs-on: ubuntu-latest
+    outputs:
+      nightly_date: ${{ steps.date.outputs.nightly_date }}
+    steps:
+      - name: Set nightly date
+        id: date
+        shell: bash
+        env:
+          INPUT_NIGHTLY_DATE: ${{ inputs.nightly_date }}
+        run: |
+          if [[ -n "${INPUT_NIGHTLY_DATE}" ]]; then
+            if [[ ! "${INPUT_NIGHTLY_DATE}" =~ ^[0-9]{8}$ ]]; then
+              echo "::error::Invalid nightly_date '${INPUT_NIGHTLY_DATE}' (expected YYYYMMDD)."
+              exit 1
+            fi
+            NIGHTLY_DATE="${INPUT_NIGHTLY_DATE}"
+          else
+            NIGHTLY_DATE="$(TZ='America/Los_Angeles' date +%Y%m%d)"
+          fi
+          echo "nightly_date=${NIGHTLY_DATE}" >> "$GITHUB_OUTPUT"
+          echo "Using NIGHTLY_RELEASE_DATE=${NIGHTLY_DATE}"
+
   build_wheels:
     name: "Build Wheels - Python ${{ matrix.python-version }}"
+    needs: init
     runs-on: linux-x86-n4-16
     container:
       image: us-docker.pkg.dev/ml-oss-artifacts-published/ml-public-container/ml-build@sha256:d6b429665f5269698f88ccd00bcb8a6eb685332c302f08f29fe0738cd6a6610c
@@ -109,6 +140,7 @@ jobs:
       - name: Build and generate wheel
         shell: bash
         env:
+          NIGHTLY_RELEASE_DATE: ${{ needs.init.outputs.nightly_date }}
           DOCKER_PYTHON_VERSION: ${{ matrix.python-version }}
           CUSTOM_BAZEL_FLAGS: "--config=release_cpu_linux"
           TEST_MANYLINUX_COMPLIANCE: "true"
@@ -118,7 +150,6 @@ jobs:
           # are skipped and only the wheels are published.
           LITERT_PREBUILTS_PIN: "required"
         run: |
-          export NIGHTLY_RELEASE_DATE=$(TZ='America/Los_Angeles' date +%Y%m%d)
           export CI_BUILD_PYTHON="python${DOCKER_PYTHON_VERSION}"
           export HERMETIC_PYTHON_VERSION="${DOCKER_PYTHON_VERSION}"
           chmod +x configure.py
@@ -157,8 +188,10 @@ jobs:
   upload-to-pypi:
     name: "Upload Nightly Wheels to PyPI"
     runs-on: ubuntu-latest
-    needs: build_wheels
-    if: success() && github.ref == 'refs/heads/main'
+    needs: [init, build_wheels]
+    # Publish any passing wheels and pinned SDK sdists even if one Python
+    # version flakes (the workflow run still reports failure).
+    if: always() && !cancelled() && needs.init.result == 'success' && github.ref == 'refs/heads/main'
     permissions:
       contents: read
       id-token: write
@@ -179,7 +212,13 @@ jobs:
           merge-multiple: true
 
       - name: List downloaded wheels
-        run: ls -R dist
+        shell: bash
+        run: |
+          if [[ ! -d dist ]] || [[ -z "$(ls -A dist)" ]]; then
+            echo "::error::No wheel or sdist artifacts were produced by build_wheels."
+            exit 1
+          fi
+          ls -laR dist
 
       - name: Refuse unpinned SDK sdists
         shell: bash
