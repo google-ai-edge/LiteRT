@@ -751,6 +751,15 @@ TEST(TestCompositeInlining, FailsIfDestinationOpIsNotInModel) {
       ::testing::HasSubstr("Failed to find the subgraph containing the op"));
 }
 
+TEST(TestCompositeInlining, FailsIfSourceSubgraphIsNull) {
+  LiteRtModelT model;
+  auto& op = model.EmplaceSubgraph().EmplaceOp();
+
+  auto result = InlineSubgraph(model, op, /*source_subgraph=*/nullptr);
+  ASSERT_FALSE(result.HasValue());
+  EXPECT_EQ(result.Error().Status(), kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(TestCompositeInlining, inlineSimpleComposite) {
   auto model_wrap = testing::LoadTestFileModel("rms_norm_composite.tflite");
   ASSERT_TRUE(model_wrap);

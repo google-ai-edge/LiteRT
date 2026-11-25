@@ -520,12 +520,12 @@ Expected<LiteRtOp> OutlinePartition(LiteRtSubgraphT& root, LiteRtSubgraph slice,
   return GraphSlicer::SlicePartitionFromGraph(root, slice, partition);
 }
 
-Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
-                              LiteRtSubgraph source_subgraph) {
+Expected<void> CheckInlinable(const LiteRtOpT& destination_op,
+                              const LiteRtSubgraphT& source_subgraph) {
   // Check if the input and output tensors of the destination op are the same as
   // the input and output tensors of the source subgraph.
-  if (destination_op.Inputs().size() != source_subgraph->Inputs().size() ||
-      destination_op.Outputs().size() != source_subgraph->Outputs().size()) {
+  if (destination_op.Inputs().size() != source_subgraph.Inputs().size() ||
+      destination_op.Outputs().size() != source_subgraph.Outputs().size()) {
     return Unexpected(
         kLiteRtStatusErrorInvalidArgument,
         "Input/output tensors of destination op and source subgraph "
@@ -577,13 +577,24 @@ Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
   };
 
   for (int i = 0; i < destination_op.Inputs().size(); ++i) {
-    LITERT_RETURN_IF_ERROR(verify_tensor_type(
-        *destination_op.Inputs().at(i), *source_subgraph->Inputs().at(i)));
+    LITERT_RETURN_IF_ERROR(verify_tensor_type(*destination_op.Inputs().at(i),
+                                              *source_subgraph.Inputs().at(i)));
   }
   for (int i = 0; i < destination_op.Outputs().size(); ++i) {
     LITERT_RETURN_IF_ERROR(verify_tensor_type(
-        *destination_op.Outputs().at(i), *source_subgraph->Outputs().at(i)));
+        *destination_op.Outputs().at(i), *source_subgraph.Outputs().at(i)));
   }
+
+  return {};
+}
+
+Expected<void> InlineSubgraph(LiteRtModelT& model, LiteRtOpT& destination_op,
+                              LiteRtSubgraph source_subgraph) {
+  if (source_subgraph == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Source subgraph is null.");
+  }
+  LITERT_RETURN_IF_ERROR(CheckInlinable(destination_op, *source_subgraph));
 
   // Find the main subgraph containing the destination op.
   LiteRtSubgraphT* main_subgraph = nullptr;
