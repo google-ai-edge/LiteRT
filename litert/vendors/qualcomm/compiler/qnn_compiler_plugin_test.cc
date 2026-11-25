@@ -21,6 +21,7 @@
 #include <system_error>
 
 #include <gtest/gtest.h>
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_abi_header.h"
 #include "litert/c/internal/litert_compiler_context.h"
@@ -40,6 +41,7 @@
 #include "litert/vendors/c/litert_compiler_plugin.h"
 #include "litert/vendors/c/litert_compiler_plugin_api.h"
 #include "litert/vendors/cc/litert_compiler_plugin.h"
+#include "litert/vendors/qualcomm/common.h"
 #include "litert/vendors/qualcomm/core/schema/soc_table.h"
 
 namespace litert {
@@ -607,7 +609,10 @@ TEST_P(QnnPluginOpCompatibilityTest, SupportedOpsTest) {
 INSTANTIATE_TEST_SUITE_P(SupportedOpsTest, QnnPluginOpCompatibilityTest,
                          kSupportedOps);
 
-TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
+class QnnPluginJitProfilingTest
+    : public ::testing::TestWithParam<qualcomm::QualcommOptions::Profiling> {};
+
+TEST_P(QnnPluginJitProfilingTest, CompileMultiSubgraphJustInTime) {
   auto model = litert::testing::LoadTestFileModel("rms_norm_composite.tflite");
 
   auto opts = Options::Create();
@@ -616,6 +621,7 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
   auto qnn_opts = opts->GetOptions<qualcomm::QualcommOptions>();
   ASSERT_TRUE(qnn_opts);
   qnn_opts->SetEnableJustInTime(true);
+  qnn_opts->SetProfiling(GetParam());
 
   LITERT_ASSERT_OK_AND_ASSIGN(auto env, Environment::Create({}));
   LITERT_ASSERT_OK_AND_ASSIGN(
@@ -629,6 +635,9 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
   LiteRtCompiledResult compiled;
   LITERT_ASSERT_OK(plugin.Api()->compiler_plugin_compile(
       plugin.Get(), "SM8650", model.Get(), &compiled));
+  absl::Cleanup cleanup = [&] {
+    plugin.Api()->destroy_compiled_result(compiled);
+  };
 
   LiteRtParamIndex num_byte_code;
   LITERT_ASSERT_OK(plugin.Api()->get_compiled_result_num_byte_code(
@@ -638,15 +647,34 @@ TEST(TestQnnPlugin, CompileMultiSubgraphJustInTime) {
   LiteRtJitExecutable handle_0 = nullptr;
   LITERT_ASSERT_OK(
       plugin.Api()->get_compiled_result_handle(compiled, 0, &handle_0));
-  EXPECT_NE(handle_0, nullptr);
+  ASSERT_NE(handle_0, nullptr);
 
   LiteRtJitExecutable handle_1 = nullptr;
   LITERT_ASSERT_OK(
       plugin.Api()->get_compiled_result_handle(compiled, 1, &handle_1));
-  EXPECT_NE(handle_1, nullptr);
+  ASSERT_NE(handle_1, nullptr);
 
-  plugin.Api()->destroy_compiled_result(compiled);
+  for (auto handle : {handle_0, handle_1}) {
+    const auto* jit_graph =
+        reinterpret_cast<const litert::qnn::QnnJitGraph*>(handle);
+    ASSERT_NE(jit_graph->context_handle, nullptr);
+    if (GetParam() == qualcomm::QualcommOptions::Profiling::kOff) {
+      EXPECT_EQ(jit_graph->profile_handle, nullptr);
+    } else {
+      EXPECT_NE(jit_graph->profile_handle, nullptr);
+    }
+  }
 }
+
+INSTANTIATE_TEST_SUITE_P(
+    ProfilingOffAndBasic, QnnPluginJitProfilingTest,
+    Values(qualcomm::QualcommOptions::Profiling::kOff,
+           qualcomm::QualcommOptions::Profiling::kBasic),
+    [](const ::testing::TestParamInfo<qualcomm::QualcommOptions::Profiling>&
+           info) {
+      return info.param == qualcomm::QualcommOptions::Profiling::kOff ? "Off"
+                                                                      : "Basic";
+    });
 
 TEST(TestQnnPlugin, CompileWithSchematicDir) {
   auto opts = Options::Create();
