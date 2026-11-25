@@ -133,3 +133,11 @@ inputs, model coefficients, quantization mode, thread count and thermal state
 when comparing runs. Record the source revision and all experimental flags.
 The packed-weight cache defaults to `$EXPORTED.xnnpack_cache`; use a separate
 cache path for a different model export.
+
+## Optional current-runtime performance comparison
+
+See [the benchmark package](benchmarks/README.md) for the official LiteRT-LM
+CPU adapter, Android build and deployment commands, fixed workloads, prompt and
+capacity sweeps, and validated summaries. It uses current official LiteRT-LM
+dependencies and reports new measurements rather than requiring historical
+performance numbers.
