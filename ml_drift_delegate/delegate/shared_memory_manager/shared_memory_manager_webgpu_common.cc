@@ -33,11 +33,14 @@
 #include <cstdlib>
 #include <cstring>
 #include <functional>
+#include <limits>
 #include <utility>
 
 #include "absl/log/absl_check.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
+#include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -63,9 +66,13 @@ constexpr size_t kAlignment = 4096;
 // which can create a buffer directly from a memory region. This allows for fast
 // uploading of data on a thread because it does not require acquiring the
 // internal WebGPU lock.
-wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
-                                   absl::Span<const uint8_t> data,
-                                   size_t min_size) {
+//
+// If `row_size` is not zero, `data` must start with `num_rows` tightly packed
+// rows of `row_size` bytes, and row i is written at byte i * `dst_row_pitch` of
+// the buffer, see CopyRowsWithPitch().
+absl::StatusOr<wgpu::Buffer> CreateOwnedDataBuffer(
+    const wgpu::Device& device, absl::Span<const uint8_t> data, size_t min_size,
+    size_t row_size = 0, size_t dst_row_pitch = 0, size_t num_rows = 0) {
   size_t size = std::max(data.size(), min_size);
   // BufferHostMappedPointer requires aligned buffers.
   size_t aligned_size = AlignByN(size, kAlignment);
@@ -79,16 +86,27 @@ wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
                 0);
   uint8_t* data_copy = static_cast<uint8_t*>(data_copy_void_ptr);
 #endif
-  memcpy(data_copy, data.data(), data.size());
-  wgpu::BufferHostMappedPointer host_mapped_desc;
-  host_mapped_desc.pointer = data_copy;
-  host_mapped_desc.disposeCallback = [](void* userdata) {
+  auto free_data_copy = [](void* userdata) {
 #if defined(_WIN32)
     VirtualFree(userdata, 0, MEM_RELEASE);
 #else
     free(userdata);
 #endif
   };
+  if (row_size != 0) {
+    absl::Status status =
+        CopyRowsWithPitch(data, row_size, num_rows, dst_row_pitch,
+                          absl::MakeSpan(data_copy, aligned_size));
+    if (!status.ok()) {
+      free_data_copy(data_copy);
+      return status;
+    }
+  } else {
+    memcpy(data_copy, data.data(), data.size());
+  }
+  wgpu::BufferHostMappedPointer host_mapped_desc;
+  host_mapped_desc.pointer = data_copy;
+  host_mapped_desc.disposeCallback = free_data_copy;
   host_mapped_desc.userdata = data_copy;
   wgpu::BufferDescriptor buffer_desc = {
       .nextInChain = &host_mapped_desc,
@@ -121,29 +139,21 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
   wgpu::CommandEncoder encoder = env.device().CreateCommandEncoder();
   uint32_t offset = 0;
 
-  // Calculate the bytes per aligned row for the buffer we are using to
-  // to copy the data to the texture. The row size is the size of the pixel
-  // times the number of pixels in the row. This will allow WebGPU to know what
-  // it should be copying.
-  int pixel_size = SizeOf(desc.GetDataType()) * 4;
-  int3 region = desc.GetFullTensorRegion();
-  const uint32_t bytes_per_row = pixel_size * region.x;
-  // from spec: "texelCopyBufferInfo.bytesPerRow must be a multiple of 256."
-  const uint32_t bytes_per_row_aligned = AlignByN(bytes_per_row, 256);
-  const uint32_t rows_per_image = region.y;
-  size_t min_owned_buffer_size = 0;
+  // CopyBufferToTexture reads the rows at a 256-byte aligned bytesPerRow, so
+  // tightly packed rows are repacked at that pitch in the staging buffer, see
+  // GetTextureStagingLayout().
+  const size_t pixel_size = SizeOf(desc.GetDataType()) * 4;
+  const int3 region = desc.GetFullTensorRegion();
+  TextureStagingLayout layout;
   if (dst_texture) {
-    // For all rows except the last one, we need to add enough bytes to store
-    // the padding and alignment that bytesPerRow requires.
-    if (rows_per_image > 1) {
-      min_owned_buffer_size += bytes_per_row_aligned * (rows_per_image - 1);
-    }
-    // Add only the required bytes for the last row.
-    min_owned_buffer_size += bytes_per_row;
+    ABSL_ASSIGN_OR_RETURN(layout, GetTextureStagingLayout(region, pixel_size,
+                                                          weights_data.size()));
   }
-
-  auto upload_notification = std::make_shared<absl::Notification>();
-  tensor->set_upload_notification(upload_notification);
+  const size_t min_owned_buffer_size = layout.min_buffer_size;
+  const size_t row_size = layout.repack_rows ? layout.bytes_per_row : 0;
+  const uint32_t bytes_per_row_aligned = layout.bytes_per_row_aligned;
+  const size_t num_rows = layout.num_rows;
+  const uint32_t rows_per_image = region.y;
 
   wgpu::Buffer buffer;
   // If the buffer is prepacked, it is likely mmapped and it will still be
@@ -152,16 +162,32 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
   // need to copy it to a buffer on the main thread.
   bool copy_buffer_on_main_thread = !has_prepacked_tflite_tensors;
   if (copy_buffer_on_main_thread) {
-    buffer = CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+    ABSL_ASSIGN_OR_RETURN(
+        buffer,
+        CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size,
+                              row_size, bytes_per_row_aligned, num_rows));
   }
+
+  auto upload_notification = std::make_shared<absl::Notification>();
+  tensor->set_upload_notification(upload_notification);
 
   auto fn = [=] {
     wgpu::Buffer owned_buffer;
     if (copy_buffer_on_main_thread) {
       owned_buffer = std::move(buffer);
     } else {
-      owned_buffer =
-          CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+      // The layout was validated above, so this only fails if the arguments
+      // are inconsistent.
+      absl::StatusOr<wgpu::Buffer> created_buffer =
+          CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size,
+                                row_size, bytes_per_row_aligned, num_rows);
+      if (!created_buffer.ok()) {
+        ABSL_LOG(ERROR) << "Failed to stage weights for upload: "
+                        << created_buffer.status();
+        upload_notification->Notify();
+        return;
+      }
+      owned_buffer = *std::move(created_buffer);
       ::ml_drift::MadviseData(const_cast<uint8_t*>(weights_data.data()),
                               weights_data.size());
     }
@@ -206,6 +232,109 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
 #endif  // !__EMSCRIPTEN__
 
 }  // namespace
+
+absl::Status CopyRowsWithPitch(absl::Span<const uint8_t> src, size_t row_size,
+                               size_t num_rows, size_t dst_row_pitch,
+                               absl::Span<uint8_t> dst) {
+  if (row_size != 0 &&
+      num_rows > (std::numeric_limits<size_t>::max)() / row_size) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        num_rows, " rows of ", row_size, " bytes overflow size_t."));
+  }
+  if (src.size() < num_rows * row_size) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Expected at least ", num_rows, " rows of ", row_size,
+                     " bytes, got ", src.size(), " bytes."));
+  }
+  if (dst_row_pitch < row_size) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Row pitch ", dst_row_pitch,
+                     " is smaller than the row size ", row_size, "."));
+  }
+  if (num_rows == 0 || row_size == 0) {
+    return absl::OkStatus();
+  }
+  // Here dst_row_pitch >= row_size > 0. Written without multiplying so that it
+  // cannot overflow.
+  if (dst.size() < row_size ||
+      (dst.size() - row_size) / dst_row_pitch < num_rows - 1) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Destination of ", dst.size(), " bytes is too small for ",
+                     num_rows, " rows with a pitch of ", dst_row_pitch, "."));
+  }
+  if (dst_row_pitch == row_size) {
+    std::copy_n(src.data(), num_rows * row_size, dst.data());
+    return absl::OkStatus();
+  }
+  for (size_t row = 0; row < num_rows; ++row) {
+    memcpy(dst.data() + row * dst_row_pitch, src.data() + row * row_size,
+           row_size);
+  }
+  return absl::OkStatus();
+}
+
+absl::StatusOr<TextureStagingLayout> GetTextureStagingLayout(const int3& region,
+                                                             size_t texel_size,
+                                                             size_t data_size) {
+  if (region.x <= 0 || region.y <= 0 || region.z <= 0 || texel_size == 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Invalid texture region ", region.x, "x", region.y, "x",
+                     region.z, " with texels of ", texel_size, " bytes."));
+  }
+  // Keep bytes_per_row_aligned representable as uint32_t.
+  constexpr uint64_t kMaxBytesPerRow =
+      (std::numeric_limits<uint32_t>::max)() - 255;
+  const uint64_t bytes_per_row = static_cast<uint64_t>(texel_size) * region.x;
+  if (texel_size > kMaxBytesPerRow || bytes_per_row > kMaxBytesPerRow) {
+    return absl::InvalidArgumentError(absl::StrCat("Texture row of ", region.x,
+                                                   " texels of ", texel_size,
+                                                   " bytes is too large."));
+  }
+  TextureStagingLayout layout;
+  layout.bytes_per_row = static_cast<uint32_t>(bytes_per_row);
+  // From the spec: "texelCopyBufferInfo.bytesPerRow must be a multiple of
+  // 256."
+  layout.bytes_per_row_aligned = AlignByN(layout.bytes_per_row, 256);
+  const uint64_t num_rows = static_cast<uint64_t>(region.y) * region.z;
+  // min_buffer_size = (num_rows - 1) * bytes_per_row_aligned + bytes_per_row,
+  // which must fit in size_t.
+  if ((num_rows - 1) >
+      ((std::numeric_limits<size_t>::max)() - layout.bytes_per_row) /
+          layout.bytes_per_row_aligned) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Texture of ", num_rows, " rows of ",
+                     layout.bytes_per_row_aligned, " bytes is too large."));
+  }
+  layout.num_rows = static_cast<size_t>(num_rows);
+  layout.min_buffer_size =
+      (layout.num_rows - 1) * layout.bytes_per_row_aligned +
+      layout.bytes_per_row;
+  if (layout.bytes_per_row == layout.bytes_per_row_aligned) {
+    // The rows are already at the aligned pitch: copied as is.
+    return layout;
+  }
+  // Data that is already padded to the aligned pitch, with or without the
+  // padding of the last row, is copied as is. Repacking it would scramble it.
+  const size_t last_row_padding =
+      layout.bytes_per_row_aligned - layout.bytes_per_row;
+  const bool is_padded =
+      data_size == layout.min_buffer_size ||
+      (data_size >= last_row_padding &&
+       data_size - last_row_padding == layout.min_buffer_size);
+  if (is_padded) {
+    return layout;
+  }
+  // Otherwise the rows are tightly packed, possibly followed by bytes that are
+  // not uploaded. num_rows * bytes_per_row <= min_buffer_size, so this does not
+  // overflow.
+  if (data_size < layout.num_rows * layout.bytes_per_row) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "Texture data is too small: expected at least ", layout.num_rows, " x ",
+        layout.bytes_per_row, " bytes, got ", data_size, "."));
+  }
+  layout.repack_rows = true;
+  return layout;
+}
 
 #if !defined(__EMSCRIPTEN__)
 // Copies `desc` into a wgpu::Buffer using the BufferHostMappedPointer extension
@@ -283,16 +412,17 @@ absl::Status CopyBufferToBuffer(
 }
 #endif  // !__EMSCRIPTEN__
 
-absl::Status CreateSharedWebGpuTensor(
+namespace {
+
+// Implements CreateSharedWebGpuTensor(). `tensor` must be null. May leave a
+// partially created tensor in `tensor` on failure.
+absl::Status CreateSharedWebGpuTensorImpl(
     const webgpu::ExecutionEnvironment& env, TensorDescriptor& tensor_desc,
     size_t page_adjusted_offset,
     ::litert::ml_drift::ReleaseDataCallback release_data_callback,
     bool has_prepacked_tflite_tensors, Executor* upload_executor,
     UploadScheduling upload_scheduling,
     std::unique_ptr<GpuSpatialTensor>& tensor) {
-  if (tensor) {
-    return absl::InternalError("Tensor is already initialized.");
-  }
 #if defined(__EMSCRIPTEN__)
   tensor = std::make_unique<webgpu::SpatialTensor>();
 #else  // defined(__EMSCRIPTEN__)
@@ -357,6 +487,30 @@ absl::Status CreateSharedWebGpuTensor(
 #if !defined(__EMSCRIPTEN__)
   env.device().Tick();
 #endif  // !defined(__EMSCRIPTEN__)
+  return status;
+}
+
+}  // namespace
+
+absl::Status CreateSharedWebGpuTensor(
+    const webgpu::ExecutionEnvironment& env, TensorDescriptor& tensor_desc,
+    size_t page_adjusted_offset,
+    ::litert::ml_drift::ReleaseDataCallback release_data_callback,
+    bool has_prepacked_tflite_tensors, Executor* upload_executor,
+    UploadScheduling upload_scheduling,
+    std::unique_ptr<GpuSpatialTensor>& tensor) {
+  if (tensor) {
+    return absl::InternalError("Tensor is already initialized.");
+  }
+  absl::Status status = CreateSharedWebGpuTensorImpl(
+      env, tensor_desc, page_adjusted_offset, std::move(release_data_callback),
+      has_prepacked_tflite_tensors, upload_executor, upload_scheduling, tensor);
+  if (!status.ok()) {
+    // Release the partially created tensor so that the caller can create it
+    // again, e.g. SharedMemoryManager falls back to converting the original
+    // weights when the weight cache data is invalid.
+    tensor.reset();
+  }
   return status;
 }
 
