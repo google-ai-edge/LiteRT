@@ -33,6 +33,7 @@ limitations under the License.
 #include "tensor/examples/experimental/gemma4/bundle_loader.h"
 #include "tensor/examples/experimental/gemma4/gemma4_graph.h"
 #include "tensor/examples/experimental/gemma4/kv_cache.h"
+#include "tensor/examples/experimental/gemma4/model_builder_internal.h"
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
@@ -208,6 +209,13 @@ absl::Status AddGemma4Signatures(ModelFactory& factory,
           absl::StrCat("Missing model weight: ", name));
     }
   }
+  return model_builder_internal::AddSignatures(factory, config, weights, specs,
+                                               options);
+}
+
+absl::Status model_builder_internal::AddSignatures(
+    ModelFactory& factory, const Config& config, const LoadedTensors& weights,
+    const std::vector<KvOwnerSpec>& specs, const ModelAuthoringOptions& options) {
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::vector<TensorHandle> prefill,
       BuildSignature(config, weights, specs, options.prefill_rows, false,

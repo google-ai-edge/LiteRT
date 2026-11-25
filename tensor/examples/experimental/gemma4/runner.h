@@ -80,32 +80,7 @@ class Runner {
     std::unique_ptr<Runner> result(new Runner(
         env, std::move(model), std::move(embeddings), std::move(bank),
         alignment, dynamic_prefill_rows, strict_shapes, config));
-    for (int i = 0; i < 2; ++i) {
-      Signature& sig = result->signatures_[i];
-      sig.name = i == 0 ? "prefill" : "decode";
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          TensorHandle input,
-          result->model_.GetInput(sig.name, "embedded_input"));
-      if (input.GetShape().size() != 3 || input.GetShape()[0] != 1 ||
-          input.GetShape()[2] != result->config_.embed_dim ||
-          input.GetShape()[1] <= 0 || (i == 1 && input.GetShape()[1] != 1)) {
-        return absl::InvalidArgumentError(
-            "Invalid Gemma4 signature input shape");
-      }
-      sig.rows = input.GetShape()[1];
-      sig.ple.resize(result->config_.num_layers);
-      for (int layer = 0; layer < result->config_.num_layers; ++layer) {
-        absl::StatusOr<size_t> index = result->model_.GetInputIndex(
-            sig.name, absl::StrCat("per_layer_token_embedding_", layer));
-        if (index.ok()) {
-          sig.ple_indices.push_back({layer, *index});
-        } else if (!absl::IsNotFound(index.status())) {
-          return index.status();
-        }
-      }
-    }
-    result->padding_.Resize(size_t(alignment) *
-                            result->config_.global_key_size);
+    LRT_TENSOR_RETURN_IF_ERROR(result->InitializeSignatures());
     return result;
   }
 
@@ -133,6 +108,8 @@ class Runner {
   }
 
  private:
+  friend class RunnerTestPeer;
+
   struct Signature {
     std::string name;
     int rows = 0;
@@ -153,6 +130,34 @@ class Runner {
         resize_mode_(strict_shapes ? ResizeMode::kStrict
                                    : ResizeMode::kNonStrict),
         model_(std::move(model)) {}
+
+  absl::Status InitializeSignatures() {
+    for (int i = 0; i < 2; ++i) {
+      Signature& sig = signatures_[i];
+      sig.name = i == 0 ? "prefill" : "decode";
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          TensorHandle input, model_.GetInput(sig.name, "embedded_input"));
+      if (input.GetShape().size() != 3 || input.GetShape()[0] != 1 ||
+          input.GetShape()[2] != config_.embed_dim ||
+          input.GetShape()[1] <= 0 || (i == 1 && input.GetShape()[1] != 1)) {
+        return absl::InvalidArgumentError(
+            "Invalid Gemma4 signature input shape");
+      }
+      sig.rows = input.GetShape()[1];
+      sig.ple.resize(config_.num_layers);
+      for (int layer = 0; layer < config_.num_layers; ++layer) {
+        absl::StatusOr<size_t> index = model_.GetInputIndex(
+            sig.name, absl::StrCat("per_layer_token_embedding_", layer));
+        if (index.ok()) {
+          sig.ple_indices.push_back({layer, *index});
+        } else if (!absl::IsNotFound(index.status())) {
+          return index.status();
+        }
+      }
+    }
+    padding_.Resize(size_t(alignment_) * config_.global_key_size);
+    return absl::OkStatus();
+  }
 
   template <class T>
   absl::Status CopyInput(Signature& sig, absl::string_view name,
