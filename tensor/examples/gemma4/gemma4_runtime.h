@@ -27,6 +27,7 @@ limitations under the License.
 #include <cstdint>
 #include <iostream>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -44,6 +45,7 @@ limitations under the License.
 #include "tensor/examples/gemma4/gemma4_config.h"
 #include "tensor/examples/gemma4/gemma4_graph.h"
 #include "tensor/examples/gemma4/helpers/quantized_embedding.h"
+#include "tensor/examples/gemma4/host_kv_cache.h"
 #include "tensor/examples/utils/perfetto_session.h"
 #include "tensor/examples/utils/safetensor_loader.h"
 #include "tensor/examples/utils/tensor_mapping.h"
@@ -74,13 +76,6 @@ absl::Status FillAttentionMask(const Shape& shape, absl::Span<float> mask,
 // attention mask of the given `shape` ([..., S, S]).
 absl::StatusOr<TensorHandle> AttentionMask(Shape shape, bool is_local,
                                            int sliding_window_size);
-
-// Appends one token worth of K or V data (`new_kv`, [num_kv_heads, head_dim])
-// to a host cache laid out as [num_kv_heads, cache_len, head_dim], growing it
-// in place to [num_kv_heads, cache_len + 1, head_dim].
-void AppendTokenToKvCache(std::vector<float>& cache_buf,
-                          absl::Span<const float> new_kv, int num_kv_heads,
-                          int cache_len, int head_dim);
 
 // Deduces the model variant from the safetensor metadata.
 absl::StatusOr<ModelVariant> DeduceModelVariant(const SafetensorLoader& loader);
@@ -147,6 +142,10 @@ struct CompiledRunners {
 // Creates the graph inputs for a sequence of `input_seq_len` tokens and a KV
 // cache holding `kv_cache_len` tokens.
 //
+// The KV caches of the local sliding window layers (and their attention mask)
+// only hold the last `sliding_window_size - 1` of these tokens, see
+// `Config::KvCacheLen`.
+//
 // The returned tensors don't have a backend lowering mixin. Use
 // `ChangeMixinsTo<Tag>()` to build a graph from them.
 absl::StatusOr<Gemma4Inputs<>> CreateGemma4Inputs(const Config& config,
@@ -199,26 +198,31 @@ absl::StatusOr<int32_t> ExecuteDecodeStep(
     std::vector<float>& local_cos, std::vector<float>& local_sin,
     DecodeTiming& decode_timing);
 
-// Initializes the host KV caches from the prefill outputs and uploads them to
-// the decode runner.
+// Creates the host KV caches, initializes them from the prefill outputs and
+// binds them to the decode runner.
+//
+// `host_key_caches` and `host_value_caches` hold one entry per layer, set for
+// the layers that have their own KV cache. The local sliding window layers only
+// keep their window (`Config::KvCacheWindow`), stored in a ring buffer with
+// `ring_mode`.
 absl::Status InitKvCacheFromPrefill(
     NnpackRunner& prefill_runner, Gemma4Outputs<>& prefill_outputs,
     NnpackRunner& decode_runner, Gemma4Inputs<>& decode_inputs,
     const Config& config, int cache_len, int max_cache_len, int batch_size,
     const std::vector<int>& sharing_patterns,
-    std::vector<std::vector<float>>& host_key_caches,
-    std::vector<std::vector<float>>& host_value_caches);
+    std::vector<std::optional<HostKvCache>>& host_key_caches,
+    std::vector<std::optional<HostKvCache>>& host_value_caches,
+    HostKvCache::RingMode ring_mode = HostKvCache::RingMode::kAuto);
 
-// Appends the K/V produced by the last decode step to the host caches and
-// uploads them to the decode runner.
-absl::Status UpdateKvCache(NnpackRunner& decode_runner,
-                           Gemma4Inputs<>& decode_inputs,
-                           Gemma4Outputs<>& decode_outputs,
-                           const Config& config, int cache_len, int batch_size,
-                           const std::vector<int>& sharing_patterns,
-                           std::vector<std::vector<float>>& host_key_caches,
-                           std::vector<std::vector<float>>& host_value_caches,
-                           DecodeTiming& decode_timing);
+// Pushes the K/V produced by the last decode step to the host caches and binds
+// them to the decode runner.
+absl::Status UpdateKvCache(
+    NnpackRunner& decode_runner, Gemma4Inputs<>& decode_inputs,
+    Gemma4Outputs<>& decode_outputs, const Config& config, int cache_len,
+    int batch_size, const std::vector<int>& sharing_patterns,
+    std::vector<std::optional<HostKvCache>>& host_key_caches,
+    std::vector<std::optional<HostKvCache>>& host_value_caches,
+    DecodeTiming& decode_timing);
 
 struct GenerateOptions {
   std::string weights_path;
@@ -265,6 +269,12 @@ absl::Status Generate(
                               DeduceModelVariant(loader));
 
   const Config config = Config::From(model_variant);
+  if (config.sliding_window_size == 1) {
+    // The local layers would keep no past token, which the decode graph can't
+    // express.
+    return absl::InvalidArgumentError(
+        "sliding_window_size must be 0 (disabled) or at least 2.");
+  }
 
   const std::string prompt =
       FormatPrompt(tokenizer, options.prompt, options.instruction_tuned);
@@ -347,8 +357,8 @@ absl::Status Generate(
   const int batch_size = 1;
   DecodeTiming decode_timing;
   std::vector<int> sharing_patterns = GetKvCacheSharingPatterns(config);
-  std::vector<std::vector<float>> host_key_caches(config.num_layers);
-  std::vector<std::vector<float>> host_value_caches(config.num_layers);
+  std::vector<std::optional<HostKvCache>> host_key_caches(config.num_layers);
+  std::vector<std::optional<HostKvCache>> host_value_caches(config.num_layers);
 
   LRT_TENSOR_RETURN_IF_ERROR(InitKvCacheFromPrefill(
       runners.prefill_runner, graphs.prefill_outputs, runners.decode_runner,
