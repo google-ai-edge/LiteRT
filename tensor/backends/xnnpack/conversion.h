@@ -74,6 +74,20 @@ class XnnpackBuildContext : public NnpackBuildContext {
   absl::StatusOr<uint32_t> DefinePerTensorQuantizedWeightsAsChannelwise(
       const graph::Tensor& weights);
 
+  // Controls whether signed `Type::kI4` blockwise weights (`zero_point == 0`)
+  // are biased to unsigned (`zero_point == 8`, `byte ^ 0x88`) for Arm64
+  // KleidiAI `qp8_f32_qb4w` dispatch. Enabled by default on Arm64; tests on
+  // other hosts may enable it explicitly via `ScopedForceBiasQb4wForTesting`.
+  static bool ShouldBiasSignedQb4wToZeroPoint8();
+  class ScopedForceBiasQb4wForTesting {
+   public:
+    explicit ScopedForceBiasQb4wForTesting(bool force);
+    ~ScopedForceBiasQb4wForTesting();
+
+   private:
+    bool prev_ = false;
+  };
+
  protected:
   absl::Status EnsureInitialized() override;
   std::unique_ptr<NnpackGraph> CreateEmptyGraph() override;
