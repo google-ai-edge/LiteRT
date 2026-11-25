@@ -59,13 +59,25 @@ constexpr size_t kAlignment = 65536;
 constexpr size_t kAlignment = 4096;
 #endif
 
+struct RowCopyLayout {
+  uint32_t bytes_per_row = 0;
+  uint32_t bytes_per_row_aligned = 0;
+  size_t num_rows = 0;
+};
+
 // Copies `data` into a wgpu::Buffer using the BufferHostMappedPointer extension
 // which can create a buffer directly from a memory region. This allows for fast
 // uploading of data on a thread because it does not require acquiring the
 // internal WebGPU lock.
+//
+// When `row_layout.bytes_per_row != row_layout.bytes_per_row_aligned` (texture
+// uploads whose row width is not 256-byte aligned), `data` is repacked
+// row-by-row with stride `bytes_per_row_aligned` and zero-initialized row
+// padding so CopyBufferToTexture reads each row at its aligned offset.
 wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
                                    absl::Span<const uint8_t> data,
-                                   size_t min_size) {
+                                   size_t min_size,
+                                   const RowCopyLayout& row_layout) {
   size_t size = std::max(data.size(), min_size);
   // BufferHostMappedPointer requires aligned buffers.
   size_t aligned_size = AlignByN(size, kAlignment);
@@ -79,7 +91,24 @@ wgpu::Buffer CreateOwnedDataBuffer(const wgpu::Device& device,
                 0);
   uint8_t* data_copy = static_cast<uint8_t*>(data_copy_void_ptr);
 #endif
-  memcpy(data_copy, data.data(), data.size());
+  if (row_layout.bytes_per_row != row_layout.bytes_per_row_aligned &&
+      row_layout.num_rows > 0) {
+    ABSL_CHECK_LT(row_layout.bytes_per_row, row_layout.bytes_per_row_aligned);
+    const size_t row_bytes = row_layout.bytes_per_row;
+    const size_t row_stride = row_layout.bytes_per_row_aligned;
+    const size_t padding_bytes = row_stride - row_bytes;
+    ABSL_CHECK_GE(data.size(), row_layout.num_rows * row_bytes);
+    ABSL_CHECK_GE(size, (row_layout.num_rows - 1) * row_stride + row_bytes);
+    for (size_t r = 0; r < row_layout.num_rows; ++r) {
+      uint8_t* dst_row = data_copy + r * row_stride;
+      memcpy(dst_row, data.data() + r * row_bytes, row_bytes);
+      if (r + 1 < row_layout.num_rows) {
+        memset(dst_row + row_bytes, 0, padding_bytes);
+      }
+    }
+  } else {
+    memcpy(data_copy, data.data(), data.size());
+  }
   wgpu::BufferHostMappedPointer host_mapped_desc;
   host_mapped_desc.pointer = data_copy;
   host_mapped_desc.disposeCallback = [](void* userdata) {
@@ -121,25 +150,33 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
   wgpu::CommandEncoder encoder = env.device().CreateCommandEncoder();
   uint32_t offset = 0;
 
-  // Calculate the bytes per aligned row for the buffer we are using to
-  // to copy the data to the texture. The row size is the size of the pixel
-  // times the number of pixels in the row. This will allow WebGPU to know what
-  // it should be copying.
-  int pixel_size = SizeOf(desc.GetDataType()) * 4;
-  int3 region = desc.GetFullTensorRegion();
-  const uint32_t bytes_per_row = pixel_size * region.x;
-  // from spec: "texelCopyBufferInfo.bytesPerRow must be a multiple of 256."
-  const uint32_t bytes_per_row_aligned = AlignByN(bytes_per_row, 256);
-  const uint32_t rows_per_image = region.y;
+  int3 region(0, 0, 0);
+  uint32_t rows_per_image = 0;
+  RowCopyLayout row_layout;
   size_t min_owned_buffer_size = 0;
   if (dst_texture) {
+    // Calculate the bytes per aligned row for the buffer we are using to
+    // copy the data to the texture. The row size is the size of the pixel
+    // times the number of pixels in the row. This will allow WebGPU to know
+    // what it should be copying.
+    const int pixel_size = SizeOf(desc.GetDataType()) * 4;
+    region = desc.GetFullTensorRegion();
+    row_layout.bytes_per_row = pixel_size * region.x;
+    // from spec: "texelCopyBufferInfo.bytesPerRow must be a multiple of 256."
+    row_layout.bytes_per_row_aligned = AlignByN(row_layout.bytes_per_row, 256);
+    rows_per_image = region.y;
+    row_layout.num_rows = static_cast<size_t>(rows_per_image) * region.z;
     // For all rows except the last one, we need to add enough bytes to store
     // the padding and alignment that bytesPerRow requires.
-    if (rows_per_image > 1) {
-      min_owned_buffer_size += bytes_per_row_aligned * (rows_per_image - 1);
+    if (row_layout.num_rows > 1) {
+      min_owned_buffer_size +=
+          static_cast<size_t>(row_layout.bytes_per_row_aligned) *
+          (row_layout.num_rows - 1);
     }
     // Add only the required bytes for the last row.
-    min_owned_buffer_size += bytes_per_row;
+    if (row_layout.num_rows > 0) {
+      min_owned_buffer_size += row_layout.bytes_per_row;
+    }
   }
 
   auto upload_notification = std::make_shared<absl::Notification>();
@@ -152,7 +189,8 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
   // need to copy it to a buffer on the main thread.
   bool copy_buffer_on_main_thread = !has_prepacked_tflite_tensors;
   if (copy_buffer_on_main_thread) {
-    buffer = CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+    buffer = CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size,
+                                   row_layout);
   }
 
   auto fn = [=] {
@@ -160,8 +198,8 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
     if (copy_buffer_on_main_thread) {
       owned_buffer = std::move(buffer);
     } else {
-      owned_buffer =
-          CreateOwnedDataBuffer(device, weights_data, min_owned_buffer_size);
+      owned_buffer = CreateOwnedDataBuffer(device, weights_data,
+                                           min_owned_buffer_size, row_layout);
       ::ml_drift::MadviseData(const_cast<uint8_t*>(weights_data.data()),
                               weights_data.size());
     }
@@ -178,7 +216,7 @@ absl::Status UploadPrepackedTensor(const webgpu::ExecutionEnvironment& env,
           .layout =
               {
                   .offset = offset,
-                  .bytesPerRow = bytes_per_row_aligned,
+                  .bytesPerRow = row_layout.bytes_per_row_aligned,
                   .rowsPerImage = rows_per_image,
               },
           .buffer = owned_buffer,
