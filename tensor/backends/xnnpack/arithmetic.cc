@@ -715,7 +715,7 @@ absl::Status OpMixin<FullyConnectedOperation, XnnpackMixinTag>::ToXnnpack(
   bool weights_are_quantized = false;
   if (weights_info.ok() && weights_info->quantization &&
       (weights_info->type == Type::kI8 || weights_info->type == Type::kI4 ||
-       weights_info->type == Type::kI2)) {
+       weights_info->type == Type::kU4 || weights_info->type == Type::kI2)) {
     if (auto pcq =
             weights_info->quantization->As<PerChannelAffineQuantization>();
         pcq.ok()) {

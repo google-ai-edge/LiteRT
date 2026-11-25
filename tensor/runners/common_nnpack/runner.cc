@@ -133,8 +133,14 @@ absl::Status NnpackRunner::SetInput(const TensorHandle& tensor,
     external_buffers_[value.id] = OwningCpuBuffer::Copy(
         reinterpret_cast<const char*>(data.data()), data.size());
   } else {
-    external_buffers_[value.id] =
-        std::make_shared<SpanCpuBuffer>(data.data(), data.size());
+    auto& slot = external_buffers_[value.id];
+    if (slot != nullptr && slot->IsA(SpanCpuBuffer::TypeId())) {
+      const LockedBufferSpan<const std::byte> locked = slot->Lock();
+      if (locked.data() == data.data() && locked.size() == data.size()) {
+        return absl::OkStatus();
+      }
+    }
+    slot = std::make_shared<SpanCpuBuffer>(data.data(), data.size());
   }
   return absl::OkStatus();
 }
@@ -151,8 +157,14 @@ absl::Status NnpackRunner::SetOutput(const TensorHandle& tensor,
         absl::StrFormat("Mismatched output size: expected %v, got %v",
                         ByteSize(value.info), data.size()));
   }
-  external_buffers_[value.id] =
-      std::make_shared<MutableSpanCpuBuffer>(data.data(), data.size());
+  auto& slot = external_buffers_[value.id];
+  if (slot != nullptr && slot->IsA(MutableSpanCpuBuffer::TypeId())) {
+    const LockedBufferSpan<std::byte> locked = slot->LockMutable();
+    if (locked.data() == data.data() && locked.size() == data.size()) {
+      return absl::OkStatus();
+    }
+  }
+  slot = std::make_shared<MutableSpanCpuBuffer>(data.data(), data.size());
   return absl::OkStatus();
 }
 
