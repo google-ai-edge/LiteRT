@@ -630,9 +630,12 @@ cc_library(
     deps = [
         ":model",
         ":op_shape_inference_utils",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
+        "//litert/cc:litert_expected",
+        "//litert/core/util:tensor_layout_util",
         "//tflite/schema:schema_fbs",
         "@SafeInt",
         "@com_google_absl//absl/types:span",
@@ -1225,6 +1228,7 @@ cc_test(
     deps = [
         ":model",
         ":ops_convolution",
+        ":ops_reference_numeric_utils",
         ":shape_inference_types",
         "//litert/c:litert_common",
         "//litert/cc:litert_buffer_ref",
