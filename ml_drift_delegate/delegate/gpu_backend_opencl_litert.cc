@@ -23,6 +23,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/log/die_if_null.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -590,6 +591,7 @@ GpuInferenceContextOpenClLitert::GpuInferenceContextOpenClLitert(
 {
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status GpuInferenceContextOpenClLitert::Dispatch() {
   GpuBackendOpenClLitert* current_backend =
       static_cast<GpuBackendOpenClLitert*>(backend());
@@ -648,6 +650,7 @@ GpuInferenceContextOpenClLitert::GetPreDispatchEvent() {
   return absl::NotFoundError("No pre-dispatch event.");
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::StatusOr<GpuEventHandle>
 GpuInferenceContextOpenClLitert::GetPostDispatchEvent(
     bool is_async_execution_mode) {
@@ -680,6 +683,7 @@ GpuInferenceContextOpenClLitert::GetPostDispatchEvent(
   return output_event;
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status GpuInferenceContextOpenClLitert::WaitForEventsCompleted(
     absl::Span<GpuEventHandle> events, bool force_sync) {
   if (events.empty()) {

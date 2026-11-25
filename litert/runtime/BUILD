@@ -55,6 +55,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core:environment",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ] + select({
         "//litert/build_common:build_include_gpu_enabled": [
@@ -221,6 +222,7 @@ cc_library(
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/core/util:tensor_type_util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/cleanup",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/synchronization",

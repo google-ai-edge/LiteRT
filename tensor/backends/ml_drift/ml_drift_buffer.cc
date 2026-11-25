@@ -22,6 +22,7 @@ limitations under the License.
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -292,6 +293,7 @@ LockedBufferSpan<std::byte> MlDriftBuffer::LockMutable() {
           size_bytes_};
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status MlDriftBuffer::WriteDataAsync(const void* ptr, size_t offset,
                                            size_t size_bytes) {
   cl_mem mem = GetMemoryForWriting();
@@ -316,6 +318,7 @@ absl::Status MlDriftBuffer::WriteDataAsync(const void* ptr, size_t offset,
   return absl::OkStatus();
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status MlDriftBuffer::CopyFromAsync(const MlDriftBuffer& src,
                                           size_t src_offset, size_t dst_offset,
                                           size_t size_bytes) {
@@ -424,6 +427,7 @@ absl::Status MlDriftBuffer::CopyFromAsync(const MlDriftBuffer& src,
   return absl::OkStatus();
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status MlDriftBuffer::ZeroInit() {
   cl_mem mem = GetMemoryForWriting();
   if (!mem) {

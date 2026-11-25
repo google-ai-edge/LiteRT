@@ -23,6 +23,7 @@ limitations under the License.
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -159,8 +160,14 @@ struct MlDriftClBackend {
     return tensor->WriteData(data.data(), env->queue(), /*async=*/false);
   }
 
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+  static void ReleaseMemObject(cl_mem mem) {
+    ml_drift::cl::clReleaseMemObject(mem);
+  }
+
   // `CreateConstTensorFromHostData` without copying: the buffer wrapping
   // `data`, or null if `desc` / `data` don't allow it.
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   static absl::StatusOr<std::shared_ptr<const void>> WrapHostData(
       Environment* env, const ml_drift::TensorDescriptor& desc,
       absl::Span<const uint8_t> data, Tensor* tensor) {
@@ -202,8 +209,7 @@ struct MlDriftClBackend {
           absl::StrCat("clCreateBuffer(CL_MEM_USE_HOST_PTR) of ", size,
                        " bytes: ", ml_drift::cl::CLErrorCodeToString(error)));
     }
-    std::shared_ptr<const void> owner(
-        buffer, [](cl_mem mem) { ml_drift::cl::clReleaseMemObject(mem); });
+    std::shared_ptr<const void> owner(buffer, &ReleaseMemObject);
     ml_drift::TensorDescriptor desc_without_data;
     desc.CopyWithoutData(&desc_without_data);
     if (texture) {
@@ -236,6 +242,7 @@ struct MlDriftClBackend {
     return env->queue()->WaitForCompletion();
   }
 
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   static absl::Status CopyBufferToTensor(InferenceContext* ctx,
                                          Environment* env, ml_drift::ValueId id,
                                          Buffer* generic_buffer) {
@@ -303,6 +310,7 @@ struct MlDriftClBackend {
     return std::unique_ptr<Buffer>(std::move(buf));
   }
 
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   static absl::Status CopyTensorToBuffer(InferenceContext* ctx,
                                          Environment* env, ml_drift::ValueId id,
                                          Buffer* generic_buffer) {
@@ -443,6 +451,7 @@ class MlDriftModelRunner
 };
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status MlDriftModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
     const std::string& name, MlDriftBuffer& buffer) {
   LRT_TENSOR_RETURN_IF_ERROR(this->EnsureEnvInitialized());
@@ -501,6 +510,7 @@ absl::Status MlDriftModelRunner<ModelFunctor, Inputs, Outputs>::SetInput(
 }
 
 template <typename ModelFunctor, typename Inputs, typename Outputs>
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status MlDriftModelRunner<ModelFunctor, Inputs, Outputs>::GetOutput(
     const std::string& name, MlDriftBuffer& buffer) {
   LRT_TENSOR_RETURN_IF_ERROR(this->EnsureEnvInitialized());

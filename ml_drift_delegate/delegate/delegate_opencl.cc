@@ -24,6 +24,7 @@
 #include <string>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -231,6 +232,17 @@ bool HasOpenClEnvOptions(const LiteRtRuntimeContext* runtime_context,
              &command_queue) == kLiteRtStatusOk;
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+void SetQcomPerfHintHigh(cl_platform_id cl_plat_id, cl_context cl_ctx) {
+  auto pfn_set_perf_hint = reinterpret_cast<SetPerfHintQcomFn>(
+      ml_drift::cl::clGetExtensionFunctionAddressForPlatform(
+          cl_plat_id, "clSetPerfHintQCOM"));
+  if (pfn_set_perf_hint) {
+    LITERT_LOG(LITERT_INFO, "Setting QCOM GPU perf hint to HIGH.");
+    pfn_set_perf_hint(cl_ctx, CL_PERF_HINT_HIGH_QCOM);
+  }
+}
+
 absl::StatusOr<DelegateEnvironment*> WrapExistingClEnvironment(
     const LiteRtRuntimeContext* runtime_context, LiteRtEnvironment litert_env,
     LiteRtEnvironmentOptions env_options,
@@ -260,13 +272,7 @@ absl::StatusOr<DelegateEnvironment*> WrapExistingClEnvironment(
   cl_context cl_ctx = reinterpret_cast<cl_context>(context_id.int_value);
   if (context_options.performance == ml_drift::cl::PerformanceHint::kHigh &&
       device.GetInfo().SupportsExtension("cl_qcom_perf_hint")) {
-    auto pfn_set_perf_hint = reinterpret_cast<SetPerfHintQcomFn>(
-        ml_drift::cl::clGetExtensionFunctionAddressForPlatform(
-            cl_plat_id, "clSetPerfHintQCOM"));
-    if (pfn_set_perf_hint) {
-      LITERT_LOG(LITERT_INFO, "Setting QCOM GPU perf hint to HIGH.");
-      pfn_set_perf_hint(cl_ctx, CL_PERF_HINT_HIGH_QCOM);
-    }
+    SetQcomPerfHintHigh(cl_plat_id, cl_ctx);
   }
 
   ml_drift::cl::CLContext context(cl_ctx, /*has_ownership=*/false, device);

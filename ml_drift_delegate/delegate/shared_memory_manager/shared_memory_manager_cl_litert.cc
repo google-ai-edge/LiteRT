@@ -46,6 +46,7 @@
 #ifdef __ANDROID__
 #include <android/hardware_buffer.h>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "ml_drift/cl/cl_image_format.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include <CL/cl.h>
@@ -124,6 +125,7 @@ bool IsAhwbGpuDataBufferSupported() {
 // Returns true if the tensor was successfully created via AHWB; |tensor| is
 // populated. Returns false on any failure; the caller should fall through to
 // the standard CreateTensor path.
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 bool TryCreateTensorViaAhwb(
     const cl::Environment& env,
     ml_drift::TensorDescriptor& tensor_desc,

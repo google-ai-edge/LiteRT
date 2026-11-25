@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <utility>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
@@ -135,6 +136,7 @@ Expected<void> OpenClMemory::Unlock() {
   return Expected<void>();
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<void> OpenClMemory::Clear() {
   LITERT_RETURN_IF_ERROR(
       IsSupported(),
@@ -191,6 +193,7 @@ bool IsAhwbToClInteropSupported() {
   return ::ml_drift::cl::clImportMemoryARM != nullptr;
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     AhwbBuffer& ahwb_buffer) {
@@ -223,6 +226,7 @@ Expected<OpenClMemory> OpenClMemory::AllocFromAhwbBuffer(
                       std::move(cl_buffer), ahwb_buffer.ahwb);
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<OpenClMemory> OpenClMemory::AllocFromGlBuffer(
     GpuEnvironment* gpu_env, const LiteRtRankedTensorType& tensor_type,
     GlBuffer& gl_buffer) {

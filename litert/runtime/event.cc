@@ -19,6 +19,7 @@
 #include <cerrno>
 #include <cstdint>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
@@ -42,6 +43,43 @@
 
 using litert::Error;
 using litert::Expected;
+
+namespace {
+
+#if LITERT_HAS_OPENCL_SUPPORT
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+LiteRtClInt WaitForOpenClEvent(LiteRtClEvent* event) {
+  return ::ml_drift::cl::clWaitForEvents(/*num_events=*/1,
+                                         /*event_list=*/event);
+}
+
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+void ReleaseOpenClEvent(LiteRtClEvent event) {
+  ::ml_drift::cl::clReleaseEvent(event);
+}
+#endif  // LITERT_HAS_OPENCL_SUPPORT
+
+#if LITERT_HAS_OPENGL_SUPPORT
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+void DestroyEglSyncKhr(EGLDisplay display, EGLSyncKHR sync) {
+  static auto* egl_destroy_sync_khr =
+      reinterpret_cast<decltype(&eglDestroySyncKHR)>(
+          eglGetProcAddress("eglDestroySyncKHR"));
+  if (egl_destroy_sync_khr == nullptr) {
+    LITERT_LOG(LITERT_ERROR,
+               "Cannot destroy EGL sync: Failed to load eglDestroySyncKHR");
+    return;
+  }
+
+  EGLBoolean destroy_success = egl_destroy_sync_khr(display, sync);
+  if (destroy_success == EGL_FALSE) {
+    LITERT_LOG(LITERT_ERROR,
+               "EGL sync destroy failed: eglDestroySyncKHR failed");
+  }
+}
+#endif  // LITERT_HAS_OPENGL_SUPPORT
+
+}  // namespace
 
 Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   if (type == LiteRtEventTypeSyncFenceFd) {
@@ -75,9 +113,7 @@ Expected<void> LiteRtEventT::Wait(int64_t timeout_in_ms) {
   }
   if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    LiteRtClInt res =
-        ::ml_drift::cl::clWaitForEvents(/*num_events=*/1,
-                                        /*event_list=*/&opencl_event);
+    LiteRtClInt res = WaitForOpenClEvent(&opencl_event);
     if (res != LITE_RT_CL_SUCCESS) {
       return Error(kLiteRtStatusErrorRuntimeFailure,
                    absl::StrCat("clWaitForEvents fails with error code ", res));
@@ -128,24 +164,11 @@ LiteRtEventT::~LiteRtEventT() {
       return;
     }
 
-    static auto* egl_destroy_sync_khr =
-        reinterpret_cast<decltype(&eglDestroySyncKHR)>(
-            eglGetProcAddress("eglDestroySyncKHR"));
-    if (egl_destroy_sync_khr == nullptr) {
-      LITERT_LOG(LITERT_ERROR,
-                 "Cannot destroy EGL sync: Failed to load eglDestroySyncKHR");
-      return;
-    }
-
-    EGLBoolean destroy_success = egl_destroy_sync_khr(display, egl_sync);
-    if (destroy_success == EGL_FALSE) {
-      LITERT_LOG(LITERT_ERROR,
-                 "EGL sync destroy failed: eglDestroySyncKHR failed");
-    }
+    DestroyEglSyncKhr(display, egl_sync);
 #endif  // LITERT_HAS_OPENGL_SUPPORT
   } else if (type == LiteRtEventTypeOpenCl) {
 #if LITERT_HAS_OPENCL_SUPPORT
-    ::ml_drift::cl::clReleaseEvent(opencl_event);
+    ReleaseOpenClEvent(opencl_event);
 #endif  // LITERT_HAS_OPENCL_SUPPORT
   } else if (type == LiteRtEventTypeCustom) {
 #if LITERT_HAS_CUSTOM_EVENT_SUPPORT
@@ -177,6 +200,7 @@ Expected<int> LiteRtEventT::GetSyncFenceFd() {
 #endif
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<void> LiteRtEventT::Signal() {
 #if LITERT_HAS_OPENCL_SUPPORT
   if (type == LiteRtEventTypeOpenCl) {
@@ -194,6 +218,7 @@ Expected<void> LiteRtEventT::Signal() {
                "The event signal is not supported");
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<LiteRtEventT*> LiteRtEventT::CreateManaged(LiteRtEnvironment env,
                                                     LiteRtEventType type) {
   if (type == LiteRtEventTypeOpenCl) {
@@ -341,6 +366,7 @@ Expected<bool> LiteRtEventT::IsSignaled() const {
 #endif
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<int> LiteRtEventT::DupFd() const {
   if (type == LiteRtEventTypeSyncFenceFd) {
 #if LITERT_HAS_SYNC_FENCE_SUPPORT
@@ -381,6 +407,7 @@ Expected<int> LiteRtEventT::DupFd() const {
                             static_cast<int>(type)));
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 Expected<LiteRtEventType> GetEventTypeFromEglSync(LiteRtEnvironment env,
                                                   LiteRtEglSyncKhr egl_sync) {
 #if LITERT_HAS_OPENGL_SUPPORT

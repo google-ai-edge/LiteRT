@@ -30,6 +30,7 @@ cc_library(
         "//tensor/backends/ml_drift:ml_drift_buffer",
         "//tensor/runners/litert:litert_buffer",
         "//tensor/utils:macros",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/log:absl_log",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

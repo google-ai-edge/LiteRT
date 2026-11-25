@@ -184,6 +184,7 @@ cc_library(
         "//tflite/c:common",
         "//tflite/core/c:private_common",
         "//weight_loader:external_weight_loader",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_macros",
         "@com_google_absl//absl/status:statusor",

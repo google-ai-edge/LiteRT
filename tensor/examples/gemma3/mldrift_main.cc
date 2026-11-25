@@ -26,6 +26,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/algorithm/container.h"  // from @com_google_absl
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/flags/flag.h"  // from @com_google_absl
 #include "absl/flags/parse.h"  // from @com_google_absl
@@ -96,6 +97,7 @@ namespace {
 class OpenClParamUpdater {
  public:
   OpenClParamUpdater() = default;
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   ~OpenClParamUpdater() {
     if (kernel_) {
       ml_drift::cl::clReleaseKernel(kernel_);
@@ -105,6 +107,7 @@ class OpenClParamUpdater {
     }
   }
 
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   absl::Status Init(ml_drift::cl::Environment* env) {
     cl_context context = env->context().context();
     cl_device_id device = env->device().id();
@@ -148,6 +151,7 @@ class OpenClParamUpdater {
     return absl::OkStatus();
   }
 
+  ABSL_ATTRIBUTE_NO_SANITIZE_CFI
   absl::Status Update(ml_drift::cl::Environment* env, cl_mem buffer,
                       int cache_len, int active_tokens, int top_k) {
     cl_int err;
@@ -785,6 +789,7 @@ absl::Status InitDecodeCaches(OpenClDecodeState* state,
   return absl::OkStatus();
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::StatusOr<std::vector<int32_t>> RunDecodeStepOpenCl(
     OpenClDecodeState* state, const Gemma3Config& config, int32_t current_token,
     int cache_len, bool readback_output, bool verbose,

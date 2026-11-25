@@ -33,6 +33,7 @@
 #include <utility>
 #include <vector>
 
+#include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_macros.h"  // from @com_google_absl
@@ -78,6 +79,12 @@ constexpr absl::string_view kBackendName = "OpenCL";
 
 // Serialization data prefix. FYI, Jet uses "gpuv2_data_".
 constexpr absl::string_view kSerializedDataPrefix = "gpuv3_data_";
+
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
+cl_mem CreateOpenClBuffer(cl_context context, cl_mem_flags flags, size_t size,
+                          void* host_ptr, cl_int* err) {
+  return ::ml_drift::cl::clCreateBuffer(context, flags, size, host_ptr, err);
+}
 
 }  // namespace
 
@@ -256,9 +263,9 @@ GpuBackendOpenCl::CreateIOBufferWithSize(::ml_drift::DataType data_type,
   // buffers to avoid uncached bus readback stalls.
   if (!input && env_->GetDevicePtr()->GetInfo().IsPowerVR()) {
     cl_int err = CL_SUCCESS;
-    cl_mem mem = ::ml_drift::cl::clCreateBuffer(
-        env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
-        size, nullptr, &err);
+    cl_mem mem = CreateOpenClBuffer(env_->context().context(),
+                                    CL_MEM_READ_WRITE | CL_MEM_ALLOC_HOST_PTR,
+                                    size, nullptr, &err);
     if (err != CL_SUCCESS) {
       return absl::UnknownError(absl::StrCat(
           "Failed to allocate device memory with clCreateBuffer: ", err));
@@ -391,9 +398,9 @@ GpuBackendOpenCl::CreateInternalHostBuffer(::ml_drift::DataType data_type,
   std::memset(host_ptr, 0, alloc_size);
 
   cl_int err = CL_SUCCESS;
-  cl_mem mem = ::ml_drift::cl::clCreateBuffer(
-      env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
-      alloc_size, host_ptr, &err);
+  cl_mem mem = CreateOpenClBuffer(env_->context().context(),
+                                  CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR,
+                                  alloc_size, host_ptr, &err);
   if (err != CL_SUCCESS) {
 #if defined(_WIN32)
     _aligned_free(host_ptr);
@@ -436,9 +443,9 @@ GpuBackendOpenCl::WrapExternalHostBuffer(::ml_drift::DataType data_type,
   }
 
   cl_int err = CL_SUCCESS;
-  cl_mem mem = ::ml_drift::cl::clCreateBuffer(
-      env_->context().context(), CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, size,
-      host_ptr, &err);
+  cl_mem mem = CreateOpenClBuffer(env_->context().context(),
+                                  CL_MEM_READ_WRITE | CL_MEM_USE_HOST_PTR, size,
+                                  host_ptr, &err);
   if (err != CL_SUCCESS) {
     return absl::InternalError(absl::StrCat(
         "Failed to wrap external host pointer with clCreateBuffer: ", err));
@@ -608,6 +615,7 @@ GpuIOBufferOpenCl::~GpuIOBufferOpenCl() {
   }
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status GpuIOBufferOpenCl::SyncToDevice() {
   if (requires_explicit_host_sync_) {
     const size_t size = buffer_.GetMemorySizeInBytes();
@@ -661,6 +669,7 @@ absl::Status GpuIOBufferOpenCl::SyncToDevice() {
   return absl::OkStatus();
 }
 
+ABSL_ATTRIBUTE_NO_SANITIZE_CFI
 absl::Status GpuIOBufferOpenCl::SyncToHost() {
   // NOMUTANTS -- Only host pointer buffers have explicit host sync enabled.
   if (requires_explicit_host_sync_) {
