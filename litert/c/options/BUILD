@@ -383,10 +383,7 @@ cc_test(
 filegroup(
     name = "options_headers",
     srcs = glob(["litert_*.h"]),
-    visibility = [
-        "//litert/c:__pkg__",
-        "//litert/cc:__pkg__",
-    ],
+    visibility = ["//litert/c:__pkg__"],
 )
 
 exports_files(glob(["litert_*.h"]))
