@@ -55,6 +55,7 @@ GetBufferToHandle() {
 static int g_num_registrations = 0;
 static int g_num_unregistrations = 0;
 static int g_num_detaches = 0;
+static int g_num_input_event_attaches = 0;
 // Number of upcoming registrations to fail.
 static int g_num_registrations_to_fail = 0;
 static LiteRtEnvironment g_env = nullptr;
@@ -110,6 +111,10 @@ int LiteRtDispatch_MockDispatchNumUnregistrations() {
 }
 
 int LiteRtDispatch_MockDispatchNumDetaches() { return g_num_detaches; }
+
+int LiteRtDispatch_MockDispatchNumInputEventAttaches() {
+  return g_num_input_event_attaches;
+}
 
 void LiteRtDispatch_MockDispatchFailNextRegistration() {
   ++g_num_registrations_to_fail;
@@ -268,7 +273,10 @@ LITERT_CAPI_EXPORT LiteRtStatus LiteRtDispatchQueryInterface(
         };
     g_intercepted_async_interface.attach_input_event =
         [](LiteRtDispatchInvocationContext context, int idx,
-           LiteRtEvent event) { return kLiteRtStatusOk; };
+           LiteRtEvent event) {
+          ++g_num_input_event_attaches;
+          return kLiteRtStatusOk;
+        };
 
     g_is_intercepted_initialized = true;
   }
@@ -311,6 +319,8 @@ int LiteRtDispatch_MockDispatchNumRegistrations() { return 0; }
 int LiteRtDispatch_MockDispatchNumUnregistrations() { return 0; }
 
 int LiteRtDispatch_MockDispatchNumDetaches() { return 0; }
+
+int LiteRtDispatch_MockDispatchNumInputEventAttaches() { return 0; }
 
 void LiteRtDispatch_MockDispatchFailNextRegistration() {}
 
