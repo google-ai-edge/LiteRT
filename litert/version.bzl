@@ -8,7 +8,7 @@ LITERT_FULL_VERSION = "1.5.0"
 #
 # The patched version should be bumped after every release during
 # alpha. Once leaving alpha, the version is 2.1.0.
-LITERT_EXPERIMENTAL_VERSION = "2.5.0"
+LITERT_EXPERIMENTAL_VERSION = "2.4.1"
 
 # The ai-edge-litert-sdk-<vendor> versions below must equal
 # LITERT_EXPERIMENTAL_VERSION: the `ai-edge-litert` wheel pins its `npu-*`
