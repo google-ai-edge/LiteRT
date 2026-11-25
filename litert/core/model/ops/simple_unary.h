@@ -19,13 +19,17 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <type_traits>
 #include <vector>
 
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 
 namespace litert::internal {
 
@@ -171,39 +175,44 @@ template <typename InT>
 inline void ReferenceDequantize(const InT* input_data, size_t num_elements,
                                 float* output_data, float scale,
                                 int64_t zero_point) {
-  const float zp = static_cast<float>(zero_point);
   for (size_t i = 0; i < num_elements; ++i) {
-    output_data[i] = (static_cast<float>(input_data[i]) - zp) * scale;
+    output_data[i] = DequantizeValue(input_data[i], scale, zero_point);
   }
 }
 
 template <typename InT>
-inline void ReferenceDequantizePerChannel(
-    const InT* input_data, const int32_t* dims, int rank,
-    int32_t quantized_dimension, const float* scales,
-    const int64_t* zero_points, float* output_data) {
-  if (quantized_dimension < 0) quantized_dimension += rank;
-  size_t outer_size = 1;
-  for (int i = 0; i < quantized_dimension; ++i) {
-    outer_size *= static_cast<size_t>(dims[i]);
+inline LiteRtStatus ReferenceDequantizePerChannel(const InT* input_data,
+                                                  const int32_t* dims, int rank,
+                                                  int32_t quantized_dimension,
+                                                  const float* scales,
+                                                  const int64_t* zero_points,
+                                                  float* output_data) {
+  if (rank <= 0 || dims == nullptr || scales == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  const size_t num_channels = static_cast<size_t>(dims[quantized_dimension]);
-  size_t inner_size = 1;
-  for (int i = quantized_dimension + 1; i < rank; ++i) {
-    inner_size *= static_cast<size_t>(dims[i]);
+  auto layout = PrepareAxisLayout(absl::MakeConstSpan(dims, rank),
+                                  quantized_dimension, sizeof(InT));
+  if (!layout || !CheckedByteCount(layout->num_elements, sizeof(float))) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  for (size_t o = 0; o < outer_size; ++o) {
-    for (size_t c = 0; c < num_channels; ++c) {
+  if (layout->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (input_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t o = 0; o < layout->outer_size; ++o) {
+    for (size_t c = 0; c < layout->axis_size; ++c) {
       const float scale = scales[c];
-      const float zp =
-          zero_points != nullptr ? static_cast<float>(zero_points[c]) : 0.0f;
-      const size_t base = (o * num_channels + c) * inner_size;
-      for (size_t i = 0; i < inner_size; ++i) {
+      const int64_t zp = zero_points != nullptr ? zero_points[c] : 0;
+      const size_t base = (o * layout->axis_size + c) * layout->inner_size;
+      for (size_t i = 0; i < layout->inner_size; ++i) {
         output_data[base + i] =
-            (static_cast<float>(input_data[base + i]) - zp) * scale;
+            DequantizeValue(input_data[base + i], scale, zp);
       }
     }
   }
+  return kLiteRtStatusOk;
 }
 
 inline void ReferenceGelu(const float* input_data, size_t num_elements,
@@ -225,6 +234,249 @@ inline void ReferenceGelu(const float* input_data, size_t num_elements,
     });
   }
 }
+
+namespace detail {
+
+template <typename InT, typename OutT>
+inline LiteRtStatus ValidateUnaryPointers(const InT* input_data,
+                                          const OutT* output_data,
+                                          size_t num_elements) {
+  if (!CheckedByteCount(num_elements, sizeof(InT)) ||
+      !CheckedByteCount(num_elements, sizeof(OutT))) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  if (num_elements == 0) {
+    return kLiteRtStatusOk;
+  }
+  if (input_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return kLiteRtStatusOk;
+}
+
+inline Expected<std::vector<bool>> ParseReverseV2Axes(
+    size_t rank, absl::Span<const int32_t> axes) {
+  std::vector<bool> reverse_dim(rank, false);
+  for (int32_t raw_axis : axes) {
+    const int64_t axis = raw_axis < 0 ? static_cast<int64_t>(raw_axis) +
+                                            static_cast<int64_t>(rank)
+                                      : static_cast<int64_t>(raw_axis);
+    if (axis < 0 || axis >= static_cast<int64_t>(rank) ||
+        reverse_dim[static_cast<size_t>(axis)]) {
+      return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                        "ReverseV2 axis is out of range or duplicated");
+    }
+    reverse_dim[static_cast<size_t>(axis)] = true;
+  }
+  return reverse_dim;
+}
+
+template <typename T>
+inline void ExecuteReverseV2WithLayout(const ContiguousLayout& layout,
+                                       absl::Span<const int32_t> dims,
+                                       const std::vector<bool>& reverse_dim,
+                                       const T* input_data, T* output_data) {
+  if (layout.IsEmpty()) {
+    return;
+  }
+  if (dims.empty()) {
+    output_data[0] = input_data[0];
+    return;
+  }
+  const size_t rank = dims.size();
+  for (size_t out_idx = 0; out_idx < layout.num_elements; ++out_idx) {
+    size_t rem = out_idx;
+    size_t in_idx = 0;
+    for (size_t d = 0; d < rank; ++d) {
+      const size_t coord = rem / layout.strides[d];
+      rem %= layout.strides[d];
+      const size_t src_coord =
+          reverse_dim[d] ? (static_cast<size_t>(dims[d]) - 1 - coord) : coord;
+      in_idx += src_coord * layout.strides[d];
+    }
+    output_data[out_idx] = input_data[in_idx];
+  }
+}
+
+}  // namespace detail
+
+// Evaluates Leaky ReLU (`x >= 0 ? x : alpha * x`) elementwise over
+// `num_elements` floats. Valid empty tensors (`num_elements == 0`) return
+// `kLiteRtStatusOk` without dereferencing data pointers; `input_data` and
+// `output_data` may alias.
+inline LiteRtStatus ReferenceLeakyRelu(const float* input_data,
+                                       float* output_data, size_t num_elements,
+                                       float alpha) {
+  if (LiteRtStatus status =
+          detail::ValidateUnaryPointers(input_data, output_data, num_elements);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  ReferenceUnaryGeneric(
+      input_data, num_elements, output_data,
+      [alpha](float val) { return val >= 0.0f ? val : alpha * val; });
+  return kLiteRtStatusOk;
+}
+
+// Evaluates quantized Leaky ReLU (`x >= 0 ? x : alpha * x`) elementwise with
+// affine dequantization (`input_quant`), `float` arithmetic, and saturating
+// requantization (`output_quant`). Valid empty tensors (`num_elements == 0`)
+// return `kLiteRtStatusOk` without dereferencing data pointers; `input_data`
+// and `output_data` may alias.
+template <typename T>
+inline LiteRtStatus ReferenceLeakyReluQuantized(
+    const T* input_data, T* output_data, size_t num_elements, float alpha,
+    const AffineQuantSpec& input_quant, const AffineQuantSpec& output_quant) {
+  if constexpr (!std::is_floating_point_v<T>) {
+    if (auto valid = ValidateQuantization<T>(output_quant); !valid) {
+      return valid.Error().Status();
+    }
+  }
+  if (LiteRtStatus status =
+          detail::ValidateUnaryPointers(input_data, output_data, num_elements);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  for (size_t i = 0; i < num_elements; ++i) {
+    const float x = DequantizeValue(input_data[i], input_quant);
+    const float y = x >= 0.0f ? x : alpha * x;
+    auto q = QuantizeValue<T>(y, output_quant);
+    if (!q) {
+      return q.Error().Status();
+    }
+    output_data[i] = *q;
+  }
+  return kLiteRtStatusOk;
+}
+
+// Evaluates elementwise boolean negation (`!x`) over `num_elements` elements.
+// Valid empty tensors (`num_elements == 0`) return `kLiteRtStatusOk` without
+// dereferencing data pointers; `input_data` and `output_data` may alias.
+inline LiteRtStatus ReferenceLogicalNot(const bool* input_data,
+                                        bool* output_data,
+                                        size_t num_elements) {
+  if (LiteRtStatus status =
+          detail::ValidateUnaryPointers(input_data, output_data, num_elements);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  for (size_t i = 0; i < num_elements; ++i) {
+    output_data[i] = !input_data[i];
+  }
+  return kLiteRtStatusOk;
+}
+
+// Requantizes `num_elements` values from `(InT, input_scale, input_zero_point)`
+// to `(OutT, output_scale, output_zero_point)` via `double` dequantization and
+// saturating requantization. Valid empty tensors (`num_elements == 0`) return
+// `kLiteRtStatusOk` without dereferencing data pointers; `input_data` and
+// `output_data` must not alias unless `InT` and `OutT` are identical.
+template <typename InT, typename OutT>
+inline LiteRtStatus ReferenceQuantize(const InT* input_data,
+                                      size_t num_elements, float input_scale,
+                                      int64_t input_zero_point,
+                                      float output_scale,
+                                      int64_t output_zero_point,
+                                      OutT* output_data) {
+  if constexpr (!std::is_floating_point_v<OutT>) {
+    if (auto valid =
+            ValidateQuantization<OutT>(output_scale, output_zero_point);
+        !valid) {
+      return valid.Error().Status();
+    }
+  }
+  if (LiteRtStatus status =
+          detail::ValidateUnaryPointers(input_data, output_data, num_elements);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  for (size_t i = 0; i < num_elements; ++i) {
+    double real_val = 0.0;
+    if constexpr (std::is_floating_point_v<InT>) {
+      real_val = static_cast<double>(input_data[i]);
+    } else {
+      real_val = (static_cast<double>(input_data[i]) -
+                  static_cast<double>(input_zero_point)) *
+                 static_cast<double>(input_scale);
+    }
+    auto q = QuantizeValueFromDouble<OutT>(real_val, output_scale,
+                                           output_zero_point);
+    if (!q) {
+      return q.Error().Status();
+    }
+    output_data[i] = *q;
+  }
+  return kLiteRtStatusOk;
+}
+
+// Reverses elements of `input` along `axes` into `output`.
+//
+// Domain and preconditions:
+//   - `output.dims` must equal `input.dims` (concrete, nonnegative dimensions).
+//   - Negative axes in `[-rank, -1]` are normalized by adding `rank`;
+//     out-of-range axes return `kLiteRtStatusErrorInvalidArgument`.
+//   - Duplicate normalized axes (e.g., `{1, -1}` on a 2D tensor) return
+//     `kLiteRtStatusErrorInvalidArgument` (matching TF/TFLite).
+//   - Scalar inputs (`rank == 0`) require `axes` to be empty.
+//   - Valid empty tensors return `kLiteRtStatusOk` after shape and axis
+//     validation without dereferencing data pointers.
+//   - `input.data` must not alias `output.data`.
+template <typename T>
+inline LiteRtStatus ReferenceReverseV2(ConstTensorView<T> input,
+                                       absl::Span<const int32_t> axes,
+                                       TensorView<T> output) {
+  if (output.dims.size() != input.dims.size() ||
+      !std::equal(input.dims.begin(), input.dims.end(), output.dims.begin())) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto layout = PrepareContiguousLayout(input.dims, sizeof(T));
+  if (!layout) {
+    return layout.Error().Status();
+  }
+  auto reverse_dim = detail::ParseReverseV2Axes(input.dims.size(), axes);
+  if (!reverse_dim) {
+    return reverse_dim.Error().Status();
+  }
+  if (!ValidateBufferCapacity(input.data, layout->num_elements) ||
+      !ValidateBufferCapacity(output.data, layout->num_elements)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  detail::ExecuteReverseV2WithLayout(*layout, input.dims, *reverse_dim,
+                                     input.data.data(), output.data.data());
+  return kLiteRtStatusOk;
+}
+
+// Raw-pointer overload of `ReferenceReverseV2` assuming `output_data` has the
+// same shape `(input_dims, rank)` as `input_data`.
+template <typename T>
+inline LiteRtStatus ReferenceReverseV2(const T* input_data,
+                                       const int32_t* input_dims, int rank,
+                                       const int32_t* axes, int num_axes,
+                                       T* output_data) {
+  auto dims_span = MakeDimsSpan(input_dims, rank);
+  auto axes_span = MakeDimsSpan(axes, num_axes);
+  if (!dims_span || !axes_span) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto layout = PrepareContiguousLayout(*dims_span, sizeof(T));
+  if (!layout) {
+    return layout.Error().Status();
+  }
+  auto reverse_dim = detail::ParseReverseV2Axes(dims_span->size(), *axes_span);
+  if (!reverse_dim) {
+    return reverse_dim.Error().Status();
+  }
+  if (layout->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (input_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  detail::ExecuteReverseV2WithLayout(*layout, *dims_span, *reverse_dim,
+                                     input_data, output_data);
+  return kLiteRtStatusOk;
+}
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_
