@@ -530,6 +530,10 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
 
   auto scale_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), scale_values, float_type);
+  scale_desc
+      .UpdateToSupportedStorageType(ctx.gpu_model_builder->gpu_info(),
+                                    scale_desc.GetBHWDCShape())
+      .IgnoreError();
   ml_drift::GpuModelBuilder::TensorHandle scale_handle;
   std::optional<ml_drift::GpuModelBuilder::TensorHandle> zero_point_handle;
   if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
@@ -552,6 +556,10 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
         zp_values.data, zero_points.CopyAs<float>(scale_values.data.size()));
     auto zero_point_desc = ScaleOrZeroPointToTensorDesc(
         ctx.gpu_model_builder->gpu_info(), zp_values, float_type);
+    zero_point_desc
+        .UpdateToSupportedStorageType(ctx.gpu_model_builder->gpu_info(),
+                                      zero_point_desc.GetBHWDCShape())
+        .IgnoreError();
     if (!out_info.name.empty() && ctx.shared_weight_descriptors != nullptr) {
       auto [shared_zp_it, _] = ctx.shared_weight_descriptors->try_emplace(
           zp_key, std::move(zero_point_desc));
