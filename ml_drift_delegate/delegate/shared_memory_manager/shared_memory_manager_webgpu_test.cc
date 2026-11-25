@@ -44,6 +44,7 @@
 #include "ml_drift/webgpu/execution_environment.h"  // from @ml_drift
 #include "ml_drift/webgpu/spatial_tensor.h"  // from @ml_drift
 #include "ml_drift/webgpu/testing/webgpu_test.h"  // from @ml_drift
+#include "ml_drift/webgpu/webgpu_headers.h"  // from @ml_drift
 #include "ml_drift_delegate/delegate/shared_memory_manager/gf32_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/ir_graph_adapter.h"
 #include "ml_drift_delegate/delegate/shared_memory_manager/shared_memory_manager.h"
@@ -882,5 +883,52 @@ INSTANTIATE_TEST_SUITE_P(FloatTypes, CreateSharedWebGpuTensorTest,
                          ::testing::Values(DataType::kFloat16,
                                            DataType::kFloat32));
 #endif  // !defined(_WIN32)
+
+// Weights restored from the weight cache are tightly packed. Uploading them to
+// a texture whose row size is not a multiple of 256 bytes must still produce
+// the same texels when HostMappedPointer is enabled (falling back to
+// CreateFromDescriptor() / queue.WriteTexture instead of CopyBufferToTexture).
+// The parameter is the texture width in texels; kUint16 x 4 channels = 8 bytes
+// per texel.
+class TightlyPackedTextureUploadTest : public ::testing::TestWithParam<int> {};
+
+TEST_P(TightlyPackedTextureUploadTest,
+       CreateSharedWebGpuTensorUploadsTextureRows) {
+  // The shared fixture does not request HostMappedPointer, which the upload
+  // path under test needs. Request it like the delegate does.
+  webgpu::ExecutionEnvironment env;
+  ASSERT_OK(env.Initialize({.enable_host_mapped_pointer = true}));
+  if (!env.device().HasFeature(wgpu::FeatureName::HostMappedPointer)) {
+    GTEST_SKIP() << "The upload path under test needs HostMappedPointer.";
+  }
+
+  TensorDescriptor desc(DataType::kUint16, TensorStorageType::kTexture2D,
+                        Layout::kHWC);
+  desc.SetBHWCShape(BHWC(1, 7, GetParam(), 4));
+  const size_t size = desc.GetMemorySizeInBytes();
+  std::vector<uint8_t> expected(size);
+  for (size_t i = 0; i < size; ++i) {
+    expected[i] = static_cast<uint8_t>(i * 7 + 3);
+  }
+  desc.SetData(std::vector<uint8_t>(expected));
+
+  std::unique_ptr<GpuSpatialTensor> tensor;
+  ASSERT_OK(webgpu_internal::CreateSharedWebGpuTensor(
+      env, desc, /*page_adjusted_offset=*/0,
+      /*release_data_callback=*/nullptr,
+      /*has_prepacked_tflite_tensors=*/false, /*upload_executor=*/nullptr,
+      webgpu_internal::UploadScheduling::kAllowInline, tensor));
+  ASSERT_NE(tensor, nullptr);
+
+  TensorDescriptor readback;
+  ASSERT_OK(static_cast<webgpu::SpatialTensor*>(tensor.get())
+                ->ToDescriptor(env.device(), &readback));
+  EXPECT_THAT(readback.GetData(), ::testing::ElementsAreArray(expected));
+}
+
+// Rows of 8, 40 and 96 bytes (not a multiple of 256), and of 256 and 2560
+// bytes (already aligned).
+INSTANTIATE_TEST_SUITE_P(Widths, TightlyPackedTextureUploadTest,
+                         ::testing::Values(1, 5, 12, 32, 320));
 
 }  // namespace ml_drift

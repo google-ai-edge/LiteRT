@@ -302,6 +302,17 @@ absl::Status CreateSharedWebGpuTensor(
   bool is_supported_texture =
       tensor_desc.GetStorageType() == TensorStorageType::kTexture2D &&
       tensor_desc.GetDataType() == DataType::kUint16;
+  if (is_supported_texture) {
+    // UploadPrepackedTensor() copies via CopyBufferToTexture(), which requires
+    // bytesPerRow to be a multiple of 256. Fall back to CreateFromDescriptor()
+    // (queue.WriteTexture) when tightly packed rows are not 256-byte aligned.
+    const int width = tensor_desc.GetFullTensorRegion().x;
+    is_supported_texture =
+        width > 0 &&
+        (static_cast<size_t>(SizeOf(tensor_desc.GetDataType())) * 4 * width) %
+                256 ==
+            0;
+  }
   bool is_quantized_buffer =
       tensor_desc.GetStorageType() == TensorStorageType::kBuffer &&
       (tensor_desc.GetDataType() == DataType::kUint2 ||
