@@ -989,6 +989,49 @@ TEST(SerializationTest, UnnamedInputsAndOutputsAreGivenAName) {
   ASSERT_THAT(GetOutputName(1), StrEq("unnamed_output_1"));
 }
 
+TEST(SerializationTest, RetainsScopesAcrossIndependentSignatures) {
+  std::weak_ptr<graph::Scope> first_scope;
+  std::vector<char> model_data;
+  {
+    ModelFactory factory;
+    {
+      TensorTf input({.name = "first_input", .type = Type::kFP32, .shape = {4}});
+      graph::ScopeGuard scope("layer", "first_layer");
+      first_scope = scope.scope();
+      scope.Bind("input", input);
+      TensorTf intermediate = Abs(input);
+      scope.Bind("intermediate", intermediate);
+      TensorTf output = Neg(intermediate).SetName("first_output");
+      ASSERT_THAT(factory.AddSignature({output}, "first"), IsOk());
+    }
+    // No graph roots remain. Raw scope pointers used to dangle here, before
+    // Build() walked all previously registered scopes for the next signature.
+    ASSERT_FALSE(first_scope.expired());
+    {
+      TensorTf input({.name = "second_input", .type = Type::kFP32, .shape = {4}});
+      graph::ScopeGuard scope("layer", "second_layer");
+      scope.Bind("input", input);
+      TensorTf intermediate = Abs(input);
+      scope.Bind("intermediate", intermediate);
+      TensorTf output = Neg(intermediate).SetName("second_output");
+      ASSERT_THAT(factory.AddSignature({output}, "second"), IsOk());
+    }
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(model_data, factory.CreateFlatbuffer());
+  }
+  EXPECT_TRUE(first_scope.expired());
+  const tflite::Model* model = tflite::GetModel(model_data.data());
+  ASSERT_EQ(model->subgraphs()->size(), 2);
+  for (int i = 0; i < 2; ++i) {
+    const std::string expected =
+        i == 0 ? "first_layer/intermediate" : "second_layer/intermediate";
+    bool found = false;
+    for (const auto* tensor : *model->subgraphs()->Get(i)->tensors()) {
+      found |= tensor->name()->str() == expected;
+    }
+    EXPECT_TRUE(found) << expected;
+  }
+}
+
 TEST(SerializationTest, ScopedGraphPersistsHierarchicalTensorNamesAndMetadata) {
   std::vector<char> model_data;
   {

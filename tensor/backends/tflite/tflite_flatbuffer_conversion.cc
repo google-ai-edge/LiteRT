@@ -243,7 +243,7 @@ uint32_t ModelFactory::GetOrRegisterScopeId(
   const uint32_t id = static_cast<uint32_t>(serialized_scopes_.size());
   scope_to_id_[scope.get()] = id;
   SerializedScopeRecord rec;
-  rec.ptr = scope.get();
+  rec.ptr = scope;
   rec.kind = scope->kind;
   rec.name = scope->name;
   rec.parent_id = parent_id;
