@@ -38,7 +38,9 @@ Key differences and trade-offs compared with upstream LiteRT-LM + XNNPACK:
   INT4 containers; the vocabulary head uses dynamic activation quantization.
 
 The C++ `:model_builder` authors E2B only. The runner can also consume externally
-provided E4B models with compact E4B bundles.
+provided E4B models with compact E4B bundles. See
+[reproduction instructions](REPRODUCING.md) for preparation, export, forced-token
+smoke cases and tests without a checkpoint.
 
 ## KV Cache Buffer Transaction Lifecycle (`ActiveKvBank`)
 

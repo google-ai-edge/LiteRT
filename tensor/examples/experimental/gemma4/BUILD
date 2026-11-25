@@ -243,3 +243,21 @@ cc_test(
         "@com_google_googletest//:gtest_main",
     ],
 )
+
+cc_binary(
+    name = "export_model",
+    srcs = ["export_model.cc"],
+    copts = ["-ffp-contract=off"],
+    local_defines = ["ABSL_FLAGS_STRIP_NAMES=0"],
+    deps = [
+        ":bundle_loader",
+        ":model_builder",
+        "//tensor/backends/tflite:tflite_flatbuffer_conversion",
+        "//tensor/examples/gemma4:gemma4_config",
+        "//tensor/utils:macros",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:parse",
+        "@com_google_absl//absl/log:initialize",
+        "@com_google_absl//absl/status",
+    ],
+)
