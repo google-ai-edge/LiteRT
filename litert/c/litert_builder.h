@@ -65,7 +65,10 @@ LiteRtStatus LiteRtBuilderBuildOp(LiteRtBuilder builder, LiteRtOpCode op_code,
                                   LiteRtTensor* outputs, LiteRtOp* new_op);
 
 // Removes an existing OP from the graph being rewritten.
-// This function is performed transactionally within the builder context.
+// This function is performed transactionally within the builder context: the
+// op stays connected and its options stay readable until the builder's changes
+// are applied, which the pattern driver does only when the transformation
+// returns kLiteRtStatusOk.
 LiteRtStatus LiteRtBuilderEraseOp(LiteRtBuilder builder, LiteRtOp op_to_erase);
 
 // Replaces the tensor at input_index of op with new_tensor, updating

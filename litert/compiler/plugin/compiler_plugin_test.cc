@@ -62,6 +62,7 @@
 namespace litert::internal {
 namespace {
 
+using ::testing::ElementsAre;
 using testing::UniqueTestDirectory;
 
 constexpr absl::string_view kTestPluginSearchPath = "vendors/examples";
@@ -1938,6 +1939,35 @@ TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewrite) {
 
   ASSERT_EQ(subgraph.Ops().size(), 1);
   EXPECT_EQ(subgraph.Ops().front()->OpCode(), kLiteRtOpCodeTflMul);
+}
+
+// A pattern that erases an op and then fails leaves the graph unchanged.
+TEST_F(CompilerPluginFriend, FailedPatternKeepsErasedOp) {
+  CompilerPlugin plugin = CreatePlugin();
+  LiteRtTransformation transformation;
+  transformation.name = "EraseThenFail";
+  transformation.pattern = [](const LiteRtCompilerContext* context,
+                              LiteRtBuilder builder,
+                              LiteRtOp op) -> LiteRtStatus {
+    LITERT_RETURN_IF_ERROR(LiteRtBuilderEraseOp(builder, op));
+    return kLiteRtStatusErrorNotFound;
+  };
+  AddTransformation(plugin, transformation);
+
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  auto& input = subgraph.EmplaceTensor();
+  auto& output = subgraph.EmplaceTensor();
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&input, op);
+  AttachOutput(&output, op);
+
+  LITERT_ASSERT_OK(plugin.GreedyPatternMatchAndRewrite(model));
+
+  EXPECT_THAT(subgraph.Ops(), ElementsAre(&op));
+  EXPECT_THAT(input.Users(), ElementsAre(&op));
+  EXPECT_EQ(output.DefiningOp(), &op);
 }
 
 TEST_F(CompilerPluginFriend, GreedyPatternMatchAndRewriteIterative) {
