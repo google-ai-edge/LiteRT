@@ -107,6 +107,7 @@ cc_library(
         "//tflite/delegates/gpu/common:data_type",
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common/task:buffer_desc",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
@@ -155,6 +156,7 @@ cc_library(
         "//tflite/delegates/gpu/common:util",
         "//tflite/delegates/gpu/common/task:arguments",
         "//tflite/delegates/gpu/common/task:util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -188,6 +190,7 @@ cc_library(
         ":opencl_wrapper",
         ":util",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -206,6 +209,7 @@ cc_library(
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common/task:profiling_info",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -221,6 +225,7 @@ cc_library(
         ":util",
         "//tflite/delegates/gpu/common:data_type",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -236,6 +241,7 @@ cc_library(
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:types",
         "//tflite/experimental/acceleration/compatibility:android_info",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/debugging:leak_check",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:str_format",
@@ -266,6 +272,7 @@ cc_library(
     hdrs = ["cl_event.h"],
     deps = [
         ":opencl_wrapper",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -291,6 +298,7 @@ cc_library(
         ":util",
         "//tflite/delegates/gpu/common:kernel_info",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -303,6 +311,7 @@ cc_library(
         ":opencl_wrapper",
         "//tflite/delegates/gpu/common:access_type",
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -320,6 +329,7 @@ cc_library(
         ":tensor",
         "//tflite/delegates/gpu/common/task:compiler_options",
         "//tflite/delegates/gpu/common/task:gpu_operation",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -335,6 +345,7 @@ cc_library(
         ":util",
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common/task:compiler_options",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",
     ],
@@ -358,6 +369,7 @@ cc_library(
     deps = [
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/gl:gl_call",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -399,6 +411,7 @@ cc_library(
         "//tflite/delegates/gpu/gl:gl_call",
         "//tflite/delegates/gpu/gl:gl_sync",
         "//tflite/delegates/gpu/gl:portable",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -517,6 +530,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:serialization_base",
         "//tflite/delegates/gpu/common/task:tensor_desc",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
     ],
@@ -539,6 +553,7 @@ cc_library(
     }),
     deps = [
         "//tflite/delegates/gpu/common:status",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
         "@opencl_headers",
         "//tflite/delegates/gpu/cl/" + if_google("google", "default") + ":qcom_wrapper",
@@ -576,6 +591,7 @@ cc_library(
         ":gpu_object",
         ":util",
         "//tflite/delegates/gpu/common/task:qcom_thin_filter_desc",
+        "@com_google_absl//absl/base:core_headers",
     ],
 )
 
@@ -637,6 +653,7 @@ cc_library(
         "//tflite/delegates/gpu/common:types",
         "//tflite/delegates/gpu/common/task:gpu_tensor",
         "//tflite/delegates/gpu/common/task:tensor_desc",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/strings",
     ],
 )
@@ -679,6 +696,7 @@ cc_library(
         "//tflite/delegates/gpu/common:status",
         "//tflite/delegates/gpu/common:tensor",
         "//tflite/delegates/gpu/common:util",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/types:span",

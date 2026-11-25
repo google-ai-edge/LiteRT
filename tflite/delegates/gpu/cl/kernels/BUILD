@@ -169,6 +169,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:util",
         "//tflite/delegates/gpu/common/task:work_group_picking",
         "//tflite/delegates/gpu/common/tasks:conversion",
+        "@com_google_absl//absl/base:core_headers",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/strings",
     ],
