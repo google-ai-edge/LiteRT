@@ -83,6 +83,7 @@ const auto kSupportedOps =
                     "simple_embedding_lookup_op.tflite",
                     "simple_equal_op.tflite",
                     "simple_exp_op.tflite",
+                    "simple_expand_dims_op.tflite",
                     "simple_floor_op.tflite",
                     "simple_floor_div.tflite",
                     "simple_floor_mod.tflite",
