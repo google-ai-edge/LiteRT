@@ -57,7 +57,6 @@ litert_dynamic_lib(
     so_name = "libLiteRtCompilerPlugin_Qualcomm.so",
     ungrte = True,
     visibility = [
-        "//ci/tools/python/wheel:__subpackages__",
         "//litert:__subpackages__",
         "//litert:litert_friends",
     ],
@@ -403,7 +402,6 @@ litert_lib(
     srcs = ["graph_mapper.cc"],
     hdrs = ["graph_mapper.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
-    visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_element_type",
