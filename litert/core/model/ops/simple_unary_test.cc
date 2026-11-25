@@ -16,6 +16,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -24,11 +25,14 @@
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/test/matchers.h"
 
 namespace litert::internal {
 namespace {
 
 using ::testing::ElementsAre;
+using ::testing::litert::IsError;
+using ::testing::litert::IsOk;
 
 TEST(SimpleUnaryOpTest, AbsStaticShape) {
   LiteRtOpT op;
@@ -181,6 +185,147 @@ TEST(SimpleUnaryOpTest, AbsEmptyInputsFailure) {
 
   EXPECT_EQ(InferAbs(op, absl::MakeSpan(input_shapes), output_shapes),
             kLiteRtStatusErrorShapeInferenceFailed);
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelScalesNegativeAxisWithNullZeroPoints) {
+  const std::vector<int32_t> in = {2, 4, -2, -4};
+  const int32_t dims[] = {2, 2};
+  const std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<float> out(4, 0.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel(
+                  in.data(), dims, /*rank=*/2, /*quantized_dimension=*/-1,
+                  scales.data(), /*zero_points=*/nullptr, out.data()),
+              IsOk());
+
+  EXPECT_THAT(out, ElementsAre(1.0f, 8.0f, -1.0f, -8.0f));
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelPreservesLargeInt32Difference) {
+  // Subtracting in float32 loses precision for |val| > 2^24
+  // (16777217 -> 16777216).
+  const std::vector<int32_t> in = {16777217, -16777217};
+  const int32_t dims[] = {2};
+  const std::vector<float> scales = {1.0f, 0.5f};
+  const std::vector<int64_t> zero_points = {16777216, -16777215};
+  std::vector<float> out(2, 0.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel(
+                  in.data(), dims, /*rank=*/1, /*quantized_dimension=*/0,
+                  scales.data(), zero_points.data(), out.data()),
+              IsOk());
+
+  EXPECT_THAT(out, ElementsAre(1.0f, -1.0f));
+}
+
+struct DequantizePerChannelInvalidShapeCase {
+  std::string test_name;
+  std::vector<int32_t> dims = {2, 2};
+  int rank = 2;
+  int32_t quantized_dimension = 0;
+};
+
+using ReferenceDequantizePerChannelInvalidShapeTest =
+    ::testing::TestWithParam<DequantizePerChannelInvalidShapeCase>;
+
+TEST_P(ReferenceDequantizePerChannelInvalidShapeTest,
+       LeavesOutputUntouchedOnInvalidArgs) {
+  const auto& tc = GetParam();
+  const std::vector<int32_t> in = {2, 4, -2, -4};
+  const std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<float> out(4, -5.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  in.data(), tc.dims.data(), tc.rank, tc.quantized_dimension,
+                  scales.data(), /*zero_points=*/nullptr, out.data()),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ReferenceDequantizePerChannelInvalidShapeTests,
+    ReferenceDequantizePerChannelInvalidShapeTest,
+    ::testing::Values(
+        DequantizePerChannelInvalidShapeCase{.test_name = "ZeroRank",
+                                             .rank = 0},
+        DequantizePerChannelInvalidShapeCase{
+            .test_name = "OutOfRangeQuantizedDimension",
+            .quantized_dimension = 5}),
+    [](const ::testing::TestParamInfo<DequantizePerChannelInvalidShapeCase>&
+           info) { return info.param.test_name; });
+
+TEST(SimpleUnaryOpTest, ReferenceDequantizePerChannelEmptyTensorIsNoOp) {
+  const int32_t dims[] = {0, 2};
+  const std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<float> out(4, -5.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  /*input_data=*/nullptr, dims, /*rank=*/2,
+                  /*quantized_dimension=*/1, scales.data(),
+                  /*zero_points=*/nullptr, /*output_data=*/nullptr),
+              IsOk());
+
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelNullDimsLeavesOutputUntouched) {
+  const std::vector<int32_t> in = {2, 4, -2, -4};
+  const std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<float> out(4, -5.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  in.data(), /*dims=*/nullptr, /*rank=*/2,
+                  /*quantized_dimension=*/0, scales.data(),
+                  /*zero_points=*/nullptr, out.data()),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelNullInputDataLeavesOutputUntouched) {
+  const int32_t dims[] = {2, 2};
+  const std::vector<float> scales = {0.5f, 2.0f};
+  std::vector<float> out(4, -5.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  /*input_data=*/nullptr, dims, /*rank=*/2,
+                  /*quantized_dimension=*/0, scales.data(),
+                  /*zero_points=*/nullptr, out.data()),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelNullScalesLeavesOutputUntouched) {
+  const std::vector<int32_t> in = {2, 4, -2, -4};
+  const int32_t dims[] = {2, 2};
+  std::vector<float> out(4, -5.0f);
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  in.data(), dims, /*rank=*/2, /*quantized_dimension=*/0,
+                  /*scales=*/nullptr, /*zero_points=*/nullptr, out.data()),
+              IsError(kLiteRtStatusErrorInvalidArgument));
+
+  EXPECT_THAT(out, ElementsAre(-5.0f, -5.0f, -5.0f, -5.0f));
+}
+
+TEST(SimpleUnaryOpTest,
+     ReferenceDequantizePerChannelNullOutputDataReturnsInvalidArgument) {
+  const std::vector<int32_t> in = {2, 4, -2, -4};
+  const int32_t dims[] = {2, 2};
+  const std::vector<float> scales = {0.5f, 2.0f};
+
+  EXPECT_THAT(ReferenceDequantizePerChannel<int32_t>(
+                  in.data(), dims, /*rank=*/2, /*quantized_dimension=*/0,
+                  scales.data(), /*zero_points=*/nullptr,
+                  /*output_data=*/nullptr),
+              IsError(kLiteRtStatusErrorInvalidArgument));
 }
 
 }  // namespace
