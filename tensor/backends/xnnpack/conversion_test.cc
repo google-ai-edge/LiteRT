@@ -26,11 +26,14 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "xnnpack.h"  // from @XNNPACK  // from @XNNPACK
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
+#include "tensor/backends/xnnpack/graph.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -218,22 +221,28 @@ TEST(XnnpackConversionTest, BlockwiseEmptyScalesRejectsMultipleZeroPoints) {
 }
 
 TEST(XnnpackConversionTest, BlockwiseUniformAndNonUniformZeroPoints) {
-  auto build_fc = [&](ZeroPoints zero_points) {
+  auto build_fc = [&](ZeroPoints zero_points, bool with_buffer = true) {
     XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 32}});
-    XnnTensor weights(TensorInit{
-        .name = "weights",
-        .type = Type::kI4,
-        .shape = {2, 32},
-        .buffer = std::vector<int8_t>(32, 0),
-        .quantization = std::make_shared<BlockwiseQuantization>(
-            std::vector<float>{0.5f, 0.25f}, std::move(zero_points),
-            /*block_size=*/32, /*quantized_dimension=*/0)});
+    TensorInit init{.name = "weights",
+                    .type = Type::kI4,
+                    .shape = {2, 32},
+                    .quantization = std::make_shared<BlockwiseQuantization>(
+                        std::vector<float>{0.5f, 0.25f}, std::move(zero_points),
+                        /*block_size=*/32, /*quantized_dimension=*/0)};
+    if (with_buffer) {
+      init.buffer = std::vector<int8_t>(64, 0);
+    }
+    XnnTensor weights(std::move(init));
     XnnTensor output = FullyConnected(input, weights);
     return BuildXnnpackGraph({output});
   };
 
   EXPECT_THAT(build_fc(ZeroPoints::Int({8, 8})), ::testing::tensor::IsOk());
   EXPECT_THAT(build_fc(ZeroPoints::Int({8, 5})),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(build_fc(ZeroPoints::Float({1.5f, -0.5f})),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(build_fc(ZeroPoints::Float({1.5f, -0.5f}), /*with_buffer=*/false),
               StatusIs(absl::StatusCode::kUnimplemented));
 }
 
@@ -291,6 +300,58 @@ TEST(XnnpackConversionTest,
   EXPECT_THAT(BuildXnnpackGraph({output}), IsOk());
 }
 
+TEST(XnnpackConversionTest, FingerprintSinkRegistrationDispatchAndEdgeCases) {
+  struct SinkState {
+    int calls = 0;
+    std::vector<XnnConstantFingerprint> received;
+  };
+  SinkState state;
+  xnn_weights_cache_provider provider{};
+  provider.context = &state;
+  xnn_weights_cache_t cache = &provider;
+
+  const auto sink = +[](void* cache_context,
+                        absl::Span<const XnnConstantFingerprint> fingerprints) {
+    auto* s = static_cast<SinkState*>(cache_context);
+    ++s->calls;
+    s->received.assign(fingerprints.begin(), fingerprints.end());
+  };
+
+  int dummy_weight = 42;
+  const std::vector<XnnConstantFingerprint> fps = {
+      XnnConstantFingerprint{.data_ptr = &dummy_weight,
+                             .content_hash = 0xCAFEBABEULL,
+                             .min_packed_bytes = 64},
+  };
+
+  // Null cache or null sink registration is a safe no-op.
+  RegisterXnnWeightsCacheFingerprintSink(/*cache=*/nullptr, sink);
+  RegisterXnnWeightsCacheFingerprintSink(cache, /*sink=*/nullptr);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 0);
+
+  // Valid registration dispatches non-empty fingerprints and skips empty/null.
+  RegisterXnnWeightsCacheFingerprintSink(cache, sink);
+  const absl::Cleanup unregister_sink = [cache]() {
+    UnregisterXnnWeightsCacheFingerprintSink(cache);
+  };
+  NotifyXnnWeightsCacheConstantFingerprints(/*cache=*/nullptr, fps);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, {});
+  EXPECT_EQ(state.calls, 0);
+
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 1);
+  ASSERT_EQ(state.received.size(), 1u);
+  EXPECT_EQ(state.received[0].data_ptr, &dummy_weight);
+  EXPECT_EQ(state.received[0].content_hash, 0xCAFEBABEULL);
+  EXPECT_EQ(state.received[0].min_packed_bytes, 64u);
+
+  // Unregistering stops future notifications (and null unregister is a no-op).
+  UnregisterXnnWeightsCacheFingerprintSink(/*cache=*/nullptr);
+  UnregisterXnnWeightsCacheFingerprintSink(cache);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 1);
+}
 // This test is disabled because the lowering should not do implicit data
 // conversions.
 //
