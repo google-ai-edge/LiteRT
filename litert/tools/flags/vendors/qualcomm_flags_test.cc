@@ -894,5 +894,16 @@ TEST(QualcommOptionsFromFlagsTest, HtpContextInitAcceleration) {
   absl::SetFlag(&FLAGS_qualcomm_htp_context_init_acceleration, false);
 }
 
+TEST(QualcommOptionsFromFlagsTest, HtpConcurrentDeserializationPatchPath) {
+  absl::SetFlag(&FLAGS_qualcomm_htp_concurrent_deserialization_patch_path,
+                std::string("context.patch"));
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_EQ(options.Value().GetHtpConcurrentDeserializationPatchPath(),
+            "context.patch");
+  absl::SetFlag(&FLAGS_qualcomm_htp_concurrent_deserialization_patch_path,
+                std::string());
+}
 }  // namespace
 }  // namespace litert::qualcomm

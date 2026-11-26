@@ -659,6 +659,15 @@ bool Options::GetHtpContextInitAcceleration() const {
   return htp_context_init_acceleration_;
 }
 
+void Options::SetHtpConcurrentDeserializationPatchPath(
+    absl::string_view patch_path) {
+  htp_concurrent_deserialization_patch_path_ = patch_path;
+}
+
+absl::string_view Options::GetHtpConcurrentDeserializationPatchPath() const {
+  return htp_concurrent_deserialization_patch_path_;
+}
+
 std::uint32_t Options::GetNumHvxThreads() const { return num_hvx_threads_; }
 
 void Options::SetNumHvxThreads(std::uint32_t num_hvx_threads) {
@@ -838,6 +847,8 @@ std::string Options::Dump() const {
   field(2, "VtcmSize", vtcm_size_);
   field(2, "HtpDeviceId", htp_device_id_);
   field(2, "HtpContextInitAcceleration", htp_context_init_acceleration_);
+  field(2, "HtpConcurrentDeserializationPatchPath",
+        htp_concurrent_deserialization_patch_path_);
   field(2, "NumHvxThreads", num_hvx_threads_);
   field(2, "HtpFileReadMemoryBudgetMB", htp_file_read_memory_budget_mb_);
   field(2, "OptimizationLevel", optimization_level_);

@@ -112,6 +112,31 @@ TEST(MiscTest, TestAlwaysFalse) {
   ASSERT_FALSE(::qnn::always_false<long double>);
 }
 
+#if !defined(_WIN32)
+TEST(MiscTest, OpenConcurrentDeserializationPatch) {
+  const std::filesystem::path temp_path =
+      std::filesystem::temp_directory_path() /
+      ("qnn_concurrent_deserialization_patch_" +
+       std::to_string(getpid()));
+  ASSERT_TRUE(std::filesystem::create_directories(temp_path));
+
+  int fd = -2;
+  EXPECT_TRUE(OpenConcurrentDeserializationPatch("", "qnn_partition_0", &fd));
+  EXPECT_EQ(fd, -1);
+  EXPECT_TRUE(OpenConcurrentDeserializationPatch(temp_path.string(),
+                                                 "qnn_partition_0", &fd));
+  EXPECT_GE(fd, 0);
+  CloseConcurrentDeserializationPatch(fd);
+  EXPECT_TRUE(std::filesystem::exists(temp_path / "qnn_partition_0.patch"));
+
+  const std::filesystem::path non_directory = temp_path / "not_a_directory";
+  std::ofstream(non_directory).close();
+  EXPECT_FALSE(OpenConcurrentDeserializationPatch(non_directory.string(),
+                                                  "qnn_partition_1", &fd));
+  EXPECT_TRUE(std::filesystem::remove_all(temp_path));
+}
+#endif
+
 TEST(MiscTests, Quantize) {
   float val = 1;
   float scale = 0.1;

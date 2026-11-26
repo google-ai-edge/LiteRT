@@ -137,10 +137,15 @@ Expected<absl::Span<const QnnSystemInterface_t*>> LoadSystemProvidersFromLib(
 
 }  // namespace
 
+HtpContextConfigs::~HtpContextConfigs() {
+  ::qnn::CloseConcurrentDeserializationPatch(
+      concurrent_deserialization_patch_fd);
+}
+
 absl::Span<const QnnContext_Config_t*> QnnManager::BuildHtpContextConfigs(
     const ::qnn::Options& options,
     absl::Span<const QnnContext_Config_t*> configs,
-    HtpContextConfigs& storage) {
+    HtpContextConfigs& storage, int concurrent_deserialization_patch_fd) {
   std::vector<const QnnContext_Config_t*> htp_context_configs_to_add;
   if (options.GetGraphPriority() != ::qnn::GraphPriority::kDefault) {
     storage.priority.option = QNN_CONTEXT_CONFIG_OPTION_PRIORITY;
@@ -165,6 +170,18 @@ absl::Span<const QnnContext_Config_t*> QnnManager::BuildHtpContextConfigs(
     storage.init_acceleration.customConfig =
         &storage.init_acceleration_custom;
     htp_context_configs_to_add.push_back(&storage.init_acceleration);
+  }
+  if (concurrent_deserialization_patch_fd >= 0) {
+    storage.concurrent_deserialization_patch_custom.option =
+        QNN_HTP_CONTEXT_CONFIG_OPTION_CONCURRENT_DESERIALIZATION_PATCH;
+    storage.concurrent_deserialization_patch_custom
+        .concurrentDeserializationPatchFd = concurrent_deserialization_patch_fd;
+    storage.concurrent_deserialization_patch.option =
+        QNN_CONTEXT_CONFIG_OPTION_CUSTOM;
+    storage.concurrent_deserialization_patch.customConfig =
+        &storage.concurrent_deserialization_patch_custom;
+    htp_context_configs_to_add.push_back(
+        &storage.concurrent_deserialization_patch);
   }
 
   if (htp_context_configs_to_add.empty()) {
@@ -711,7 +728,8 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
 Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
     ::qnn::QnnBackend& qnn_backend,
     absl::Span<const QnnContext_Config_t*> configs,
-    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle) {
+    absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+    absl::string_view context_name) {
 #if !defined(_WIN32)
   const int64_t page_size = sysconf(_SC_PAGESIZE);
   uintptr_t aligned_start = 0;
@@ -736,15 +754,22 @@ Expected<QnnManager::ContextHandle> QnnManager::CreateContextHandle(
   Qnn_ContextHandle_t context_handle;
   Qnn_ErrorHandle_t status;
   if (options_.GetBackendType() == ::qnn::BackendType::kHtpBackend) {
-    HtpContextConfigs htp_configs;
-    const auto htp_span =
-        BuildHtpContextConfigs(options_, configs, htp_configs);
-    const auto context_configs =
-        htp_span.empty() ? configs.data() : htp_span.data();
     const bool vote_during_load =
         options_.GetHtpPerfCtrlMode() == ::qnn::HtpPerfCtrlMode::kAuto &&
         options_.GetHtpPerformanceMode() !=
             ::qnn::HtpPerformanceMode::kDefault;
+    HtpContextConfigs htp_configs;
+    if (!::qnn::OpenConcurrentDeserializationPatch(
+            options_.GetHtpConcurrentDeserializationPatchPath(), context_name,
+            &htp_configs.concurrent_deserialization_patch_fd)) {
+      return Unexpected(kLiteRtStatusErrorRuntimeFailure,
+                        "Failed to open HTP concurrent deserialization patch");
+    }
+    const auto htp_span = BuildHtpContextConfigs(
+        options_, configs, htp_configs,
+        htp_configs.concurrent_deserialization_patch_fd);
+    const auto context_configs =
+        htp_span.empty() ? configs.data() : htp_span.data();
 
     if (vote_during_load) {
       qnn_backend.UpVote();

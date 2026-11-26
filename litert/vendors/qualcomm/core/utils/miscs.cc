@@ -6,6 +6,8 @@
 
 #if !defined(_WIN32)
 #include <dlfcn.h>
+#include <fcntl.h>
+#include <unistd.h>
 #endif
 
 #include <array>
@@ -64,6 +66,38 @@ bool CreateDirectoryRecursive(const std::filesystem::path& dir_name) {
     return false;
   }
   return true;
+}
+
+bool OpenConcurrentDeserializationPatch(std::string_view patch_dir,
+                                        std::string_view context_name,
+                                        int* patch_fd) {
+  *patch_fd = -1;
+  if (patch_dir.empty()) {
+    return true;
+  }
+#if defined(_WIN32)
+  QNN_LOG_ERROR("Concurrent deserialization patch is unsupported on Windows");
+  return false;
+#else
+  const std::filesystem::path patch_path =
+      std::filesystem::path(std::string(patch_dir)) /
+      (std::string(context_name) + ".patch");
+  *patch_fd = open(patch_path.c_str(), O_RDWR | O_CREAT, 0644);
+  if (*patch_fd < 0) {
+    QNN_LOG_ERROR("Failed to open concurrent deserialization patch: %s",
+                  patch_path.c_str());
+    return false;
+  }
+  return true;
+#endif
+}
+
+void CloseConcurrentDeserializationPatch(int patch_fd) {
+#if !defined(_WIN32)
+  if (patch_fd >= 0) {
+    close(patch_fd);
+  }
+#endif
 }
 
 #if !defined(_WIN32)

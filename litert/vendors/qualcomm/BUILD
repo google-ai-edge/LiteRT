@@ -93,6 +93,7 @@ litert_cc_lib_with_qnn(
         "//litert/vendors/qualcomm/core/backends:lpai_backend",
         "//litert/vendors/qualcomm/core/backends:qnn_backend",
         "//litert/vendors/qualcomm/core/schema:soc_table",
+        "//litert/vendors/qualcomm/core/utils:miscs",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",
         "@com_google_absl//absl/strings",
         "@com_google_absl//absl/strings:string_view",

@@ -158,6 +158,17 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetHtpDeviceId(qualcomm_options.GetHtpDeviceId());
   qnn_options.SetHtpContextInitAcceleration(
       qualcomm_options.GetHtpContextInitAcceleration());
+  const auto htp_concurrent_deserialization_patch_path =
+      qualcomm_options.GetHtpConcurrentDeserializationPatchPath();
+  if (!htp_concurrent_deserialization_patch_path.empty() &&
+      !qualcomm_options.GetHtpContextInitAcceleration()) {
+    LITERT_LOG(LITERT_ERROR,
+               "qualcomm_htp_concurrent_deserialization_patch_path requires "
+               "qualcomm_htp_context_init_acceleration=true");
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  qnn_options.SetHtpConcurrentDeserializationPatchPath(
+      htp_concurrent_deserialization_patch_path);
   qnn_options.SetNumHvxThreads(qualcomm_options.GetNumHvxThreads());
   qnn_options.SetHtpFileReadMemoryBudgetMB(
       qualcomm_options.GetHtpFileReadMemoryBudgetMB());

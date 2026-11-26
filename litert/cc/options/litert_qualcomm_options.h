@@ -565,6 +565,21 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetHtpConcurrentDeserializationPatchPath(
+      const std::string& patch_path) {
+    LrtQualcommOptionsSetHtpConcurrentDeserializationPatchPath(
+        options_, patch_path.c_str());
+  }
+  StringView GetHtpConcurrentDeserializationPatchPath() {
+    const char* val;
+    auto status = LrtQualcommOptionsGetHtpConcurrentDeserializationPatchPath(
+        options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return "";
+    }
+    return val;
+  }
+
   void SetNumHvxThreads(std::uint32_t num_hvx_threads) {
     LrtQualcommOptionsSetNumHvxThreads(options_, num_hvx_threads);
   }

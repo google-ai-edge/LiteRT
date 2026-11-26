@@ -12,7 +12,9 @@
 #include <cstdint>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <memory>
+#include <string_view>
 #include <type_traits>
 #include <vector>
 
@@ -70,6 +72,17 @@ std::vector<std::int8_t> UnpackInt2Data(const void* src, size_t src_bytes);
 std::vector<std::int8_t> UnpackInt4Data(const void* src, size_t src_bytes);
 
 bool CreateDirectoryRecursive(const std::filesystem::path& dir_name);
+
+// Opens `<patch_dir>/<context_name>.patch` (created if missing) for QNN HTP
+// concurrent deserialization. An empty `patch_dir` disables the feature and
+// yields `*patch_fd == -1`. Returns false on failure. The caller owns the fd
+// and releases it with CloseConcurrentDeserializationPatch().
+bool OpenConcurrentDeserializationPatch(std::string_view patch_dir,
+                                        std::string_view context_name,
+                                        int* patch_fd);
+
+// No-op for a negative fd.
+void CloseConcurrentDeserializationPatch(int patch_fd);
 
 #if !defined(_WIN32)
 struct DlCloser {
