@@ -1,4 +1,4 @@
-# Copyright 2025 Google LLC.
+# Copyright 2026 Amlogic, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -22,9 +22,11 @@ set(AML_DISPATCH_DIR "${AML_ROOT}/dispatch")
 set(AML_COMPILER_DIR "${AML_ROOT}/compiler")
 get_filename_component(AML_REPO_ROOT "${AML_ROOT}/../../.." ABSOLUTE)
 
-# One GitHub fetch: amlnn-toolkit/.../nn_runtime (nnsdk + aml_compiler_core).
-# Same idea as Bazel @aml_npu_nn_runtime / LITERT_AML_NN_RUNTIME.
-set(_AMLNN_TOOLKIT_COMMIT "5efa2cd45971766bb7cb1f2ddab727e3ce301463")
+# One GitHub fetch: amlnn-toolkit/amlnn_runtime/nn_runtime
+# (nnsdk + aml_compiler_core). Same pin as Bazel @aml_npu_nn_runtime.
+# https://github.com/Amlogic-NN/amlnn-toolkit/tree/main/amlnn_runtime/nn_runtime
+set(_AML_TOOLKIT_COMMIT "11410d28ff079656e13a702b9ed8e8ed7d7f381b")
+set(_AML_TOOLKIT_SHA256 "49dd665d1d1e51f7a701b8881f3c9b77356136a3ea15c125a3329e4bfca82b09")
 
 # Resolve nn_runtime root (contains nnsdk/ + aml_compiler_core/).
 if(NOT AML_NN_RUNTIME_ROOT)
@@ -38,9 +40,23 @@ if(NOT AML_NN_RUNTIME_ROOT)
     get_filename_component(_legacy_cc_parent "$ENV{LITERT_AML_COMPILER_CORE}/.." ABSOLUTE)
     list(APPEND _aml_nn_rt_candidates "${_legacy_cc_parent}")
   endif()
+  get_filename_component(_aml_npu_nn_rt "${AML_REPO_ROOT}/../../aml_npu" ABSOLUTE)
+  # aml_npu is not nn_runtime layout; skip unless it gains matching dirs.
   foreach(_cand IN LISTS _aml_nn_rt_candidates)
+    set(_cand_ok FALSE)
     if(EXISTS "${_cand}/aml_compiler_core/include/compiler_core_context.h" AND
        EXISTS "${_cand}/nnsdk/include/nnsdk2.h")
+      if(NOT _cand STREQUAL "${CMAKE_BINARY_DIR}/_deps/aml_nn_runtime")
+        set(_cand_ok TRUE)
+      elseif(EXISTS "${_cand}/.aml_nn_pin")
+        file(READ "${_cand}/.aml_nn_pin" _cand_pin)
+        string(STRIP "${_cand_pin}" _cand_pin)
+        if(_cand_pin STREQUAL "${_AML_TOOLKIT_COMMIT}")
+          set(_cand_ok TRUE)
+        endif()
+      endif()
+    endif()
+    if(_cand_ok)
       set(AML_NN_RUNTIME_ROOT "${_cand}")
       break()
     endif()
@@ -48,15 +64,20 @@ if(NOT AML_NN_RUNTIME_ROOT)
 endif()
 
 if(NOT AML_NN_RUNTIME_ROOT)
-  set(_nn_archive "${CMAKE_BINARY_DIR}/_deps/amlnn-toolkit-${_AMLNN_TOOLKIT_COMMIT}.tar.gz")
+  set(_nn_archive "${CMAKE_BINARY_DIR}/_deps/amlnn-toolkit-${_AML_TOOLKIT_COMMIT}.tar.gz")
   set(_nn_extract "${CMAKE_BINARY_DIR}/_deps/amlnn-toolkit-src")
-  set(_nn_url "https://github.com/Amlogic-NN/amlnn-toolkit/archive/${_AMLNN_TOOLKIT_COMMIT}.tar.gz")
+  set(_nn_url "https://github.com/Amlogic-NN/amlnn-toolkit/archive/${_AML_TOOLKIT_COMMIT}.tar.gz")
   set(_nn_rt_in_archive
-    "${_nn_extract}/amlnn-toolkit-${_AMLNN_TOOLKIT_COMMIT}/amlnn_runtime/nn_runtime")
+    "${_nn_extract}/amlnn-toolkit-${_AML_TOOLKIT_COMMIT}/amlnn_runtime/nn_runtime")
   if(NOT EXISTS "${_nn_rt_in_archive}/aml_compiler_core/include/compiler_core_context.h")
     if(NOT EXISTS "${_nn_archive}")
-      message(STATUS "Downloading AML amlnn-toolkit archive (nn_runtime)...")
-      file(DOWNLOAD "${_nn_url}" "${_nn_archive}" SHOW_PROGRESS STATUS _nn_dl_status)
+      message(STATUS "Downloading amlnn-toolkit nn_runtime (nnsdk + aml_compiler_core)...")
+      if(_AML_TOOLKIT_SHA256)
+        file(DOWNLOAD "${_nn_url}" "${_nn_archive}" SHOW_PROGRESS STATUS _nn_dl_status
+             EXPECTED_HASH "SHA256=${_AML_TOOLKIT_SHA256}")
+      else()
+        file(DOWNLOAD "${_nn_url}" "${_nn_archive}" SHOW_PROGRESS STATUS _nn_dl_status)
+      endif()
       list(GET _nn_dl_status 0 _nn_dl_code)
       if(NOT _nn_dl_code EQUAL 0)
         message(FATAL_ERROR "AML nn_runtime download failed (${_nn_dl_status})")
@@ -67,10 +88,14 @@ if(NOT AML_NN_RUNTIME_ROOT)
       file(ARCHIVE_EXTRACT INPUT "${_nn_archive}" DESTINATION "${_nn_extract}")
     endif()
   endif()
-  if(EXISTS "${_nn_rt_in_archive}/aml_compiler_core/include/compiler_core_context.h")
+  if(EXISTS "${_nn_rt_in_archive}/aml_compiler_core/include/compiler_core_context.h" AND
+     EXISTS "${_nn_rt_in_archive}/nnsdk/include/nnsdk2.h")
     set(_nn_stable "${CMAKE_BINARY_DIR}/_deps/aml_nn_runtime")
+    file(REMOVE_RECURSE "${_nn_stable}")
     file(MAKE_DIRECTORY "${_nn_stable}")
-    file(COPY "${_nn_rt_in_archive}/" DESTINATION "${_nn_stable}")
+    file(COPY "${_nn_rt_in_archive}/aml_compiler_core" "${_nn_rt_in_archive}/nnsdk"
+         DESTINATION "${_nn_stable}")
+    file(WRITE "${_nn_stable}/.aml_nn_pin" "${_AML_TOOLKIT_COMMIT}\n")
     set(AML_NN_RUNTIME_ROOT "${_nn_stable}")
   endif()
 endif()
@@ -121,7 +146,7 @@ if(NOT AML_NNSDK_INCLUDE_DIRS)
 endif()
 
 # Optional: Linux packaging dir (compiler_adla / nnsdk .so next to binaries).
-# Libs come from the fetched nn_runtime.
+# Prefer libs from the fetched nn_runtime; fall back to legacy aml_npu.
 if(NOT AML_LINUX_LIB_DIR)
   if(CMAKE_SYSTEM_PROCESSOR MATCHES "aarch64|ARM64|arm64")
     if(DEFINED ENV{OECORE_TARGET_SYSROOT} OR DEFINED ENV{OE_CMAKE_TOOLCHAIN_FILE})
@@ -135,6 +160,18 @@ if(NOT AML_LINUX_LIB_DIR)
   if(EXISTS "${_aml_pack_dir}")
     set(AML_NPU_RUNTIME_LIB_DIR "${_aml_pack_dir}")
   endif()
+endif()
+if(NOT AML_NPU_ROOT)
+  if(DEFINED ENV{AML_NPU_ROOT} AND NOT "$ENV{AML_NPU_ROOT}" STREQUAL "")
+    set(AML_NPU_ROOT "$ENV{AML_NPU_ROOT}")
+  else()
+    get_filename_component(AML_NPU_ROOT "${AML_REPO_ROOT}/../../aml_npu" ABSOLUTE)
+  endif()
+endif()
+set(AML_NPU_ROOT "${AML_NPU_ROOT}" CACHE PATH
+  "Optional legacy aml_npu (extra packaging)" FORCE)
+if(NOT AML_NPU_RUNTIME_LIB_DIR AND EXISTS "${AML_NPU_ROOT}/runtime_lib/cmake/AmlNpuRuntime.cmake")
+  include("${AML_NPU_ROOT}/runtime_lib/cmake/AmlNpuRuntime.cmake")
 endif()
 if(AML_NPU_RUNTIME_LIB_DIR)
   set(AML_LINUX_LIB_DIR "${AML_NPU_RUNTIME_LIB_DIR}" CACHE PATH
@@ -162,24 +199,23 @@ set(AML_COMMON_INCLUDES
 )
 
 # Packager format shared by compiler plugin + dispatch (no ADLA).
-# Lives in vendors/aml/core (same as Bazel //litert/vendors/aml/core:aml_dispatch_info).
-add_library(aml_dispatch_info STATIC
-  ${AML_CORE_DIR}/aml_dispatch_info.cc
+# Lives in vendors/amlogic/core (same as Bazel //litert/vendors/amlogic/core:amlogic_dispatch_info).
+add_library(amlogic_dispatch_info STATIC
+  ${AML_CORE_DIR}/amlogic_dispatch_info.cc
 )
-target_include_directories(aml_dispatch_info PUBLIC
+target_include_directories(amlogic_dispatch_info PUBLIC
   ${AML_COMMON_INCLUDES}
   ${AML_CORE_DIR}
 )
 
-# Runtime-only (LiteRtDispatch_Aml). Must NOT link libcompiler_adla.so.
-add_library(aml_runtime STATIC
+# Runtime-only (LiteRtDispatch_Amlogic). Must NOT link libcompiler_adla.so.
+add_library(amlogic_runtime STATIC
   ${AML_CORE_DIR}/nnsdk_func.cc
-  ${AML_CORE_DIR}/adla_log.cc
 )
-target_include_directories(aml_runtime PUBLIC ${AML_COMMON_INCLUDES})
-target_link_libraries(aml_runtime
+target_include_directories(amlogic_runtime PUBLIC ${AML_COMMON_INCLUDES})
+target_link_libraries(amlogic_runtime
   PUBLIC
-    aml_dispatch_info
+    amlogic_dispatch_info
     tensorflow-lite
     litert_runtime_c_api_static
     litert_cc_api
@@ -191,38 +227,40 @@ target_link_libraries(aml_runtime
     absl::statusor
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
-  target_link_libraries(aml_runtime PUBLIC dl)
+  target_link_libraries(amlogic_runtime PUBLIC dl)
 endif()
 
 # Compiler core is prebuilt (aml_compiler_core / aml_compiler_core_lib /
 # aml_compiler_core_so aliases from AmlCompilerCorePrebuilt.cmake).
-# LiteRT links that .so; it does not compile compiler_core sources and does
-# not link libcompiler_adla.so.
+# LiteRT never links that .so: the compiler plugin resolves its entry points
+# at run time via dlopen (aml_compiler_core_loader), so processes that never
+# compile never map libaml_compiler_core.so / libcompiler_adla.so. The .so
+# is still installed below for the dlopen to find it.
 
-# Backward-compatible name: historical aml_core mixed runtime+compiler.
-# Prefer aml_runtime / aml_compiler_core_lib for new targets.
-add_library(aml_core INTERFACE)
-target_link_libraries(aml_core INTERFACE
-  aml_runtime
+# Backward-compatible name: historical amlogic_core mixed runtime+compiler.
+# Prefer amlogic_runtime / aml_compiler_core_lib for new targets.
+add_library(amlogic_core INTERFACE)
+target_link_libraries(amlogic_core INTERFACE
+  amlogic_runtime
   aml_compiler_core_lib
-  aml_dispatch_info
+  amlogic_dispatch_info
 )
 
-add_library(aml_dispatch_so SHARED
+add_library(amlogic_dispatch_so SHARED
   ${AML_DISPATCH_DIR}/dispatch_api.cc
   ${AML_DISPATCH_DIR}/litert_dispatch_device_context.cc
   ${AML_DISPATCH_DIR}/litert_dispatch_invocation_context.cc
 )
 
-target_include_directories(aml_dispatch_so
+target_include_directories(amlogic_dispatch_so
   PUBLIC
     ${AML_COMMON_INCLUDES}
     ${AML_DISPATCH_DIR}
 )
 
-target_link_libraries(aml_dispatch_so
+target_link_libraries(amlogic_dispatch_so
   PUBLIC
-    aml_runtime
+    amlogic_runtime
     litert_runtime_c_api_static
     absl::log
     absl::str_format
@@ -230,20 +268,20 @@ target_link_libraries(aml_dispatch_so
     absl::span
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
-  target_link_libraries(aml_dispatch_so PRIVATE dl)
+  target_link_libraries(amlogic_dispatch_so PRIVATE dl)
 endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-  target_link_libraries(aml_dispatch_so PRIVATE android log)
+  target_link_libraries(amlogic_dispatch_so PRIVATE android log)
 endif()
 
-set_target_properties(aml_dispatch_so PROPERTIES
-  OUTPUT_NAME "LiteRtDispatch_Aml"
+set_target_properties(amlogic_dispatch_so PROPERTIES
+  OUTPUT_NAME "LiteRtDispatch_Amlogic"
   POSITION_INDEPENDENT_CODE ON
 )
 if(UNIX AND NOT APPLE)
-  target_link_options(aml_dispatch_so PRIVATE
-    "-Wl,-soname=libLiteRtDispatch_Aml.so")
-  target_link_libraries(aml_dispatch_so PRIVATE
+  target_link_options(amlogic_dispatch_so PRIVATE
+    "-Wl,-soname=libLiteRtDispatch_Amlogic.so")
+  target_link_libraries(amlogic_dispatch_so PRIVATE
     "-Wl,--start-group"
     litert_runtime_c_api_shared_lib
     litert_compiler_plugin
@@ -255,12 +293,13 @@ if(UNIX AND NOT APPLE)
   )
 endif()
 
-add_library(aml_compiler_plugin_so SHARED
-  ${AML_COMPILER_DIR}/aml_compiler_plugin.cc
+add_library(amlogic_compiler_plugin_so SHARED
+  ${AML_COMPILER_DIR}/amlogic_compiler_plugin.cc
   ${AML_COMPILER_DIR}/node_binary_info.cc
+  ${AML_CORE_DIR}/aml_compiler_core_loader.cc
 )
 
-target_include_directories(aml_compiler_plugin_so
+target_include_directories(amlogic_compiler_plugin_so
   PUBLIC
     ${AML_COMMON_INCLUDES}
     ${AML_COMPILER_DIR}
@@ -268,45 +307,38 @@ target_include_directories(aml_compiler_plugin_so
     ${TFLITE_BUILD_DIR}/flatbuffers/include
 )
 
-# RTTI required for NodeBuilder::SetParameter(dynamic_cast) against
-# objects created inside prebuilt libcompiler_adla.so.
-target_compile_options(aml_compiler_plugin_so PRIVATE -frtti)
-# Keep default visibility so typeinfo can merge across DSO with ADLA.
-set_target_properties(aml_compiler_plugin_so PROPERTIES
-  CXX_VISIBILITY_PRESET default
-  VISIBILITY_INLINES_HIDDEN OFF
-)
+# Pure C plugin boundary. Do not compile or export adla C++ RTTI; cross-DSO
+# dynamic_cast belongs in the ADLA SDK, not this .so.
+target_compile_options(amlogic_compiler_plugin_so PRIVATE -fno-rtti)
 
-target_link_libraries(aml_compiler_plugin_so
+target_link_libraries(amlogic_compiler_plugin_so
   PUBLIC
-    aml_compiler_core_lib
-    aml_dispatch_info
+    amlogic_dispatch_info
     litert_compiler_plugin
     absl::flat_hash_map
     absl::str_format
     absl::strings
 )
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux" OR CMAKE_SYSTEM_NAME STREQUAL "Android")
-  target_link_libraries(aml_compiler_plugin_so PRIVATE dl)
+  target_link_libraries(amlogic_compiler_plugin_so PRIVATE dl)
 endif()
 
-set_target_properties(aml_compiler_plugin_so PROPERTIES
-  OUTPUT_NAME "LiteRtCompilerPlugin_Aml"
+set_target_properties(amlogic_compiler_plugin_so PROPERTIES
+  OUTPUT_NAME "LiteRtCompilerPlugin_Amlogic"
   POSITION_INDEPENDENT_CODE ON
 )
 if(UNIX AND NOT APPLE)
-  target_link_options(aml_compiler_plugin_so PRIVATE
-    "-Wl,-soname=libLiteRtCompilerPlugin_Aml.so"
-    # Export LiteRt* + RTTI; hide std::filesystem etc so they resolve from
-    # system C++ runtime (avoids hijacking libcompiler_adla.so Compile()).
-    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/compiler/export_aml_compiler_plugin_linux.lds"
+  target_link_options(amlogic_compiler_plugin_so PRIVATE
+    "-Wl,-soname=libLiteRtCompilerPlugin_Amlogic.so"
+    # Export the LiteRT C plugin ABI only.
+    "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/../../build_common/export_litert_only_linux.lds"
     "-Wl,--exclude-libs,libc++_static.a"
     "-Wl,--exclude-libs,libc++abi.a"
     "LINKER:-rpath,$ORIGIN"
     "LINKER:--disable-new-dtags"
     "LINKER:--allow-shlib-undefined"
   )
-  target_link_libraries(aml_compiler_plugin_so PRIVATE
+  target_link_libraries(amlogic_compiler_plugin_so PRIVATE
     "-Wl,--start-group"
     litert_runtime_c_api_shared_lib
     tensorflow-lite
@@ -319,54 +351,46 @@ if(UNIX AND NOT APPLE)
 endif()
 
 # Convenience install for board / buildroot rootfs packaging.
-# Generic ATS (//litert/ats:ats) is built from litert/ats/CMakeLists.txt when
-# LITERT_ENABLE_AML=ON. Board wrapper: run_aml_ats.sh (installed with ats).
 install(TARGETS
-  litert_runtime_c_api_shared_lib
-  aml_dispatch_so
-  aml_compiler_plugin_so
+  amlogic_dispatch_so
+  amlogic_compiler_plugin_so
   LIBRARY DESTINATION lib
   RUNTIME DESTINATION bin
   ARCHIVE DESTINATION lib
 )
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats.sh")
-  install(PROGRAMS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats.sh" DESTINATION bin)
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_collect_issues.sh")
-  install(PROGRAMS
-      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_collect_issues.sh"
-      DESTINATION bin
-  )
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_gtest.sh")
-  install(PROGRAMS
-      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_gtest.sh"
-      DESTINATION bin
-  )
-endif()
-if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_extra_models.sh")
-  install(PROGRAMS
-      "${CMAKE_CURRENT_SOURCE_DIR}/run_aml_ats_extra_models.sh"
-      DESTINATION bin
-  )
-endif()
 
 install(FILES
   "${AML_COMPILER_CORE_LIB}"
   DESTINATION lib
 )
-# GitHub flat include/ or legacy aml_npu/compiler_core/ nesting.
-set(_aml_install_hdr_api "${AML_COMPILER_CORE_INCLUDE_DIR}/compiler_core_api.h")
-set(_aml_install_hdr_ctx "${AML_COMPILER_CORE_INCLUDE_DIR}/compiler_core_context.h")
-if(NOT EXISTS "${_aml_install_hdr_api}")
-  set(_aml_install_hdr_api "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_api.h")
-  set(_aml_install_hdr_ctx "${AML_COMPILER_CORE_INCLUDE_DIR}/aml_npu/compiler_core/compiler_core_context.h")
-endif()
-install(FILES
-  "${_aml_install_hdr_api}"
-  "${_aml_install_hdr_ctx}"
-  DESTINATION include/aml_npu/compiler_core
-)
 if(AML_COMPILER_ADLA_LIB)
   install(FILES "${AML_COMPILER_ADLA_LIB}" DESTINATION lib)
+endif()
+
+if(TARGET GTest::gtest_main)
+  add_executable(dispatch_api_amlogic_test
+    ${AML_DISPATCH_DIR}/dispatch_api_amlogic_test.cc
+  )
+  target_link_libraries(dispatch_api_amlogic_test PRIVATE
+    amlogic_dispatch_so
+    litert_compiler_plugin
+    GTest::gtest_main
+  )
+  if(UNIX AND NOT APPLE)
+    target_link_options(dispatch_api_amlogic_test PRIVATE
+      "LINKER:-rpath,$ORIGIN")
+  endif()
+
+  add_executable(amlogic_compiler_plugin_test
+    ${AML_COMPILER_DIR}/compiler_plugin_test.cc
+  )
+  target_link_libraries(amlogic_compiler_plugin_test PRIVATE
+    amlogic_compiler_plugin_so
+    litert_compiler_plugin
+    GTest::gtest_main
+  )
+  if(UNIX AND NOT APPLE)
+    target_link_options(amlogic_compiler_plugin_test PRIVATE
+      "LINKER:-rpath,$ORIGIN")
+  endif()
 endif()

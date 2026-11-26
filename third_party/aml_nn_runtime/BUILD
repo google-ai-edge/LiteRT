@@ -40,6 +40,33 @@ config_setting(
     constraint_values = ["@platforms//cpu:arm64"],
 )
 
+# Android arm64 and Linux aarch64 both use a 64-bit ARM CPU. Keep them apart
+# so the Linux build does not link the Android libaml_compiler_core.so.
+config_setting(
+    name = "aml_android_arm64",
+    constraint_values = [
+        "@platforms//os:android",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+config_setting(
+    name = "aml_linux_arm64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:arm64",
+    ],
+)
+
+# //platforms:linux_aarch64 uses @platforms//cpu:aarch64, not cpu:arm64.
+config_setting(
+    name = "aml_linux_aarch64",
+    constraint_values = [
+        "@platforms//os:linux",
+        "@platforms//cpu:aarch64",
+    ],
+)
+
 selects.config_setting_group(
     name = "aml_abi_armv7",
     match_any = [

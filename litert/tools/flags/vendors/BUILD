@@ -219,6 +219,47 @@ cc_library(
     alwayslink = 1,
 )
 
+# AML #########################################################################################
+
+cc_library(
+    name = "amlogic_flags",
+    srcs = ["amlogic_flags.cc"],
+    hdrs = ["amlogic_flags.h"],
+    copts = commandline_flag_copts() + [
+        "-DINCLUDE_AMLOGIC_COMPILE_FLAGS",
+    ],
+    deps = [
+        "//litert/c:litert_common",
+        "//litert/c/options:litert_amlogic_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_options",
+        "//litert/cc/options:litert_amlogic_options",
+        "//litert/tools/flags:options_parser_registry",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/strings:string_view",
+    ],
+    alwayslink = 1,
+)
+
+cc_test(
+    name = "amlogic_flags_test",
+    srcs = ["amlogic_flags_test.cc"],
+    copts = [
+        "-DINCLUDE_AMLOGIC_COMPILE_FLAGS",
+    ],
+    deps = [
+        ":amlogic_flags",
+        "//litert/c/options:litert_amlogic_options",
+        "//litert/cc:litert_expected",
+        "//litert/cc/options:litert_amlogic_options",
+        "//litert/test:matchers",
+        "@com_google_absl//absl/flags:flag",
+        "@com_google_absl//absl/flags:reflection",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 # ARM VULKAN ML ###############################################################################
 
 cc_library(

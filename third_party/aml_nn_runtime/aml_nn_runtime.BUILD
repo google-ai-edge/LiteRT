@@ -1,6 +1,6 @@
-# BUILD for @aml_npu_nn_runtime (nn_runtime after strip_prefix / LITERT_AML_NN_RUNTIME).
+# BUILD for @aml_npu_nn_runtime (amlnn-toolkit amlnn_runtime/nn_runtime).
 #
-# Layout (GitHub amlnn-toolkit/.../nn_runtime):
+# Layout after strip_prefix:
 #   nnsdk/include/...          (+ android/lib64|lib32, linux/...)
 #   aml_compiler_core/include/ (+ libs/{android,linux,yocto}/...)
 #
@@ -81,10 +81,13 @@ cc_import(
 cc_library(
     name = "aml_compiler_core_lib",
     deps = [":headers"] + select({
-        "@//third_party/aml_nn_runtime:aml_abi_arm64": [":_so_android_arm64"],
+        "@//third_party/aml_nn_runtime:aml_linux_aarch64": [":_so_linux_aarch64"],
+        "@//third_party/aml_nn_runtime:aml_linux_arm64": [":_so_linux_aarch64"],
+        "@//third_party/aml_nn_runtime:aml_android_arm64": [":_so_android_arm64"],
+        "@//third_party/aml_nn_runtime:aml_flag_arm64_v8a": [":_so_android_arm64"],
         "@//third_party/aml_nn_runtime:aml_abi_armv7": [":_so_android_armv7"],
         "@//third_party/aml_nn_runtime:aml_abi_x86_64": [":_so_linux_x86_64"],
-        "//conditions:default": [":_so_android_arm64"],
+        "//conditions:default": [":_so_linux_x86_64"],
     }),
 )
 

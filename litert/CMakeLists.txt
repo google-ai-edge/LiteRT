@@ -437,13 +437,13 @@ add_subdirectory(compiler)
 # vendors/ downloads the vendor SDKs (e.g. the multi-GB Qualcomm QAIRT SDK) at
 # configure time, so only add it when NPU support is enabled.
 # AML buildroot/Yocto can be enabled alone (-DLITERT_ENABLE_AML=ON) and then
-# only vendors/aml is added, without pulling the other vendor SDK downloads.
+# only vendors/amlogic is added, without pulling the other vendor SDK downloads.
 option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
 if(LITERT_ENABLE_NPU)
   add_subdirectory(vendors)
 elseif(LITERT_ENABLE_AML)
-  message(STATUS "AML buildroot: adding vendors/aml without other NPU SDKs")
-  add_subdirectory(vendors/aml)
+  message(STATUS "AML buildroot: adding vendors/amlogic without other NPU SDKs")
+  add_subdirectory(vendors/amlogic)
 else()
   message(STATUS "Skipping NPU vendor dispatch libraries: LITERT_ENABLE_NPU is OFF")
 endif()

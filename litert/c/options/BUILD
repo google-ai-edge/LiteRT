@@ -319,9 +319,9 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_aml_options",
-    srcs = ["litert_aml_options.cc"],
-    hdrs = ["litert_aml_options.h"],
+    name = "litert_amlogic_options",
+    srcs = ["litert_amlogic_options.cc"],
+    hdrs = ["litert_amlogic_options.h"],
     deps = [
         "//litert/c:litert_common",
         "//litert/cc:litert_macros",
@@ -330,6 +330,16 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
     alwayslink = 1,
+)
+
+cc_test(
+    name = "litert_amlogic_options_test",
+    srcs = ["litert_amlogic_options_test.cc"],
+    deps = [
+        ":litert_amlogic_options",
+        "//litert/test:matchers",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 # copybara:uncomment_begin(google-only)
@@ -411,8 +421,8 @@ exports_files(glob(["litert_*.h"]))
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
-        "litert_aml_options.cc",
-        "litert_aml_options.h",
+        "litert_amlogic_options.cc",
+        "litert_amlogic_options.h",
         "litert_arm_vulkan_ml_options.cc",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.cc",

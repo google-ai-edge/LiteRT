@@ -1,4 +1,4 @@
-# Copyright 2026 Google LLC.
+# Copyright 2026 Amlogic, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -34,23 +34,22 @@ litert_dispatch_api(
     ],
     export_litert_only = True,
     linkopts = litert_android_linkopts() + [
-        "-Wl,-soname=libLiteRtDispatch_Aml.so",
+        "-Wl,-soname=libLiteRtDispatch_Amlogic.so",
         "-Wl,-rpath,$$ORIGIN",
         "-ldl",
     ],
     shared_lib_name = "dispatch_api_so",
-    so_name = "libLiteRtDispatch_Aml.so",
+    so_name = "libLiteRtDispatch_Amlogic.so",
     visibility = ["//litert:__subpackages__"],
     deps = [
         "//litert/c:litert_common",
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_logging",
-        "//litert/c/options:litert_aml_options",
         "//litert/cc:litert_element_type",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
         "//litert/cc:litert_ranked_tensor_type",
-        "//litert/vendors/aml/core:Aml_runtime_lib",
+        "//litert/vendors/amlogic/core:Amlogic_runtime_lib",
         "//litert/vendors/c:litert_dispatch_c_api",
         "@com_google_absl//absl/strings:string_view",
         "@com_google_absl//absl/types:span",

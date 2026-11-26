@@ -1,11 +1,23 @@
-/*******************************************************************************
- * Copyright (C) 2026 Amlogic, Inc. All rights reserved.
- *
+// Copyright 2026 Amlogic, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//      http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+/**
  * @file    nnsdk_func.h
- * @module  aml_runtime
+ * @module  amlogic_runtime
  * @brief   dlopen wrappers for libnnsdk.so (NNSDK2 / amlnn_* APIs) used by dispatch.
  * @note    Runtime only; not part of aml_compiler_core. NNSDK1 (module_*) removed.
- ******************************************************************************/
+ */
 
 #ifndef NNSDK_FUNC_H__
 #define NNSDK_FUNC_H__
@@ -82,9 +94,24 @@ AML_NN* AML_NNImplementation();
 
 /**
  * @brief AML_NN for one ADLA model: same function table, its own qcontext.
- * @note libnnsdk.so is dlopen'd once. Each model must keep the returned object.
+ * @note Each successful call holds one reference to the dlopen'd libnnsdk.so.
+ *       ReleaseNnsdk() drops that reference and dlclose's the library at zero.
  */
 AML_NN CreateAmlNn();
+
+/**
+ * @brief Drop one libnnsdk.so reference taken by CreateAmlNn().
+ * @note Call after the model's qcontext has been destroyed. The last release
+ *       dlclose's the library.
+ */
+void ReleaseNnsdk();
+
+/**
+ * @brief Directory from LiteRT DispatchLibraryDir, used to dlopen libnnsdk.so.
+ * @param dir Absolute directory, or NULL / empty to keep the bare soname.
+ * @note Must be called before the first CreateAmlNn().
+ */
+void SetNnsdkLibraryDir(const char* dir);
 
 /**
  * @brief True if NNSDK2 symbols were successfully resolved.

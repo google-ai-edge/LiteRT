@@ -446,7 +446,7 @@ endif()
 # selects libs/yocto/aarch64 from that tree.
 option(LITERT_ENABLE_AML "Enable AML dispatch/compiler build (buildroot/Yocto)" OFF)
 if(LITERT_ENABLE_AML)
-  add_subdirectory(aml)
+  add_subdirectory(amlogic)
 endif()
 
 # Samsung

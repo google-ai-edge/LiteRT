@@ -1,4 +1,4 @@
-# Copyright 2024 Google LLC.
+# Copyright 2026 Amlogic, Inc.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -17,5 +17,6 @@ package(
     default_visibility = ["//visibility:public"],
 )
 
-# Compiler plugin: //litert/vendors/aml/compiler
-# Dispatch: //litert/vendors/aml/dispatch
+# Compiler plugin: //litert/vendors/amlogic/compiler
+# Dispatch: //litert/vendors/amlogic/dispatch
+# Plugin test: //litert/vendors/amlogic/compiler:amlogic_compiler_plugin_test

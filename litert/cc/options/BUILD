@@ -240,12 +240,12 @@ cc_library(
 )
 
 cc_library(
-    name = "litert_aml_options",
-    hdrs = ["litert_aml_options.h"],
+    name = "litert_amlogic_options",
+    hdrs = ["litert_amlogic_options.h"],
     deps = [
         ":litert_concrete_options_base",
         "//litert/c:litert_common",
-        "//litert/c/options:litert_aml_options",
+        "//litert/c/options:litert_amlogic_options",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
     ],
@@ -302,7 +302,7 @@ exports_files(glob([
 filegroup(
     name = "litert_cc_sdk_files",
     srcs = [
-        "litert_aml_options.h",
+        "litert_amlogic_options.h",
         "litert_arm_vulkan_ml_options.h",
         "litert_compiler_options.h",
         "litert_concrete_options_base.h",
