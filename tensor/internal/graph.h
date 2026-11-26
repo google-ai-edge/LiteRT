@@ -38,10 +38,12 @@ limitations under the License.
 // a model from its outputs.
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <initializer_list>
 #include <limits>
 #include <memory>
@@ -471,6 +473,31 @@ struct BlockwiseQuantization : Quantization {
     std::shared_ptr<const std::vector<bf16_t>> bf16_scales;
   };
 
+  // Parameters returned by a lazy `BlockwiseQuantization` materializer.
+  struct MaterializedBlockwiseParams {
+    std::vector<float> scales;
+    std::vector<float> float_zero_points;
+  };
+
+  // Declares whether a lazy `BlockwiseQuantization` may produce floating-point
+  // zero-points upon materialization.
+  enum class ZeroPointPresence {
+    kNone,
+    kMayHaveFloat,
+  };
+
+  // Options configuring a lazy `BlockwiseQuantization`.
+  struct LazyOptions {
+    ZeroPointPresence zero_points = ZeroPointPresence::kNone;
+    bool pre_sanitized = false;
+  };
+
+  struct LazySpec {
+    size_t num_blocks = 0;
+    bool may_have_float_zero_points = false;
+    std::function<MaterializedBlockwiseParams()> materialize_fn;
+  };
+
   BlockwiseQuantization() = default;
 
   BlockwiseQuantization(std::vector<float> scales, ZeroPoints zero_points,
@@ -480,6 +507,21 @@ struct BlockwiseQuantization : Quantization {
         block_size(block_size),
         quantized_dimension(quantized_dimension) {}
 
+  // Creates a lazy `BlockwiseQuantization` whose `scales` and `zero_points`
+  // remain empty until `EnsureMaterialized()` or `SetMaterializedParams()` is
+  // called. `materialize_fn` returns the materialized scales (and optional
+  // float zero-points) by value.
+  static std::shared_ptr<BlockwiseQuantization> CreateLazily(
+      int block_size, int quantized_dimension, size_t num_blocks,
+      std::function<MaterializedBlockwiseParams()> materialize_fn,
+      LazyOptions options);
+  static std::shared_ptr<BlockwiseQuantization> CreateLazily(
+      int block_size, int quantized_dimension, size_t num_blocks,
+      std::function<MaterializedBlockwiseParams()> materialize_fn) {
+    return CreateLazily(block_size, quantized_dimension, num_blocks,
+                        std::move(materialize_fn), LazyOptions{});
+  }
+
   internal::TypeId GetTypeId() const override {
     return internal::TypeId::Get<BlockwiseQuantization>();
   }
@@ -487,11 +529,65 @@ struct BlockwiseQuantization : Quantization {
     return id == internal::TypeId::Get<BlockwiseQuantization>();
   }
 
+  // Returns true when `scales` and `zero_points` are populated in memory.
+  bool IsMaterialized() const {
+    return lazy_.materialized.load(std::memory_order_acquire);
+  }
+
+  // Returns the number of quantization blocks without triggering lazy
+  // materialization.
+  size_t NumBlocks() const;
+
+  // Returns true if this quantization has (or may lazily materialize) non-zero
+  // floating-point zero-points, without triggering lazy materialization.
+  bool MayHaveFloatZeroPoints() const;
+
+  // Returns true if this quantization has non-float (integer) zero-points.
+  // Safe to call concurrently with lazy materialization/eviction.
+  bool HasIntegerZeroPoints() const;
+
+  // Returns true when scales are already guaranteed to lie in the valid FP16
+  // normal range so backends can skip redundant per-block sanitization scans.
+  bool IsPreSanitized() const { return pre_sanitized_; }
+  void SetPreSanitized(bool v) { pre_sanitized_ = v; }
+
+  // Materializes `scales` and `zero_points` on demand if currently lazy.
+  // Leaves `IsMaterialized()` false if `materialize_fn` fails to produce the
+  // expected number of scales.
+  void EnsureMaterialized() const;
+
+  // Populates `scales` and optional float `zero_points` directly (e.g. when a
+  // paired lazy weight buffer unpacks payload and parameters in one pass).
+  void SetMaterializedParams(std::vector<float> new_scales,
+                             std::vector<float> new_float_zero_points = {});
+
+  // Invokes `fn(scales, zero_points)` under a shared reader lock if currently
+  // materialized, preventing races with `ReleaseMaterializedData()`. Returns
+  // false without invoking `fn` if not currently materialized.
+  template <typename Fn>
+  bool WithMaterializedParams(Fn&& fn) const {
+    absl::ReaderMutexLock lock(lazy_.mu);
+    if (!lazy_.materialized.load(std::memory_order_relaxed)) {
+      return false;
+    }
+    fn(absl::MakeConstSpan(scales), zero_points);
+    return true;
+  }
+
+  // Releases materialized `scales`, `zero_points`, and derived caches (BF16
+  // scales / CPU symmetric fallback) when backed by a lazy spec so host RAM
+  // can be reclaimed after backend repacking. For eager instances, clears
+  // derived caches (`bf16_cache_`) while keeping `scales` and `zero_points`.
+  // Callers must ensure no external readers hold bare references to `scales`
+  // or `zero_points` while releasing.
+  void ReleaseMaterializedData();
+
   // Returns a thread-safe cached BF16 representation of `scales` so multi-pass
   // backends (such as XNNPACK prepack + prefill + decode) do not re-allocate or
   // re-convert hundreds of millions of blockwise scales on every pass.
   std::shared_ptr<const std::vector<bf16_t>> GetOrCreateBf16Scales() const;
 
+  // Returns true if `GetOrCreateBf16Scales()` has already populated the cache.
   bool HasCachedBf16Scales() const;
 
   // Returns a thread-safe cached symmetric quantized representation for CPU
@@ -504,18 +600,38 @@ struct BlockwiseQuantization : Quantization {
   GetOrCreateCpuSymmetricFallback(Type type, int rows, int cols,
                                   const void* raw_data, size_t raw_bytes) const;
 
+  // Returns true if `GetOrCreateCpuSymmetricFallback()` has cached a fallback.
   bool HasCachedCpuSymmetricFallback() const;
+
+  // Clears cached BF16 scales and CPU symmetric fallback after in-place edits.
   void InvalidateBf16ScalesCache();
 
   // Per-block quantization scales. Any caller that mutates `scales` in-place
   // after `GetOrCreateBf16Scales()` has been called must invoke
   // `InvalidateBf16ScalesCache()` to keep the cached BF16 scales coherent.
-  std::vector<float> scales;
-  ZeroPoints zero_points;
+  // Marked `mutable` because `EnsureMaterialized() const` populates lazy
+  // parameters on first read.
+  mutable std::vector<float> scales;
+  mutable ZeroPoints zero_points;
   int block_size = 0;
   int quantized_dimension = 0;
 
  private:
+  struct LazyMaterializer {
+    LazyMaterializer() = default;
+    LazyMaterializer(const LazyMaterializer& other);
+    LazyMaterializer& operator=(const LazyMaterializer& other);
+    LazyMaterializer(LazyMaterializer&& other) noexcept;
+    LazyMaterializer& operator=(LazyMaterializer&& other) noexcept;
+
+    // Serializes `materialize_fn` invocations without holding `mu`, avoiding
+    // lock-order inversions with paired lazy buffers.
+    mutable absl::Mutex materialize_mu;
+    mutable absl::Mutex mu;
+    std::shared_ptr<const LazySpec> spec ABSL_GUARDED_BY(mu);
+    mutable std::atomic<bool> materialized{true};
+  };
+
   struct CachedBf16Scales {
     CachedBf16Scales() = default;
     CachedBf16Scales(const CachedBf16Scales& other);
@@ -529,6 +645,8 @@ struct BlockwiseQuantization : Quantization {
         ABSL_GUARDED_BY(mu);
   };
 
+  bool pre_sanitized_ = false;
+  mutable LazyMaterializer lazy_;
   mutable CachedBf16Scales bf16_cache_;
 };
 

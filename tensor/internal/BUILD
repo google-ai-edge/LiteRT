@@ -139,6 +139,7 @@ cc_test(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/utils:matchers",
+        "//tensor/utils:parallel",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:status_matchers",
         "@com_google_absl//absl/strings:string_view",

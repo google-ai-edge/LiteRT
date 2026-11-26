@@ -14,6 +14,7 @@ limitations under the License.
 ==============================================================================*/
 #include "tensor/internal/graph.h"
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
@@ -33,6 +34,7 @@ limitations under the License.
 #include "tensor/datatypes.h"
 #include "tensor/internal/type_id.h"
 #include "tensor/utils/matchers.h"
+#include "tensor/utils/parallel.h"
 
 namespace litert::tensor::graph {
 namespace {
@@ -660,6 +662,220 @@ TEST(QuantizationTest,
       bq_i4.GetOrCreateCpuSymmetricFallback(
           Type::kFP32, kRows, kCols, raw_i4_lock.data(), raw_i4_lock.size()),
       Not(IsOk()));
+}
+
+TEST(QuantizationTest, LazyBlockwiseMaterializationAndRelease) {
+  std::atomic<int> materialize_calls{0};
+  auto bq = BlockwiseQuantization::CreateLazily(
+      /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/4,
+      [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+        materialize_calls.fetch_add(1, std::memory_order_relaxed);
+        return {
+            .scales = {0.25f, 0.5f, 0.125f, 1.0f},
+            .float_zero_points = {0.0f, -2.5f, 0.0f, 1.25f},
+        };
+      },
+      BlockwiseQuantization::LazyOptions{
+          .zero_points =
+              BlockwiseQuantization::ZeroPointPresence::kMayHaveFloat,
+          .pre_sanitized = true,
+      });
+
+  EXPECT_FALSE(bq->IsMaterialized());
+  EXPECT_TRUE(bq->IsPreSanitized());
+  EXPECT_EQ(bq->NumBlocks(), 4u);
+  EXPECT_TRUE(bq->MayHaveFloatZeroPoints());
+  EXPECT_FALSE(bq->HasIntegerZeroPoints());
+  EXPECT_EQ(materialize_calls.load(std::memory_order_relaxed), 0);
+
+  bq->EnsureMaterialized();
+  {
+    auto zp1 = bq->zero_points.At<float>(1);
+    ASSERT_OK(zp1);
+    EXPECT_FLOAT_EQ(*zp1, -2.5f);
+  }
+  EXPECT_TRUE(bq->IsMaterialized());
+  EXPECT_EQ(materialize_calls.load(std::memory_order_relaxed), 1);
+  ASSERT_EQ(bq->scales.size(), 4u);
+  EXPECT_FLOAT_EQ(bq->scales[2], 0.125f);
+
+  auto bf16 = bq->GetOrCreateBf16Scales();
+  ASSERT_NE(bf16, nullptr);
+  EXPECT_EQ(bf16->size(), 4u);
+  EXPECT_EQ(materialize_calls.load(std::memory_order_relaxed), 1);
+
+  bq->ReleaseMaterializedData();
+  EXPECT_FALSE(bq->IsMaterialized());
+  EXPECT_TRUE(bq->scales.empty());
+  EXPECT_EQ(bq->NumBlocks(), 4u);
+
+  // Re-materializes cleanly if requested again.
+  bq->EnsureMaterialized();
+  {
+    auto zp3 = bq->zero_points.At<float>(3);
+    ASSERT_OK(zp3);
+    EXPECT_FLOAT_EQ(*zp3, 1.25f);
+  }
+  EXPECT_TRUE(bq->IsMaterialized());
+  EXPECT_EQ(materialize_calls.load(std::memory_order_relaxed), 2);
+}
+
+TEST(QuantizationTest, LazyBlockwiseCopyMoveSetParamsFailureAndConcurrency) {
+  // 1. Failed materialization does not poison `IsMaterialized()`.
+  auto failing_bq = BlockwiseQuantization::CreateLazily(
+      /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/4,
+      []() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+        return {};
+      });
+  failing_bq->EnsureMaterialized();
+  EXPECT_FALSE(failing_bq->IsMaterialized());
+  EXPECT_TRUE(failing_bq->scales.empty());
+
+  // Wrong-sized `SetMaterializedParams` is also ignored.
+  failing_bq->SetMaterializedParams({1.0f, 2.0f});
+  EXPECT_FALSE(failing_bq->IsMaterialized());
+
+  // Valid `SetMaterializedParams` populates without invoking `materialize_fn`.
+  int called = 0;
+  auto direct_bq = BlockwiseQuantization::CreateLazily(
+      /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/2,
+      [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+        ++called;
+        return {.scales = {0.5f, 0.25f}};
+      });
+  direct_bq->SetMaterializedParams({0.125f, 0.75f}, {0.5f, -0.5f});
+  EXPECT_TRUE(direct_bq->IsMaterialized());
+  EXPECT_EQ(called, 0);
+  EXPECT_THAT(direct_bq->scales, ElementsAre(FloatEq(0.125f), FloatEq(0.75f)));
+
+  // 2. Copy and move preserve lazy spec & materialization state.
+  std::atomic<int> copy_calls{0};
+  auto orig = BlockwiseQuantization::CreateLazily(
+      /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/3,
+      [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+        copy_calls.fetch_add(1, std::memory_order_relaxed);
+        return {.scales = {1.0f, 2.0f, 3.0f}};
+      });
+  BlockwiseQuantization copied(*orig);
+  EXPECT_FALSE(copied.IsMaterialized());
+  EXPECT_EQ(copied.NumBlocks(), 3u);
+  copied.EnsureMaterialized();
+  EXPECT_TRUE(copied.IsMaterialized());
+  EXPECT_FALSE(orig->IsMaterialized());
+  EXPECT_THAT(copied.scales, ElementsAre(FloatEq(1.0f), FloatEq(2.0f), 3.0f));
+
+  BlockwiseQuantization copy_assigned;
+  copy_assigned = *orig;
+  EXPECT_FALSE(copy_assigned.IsMaterialized());
+  EXPECT_EQ(copy_assigned.NumBlocks(), 3u);
+
+  BlockwiseQuantization moved(std::move(*orig));
+  EXPECT_FALSE(moved.IsMaterialized());
+  EXPECT_EQ(moved.NumBlocks(), 3u);
+  BlockwiseQuantization move_assigned;
+  move_assigned = std::move(moved);
+  EXPECT_FALSE(move_assigned.IsMaterialized());
+  move_assigned.EnsureMaterialized();
+  EXPECT_TRUE(move_assigned.IsMaterialized());
+  EXPECT_THAT(move_assigned.scales,
+              ElementsAre(FloatEq(1.0f), FloatEq(2.0f), 3.0f));
+
+  // 3. Concurrent `EnsureMaterialized()` invokes `materialize_fn` once.
+  std::atomic<int> concurrent_calls{0};
+  auto shared_bq = BlockwiseQuantization::CreateLazily(
+      /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/4,
+      [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+        concurrent_calls.fetch_add(1, std::memory_order_relaxed);
+        return {.scales = {0.25f, 0.5f, 0.75f, 1.0f},
+                .float_zero_points = {0.5f, -0.5f, 1.0f, -1.0f}};
+      },
+      BlockwiseQuantization::LazyOptions{
+          .zero_points =
+              BlockwiseQuantization::ZeroPointPresence::kMayHaveFloat,
+      });
+  ParallelFor(
+      /*count=*/16, /*min_grain=*/1,
+      [&](size_t begin, size_t end) {
+        for (size_t i = begin; i < end; ++i) {
+          shared_bq->EnsureMaterialized();
+          EXPECT_TRUE(shared_bq->IsMaterialized());
+          EXPECT_EQ(shared_bq->NumBlocks(), 4u);
+        }
+      },
+      /*max_threads=*/8);
+  EXPECT_EQ(concurrent_calls.load(std::memory_order_relaxed), 1);
+  EXPECT_THAT(shared_bq->scales, ElementsAre(0.25f, 0.5f, 0.75f, 1.0f));
+}
+
+TEST(QuantizationTest, CpuSymmetricFallbackLargeTensorInt8AndInt4) {
+  // Large tensor (262144 elements) verifying symmetric fallback conversion.
+  constexpr int kRows = 128;
+  constexpr int kCols = 2048;
+  constexpr int kBlockSize = 32;
+  constexpr size_t kTotalElements = static_cast<size_t>(kRows) * kCols;
+  constexpr size_t kBlocksPerRow = kCols / kBlockSize;
+  constexpr size_t kTotalBlocks = static_cast<size_t>(kRows) * kBlocksPerRow;
+
+  std::vector<float> scales(kTotalBlocks);
+  std::vector<float> float_zps(kTotalBlocks);
+  for (size_t b = 0; b < kTotalBlocks; ++b) {
+    scales[b] = 0.05f * static_cast<float>((b % 7) + 1);
+    float_zps[b] = (b % 2 == 0) ? -1.5f : 0.75f;
+  }
+
+  // INT8 parallel fallback.
+  std::vector<int8_t> raw_i8(kTotalElements);
+  for (size_t i = 0; i < kTotalElements; ++i) {
+    raw_i8[i] = static_cast<int8_t>((i * 13 + 7) % 101 - 50);
+  }
+  BlockwiseQuantization bq_i8(scales, ZeroPoints::Float(float_zps), kBlockSize);
+  ASSERT_OK_AND_ASSIGN(
+      auto fb_i8, bq_i8.GetOrCreateCpuSymmetricFallback(
+                      Type::kI8, kRows, kCols, raw_i8.data(), raw_i8.size()));
+  ASSERT_NE(fb_i8, nullptr);
+  ASSERT_EQ(fb_i8->scales.size(), static_cast<size_t>(kRows));
+  const int8_t* fb_i8_data = fb_i8->data->Span<const int8_t>().data();
+  for (int r : {0, 37, kRows - 1}) {
+    const float row_scale = fb_i8->scales[r];
+    for (int c : {0, 31, 1024, kCols - 1}) {
+      const size_t idx = static_cast<size_t>(r) * kCols + c;
+      const size_t blk = static_cast<size_t>(r) * kBlocksPerRow +
+                         static_cast<size_t>(c / kBlockSize);
+      const float expected =
+          (static_cast<float>(raw_i8[idx]) - float_zps[blk]) * scales[blk];
+      const float actual = static_cast<float>(fb_i8_data[idx]) * row_scale;
+      EXPECT_NEAR(actual, expected, row_scale + 1e-4f);
+    }
+  }
+
+  // INT4 parallel fallback.
+  auto raw_i4 = OwningCpuBuffer::Allocate<Type::kI4>(kTotalElements);
+  ASSERT_NE(raw_i4, nullptr);
+  int4_t* raw_i4_ptr = raw_i4->Span<int4_t>().data();
+  for (size_t i = 0; i < kTotalElements / 2; ++i) {
+    raw_i4_ptr[i].a = static_cast<int8_t>((i % 15) - 7);
+    raw_i4_ptr[i].b = static_cast<int8_t>(((i * 3) % 15) - 7);
+  }
+  BlockwiseQuantization bq_i4(scales, ZeroPoints::Float(float_zps), kBlockSize);
+  auto raw_i4_lock = raw_i4->Lock();
+  ASSERT_OK_AND_ASSIGN(
+      auto fb_i4,
+      bq_i4.GetOrCreateCpuSymmetricFallback(
+          Type::kI4, kRows, kCols, raw_i4_lock.data(), raw_i4_lock.size()));
+  ASSERT_NE(fb_i4, nullptr);
+  ASSERT_NE(fb_i4->bf16_scales, nullptr);
+  EXPECT_EQ(fb_i4->bf16_scales->size(), kTotalBlocks);
+  const int4_t* fb_i4_ptr = fb_i4->data->Span<const int4_t>().data();
+  for (size_t b : {size_t{0}, kTotalBlocks / 2, kTotalBlocks - 1}) {
+    const float fb_s = static_cast<float>((*fb_i4->bf16_scales)[b]);
+    EXPECT_GT(fb_s, 0.0f);
+    const size_t pair_base = b * (kBlockSize / 2);
+    const float expected0 =
+        (static_cast<float>(raw_i4_ptr[pair_base].a) - float_zps[b]) *
+        scales[b];
+    const float actual0 = static_cast<float>(fb_i4_ptr[pair_base].a) * fb_s;
+    EXPECT_NEAR(actual0, expected0, fb_s + 1e-2f);
+  }
 }
 
 }  // namespace

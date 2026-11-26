@@ -26,6 +26,27 @@ void ParallelForImpl(size_t count, size_t min_grain, size_t max_threads,
                      void* ctx,
                      void (*fn)(void* ctx, size_t begin, size_t end));
 
+// Returns true when the current thread is already running inside an outer
+// parallel weight-prepacking worker, so inner helpers can avoid nested thread
+// oversubscription on small tensors.
+bool InOuterParallelPrepackWorker();
+
+// RAII guard that marks the current thread as executing an outer parallel
+// weight-prepacking worker for the lifetime of this scope and restores the
+// prior state on destruction.
+class ScopedOuterParallelPrepackWorker {
+ public:
+  ScopedOuterParallelPrepackWorker();
+  ScopedOuterParallelPrepackWorker(const ScopedOuterParallelPrepackWorker&) =
+      delete;
+  ScopedOuterParallelPrepackWorker& operator=(
+      const ScopedOuterParallelPrepackWorker&) = delete;
+  ~ScopedOuterParallelPrepackWorker();
+
+ private:
+  bool prev_;
+};
+
 }  // namespace internal
 
 // Executes `fn(size_t begin, size_t end)` over `[0, count)` in tiles of at

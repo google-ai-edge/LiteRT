@@ -221,22 +221,28 @@ TEST(XnnpackConversionTest, BlockwiseEmptyScalesRejectsMultipleZeroPoints) {
 }
 
 TEST(XnnpackConversionTest, BlockwiseUniformAndNonUniformZeroPoints) {
-  auto build_fc = [&](ZeroPoints zero_points) {
+  auto build_fc = [&](ZeroPoints zero_points, bool with_buffer = true) {
     XnnTensor input({.name = "input", .type = Type::kFP32, .shape = {1, 32}});
-    XnnTensor weights(TensorInit{
-        .name = "weights",
-        .type = Type::kI4,
-        .shape = {2, 32},
-        .buffer = std::vector<int8_t>(32, 0),
-        .quantization = std::make_shared<BlockwiseQuantization>(
-            std::vector<float>{0.5f, 0.25f}, std::move(zero_points),
-            /*block_size=*/32, /*quantized_dimension=*/0)});
+    TensorInit init{.name = "weights",
+                    .type = Type::kI4,
+                    .shape = {2, 32},
+                    .quantization = std::make_shared<BlockwiseQuantization>(
+                        std::vector<float>{0.5f, 0.25f}, std::move(zero_points),
+                        /*block_size=*/32, /*quantized_dimension=*/0)};
+    if (with_buffer) {
+      init.buffer = std::vector<int8_t>(64, 0);
+    }
+    XnnTensor weights(std::move(init));
     XnnTensor output = FullyConnected(input, weights);
     return BuildXnnpackGraph({output});
   };
 
   EXPECT_THAT(build_fc(ZeroPoints::Int({8, 8})), ::testing::tensor::IsOk());
   EXPECT_THAT(build_fc(ZeroPoints::Int({8, 5})),
+              StatusIs(absl::StatusCode::kUnimplemented));
+  EXPECT_THAT(build_fc(ZeroPoints::Float({1.5f, -0.5f})),
+              ::testing::tensor::IsOk());
+  EXPECT_THAT(build_fc(ZeroPoints::Float({1.5f, -0.5f}), /*with_buffer=*/false),
               StatusIs(absl::StatusCode::kUnimplemented));
 }
 

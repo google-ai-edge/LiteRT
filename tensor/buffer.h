@@ -168,9 +168,65 @@ class Buffer {
     return LockedBufferSpan<std::byte>::Empty();
   }
 
-  // Releases materialized host memory when the buffer can be deterministically
-  // re-materialized on demand (no-op for eager caller-owned CPU buffers).
+  // Lazy unpack / repack / evict lifecycle hooks:
+  //
+  // Large quantized weights (such as mmap-backed GGUF matrices or deferred
+  // fused weight concatenations) can stay unmaterialized until a backend needs
+  // CPU bytes. Backends that repack weights into their own packed layout or
+  // GPU storage can:
+  //   1. Hash immutable backing bytes without unpacking via
+  //      `HashDeterministicContent` (when `HasDeterministicRawHash()` is true).
+  //   2. Stream quantized payload + scales/zero-points directly into
+  //      fused/permuted destination buffers via `TryUnpackQuantizedInto`
+  //      without allocating a full intermediate host buffer.
+  //   3. Decode individual 2-D embedding rows on demand via `TryReadRowAsFp32`.
+  //   4. Evict materialized host RAM (and advise `MADV_DONTNEED` on mmap pages)
+  //      via `ReleaseMaterializedData` once the backend finishes repacking.
+  //
+  // Returns false when backed by an unmaterialized lazy source that has not
+  // yet allocated host CPU storage.
+  virtual bool IsMaterialized() const { return true; }
+
+  // Returns true when `HashDeterministicContent` hashes an immutable raw
+  // representation identically whether or not the buffer is materialized,
+  // allowing weight caches to key on raw backing bytes without unpacking.
+  virtual bool HasDeterministicRawHash() const { return false; }
+
+  // Mixes deterministic raw content bytes into `state` via `mix_fn` without
+  // materializing unpacked CPU buffers.
+  virtual void HashDeterministicContent(void (* /*mix_fn*/)(uint64_t*,
+                                                            const std::byte*,
+                                                            size_t),
+                                        uint64_t* /*state*/) const {}
+
+  // Decodes a single 2-D row (e.g. an embedding lookup row) directly into
+  // `out` as FP32 without materializing the full matrix when supported by the
+  // underlying lazy buffer.
+  virtual bool TryReadRowAsFp32(int /*row*/, absl::Span<float> /*out*/) const {
+    return false;
+  }
+
+  // Streams a lazy quantized matrix directly into caller-provided buffers
+  // (`dst`, `scales_dst`, and optional `float_zps_dst`)—for example when
+  // constructing fused or permuted weights—without allocating an intermediate
+  // materialized `OwningCpuBuffer`.
+  virtual bool TryUnpackQuantizedInto(
+      absl::Span<std::byte> /*dst*/, absl::Span<float> /*scales_dst*/,
+      absl::Span<float> /*float_zps_dst*/) const {
+    return false;
+  }
+
+  // Releases materialized host memory (and advises the OS via `MADV_DONTNEED`
+  // where applicable) once a backend has repacked the weight, provided the
+  // buffer can be deterministically re-materialized on demand. No-op for eager
+  // caller-owned CPU buffers.
   virtual void ReleaseMaterializedData() {}
+
+  // Returns true when the buffer owns its immutable storage or
+  // deterministically materializes from an immutable backing store, making it
+  // safe for derived weight-concatenation caches to key entries by buffer
+  // identity (`weak_ptr<Buffer>`).
+  virtual bool SupportsConcatMemoization() const { return false; }
 
   // Tries to cast the buffer to the given type T.
   template <typename T>
@@ -393,6 +449,10 @@ class OwningCpuBuffer : public Buffer {
   LockedBufferSpan<std::byte> LockMutable() override {
     return {data(), [d = data_](std::byte*) mutable { d.reset(); }, size()};
   }
+
+  // Owning buffers hold dedicated, stable storage whose lifetime is tied to
+  // this instance, so weight concatenation caches can safely key on them.
+  bool SupportsConcatMemoization() const override { return true; }
 
   template <class T, class = std::enable_if_t<std::is_const_v<T>>>
   absl::Span<T> Span() const {

@@ -301,6 +301,7 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           info.name, ": blockwise quantized tensor block_size must be > 0"));
     }
     const size_t expected_block_count = dims[0] * dims[1] / bwq.block_size;
+    bwq.EnsureMaterialized();
     if (bwq.scales.size() < expected_block_count) {
       return absl::InvalidArgumentError(absl::StrCat(
           info.name, ": blockwise scale count (", bwq.scales.size(),

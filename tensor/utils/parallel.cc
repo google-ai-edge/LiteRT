@@ -23,11 +23,16 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 
+#if !defined(LITERT_TENSOR_NO_PTHREADPOOL)
 #include "pthreadpool.h"  // from @pthreadpool
+#endif
 
 namespace litert::tensor::internal {
 namespace {
 
+thread_local bool in_outer_parallel_prepack_worker = false;
+
+#if !defined(LITERT_TENSOR_NO_PTHREADPOOL)
 pthreadpool_t CreateCappedThreadpool(size_t max_threads) {
   size_t threads = max_threads;
 #if defined(__unix__) || defined(__APPLE__)
@@ -67,14 +72,33 @@ class ScopedWorkerGuard {
  private:
   bool prev_;
 };
+#endif  // !defined(LITERT_TENSOR_NO_PTHREADPOOL)
 
 }  // namespace
+
+bool InOuterParallelPrepackWorker() { return in_outer_parallel_prepack_worker; }
+
+ScopedOuterParallelPrepackWorker::ScopedOuterParallelPrepackWorker()
+    : prev_(in_outer_parallel_prepack_worker) {
+  in_outer_parallel_prepack_worker = true;
+}
+
+ScopedOuterParallelPrepackWorker::~ScopedOuterParallelPrepackWorker() {
+  in_outer_parallel_prepack_worker = prev_;
+}
 
 void ParallelForImpl(size_t count, size_t min_grain, size_t max_threads,
                      void* ctx,
                      void (*fn)(void* ctx, size_t begin, size_t end)) {
   if (count == 0) return;
-  if (in_parallel_for_worker || count <= min_grain || max_threads <= 1) {
+#if defined(LITERT_TENSOR_NO_PTHREADPOOL)
+  (void)min_grain;
+  (void)max_threads;
+  fn(ctx, 0, count);
+  return;
+#else
+  if (in_parallel_for_worker || count <= min_grain || max_threads <= 1 ||
+      (InOuterParallelPrepackWorker() && count < 65536)) {
     fn(ctx, 0, count);
     return;
   }
@@ -106,6 +130,7 @@ void ParallelForImpl(size_t count, size_t min_grain, size_t max_threads,
         fn(ctx, offset, offset + tile);
       },
       count, effective_grain, /*flags=*/0);
+#endif  // defined(LITERT_TENSOR_NO_PTHREADPOOL)
 }
 
 }  // namespace litert::tensor::internal

@@ -16,10 +16,12 @@ limitations under the License.
 #include "tensor/internal/graph.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <functional>
 #include <limits>
 #include <memory>
 #include <optional>
@@ -36,6 +38,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/utils/macros.h"
@@ -57,7 +60,311 @@ std::shared_ptr<Scope>& MutableCurrentScope() {
   return *g_current_scope;
 }
 
+absl::StatusOr<std::shared_ptr<OwningCpuBuffer>> BuildSymmetricInt8Fallback(
+    int rows, int cols, int block_size, const int8_t* src,
+    absl::Span<const float> scales, const ZeroPoints& zero_points,
+    std::vector<float>& dst_scales) {
+  const size_t blocks_per_row = static_cast<size_t>(cols / block_size);
+  const size_t total_blocks = static_cast<size_t>(rows) * blocks_per_row;
+  const size_t total_elements =
+      static_cast<size_t>(rows) * static_cast<size_t>(cols);
+  std::shared_ptr<OwningCpuBuffer> out_buf =
+      OwningCpuBuffer::Allocate<Type::kI8>(total_elements);
+  if (out_buf == nullptr) {
+    return absl::ResourceExhaustedError(
+        "Failed to allocate CPU symmetric INT8 fallback buffer.");
+  }
+  int8_t* dst = out_buf->Span<int8_t>().data();
+  dst_scales.resize(rows);
+  float* dst_scales_ptr = dst_scales.data();
+  bool has_non_finite = false;
+  LRT_TENSOR_RETURN_IF_ERROR(
+      zero_points.Visit(total_blocks, [&](auto zp_view) {
+        std::vector<float> row_vals(cols);
+        for (size_t r = 0; r < static_cast<size_t>(rows); ++r) {
+          const int8_t* src_row = src + r * static_cast<size_t>(cols);
+          float amax = 0.0f;
+          for (size_t b = 0; b < blocks_per_row; ++b) {
+            const size_t blk_idx = r * blocks_per_row + b;
+            const float s = scales[blk_idx];
+            const float zp = static_cast<float>(zp_view[blk_idx]);
+            if (!std::isfinite(s) || !std::isfinite(zp)) {
+              has_non_finite = true;
+              return;
+            }
+            const size_t c_base = b * static_cast<size_t>(block_size);
+            for (int j = 0; j < block_size; ++j) {
+              const float v =
+                  (static_cast<float>(src_row[c_base + j]) - zp) * s;
+              if (!std::isfinite(v)) {
+                has_non_finite = true;
+                return;
+              }
+              row_vals[c_base + j] = v;
+              amax = std::max(amax, std::abs(v));
+            }
+          }
+          const float row_scale =
+              std::max(amax / 127.0f, std::numeric_limits<float>::min());
+          dst_scales_ptr[r] = row_scale;
+          const float inv_scale = 1.0f / row_scale;
+          int8_t* dst_row = dst + r * static_cast<size_t>(cols);
+          for (int c = 0; c < cols; ++c) {
+            const float scaled = row_vals[c] * inv_scale;
+            dst_row[c] = static_cast<int8_t>(
+                std::isfinite(scaled)
+                    ? std::clamp(std::rint(scaled), -127.0f, 127.0f)
+                    : 0.0f);
+          }
+        }
+      }));
+  if (has_non_finite) {
+    return absl::InvalidArgumentError(
+        "Non-finite scale or zero_point in blockwise INT8 tensor.");
+  }
+  return out_buf;
+}
+
+absl::StatusOr<std::pair<std::shared_ptr<OwningCpuBuffer>,
+                         std::shared_ptr<const std::vector<bf16_t>>>>
+BuildSymmetricInt4Fallback(int rows, int cols, int block_size,
+                           const int4_t* src_packed,
+                           absl::Span<const float> scales,
+                           const ZeroPoints& zero_points) {
+  const size_t blocks_per_row = static_cast<size_t>(cols / block_size);
+  const size_t total_blocks = static_cast<size_t>(rows) * blocks_per_row;
+  const size_t total_elements =
+      static_cast<size_t>(rows) * static_cast<size_t>(cols);
+  std::shared_ptr<OwningCpuBuffer> out_buf =
+      OwningCpuBuffer::Allocate<Type::kI4>(total_elements);
+  if (out_buf == nullptr) {
+    return absl::ResourceExhaustedError(
+        "Failed to allocate CPU symmetric INT4 fallback buffer.");
+  }
+  int4_t* dst_packed = out_buf->Span<int4_t>().data();
+  auto bf16_vec = std::make_shared<std::vector<bf16_t>>(total_blocks);
+  bf16_t* dst_bf16 = bf16_vec->data();
+  const size_t pairs_per_block = static_cast<size_t>(block_size / 2);
+  bool has_non_finite = false;
+  LRT_TENSOR_RETURN_IF_ERROR(
+      zero_points.Visit(total_blocks, [&](auto zp_view) {
+        std::vector<float> blk_vals(block_size);
+        for (size_t b = 0; b < total_blocks; ++b) {
+          const float s = scales[b];
+          const float zp = static_cast<float>(zp_view[b]);
+          if (!std::isfinite(s) || !std::isfinite(zp)) {
+            has_non_finite = true;
+            return;
+          }
+          const int4_t* sp = src_packed + b * pairs_per_block;
+          int4_t* dp = dst_packed + b * pairs_per_block;
+          if (zp == 0.0f && s >= kMinFp16Normal && s <= kMaxFp16Normal) {
+            std::memcpy(dp, sp, pairs_per_block * sizeof(int4_t));
+            dst_bf16[b] = bf16_t(s);
+            continue;
+          }
+          float min_val = 0.0f;
+          float max_val = 0.0f;
+          for (int j = 0; j < block_size; j += 2) {
+            const float v0 = (static_cast<float>(sp[j / 2].a) - zp) * s;
+            const float v1 = (static_cast<float>(sp[j / 2].b) - zp) * s;
+            if (!std::isfinite(v0) || !std::isfinite(v1)) {
+              has_non_finite = true;
+              return;
+            }
+            blk_vals[j] = v0;
+            blk_vals[j + 1] = v1;
+            if (j == 0) {
+              min_val = std::min(v0, v1);
+              max_val = std::max(v0, v1);
+            } else {
+              min_val = std::min({min_val, v0, v1});
+              max_val = std::max({max_val, v0, v1});
+            }
+          }
+          const float raw_d =
+              std::max(std::abs(min_val) / 8.0f, std::abs(max_val) / 7.0f);
+          const float d = static_cast<float>(
+              fp16_t(std::clamp(raw_d, kMinFp16Normal, kMaxFp16Normal)));
+          dst_bf16[b] = bf16_t(d);
+          const float inv_d = 1.0f / d;
+          for (int j = 0; j < block_size; j += 2) {
+            const float q0 = std::clamp(blk_vals[j] * inv_d, -8.0f, 7.0f);
+            const float q1 = std::clamp(blk_vals[j + 1] * inv_d, -8.0f, 7.0f);
+            dp[j / 2].a = static_cast<int8_t>(std::rint(q0));
+            dp[j / 2].b = static_cast<int8_t>(std::rint(q1));
+          }
+        }
+      }));
+  if (has_non_finite) {
+    return absl::InvalidArgumentError(
+        "Non-finite scale or zero_point in blockwise INT4 tensor.");
+  }
+  return std::make_pair(std::move(out_buf), std::move(bf16_vec));
+}
+
 }  // namespace
+
+BlockwiseQuantization::LazyMaterializer::LazyMaterializer(
+    const LazyMaterializer& other) {
+  absl::ReaderMutexLock lock(other.mu);
+  spec = other.spec;
+  materialized.store(other.materialized.load(std::memory_order_relaxed),
+                     std::memory_order_relaxed);
+}
+
+BlockwiseQuantization::LazyMaterializer&
+BlockwiseQuantization::LazyMaterializer::operator=(
+    const LazyMaterializer& other) {
+  if (this == &other) return *this;
+  std::shared_ptr<const LazySpec> spec_copy;
+  bool mat_copy = true;
+  {
+    absl::ReaderMutexLock lock(other.mu);
+    spec_copy = other.spec;
+    mat_copy = other.materialized.load(std::memory_order_relaxed);
+  }
+  absl::WriterMutexLock lock(mu);
+  spec = std::move(spec_copy);
+  materialized.store(mat_copy, std::memory_order_release);
+  return *this;
+}
+
+BlockwiseQuantization::LazyMaterializer::LazyMaterializer(
+    LazyMaterializer&& other) noexcept {
+  absl::WriterMutexLock lock(other.mu);
+  spec = std::move(other.spec);
+  materialized.store(other.materialized.load(std::memory_order_relaxed),
+                     std::memory_order_relaxed);
+}
+
+BlockwiseQuantization::LazyMaterializer&
+BlockwiseQuantization::LazyMaterializer::operator=(
+    LazyMaterializer&& other) noexcept {
+  if (this == &other) return *this;
+  std::shared_ptr<const LazySpec> spec_moved;
+  bool mat_moved = true;
+  {
+    absl::WriterMutexLock lock(other.mu);
+    spec_moved = std::move(other.spec);
+    mat_moved = other.materialized.load(std::memory_order_relaxed);
+  }
+  absl::WriterMutexLock lock(mu);
+  spec = std::move(spec_moved);
+  materialized.store(mat_moved, std::memory_order_release);
+  return *this;
+}
+
+std::shared_ptr<BlockwiseQuantization> BlockwiseQuantization::CreateLazily(
+    int block_size, int quantized_dimension, size_t num_blocks,
+    std::function<MaterializedBlockwiseParams()> materialize_fn,
+    LazyOptions options) {
+  auto bq = std::make_shared<BlockwiseQuantization>();
+  bq->block_size = block_size;
+  bq->quantized_dimension = quantized_dimension;
+  bq->pre_sanitized_ = options.pre_sanitized;
+  auto spec = std::make_shared<LazySpec>();
+  spec->num_blocks = num_blocks;
+  spec->may_have_float_zero_points =
+      (options.zero_points == ZeroPointPresence::kMayHaveFloat);
+  spec->materialize_fn = std::move(materialize_fn);
+  absl::WriterMutexLock lock(bq->lazy_.mu);
+  bq->lazy_.spec = std::move(spec);
+  bq->lazy_.materialized.store(false, std::memory_order_release);
+  return bq;
+}
+
+size_t BlockwiseQuantization::NumBlocks() const {
+  absl::ReaderMutexLock lock(lazy_.mu);
+  if (!lazy_.materialized.load(std::memory_order_relaxed) &&
+      lazy_.spec != nullptr) {
+    return lazy_.spec->num_blocks;
+  }
+  return scales.size();
+}
+
+bool BlockwiseQuantization::MayHaveFloatZeroPoints() const {
+  absl::ReaderMutexLock lock(lazy_.mu);
+  if (!lazy_.materialized.load(std::memory_order_relaxed) &&
+      lazy_.spec != nullptr) {
+    return lazy_.spec->may_have_float_zero_points;
+  }
+  return zero_points.Data<float>().ok() && !zero_points.IsSymmetric();
+}
+
+bool BlockwiseQuantization::HasIntegerZeroPoints() const {
+  absl::ReaderMutexLock lock(lazy_.mu);
+  if (!lazy_.materialized.load(std::memory_order_relaxed) &&
+      lazy_.spec != nullptr) {
+    return false;
+  }
+  return !zero_points.IsSymmetric() && !zero_points.Data<float>().ok();
+}
+
+void BlockwiseQuantization::EnsureMaterialized() const {
+  if (lazy_.materialized.load(std::memory_order_acquire)) {
+    return;
+  }
+  absl::MutexLock mat_lock(lazy_.materialize_mu);
+  std::shared_ptr<const LazySpec> spec;
+  {
+    absl::ReaderMutexLock lock(lazy_.mu);
+    if (lazy_.materialized.load(std::memory_order_relaxed)) {
+      return;
+    }
+    spec = lazy_.spec;
+  }
+  if (spec == nullptr || !spec->materialize_fn) {
+    absl::WriterMutexLock lock(lazy_.mu);
+    lazy_.materialized.store(true, std::memory_order_release);
+    return;
+  }
+  MaterializedBlockwiseParams params = spec->materialize_fn();
+  if (params.scales.size() != spec->num_blocks) {
+    return;
+  }
+  absl::WriterMutexLock lock(lazy_.mu);
+  if (!lazy_.materialized.load(std::memory_order_relaxed)) {
+    scales = std::move(params.scales);
+    zero_points = params.float_zero_points.empty()
+                      ? ZeroPoints{}
+                      : ZeroPoints::Float(std::move(params.float_zero_points));
+    lazy_.materialized.store(true, std::memory_order_release);
+  }
+}
+
+void BlockwiseQuantization::SetMaterializedParams(
+    std::vector<float> new_scales, std::vector<float> new_float_zero_points) {
+  absl::WriterMutexLock lock(lazy_.mu);
+  if (lazy_.spec != nullptr && new_scales.size() != lazy_.spec->num_blocks) {
+    return;
+  }
+  if (!lazy_.materialized.load(std::memory_order_relaxed)) {
+    scales = std::move(new_scales);
+    zero_points = new_float_zero_points.empty()
+                      ? ZeroPoints{}
+                      : ZeroPoints::Float(std::move(new_float_zero_points));
+    lazy_.materialized.store(true, std::memory_order_release);
+  }
+}
+
+void BlockwiseQuantization::ReleaseMaterializedData() {
+  absl::WriterMutexLock lock(lazy_.mu);
+  if (lazy_.spec != nullptr) {
+    lazy_.materialized.store(false, std::memory_order_release);
+    {
+      absl::MutexLock cache_lock(bf16_cache_.mu);
+      bf16_cache_.scales.reset();
+      bf16_cache_.cpu_fallback.reset();
+    }
+    std::vector<float>().swap(scales);
+    zero_points = ZeroPoints{};
+    return;
+  }
+  absl::MutexLock cache_lock(bf16_cache_.mu);
+  bf16_cache_.scales.reset();
+  bf16_cache_.cpu_fallback.reset();
+}
 
 BlockwiseQuantization::CachedBf16Scales::CachedBf16Scales(
     const CachedBf16Scales&) {}
@@ -89,6 +396,8 @@ BlockwiseQuantization::CachedBf16Scales::operator=(
 
 std::shared_ptr<const std::vector<bf16_t>>
 BlockwiseQuantization::GetOrCreateBf16Scales() const {
+  EnsureMaterialized();
+  absl::ReaderMutexLock lazy_lock(lazy_.mu);
   {
     absl::MutexLock lock(bf16_cache_.mu);
     if (bf16_cache_.scales != nullptr &&
@@ -133,6 +442,8 @@ BlockwiseQuantization::GetOrCreateCpuSymmetricFallback(Type type, int rows,
     return absl::InvalidArgumentError(
         "Invalid BlockwiseQuantization geometry for CPU symmetric fallback.");
   }
+  EnsureMaterialized();
+  absl::ReaderMutexLock lazy_lock(lazy_.mu);
   const size_t blocks_per_row = static_cast<size_t>(cols / block_size);
   const size_t total_blocks = static_cast<size_t>(rows) * blocks_per_row;
   const size_t total_elements =
@@ -172,130 +483,19 @@ BlockwiseQuantization::GetOrCreateCpuSymmetricFallback(Type type, int rows,
   built->rows = rows;
   built->cols = cols;
   if (type == Type::kI8) {
-    std::shared_ptr<OwningCpuBuffer> out_buf =
-        OwningCpuBuffer::Allocate<Type::kI8>(total_elements);
-    if (out_buf == nullptr) {
-      return absl::ResourceExhaustedError(
-          "Failed to allocate CPU symmetric INT8 fallback buffer.");
-    }
-    const int8_t* src = static_cast<const int8_t*>(raw_data);
-    int8_t* dst = out_buf->Span<int8_t>().data();
-    built->scales.resize(rows);
-    std::vector<float> row_vals(cols);
-    bool has_non_finite = false;
-    LRT_TENSOR_RETURN_IF_ERROR(
-        zero_points.Visit(total_blocks, [&](auto zp_view) {
-          for (int r = 0; r < rows; ++r) {
-            const int8_t* src_row = src + static_cast<size_t>(r) * cols;
-            float amax = 0.0f;
-            for (size_t b = 0; b < blocks_per_row; ++b) {
-              const size_t blk_idx =
-                  static_cast<size_t>(r) * blocks_per_row + b;
-              const float s = scales[blk_idx];
-              const float zp = static_cast<float>(zp_view[blk_idx]);
-              if (!std::isfinite(s) || !std::isfinite(zp)) {
-                has_non_finite = true;
-                return;
-              }
-              const size_t c_base = b * static_cast<size_t>(block_size);
-              for (int j = 0; j < block_size; ++j) {
-                const float v =
-                    (static_cast<float>(src_row[c_base + j]) - zp) * s;
-                if (!std::isfinite(v)) {
-                  has_non_finite = true;
-                  return;
-                }
-                row_vals[c_base + j] = v;
-                amax = std::max(amax, std::abs(v));
-              }
-            }
-            const float row_scale =
-                std::max(amax / 127.0f, std::numeric_limits<float>::min());
-            built->scales[r] = row_scale;
-            const float inv_scale = 1.0f / row_scale;
-            int8_t* dst_row = dst + static_cast<size_t>(r) * cols;
-            for (int c = 0; c < cols; ++c) {
-              const float scaled = row_vals[c] * inv_scale;
-              dst_row[c] = static_cast<int8_t>(
-                  std::isfinite(scaled)
-                      ? std::clamp(std::rint(scaled), -127.0f, 127.0f)
-                      : 0.0f);
-            }
-          }
-        }));
-    if (has_non_finite) {
-      return absl::InvalidArgumentError(
-          "Non-finite scale or zero_point in blockwise INT8 tensor.");
-    }
-    built->data = std::move(out_buf);
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        built->data,
+        BuildSymmetricInt8Fallback(rows, cols, block_size,
+                                   static_cast<const int8_t*>(raw_data), scales,
+                                   zero_points, built->scales));
   } else {
-    std::shared_ptr<OwningCpuBuffer> out_buf =
-        OwningCpuBuffer::Allocate<Type::kI4>(total_elements);
-    if (out_buf == nullptr) {
-      return absl::ResourceExhaustedError(
-          "Failed to allocate CPU symmetric INT4 fallback buffer.");
-    }
-    const int4_t* src_packed = static_cast<const int4_t*>(raw_data);
-    int4_t* dst_packed = out_buf->Span<int4_t>().data();
-    auto bf16_vec = std::make_shared<std::vector<bf16_t>>(total_blocks);
-    const size_t pairs_per_block = static_cast<size_t>(block_size / 2);
-    std::vector<float> blk_vals(block_size);
-    bool has_non_finite = false;
-    LRT_TENSOR_RETURN_IF_ERROR(
-        zero_points.Visit(total_blocks, [&](auto zp_view) {
-          for (size_t b = 0; b < total_blocks; ++b) {
-            const float s = scales[b];
-            const float zp = static_cast<float>(zp_view[b]);
-            if (!std::isfinite(s) || !std::isfinite(zp)) {
-              has_non_finite = true;
-              return;
-            }
-            const int4_t* sp = src_packed + b * pairs_per_block;
-            int4_t* dp = dst_packed + b * pairs_per_block;
-            if (zp == 0.0f && s >= kMinFp16Normal && s <= kMaxFp16Normal) {
-              std::memcpy(dp, sp, pairs_per_block * sizeof(int4_t));
-              (*bf16_vec)[b] = bf16_t(s);
-              continue;
-            }
-            float min_val = 0.0f;
-            float max_val = 0.0f;
-            for (int j = 0; j < block_size; j += 2) {
-              const float v0 = (static_cast<float>(sp[j / 2].a) - zp) * s;
-              const float v1 = (static_cast<float>(sp[j / 2].b) - zp) * s;
-              if (!std::isfinite(v0) || !std::isfinite(v1)) {
-                has_non_finite = true;
-                return;
-              }
-              blk_vals[j] = v0;
-              blk_vals[j + 1] = v1;
-              if (j == 0) {
-                min_val = std::min(v0, v1);
-                max_val = std::max(v0, v1);
-              } else {
-                min_val = std::min({min_val, v0, v1});
-                max_val = std::max({max_val, v0, v1});
-              }
-            }
-            const float raw_d =
-                std::max(std::abs(min_val) / 8.0f, std::abs(max_val) / 7.0f);
-            const float d = static_cast<float>(
-                fp16_t(std::clamp(raw_d, kMinFp16Normal, kMaxFp16Normal)));
-            (*bf16_vec)[b] = bf16_t(d);
-            const float inv_d = 1.0f / d;
-            for (int j = 0; j < block_size; j += 2) {
-              const float q0 = std::clamp(blk_vals[j] * inv_d, -8.0f, 7.0f);
-              const float q1 = std::clamp(blk_vals[j + 1] * inv_d, -8.0f, 7.0f);
-              dp[j / 2].a = static_cast<int8_t>(std::rint(q0));
-              dp[j / 2].b = static_cast<int8_t>(std::rint(q1));
-            }
-          }
-        }));
-    if (has_non_finite) {
-      return absl::InvalidArgumentError(
-          "Non-finite scale or zero_point in blockwise INT4 tensor.");
-    }
-    built->data = std::move(out_buf);
-    built->bf16_scales = std::move(bf16_vec);
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        auto fallback_i4,
+        BuildSymmetricInt4Fallback(rows, cols, block_size,
+                                   static_cast<const int4_t*>(raw_data), scales,
+                                   zero_points));
+    built->data = std::move(fallback_i4.first);
+    built->bf16_scales = std::move(fallback_i4.second);
   }
 
   absl::MutexLock lock(bf16_cache_.mu);
