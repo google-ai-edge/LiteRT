@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/backends/xnnpack/conversion.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -27,17 +28,20 @@ limitations under the License.
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
+#include "tensor/arithmetic_graph.h"
 #include "tensor/backends/common_nnpack/conversion.h"
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/xnnpack/dequantize.h"
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/backends/xnnpack/utils.h"
+#include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/internal/graph_traversal.h"
@@ -150,6 +154,18 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
   return xnn_datatype_invalid;
 }
 
+std::shared_ptr<const std::vector<bf16_t>> GetSharedWarmDummyBf16Scales(
+    size_t min_blocks) {
+  static absl::NoDestructor<absl::Mutex> mu;
+  static absl::NoDestructor<std::shared_ptr<const std::vector<bf16_t>>> cached;
+  absl::MutexLock lock(*mu);
+  if (*cached == nullptr || (*cached)->size() < min_blocks) {
+    *cached =
+        std::make_shared<const std::vector<bf16_t>>(min_blocks, bf16_t(1.0f));
+  }
+  return *cached;
+}
+
 }  // namespace
 
 absl::Status XnnpackBuildContext::EnsureInitialized() {
@@ -168,6 +184,17 @@ absl::Status XnnpackBuildContext::CreateSubgraph(size_t external_value_ids,
                                                  uint32_t flags) {
   LRT_TENSOR_RETURN_IF_ERROR(static_cast<XnnpackGraph*>(graph_.get())
                                  ->ResetSubgraph(external_value_ids, flags));
+  if (!warm_fc_buffers_.empty()) {
+    if (warm_max_rows_ > 0) {
+      graph_->dequantized_buffers().emplace_back(warm_max_rows_, 1.0f);
+      warm_dummy_f32_scales_ = graph_->dequantized_buffers().back().data();
+    }
+    if (warm_max_blocks_ > 0) {
+      auto bf16_vec = GetSharedWarmDummyBf16Scales(warm_max_blocks_);
+      warm_dummy_bf16_scales_ = bf16_vec->data();
+      graph_->bf16_scale_refs().push_back(std::move(bf16_vec));
+    }
+  }
   return absl::OkStatus();
 }
 
@@ -176,9 +203,13 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
   const auto& info = value.info;
   const bool is_external =
       (value.flags & (FlagExternalInput() | FlagExternalOutput())) != 0;
+  const bool is_warm_fc = !is_external && info.buffer != nullptr &&
+                          warm_fc_buffers_.contains(info.buffer.get());
 
   if (info.buffer && !is_external) {
-    value.data = info.buffer->Lock();
+    if (!is_warm_fc) {
+      value.data = info.buffer->Lock();
+    }
     graph_->keep_alive_buffers().push_back(info.buffer);
   }
 
@@ -191,7 +222,16 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     }
     dims.push_back(dim == -1 ? 0 : static_cast<size_t>(dim));
   }
-  const void* data_ptr = value.data.data();
+  // In warm-FC mode, synthesize a unique non-null tagged pointer by setting
+  // bit 0 of `info.buffer.get()` so it cannot alias any real heap/mmap address.
+  // XNNPACK uses this pointer only as a weights-cache lookup key; it is never
+  // dereferenced because `SharedXnnpackState` runs in warm-lookup-only mode and
+  // aborts `PrepareRuntime()` on any cache miss before XNNPACK packs weights.
+  const void* data_ptr =
+      is_warm_fc
+          ? reinterpret_cast<const void*>(
+                reinterpret_cast<uintptr_t>(info.buffer.get()) | uintptr_t{1})
+          : value.data.data();
   xnn_datatype defined_dtype = GetXnnpackType(value);
   uint32_t external_id = is_external ? value.id : XNN_INVALID_VALUE_ID;
   xnn_subgraph_t sg = subgraph();
@@ -301,108 +341,147 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           info.name, ": blockwise quantized tensor block_size must be > 0"));
     }
     const size_t expected_block_count = dims[0] * dims[1] / bwq.block_size;
-    bwq.EnsureMaterialized();
-    if (bwq.scales.size() < expected_block_count) {
-      return absl::InvalidArgumentError(absl::StrCat(
-          info.name, ": blockwise scale count (", bwq.scales.size(),
-          ") is smaller than block_count (", expected_block_count, ")"));
-    }
-    LRT_TENSOR_RETURN_IF_ERROR(
-        bwq.zero_points.Validate<float>(bwq.scales.size()));
-    const absl::StatusOr<int32_t> uniform_zp =
-        bwq.zero_points.Scalar<int32_t>();
-    // XNNPACK's `xnn_define_blockwise_quantized_tensor_value_v2` only accepts a
-    // single scalar `int32_t zero_point` (no per-block affine zero points) and
-    // does not support blockwise INT8 (`Q8_0`), so XNNPACK converts `Q8_0` to
-    // per-channel symmetric `qcint8` and `Q4_1`/`Q4_K` to symmetric `qbint4`
-    // via `GetOrCreateCpuSymmetricFallback`. For native per-block affine zero
-    // points on CPU without symmetric re-quantization, prefer the YNNPACK
-    // backend.
-    if (info.type == Type::kI8) {
-      // Other layouts are unsupported rather than invalid.
-      if (dims.size() != 2 || value.data.data() == nullptr ||
-          bwq.quantized_dimension != 0 ||
-          dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
-        return absl::UnimplementedError(absl::StrCat(
-            info.name,
-            ": XNNPACK only supports blockwise INT8 tensors as 2D constant "
-            "weights quantized along dimension 0"));
+    if (is_warm_fc) {
+      if (bwq.NumBlocks() < expected_block_count) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            info.name, ": blockwise scale count (", bwq.NumBlocks(),
+            ") is smaller than block_count (", expected_block_count, ")"));
       }
-      // TODO(b/577601974): Remove this transitional lossy fallback once the
-      // lossless YNNPACK blockwise backend lands (cl/1014238277).
-      ABSL_LOG_FIRST_N(WARNING, 1)
-          << "XNNPACK does not natively support blockwise INT8 weights; "
-             "re-quantizing '"
-          << info.name
-          << "' to per-channel INT8 via lossy CPU symmetric fallback.";
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          auto fallback,
-          bwq.GetOrCreateCpuSymmetricFallback(
-              Type::kI8, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
-              value.data.data(), value.data.size()));
-      const float* scales_ptr = fallback->scales.data();
-      data_ptr = fallback->data->data();
-      defined_dtype = xnn_datatype_qcint8;
-      graph_->cpu_fallback_refs().push_back(std::move(fallback));
-      LRT_TENSOR_RETURN_IF_ERROR(
-          xnn_define_channelwise_quantized_tensor_value_v3(
-              sg, defined_dtype, /*zero_point=*/0, scales_ptr, dims.size(),
-              /*channel_dim=*/0, dims.data(), data_ptr, external_id,
-              value.flags, &value.id, /*channelwise_zero_point=*/nullptr))
-          << "Could not define channelwise fallback tensor for blockwise INT8.";
-    } else if (info.type == Type::kI4 &&
-               (bwq.HasCachedCpuSymmetricFallback() ||
-                (bwq.zero_points.Data<float>().ok() && !uniform_zp.ok()))) {
-      if (dims.size() != 2 || value.data.data() == nullptr ||
-          bwq.quantized_dimension != 0 ||
-          dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
-        return absl::UnimplementedError(absl::StrCat(
-            info.name,
-            ": XNNPACK only supports affine blockwise INT4 tensors as 2D "
-            "constant weights quantized along dimension 0"));
+      if (info.type == Type::kI8) {
+        defined_dtype = xnn_datatype_qcint8;
+        LRT_TENSOR_RETURN_IF_ERROR(
+            xnn_define_channelwise_quantized_tensor_value_v3(
+                sg, defined_dtype, /*zero_point=*/0, warm_dummy_f32_scales_,
+                dims.size(), /*channel_dim=*/0, dims.data(), data_ptr,
+                external_id, value.flags, &value.id,
+                /*channelwise_zero_point=*/nullptr))
+            << "Could not define warm channelwise fallback tensor for "
+               "blockwise INT8.";
+      } else {
+        defined_dtype = GetXnnpackType(value);
+        const bool uses_sym_fallback =
+            bwq.MayHaveFloatZeroPoints() ||
+            bwq.HasCachedCpuSymmetricFallback() ||
+            (bwq.zero_points.Data<float>().ok() &&
+             !bwq.zero_points.Scalar<int32_t>().ok());
+        const int32_t zero_point =
+            uses_sym_fallback ? 0
+                              : bwq.zero_points.Scalar<int32_t>().value_or(0);
+        LRT_TENSOR_RETURN_IF_ERROR(
+            xnn_define_blockwise_quantized_tensor_value_v2(
+                sg, defined_dtype, zero_point, warm_dummy_bf16_scales_,
+                dims.size(), bwq.quantized_dimension, bwq.block_size,
+                dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
+                value.flags, xnn_datatype_bf16, &value.id))
+            << "Could not define warm blockwise quantized tensor value.";
       }
-      // TODO(b/577601974): Remove this transitional lossy fallback once the
-      // lossless YNNPACK blockwise backend lands (cl/1014238277).
-      ABSL_LOG_FIRST_N(WARNING, 1)
-          << "XNNPACK does not natively support affine blockwise INT4 "
-             "zero-points; re-quantizing '"
-          << info.name
-          << "' to symmetric Q4_0 via lossy CPU symmetric fallback.";
-      LRT_TENSOR_ASSIGN_OR_RETURN(
-          auto fallback,
-          bwq.GetOrCreateCpuSymmetricFallback(
-              Type::kI4, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
-              value.data.data(), value.data.size()));
-      const void* scale_ptr = fallback->bf16_scales->data();
-      data_ptr = fallback->data->data();
-      defined_dtype = xnn_datatype_qbint4;
-      graph_->cpu_fallback_refs().push_back(std::move(fallback));
-      LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
-          sg, defined_dtype, /*zero_point=*/0, scale_ptr, dims.size(),
-          bwq.quantized_dimension, bwq.block_size, dims.data(), data_ptr,
-          external_id, value.flags, xnn_datatype_bf16, &value.id))
-          << "Could not define symmetric blockwise INT4 fallback tensor.";
     } else {
-      if (!bwq.zero_points.IsUniform()) {
-        return absl::UnimplementedError(absl::StrCat(
-            info.name,
-            ": XNNPACK doesn't support blockwise quantization with different "
-            "zero points"));
+      bwq.EnsureMaterialized();
+      if (bwq.scales.size() < expected_block_count) {
+        return absl::InvalidArgumentError(absl::StrCat(
+            info.name, ": blockwise scale count (", bwq.scales.size(),
+            ") is smaller than block_count (", expected_block_count, ")"));
       }
-      if (!uniform_zp.ok()) {
-        return uniform_zp.status();
+      LRT_TENSOR_RETURN_IF_ERROR(
+          bwq.zero_points.Validate<float>(bwq.scales.size()));
+      const absl::StatusOr<int32_t> uniform_zp =
+          bwq.zero_points.Scalar<int32_t>();
+      // XNNPACK's `xnn_define_blockwise_quantized_tensor_value_v2` only accepts
+      // a single scalar `int32_t zero_point` (no per-block affine zero points)
+      // and does not support blockwise INT8 (`Q8_0`), so XNNPACK converts
+      // `Q8_0` to per-channel symmetric `qcint8` and `Q4_1`/`Q4_K` to symmetric
+      // `qbint4` via `GetOrCreateCpuSymmetricFallback`. For native per-block
+      // affine zero points on CPU without symmetric re-quantization, prefer the
+      // YNNPACK backend.
+      if (info.type == Type::kI8) {
+        // Other layouts are unsupported rather than invalid.
+        if (dims.size() != 2 || value.data.data() == nullptr ||
+            bwq.quantized_dimension != 0 ||
+            dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
+          return absl::UnimplementedError(absl::StrCat(
+              info.name,
+              ": XNNPACK only supports blockwise INT8 tensors as 2D constant "
+              "weights quantized along dimension 0"));
+        }
+        // TODO(b/577601974): Remove this transitional lossy fallback once the
+        // lossless YNNPACK blockwise backend lands (cl/1014238277).
+        ABSL_LOG_FIRST_N(WARNING, 1)
+            << "XNNPACK does not natively support blockwise INT8 weights; "
+               "re-quantizing '"
+            << info.name
+            << "' to per-channel INT8 via lossy CPU symmetric fallback.";
+        LRT_TENSOR_ASSIGN_OR_RETURN(
+            auto fallback,
+            bwq.GetOrCreateCpuSymmetricFallback(
+                Type::kI8, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
+                value.data.data(), value.data.size()));
+        const float* scales_ptr = fallback->scales.data();
+        data_ptr = fallback->data->data();
+        defined_dtype = xnn_datatype_qcint8;
+        graph_->cpu_fallback_refs().push_back(std::move(fallback));
+        LRT_TENSOR_RETURN_IF_ERROR(
+            xnn_define_channelwise_quantized_tensor_value_v3(
+                sg, defined_dtype, /*zero_point=*/0, scales_ptr, dims.size(),
+                /*channel_dim=*/0, dims.data(), data_ptr, external_id,
+                value.flags, &value.id, /*channelwise_zero_point=*/nullptr))
+            << "Could not define channelwise fallback tensor for blockwise "
+               "INT8.";
+      } else if (info.type == Type::kI4 &&
+                 (bwq.HasCachedCpuSymmetricFallback() ||
+                  (bwq.zero_points.Data<float>().ok() && !uniform_zp.ok()))) {
+        if (dims.size() != 2 || value.data.data() == nullptr ||
+            bwq.quantized_dimension != 0 ||
+            dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
+          return absl::UnimplementedError(absl::StrCat(
+              info.name,
+              ": XNNPACK only supports affine blockwise INT4 tensors as 2D "
+              "constant weights quantized along dimension 0"));
+        }
+        // TODO(b/577601974): Remove this transitional lossy fallback once the
+        // lossless YNNPACK blockwise backend lands (cl/1014238277).
+        ABSL_LOG_FIRST_N(WARNING, 1)
+            << "XNNPACK does not natively support affine blockwise INT4 "
+               "zero-points; re-quantizing '"
+            << info.name
+            << "' to symmetric Q4_0 via lossy CPU symmetric fallback.";
+        LRT_TENSOR_ASSIGN_OR_RETURN(
+            auto fallback,
+            bwq.GetOrCreateCpuSymmetricFallback(
+                Type::kI4, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
+                value.data.data(), value.data.size()));
+        const void* scale_ptr = fallback->bf16_scales->data();
+        data_ptr = fallback->data->data();
+        defined_dtype = xnn_datatype_qbint4;
+        graph_->cpu_fallback_refs().push_back(std::move(fallback));
+        LRT_TENSOR_RETURN_IF_ERROR(
+            xnn_define_blockwise_quantized_tensor_value_v2(
+                sg, defined_dtype, /*zero_point=*/0, scale_ptr, dims.size(),
+                bwq.quantized_dimension, bwq.block_size, dims.data(), data_ptr,
+                external_id, value.flags, xnn_datatype_bf16, &value.id))
+            << "Could not define symmetric blockwise INT4 fallback tensor.";
+      } else {
+        if (!bwq.zero_points.IsUniform()) {
+          return absl::UnimplementedError(absl::StrCat(
+              info.name,
+              ": XNNPACK doesn't support blockwise quantization with different "
+              "zero points"));
+        }
+        if (!uniform_zp.ok()) {
+          return uniform_zp.status();
+        }
+        const int32_t zero_point = *uniform_zp;
+        std::shared_ptr<const std::vector<bf16_t>> bf16_scales =
+            bwq.GetOrCreateBf16Scales();
+        const void* scale_ptr = bf16_scales->data();
+        graph_->bf16_scale_refs().push_back(std::move(bf16_scales));
+        LRT_TENSOR_RETURN_IF_ERROR(
+            xnn_define_blockwise_quantized_tensor_value_v2(
+                sg, defined_dtype, zero_point, scale_ptr, dims.size(),
+                bwq.quantized_dimension, bwq.block_size,
+                dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
+                value.flags, xnn_datatype_bf16, &value.id))
+            << "Could not define a new blockwise quantized tensor value.";
       }
-      const int32_t zero_point = *uniform_zp;
-      std::shared_ptr<const std::vector<bf16_t>> bf16_scales =
-          bwq.GetOrCreateBf16Scales();
-      const void* scale_ptr = bf16_scales->data();
-      graph_->bf16_scale_refs().push_back(std::move(bf16_scales));
-      LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
-          sg, defined_dtype, zero_point, scale_ptr, dims.size(),
-          bwq.quantized_dimension, bwq.block_size,
-          dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
-          value.flags, xnn_datatype_bf16, &value.id))
-          << "Could not define a new blockwise quantized tensor value.";
     }
   } else {
     return absl::UnimplementedError("Unsupported quantization type.");
@@ -580,24 +659,144 @@ absl::Status XnnpackBuildContext::LowerOp(const graph::Operation& op) {
   return op_ext->ToXnnpack(op, *this);
 }
 
-absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
-    std::vector<TensorHandle> outputs) {
+namespace {
+
+enum class WarmFcCacheMode {
+  kDisabled,
+  kEnabled,
+};
+
+struct WarmFcCandidate {
+  bool eligible = false;
+  size_t need_rows = 0;
+  size_t need_blocks = 0;
+};
+
+WarmFcCandidate EvaluateWarmFcCandidate(const graph::Operation& op,
+                                        size_t input_idx,
+                                        const graph::TensorInformation& info) {
+  if (input_idx != 1 || op.inputs.size() < 2 || info.buffer == nullptr) {
+    return {};
+  }
+  if (!info.buffer->HasDeterministicRawHash() &&
+      !info.buffer->IsMaterialized()) {
+    return {};
+  }
+  if (info.shape.size() != 2 || info.shape[0] <= 0 || info.shape[1] <= 0 ||
+      static_cast<uint64_t>(info.shape[0]) *
+              static_cast<uint64_t>(info.shape[1]) <=
+          1ULL) {
+    return {};
+  }
+  absl::StatusOr<const graph::TensorInformation&> act_info =
+      graph::GetInfo(op.inputs[0]);
+  if (!act_info.ok() ||
+      (act_info->type != Type::kFP32 && act_info->type != Type::kFP16)) {
+    return {};
+  }
+  if (op.inputs.size() >= 3 && op.inputs[2].group != nullptr &&
+      op.inputs[2].group->producer != nullptr) {
+    return {};
+  }
+  if (info.quantization == nullptr) {
+    // XNNPACK's mixed-precision FP32-input/FP16-weight FC operator dereferences
+    // `f16_kernel` before checking `weights_cache`, so unquantized weights are
+    // only warm-cache safe when activation and weight float types match.
+    const bool matching_float =
+        (info.type == Type::kFP32 && act_info->type == Type::kFP32) ||
+        (info.type == Type::kFP16 && act_info->type == Type::kFP16);
+    return {.eligible = matching_float};
+  }
+  if (auto pcq = info.quantization->As<PerChannelAffineQuantization>();
+      pcq.ok()) {
+    const int qdim = pcq->quantized_dimension;
+    const bool ok =
+        (info.type == Type::kI8 || info.type == Type::kI4 ||
+         info.type == Type::kI2) &&
+        pcq->scales.size() > 1 && pcq->zero_points.IsSymmetric() && qdim >= 0 &&
+        static_cast<size_t>(qdim) < info.shape.size() &&
+        pcq->scales.size() >= static_cast<size_t>(info.shape[qdim]);
+    return {.eligible = ok};
+  }
+  if (auto bwq = info.quantization->As<BlockwiseQuantization>(); bwq.ok()) {
+    if (info.type != Type::kI8 && info.type != Type::kI4) return {};
+    if (!info.buffer->HasDeterministicRawHash() && !bwq->IsMaterialized()) {
+      return {};
+    }
+    const size_t rows = static_cast<size_t>(info.shape[0]);
+    const size_t cols = static_cast<size_t>(info.shape[1]);
+    if (bwq->block_size <= 0 ||
+        (rows * cols) % static_cast<size_t>(bwq->block_size) != 0) {
+      return {};
+    }
+    const size_t blocks = (rows * cols) / static_cast<size_t>(bwq->block_size);
+    if (bwq->NumBlocks() < blocks) return {};
+    return {
+        .eligible = true,
+        .need_rows = info.type == Type::kI8 ? rows : 0,
+        .need_blocks = info.type == Type::kI8 ? 0 : blocks,
+    };
+  }
+  return {};
+}
+
+absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraphImpl(
+    std::vector<TensorHandle> outputs, WarmFcCacheMode warm_fc_cache_mode) {
+  const bool warm_fc_cache_only =
+      (warm_fc_cache_mode == WarmFcCacheMode::kEnabled);
   uint32_t next_id = 0;
   absl::flat_hash_map<graph::Tensor, uint32_t> external_ids;
+  absl::flat_hash_set<const Buffer*> ineligible_buffers;
   for (const TensorHandle& out : outputs) {
-    auto [it, inserted] = external_ids.insert({out.GetRaw(), next_id});
+    const graph::Tensor raw = out.GetRaw();
+    auto [it, inserted] = external_ids.insert({raw, next_id});
     next_id += inserted;
+    if (warm_fc_cache_only && raw.group != nullptr) {
+      for (const graph::TensorInformation& info : raw.group->tensor_infos) {
+        if (info.buffer != nullptr) {
+          ineligible_buffers.insert(info.buffer.get());
+        }
+      }
+    }
   }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(auto plan, GetExecutionPlan(outputs));
+  absl::flat_hash_set<const Buffer*> candidate_fc_buffers;
+  size_t max_warm_rows = 0;
+  size_t max_warm_blocks = 0;
   for (const graph::Operation* op : plan) {
-    for (const graph::Tensor& t : op->inputs) {
-      if (auto info_or = graph::GetInfo(t);
-          !info_or.ok() || info_or->buffer != nullptr) {
+    const bool is_fc =
+        warm_fc_cache_only && op->As<graph::FullyConnectedOperation>().ok();
+    for (size_t i = 0; i < op->inputs.size(); ++i) {
+      const graph::Tensor& t = op->inputs[i];
+      absl::StatusOr<const graph::TensorInformation&> info = graph::GetInfo(t);
+      if (!info.ok() || info->buffer != nullptr) {
+        if (warm_fc_cache_only && t.group != nullptr &&
+            t.group->producer == nullptr) {
+          if (t.group->tensor_infos.size() != 1) {
+            for (const graph::TensorInformation& inf : t.group->tensor_infos) {
+              if (inf.buffer != nullptr) {
+                ineligible_buffers.insert(inf.buffer.get());
+              }
+            }
+          } else if (info.ok() && info->buffer != nullptr) {
+            const WarmFcCandidate candidate =
+                is_fc ? EvaluateWarmFcCandidate(*op, i, *info)
+                      : WarmFcCandidate{};
+            if (candidate.eligible) {
+              candidate_fc_buffers.insert(info->buffer.get());
+              max_warm_rows = std::max(max_warm_rows, candidate.need_rows);
+              max_warm_blocks =
+                  std::max(max_warm_blocks, candidate.need_blocks);
+            } else {
+              ineligible_buffers.insert(info->buffer.get());
+            }
+          }
+        }
         continue;
       }
-      if (auto producer_or = graph::GetProducer(t);
-          producer_or.ok() && *producer_or != nullptr) {
+      if (auto producer = graph::GetProducer(t);
+          producer.ok() && *producer != nullptr) {
         continue;
       }
       auto [it, inserted] = external_ids.insert({t, next_id});
@@ -606,10 +805,35 @@ absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
   }
 
   XnnpackBuildContext ctx(std::move(outputs), std::move(external_ids));
+  if (warm_fc_cache_only && !candidate_fc_buffers.empty()) {
+    absl::flat_hash_set<const Buffer*> warm_fc_buffers;
+    warm_fc_buffers.reserve(candidate_fc_buffers.size());
+    for (const Buffer* buf : candidate_fc_buffers) {
+      if (!ineligible_buffers.contains(buf)) {
+        warm_fc_buffers.insert(buf);
+      }
+    }
+    if (!warm_fc_buffers.empty()) {
+      ctx.SetWarmFcBuffers(std::move(warm_fc_buffers), max_warm_rows,
+                           max_warm_blocks);
+    }
+  }
   LRT_TENSOR_RETURN_IF_ERROR(BuildNnpackGraph(ctx));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto graph, ctx.Finalize());
   return std::unique_ptr<XnnpackGraph>(
       static_cast<XnnpackGraph*>(graph.release()));
+}
+
+}  // namespace
+
+absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
+    std::vector<TensorHandle> outputs) {
+  return BuildXnnpackGraphImpl(std::move(outputs), WarmFcCacheMode::kDisabled);
+}
+
+absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraphWithWarmFcCache(
+    std::vector<TensorHandle> outputs) {
+  return BuildXnnpackGraphImpl(std::move(outputs), WarmFcCacheMode::kEnabled);
 }
 
 }  // namespace litert::tensor
