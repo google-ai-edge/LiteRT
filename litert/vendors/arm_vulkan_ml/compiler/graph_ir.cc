@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
 
@@ -224,11 +229,53 @@ bool FoldConstantLayout(CompilerGraph& graph, GraphNode& node,
   return true;
 }
 
+bool FoldTransposeIntoSum(CompilerGraph& graph, GraphNode& sum,
+                          const Uses& uses, OptimizationReport* report) {
+  if (sum.body.code != kLiteRtOpCodeTflSum ||
+      sum.body.output_type != DataType::int8_t || sum.body.typed ||
+      sum.body.portable || sum.inputs.size() != 1 ||
+      sum.body.output.shape.size() == sum.body.inputs[0].shape.size()) {
+    return false;
+  }
+  const ValueId input = sum.inputs[0];
+  const size_t producer = uses.producer[input];
+  if (producer == graph.nodes.size() || !Removable(graph, input, uses)) {
+    return false;
+  }
+  GraphNode& transpose = graph.nodes[producer];
+  if (transpose.removed || !IsShape(transpose) ||
+      transpose.body.code != kLiteRtOpCodeTflTranspose) {
+    return false;
+  }
+  const auto& permutation = transpose.body.parameters;
+  auto& axes = sum.body.parameters;
+  // The unreduced axes must already be in output order after remapping.
+  int32_t previous = -1;
+  for (int32_t axis = 0; axis < permutation.size(); ++axis) {
+    if (std::find(axes.begin(), axes.end(), axis) != axes.end()) continue;
+    if (permutation[axis] <= previous) return false;
+    previous = permutation[axis];
+  }
+  for (int32_t& axis : axes) axis = permutation[axis];
+  sum.inputs[0] = transpose.inputs[0];
+  sum.body.inputs[0] = Quantized(graph.values[sum.inputs[0]]);
+  transpose.removed = true;
+  Origins(sum, transpose);
+  Decision(report, "fold_transpose_into_sum", sum, true,
+           "remapped reduction axes preserve output order and quantization");
+  return true;
+}
+
 bool ShapePass(CompilerGraph& graph, OptimizationReport* report) {
   bool changed = false;
   Uses uses(graph);
   for (GraphNode& node : graph.nodes) {
-    if (node.removed || !IsShape(node)) continue;
+    if (node.removed) continue;
+    if (FoldTransposeIntoSum(graph, node, uses, report)) {
+      changed = true;
+      continue;
+    }
+    if (!IsShape(node)) continue;
     if (FoldConstantLayout(graph, node, report)) {
       changed = true;
       continue;

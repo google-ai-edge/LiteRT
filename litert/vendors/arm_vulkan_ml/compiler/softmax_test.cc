@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
 
@@ -231,19 +236,21 @@ TEST(ProFpSoftmax, EmitsFloat32SoftmaxAndRequantizationForInt8AndInt16) {
         [&](spv_message_level_t, const char*, const spv_position_t&,
             const char* message) { diagnostics += message; });
     EXPECT_TRUE(validator.Validate(binary)) << diagnostics;
-    int exp_ops = 0, recip_ops = 0;
+    int exp_ops = 0, recip_ops = 0, tile_ops = 0;
     for (const auto& instruction : module->GetSpirvGraph()) {
       if (instruction.m_Opcode == spv::Op::OpExtInst) {
         const auto opcode =
             static_cast<O>(instruction.m_Operands[3].m_LiteralWord);
         exp_ops += opcode == O::Exp;
         recip_ops += opcode == O::Reciprocal;
+        tile_ops += opcode == O::Tile;
         EXPECT_NE(opcode, O::Table);
         EXPECT_NE(opcode, O::IntDiv);
       }
     }
     EXPECT_EQ(exp_ops, 1);
     EXPECT_EQ(recip_ops, 1);
+    EXPECT_EQ(tile_ops, 1);
   }
 }
 }  // namespace

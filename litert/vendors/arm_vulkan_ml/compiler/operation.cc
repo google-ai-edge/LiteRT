@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/operation.h"
 
@@ -109,6 +114,7 @@ bool SameQuant(const QuantizedTensor& a, const QuantizedTensor& b) {
   return a.floating == b.floating && a.type == b.type && a.scale == b.scale &&
          a.zero_point == b.zero_point;
 }
+
 std::optional<Activation> ActivationCode(uint32_t code) {
   switch (code) {
     case 0:
@@ -138,6 +144,123 @@ ResId Rescale(Graph& g, ResId input, const std::vector<uint32_t>& shape,
   return EmitNativeRescale(g, input, input_type, output_type, shape, izp, ozp,
                            scales, constants);
 }
+
+constexpr int kSquaredDifferenceWiden = 1 << 7;
+constexpr int32_t kSquaredDifferenceBound = 255 * kSquaredDifferenceWiden;
+constexpr int64_t kSquaredDifferenceSquareBound =
+    int64_t{kSquaredDifferenceBound} * kSquaredDifferenceBound;
+static_assert(kSquaredDifferenceSquareBound < (int64_t{1} << 30));
+
+// The graph optimizer can cancel common powers of two for SINGLE_ROUND.
+// Restore the Q31 representation when the original multiplier precision matters.
+Scale32 RecoverQ31Scale(Scale32 scale) {
+  while (scale.multiplier < (1 << 30) && scale.shift < 62) {
+    scale.multiplier *= 2;
+    ++scale.shift;
+  }
+  return scale;
+}
+
+Scale32 FitInt8SumScale(const OperationPlan& plan, int64_t element_count) {
+  const Scale32 original = plan.scales[0];
+  Scale32 fitted = RecoverQ31Scale(original);
+  const auto& input = plan.inputs[0];
+  const float scale =
+      static_cast<float>(input.scale) / static_cast<float>(plan.output.scale);
+  const float bias = -input.zero_point * scale * element_count;
+  const int64_t offset = int64_t{input.zero_point} * element_count;
+  const int64_t half = int64_t{1} << (fitted.shift - 1);
+  const int64_t factor_limit = (int64_t{1} << 62) / half;
+  int64_t min_multiplier = 1;
+  int64_t max_multiplier = INT32_MAX;
+  auto constrain = [&](int64_t sum, int64_t threshold) {
+    if (sum > 0) {
+      min_multiplier = std::max(min_multiplier, (threshold + sum - 1) / sum);
+    } else if (sum < 0) {
+      max_multiplier = std::min(max_multiplier, threshold / sum);
+    } else if (threshold > 0) {
+      max_multiplier = 0;
+    }
+  };
+  // Match every output threshold of the optimized builtin. Its FP32 sum
+  // and zero-point bias are rounded together before output saturation.
+  for (int32_t code = -127; code <= 127; ++code) {
+    const int64_t target = code - plan.output.zero_point;
+    int64_t first = plan.min64[0];
+    int64_t last = plan.max64[0] + 1;
+    while (first < last) {
+      const int64_t mid = first + (last - first) / 2;
+      const float raw_sum = static_cast<float>(mid + offset);
+      if (std::round(raw_sum * scale + bias) >= static_cast<float>(target)) {
+        last = mid;
+      } else {
+        first = mid + 1;
+      }
+    }
+    // A signed INT32 sum times a positive INT32 multiplier has magnitude
+    // below 2^62. Cap unreachable thresholds before multiplying.
+    const int64_t threshold =
+        std::clamp(2 * target - 1, -factor_limit, factor_limit) * half;
+    if (first <= plan.max64[0]) constrain(first, threshold);
+    if (first > plan.min64[0]) constrain(1 - first, 1 - threshold);
+    if (min_multiplier > max_multiplier) return original;
+  }
+  const int32_t multiplier = std::clamp<int64_t>(
+      fitted.multiplier, min_multiplier, max_multiplier);
+  if (multiplier == fitted.multiplier) return original;
+  return {multiplier, fitted.shift};
+}
+
+Scale32 SquaredDifferenceRoundingShift(Scale32 scale) {
+  return {1 << 30, static_cast<int8_t>(scale.shift - 1)};
+}
+
+std::optional<Scale32> FitSquaredDifferenceInputScale(Scale32 scale,
+                                                     int32_t zero_point) {
+  if (scale.shift <= 31) return scale;
+  const Scale32 high_scale{scale.multiplier, 31};
+  const auto low_scale = SquaredDifferenceRoundingShift(scale);
+  const int64_t divisor = int64_t{1} << scale.shift;
+  int64_t min_multiplier = 1;
+  int64_t max_multiplier = INT32_MAX;
+  for (int32_t code = -128; code <= 127; ++code) {
+    const int32_t input = (code - zero_point) * kSquaredDifferenceWiden;
+    if (input == 0) continue;
+    const int32_t high = *ApplyScale32(input, high_scale);
+    const int32_t rounded = *ApplyScale32(high - (high < 0), low_scale);
+
+    // Intersect the multiplier ranges that give the builtin result at every
+    // input code. SINGLE_ROUND assigns signed ties to the higher output code.
+    const int64_t magnitude = std::abs(input);
+    const int64_t lower =
+        int64_t{std::abs(rounded)} * divisor - divisor / 2 + (input < 0);
+    min_multiplier =
+        std::max(min_multiplier, (lower + magnitude - 1) / magnitude);
+    max_multiplier = std::min(max_multiplier, (lower + divisor - 1) / magnitude);
+    if (min_multiplier > max_multiplier) return std::nullopt;
+  }
+  scale.multiplier =
+      std::clamp<int64_t>(scale.multiplier, min_multiplier, max_multiplier);
+  return scale;
+}
+
+bool SquaredDifferenceOutputNeedsDoubleRounding(Scale32 scale,
+                                                int32_t zero_point) {
+  if (scale.shift <= 31) return false;
+  const int64_t rounding = int64_t{1} << (scale.shift - 1);
+  for (int64_t diff = 1; diff <= kSquaredDifferenceBound; ++diff) {
+    const int64_t numerator = diff * diff * scale.multiplier + rounding;
+    const int64_t single = numerator >> scale.shift;
+    if (single + zero_point >= 127) return false;
+    // For nonnegative squares the builtin's rounded high multiply adds
+    // 2^30 to the numerator before the final rounding.
+    const int64_t double_rounded =
+        (numerator + (int64_t{1} << 30)) >> scale.shift;
+    if (single != double_rounded) return true;
+  }
+  return false;
+}
+
 ResId Clamp(Graph& g, ResId input, const OperationPlan& p) {
   const int32_t lo = p.output_type == DataType::int16_t ? -32768 : -128;
   const int32_t hi = p.output_type == DataType::int16_t ? 32767 : 127;
@@ -528,7 +651,11 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
   if (data_index >= in.size()) return reject("Missing data input");
   auto input = ReadTensor(in[data_index]);
   auto output = ReadTensor(out[0]);
-  if (!input || !output || input->shape.empty() || output->shape.empty())
+  const bool scalar_sub_lhs = input && input->shape.empty() &&
+                              input->type == DataType::int8_t &&
+                              p.code == kLiteRtOpCodeTflSub;
+  if (!input || !output || (input->shape.empty() && !scalar_sub_lhs) ||
+      output->shape.empty())
     return reject(
         "Requires static dense FP32 or per-tensor affine INT8/INT16 data "
         "tensors");
@@ -999,13 +1126,15 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
       }
       break;
     }
+    case kLiteRtOpCodeTflSquaredDifference:
     case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflAdd: {
-      if (in.size() != 2) return reject("ADD requires two inputs");
+      if (in.size() != 2)
+        return reject("Binary arithmetic requires two inputs");
       auto rhs = ReadTensor(in[1]);
       if (!rhs || rhs->floating || rhs->type != input->type ||
           output->type != input->type)
-        return reject("ADD requires matching quantized inputs");
+        return reject("Binary arithmetic requires matching quantized types");
       const size_t rank = std::max(input->shape.size(), rhs->shape.size());
       auto lhs_shape = input->shape, rhs_shape = rhs->shape;
       lhs_shape.insert(lhs_shape.begin(), rank - lhs_shape.size(), 1);
@@ -1014,24 +1143,40 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
       for (size_t i = 0; i < rank; ++i) {
         if (lhs_shape[i] != rhs_shape[i] && lhs_shape[i] != 1 &&
             rhs_shape[i] != 1)
-          return reject("ADD broadcast mismatch");
+          return reject("Binary arithmetic broadcast mismatch");
         shape[i] = std::max(lhs_shape[i], rhs_shape[i]);
       }
-      if (shape != output->shape) return reject("ADD output shape mismatch");
+      if (shape != output->shape)
+        return reject("Binary arithmetic output shape mismatch");
+      p.inputs.push_back(*rhs);
+      p.runtime_inputs.push_back(1);
+      const double twice_max = 2 * std::max(input->scale, rhs->scale);
+      if (p.code == kLiteRtOpCodeTflSquaredDifference) {
+        // Widen the centered inputs for precision while keeping the square
+        // in INT32.
+        const double common_scale = twice_max / kSquaredDifferenceWiden;
+        auto lhs = MakeScale32(input->scale / twice_max);
+        auto rhs_scale = MakeScale32(rhs->scale / twice_max);
+        auto result = MakeScale32(common_scale * common_scale / output->scale);
+        if (!lhs || !rhs_scale || !result ||
+            !IsScale32RangeValid(*result, 0, kSquaredDifferenceSquareBound))
+          return reject("SQUARED_DIFFERENCE rescale is out of range");
+        p.scales = {*MakeScale32(kSquaredDifferenceWiden), *lhs, *rhs_scale,
+                    *result};
+        break;
+      }
       uint32_t fused;
       if ((p.code == kLiteRtOpCodeTflSub ? LiteRtGetSubFusedActivationOption
                                          : LiteRtGetAddFusedActivationOption)(
               op.Get(), &fused) != kLiteRtStatusOk)
-        return reject("Cannot read ADD activation");
+        return reject("Cannot read ADD/SUB activation");
       auto activation = ActivationCode(fused);
-      if (!activation) return reject("Unsupported ADD activation");
+      if (!activation) return reject("Unsupported ADD/SUB activation");
       if (input->type == DataType::int16_t) {
         auto act_range = ActivationRangeInt16(*activation, output->scale,
                                               output->zero_point);
         if (!act_range) return reject("Invalid INT16 ADD/SUB activation");
         p.activation = *act_range;
-        p.inputs.push_back(*rhs);
-        p.runtime_inputs.push_back(1);
         if (input->scale == rhs->scale && input->scale == output->scale) {
           p.equal_scale_fast_path = true;
           p.scales.push_back(*MakeScale32(1.0));
@@ -1039,7 +1184,6 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
           p.max64 = {65536};
           break;
         }
-        const double twice_max = 2.0 * std::max(input->scale, rhs->scale);
         bool ok = false;
         // Start at 8192 so (s_i / twice_max) * factor <= 4096 fits in a single
         // 16-bit multiplier RESCALE without two-stage amplification splitting,
@@ -1073,14 +1217,11 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
       }
       p.activation =
           *ActivationRange(*activation, output->scale, output->zero_point);
-      p.inputs.push_back(*rhs);
-      p.runtime_inputs.push_back(1);
-      const double twice_max = 2 * std::max(input->scale, rhs->scale);
       for (double scale : {input->scale / twice_max * 1048576,
                            rhs->scale / twice_max * 1048576,
                            twice_max / (1048576 * output->scale)}) {
         auto encoded = MakeScale32(scale);
-        if (!encoded) return reject("ADD scale not representable");
+        if (!encoded) return reject("ADD/SUB scale not representable");
         p.scales.push_back(*encoded);
       }
       int64_t minimum = 0, maximum = 0;
@@ -1185,8 +1326,9 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
           input->type != output->type || !constant_ints(1) ||
           p.parameters.empty() ||
           LiteRtGetSumKeepDimsOption(op.Get(), &keep) != kLiteRtStatusOk ||
-          !keep)
-        return reject("SUM requires constant axes and keep_dims=true");
+          (!keep && input->type != DataType::int8_t))
+        return reject(
+            "SUM requires constant axes and INT8 for keep_dims=false");
       std::set<int32_t> axes;
       auto shape = input->shape;
       uint64_t n = 1;
@@ -1198,6 +1340,10 @@ std::optional<OperationPlan> AnalyzeOperationImpl(
         shape[axis] = 1;
       }
       const uint64_t max_mag = input->type == DataType::int16_t ? 32768 : 255;
+      if (!keep) {
+        for (auto it = axes.rbegin(); it != axes.rend(); ++it)
+          shape.erase(shape.begin() + *it);
+      }
       if (shape != output->shape || n > uint64_t{INT32_MAX} / max_mag)
         return reject("SUM shape or accumulation range invalid");
       const int64_t lo = ((input->type == DataType::int16_t ? -32768 : -128) -
@@ -1597,6 +1743,59 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
       return g.AddPadOperator(
           input, g.AddTensorConstant(Attribute(p.parameters)),
           g.AddTensorConstant(Attribute(p.pad_value, p.output_type)), out);
+    case kLiteRtOpCodeTflSquaredDifference: {
+      const auto& output_shape = p.output.shape;
+      auto align = [&](size_t i) {
+        const auto& operand = p.inputs[i];
+        auto shape = operand.shape;
+        if (shape.empty()) shape.push_back(1);
+        auto wide =
+            Rescale(g, inputs[i], shape, DataType::int8_t, DataType::int32_t,
+                    operand.zero_point, 0, {p.scales[0]}, constants);
+        auto scale = p.scales[i + 1];
+        const Scale32 q31 = RecoverQ31Scale(scale);
+        const auto fitted =
+            FitSquaredDifferenceInputScale(q31, operand.zero_point);
+        if (!fitted) {
+          wide = Rescale(g, wide, shape, DataType::int32_t, DataType::int32_t,
+                         0, 0, {{q31.multiplier, 31}}, constants);
+          // Bias negative values so the second rescale rounds ties away from
+          // zero.
+          const TosaTensor type(DataType::int32_t, shape);
+          auto sign = g.AddArithmeticRightShiftOperator(
+              wide, BroadcastScalar(g, int32_t{31}, shape.size(), constants),
+              Attribute(false), type);
+          wide = g.AddAddOperator(wide, sign, type);
+          scale = SquaredDifferenceRoundingShift(q31);
+        } else if (fitted->multiplier != q31.multiplier) {
+          scale = *fitted;
+        }
+        wide = Rescale(g, wide, shape, DataType::int32_t, DataType::int32_t, 0,
+                       0, {scale}, constants);
+        shape.insert(shape.begin(), output_shape.size() - shape.size(), 1);
+        return Reshape(g, wide, DataType::int32_t, shape);
+      };
+      const auto lhs = align(0);
+      const auto rhs = align(1);
+      const TosaTensor wide_out(DataType::int32_t, output_shape);
+      auto difference = g.AddSubOperator(lhs, rhs, wide_out);
+      auto squared =
+          g.AddMulOperator(difference, difference,
+                           g.AddTensorConstant(Attribute(int8_t{0})), wide_out);
+      auto scale = p.scales[3];
+      const Scale32 q31 = RecoverQ31Scale(scale);
+      if (SquaredDifferenceOutputNeedsDoubleRounding(q31,
+                                                     p.output.zero_point)) {
+        // Match the builtin's rounded high multiply before the final shift.
+        squared = Rescale(g, squared, output_shape, DataType::int32_t,
+                          DataType::int32_t, 0, 0, {{q31.multiplier, 31}},
+                          constants);
+        scale = SquaredDifferenceRoundingShift(q31);
+      }
+      return Rescale(g, squared, output_shape, DataType::int32_t,
+                     DataType::int8_t, 0, p.output.zero_point, {scale},
+                     constants);
+    }
     case kLiteRtOpCodeTflSub:
     case kLiteRtOpCodeTflAdd: {
       if (p.output_type == DataType::int16_t) {
@@ -1712,13 +1911,21 @@ ResId EmitOperation(Graph& g, const std::vector<ResId>& inputs,
           Rescale(g, input, q.shape, DataType::int8_t, DataType::int32_t,
                   q.zero_point, 0, {*MakeScale32(1)}, constants);
       auto shape = q.shape;
+      int64_t element_count = 1;
       for (auto axis : p.parameters) {
+        element_count *= shape[axis];
         shape[axis] = 1;
         value = g.AddReduceSumOperator(value, Attribute(axis),
                                        TosaTensor(DataType::int32_t, shape));
       }
+      if (shape != p.output.shape) {
+        value = Reshape(g, value, DataType::int32_t, p.output.shape);
+      }
+      const Scale32 scale = constants.rescale_multiplier_bits == 32
+                                ? FitInt8SumScale(p, element_count)
+                                : p.scales[0];
       return Rescale(g, value, p.output.shape, DataType::int32_t,
-                     DataType::int8_t, 0, p.output.zero_point, p.scales,
+                     DataType::int8_t, 0, p.output.zero_point, {scale},
                      constants);
     }
     default:

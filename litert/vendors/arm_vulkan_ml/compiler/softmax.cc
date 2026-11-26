@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/softmax.h"
 
@@ -130,6 +135,13 @@ ResId EmitProFpSoftmax(tfsc::tosa::Graph& graph, ResId input,
   ResId exp_val = graph.AddExpOperator(diff, fp);
   ResId sum = graph.AddReduceSumOperator(exp_val, axis, row);
   ResId recip = graph.AddReciprocalOperator(sum, row);
+  if (plan.channels > 1) {
+    // Broadcast the row reciprocal explicitly across the last axis.
+    std::vector<uint32_t> multiples(shape.size(), 1);
+    multiples.back() = plan.channels;
+    recip = graph.AddTileOperator(
+        recip, graph.AddTensorConstant(Attribute(multiples)), fp);
+  }
   ResId prob = mul(exp_val, recip, fp);
   ResId scaled =
       mul(prob, scalar(static_cast<float>(1.0 / plan.output_scale)), fp);
