@@ -156,7 +156,9 @@ class ModelFactory {
   };
 
   struct SerializedScopeRecord {
-    const graph::Scope* ptr = nullptr;
+    // Later subgraphs revisit earlier scopes' boundary bindings. The original
+    // graph may already be released after AddSignature returns.
+    std::shared_ptr<const graph::Scope> ptr;
     std::string kind;
     std::string name;
     uint32_t parent_id = 0xFFFFFFFFu;
