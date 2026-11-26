@@ -48,6 +48,7 @@ absl::StatusOr<const ZeroPoints&> GetZeroPointsObject(
   if (absl::StatusOr<const BlockwiseQuantization&> bwq =
           quantization.As<const BlockwiseQuantization>();
       bwq.ok()) {
+    bwq->EnsureMaterialized();
     return bwq->zero_points;
   }
   if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
@@ -154,6 +155,7 @@ absl::Span<const float> YnnpackBuildContext::GetScales(
   if (absl::StatusOr<const BlockwiseQuantization&> bwq =
           quantization.As<const BlockwiseQuantization>();
       bwq.ok()) {
+    bwq->EnsureMaterialized();
     return bwq->scales;
   }
   if (absl::StatusOr<const PerChannelAffineQuantization&> pcq =
@@ -234,6 +236,7 @@ absl::Status YnnpackBuildContext::ValidateQuantization(
           ") must be a multiple of block_size (", block_size, ")."));
     }
     const size_t num_blocks = reduction / block_size;
+    bwq->EnsureMaterialized();
     if (bwq->scales.size() != channels * num_blocks) {
       return absl::InvalidArgumentError(absl::StrCat(
           info.name, ": blockwise scale count (", bwq->scales.size(),

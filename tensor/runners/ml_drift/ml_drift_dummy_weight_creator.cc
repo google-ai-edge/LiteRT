@@ -15,12 +15,14 @@ limitations under the License.
 #include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 
 #include <algorithm>
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <memory>
 #include <numeric>
+#include <thread>  // NOLINT(build/c++11)
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -39,6 +41,7 @@ limitations under the License.
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
 #include "tensor/datatypes.h"
@@ -80,6 +83,122 @@ absl::StatusOr<ml_drift::OHWI> ShapeToOHWI(const T& shape) {
                                                      " to MlDrift OHWI."));
   }
 }
+
+bool TryDirectRearrangeInt8AsUint8I4O4(const int8_t* src,
+                                       const ml_drift::OHWI& shape,
+                                       const ml_drift::WeightsDescription& desc,
+                                       absl::Span<uint8_t> dst) {
+  if (shape.h != 1 || shape.w != 1 || shape.o <= 0 || shape.i <= 0) {
+    return false;
+  }
+  const bool is_linear_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  const bool is_tex_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+  if (!is_linear_i4o4 && !is_tex_i4o4) {
+    return false;
+  }
+  const int dst_group_size = desc.GetOutputGroupSize();
+  if (dst_group_size <= 0) return false;
+  const int dst_slices = ml_drift::DivideRoundUp(shape.o, 4);
+  const int src_slices = ml_drift::DivideRoundUp(shape.i, 4);
+  const int dst_groups = ml_drift::DivideRoundUp(dst_slices, dst_group_size);
+  const size_t expected_bytes =
+      static_cast<size_t>(dst_groups) * dst_group_size * src_slices * 16;
+  if (dst.size() < expected_bytes) return false;
+
+  const size_t O = static_cast<size_t>(shape.o);
+  const size_t I = static_cast<size_t>(shape.i);
+  auto pack_tile = [&](int d, int s, uint8_t* out_tile) {
+    for (int d_group = 0; d_group < dst_group_size; ++d_group) {
+      const size_t d_ch =
+          static_cast<size_t>(4 * (d * dst_group_size + d_group));
+      const size_t s_base = static_cast<size_t>(4 * s);
+      if (d_ch + 4 <= O && s_base + 4 <= I) {
+        const uint8_t* r0 =
+            reinterpret_cast<const uint8_t*>(src + (d_ch + 0) * I + s_base);
+        const uint8_t* r1 =
+            reinterpret_cast<const uint8_t*>(src + (d_ch + 1) * I + s_base);
+        const uint8_t* r2 =
+            reinterpret_cast<const uint8_t*>(src + (d_ch + 2) * I + s_base);
+        const uint8_t* r3 =
+            reinterpret_cast<const uint8_t*>(src + (d_ch + 3) * I + s_base);
+        for (int k = 0; k < 4; ++k) {
+          out_tile[k * 4 + 0] = r0[k] ^ 0x80u;
+          out_tile[k * 4 + 1] = r1[k] ^ 0x80u;
+          out_tile[k * 4 + 2] = r2[k] ^ 0x80u;
+          out_tile[k * 4 + 3] = r3[k] ^ 0x80u;
+        }
+      } else {
+        for (int k = 0; k < 4; ++k) {
+          const size_t s_ch = s_base + static_cast<size_t>(k);
+          for (int lane = 0; lane < 4; ++lane) {
+            const size_t o_ch = d_ch + static_cast<size_t>(lane);
+            out_tile[k * 4 + lane] =
+                (o_ch < O && s_ch < I)
+                    ? (static_cast<uint8_t>(src[o_ch * I + s_ch]) ^ 0x80u)
+                    : 0x80u;
+          }
+        }
+      }
+      out_tile += 16;
+    }
+  };
+
+  const size_t outer_units =
+      static_cast<size_t>(is_linear_i4o4 ? dst_groups : src_slices);
+  const size_t total_elems = O * I;
+  const size_t hw = std::max<size_t>(1, std::thread::hardware_concurrency());
+  const size_t num_workers = (total_elems >= (512ULL << 10))
+                                 ? std::min<size_t>({outer_units, hw, 8})
+                                 : 1;
+  auto run_unit = [&](size_t u) {
+    if (is_linear_i4o4) {
+      const int d = static_cast<int>(u);
+      const size_t d_stride =
+          static_cast<size_t>(src_slices) * dst_group_size * 16;
+      uint8_t* ptr = dst.data() + static_cast<size_t>(d) * d_stride;
+      for (int s = 0; s < src_slices; ++s) {
+        pack_tile(d, s, ptr);
+        ptr += static_cast<size_t>(dst_group_size) * 16;
+      }
+    } else {
+      const int s = static_cast<int>(u);
+      const size_t s_stride =
+          static_cast<size_t>(dst_groups) * dst_group_size * 16;
+      uint8_t* ptr = dst.data() + static_cast<size_t>(s) * s_stride;
+      for (int d = 0; d < dst_groups; ++d) {
+        pack_tile(d, s, ptr);
+        ptr += static_cast<size_t>(dst_group_size) * 16;
+      }
+    }
+  };
+  if (num_workers <= 1) {
+    for (size_t u = 0; u < outer_units; ++u) {
+      run_unit(u);
+    }
+  } else {
+    std::atomic<size_t> next{0};
+    std::vector<std::thread> pool;
+    pool.reserve(num_workers - 1);
+    auto worker = [&]() {
+      while (true) {
+        const size_t u = next.fetch_add(1, std::memory_order_relaxed);
+        if (u >= outer_units) break;
+        run_unit(u);
+      }
+    };
+    for (size_t w = 1; w < num_workers; ++w) {
+      pool.emplace_back(worker);
+    }
+    worker();
+    for (std::thread& th : pool) {
+      th.join();
+    }
+  }
+  return true;
+}
+
 }  // namespace
 
 ml_drift::TensorDescriptor CreatePackedWeightsTensorDescriptor(
@@ -176,72 +295,8 @@ MlDriftDummyWeightCreator::CreateFcWeights(
     const size_t num_elements = weights.shape.DimensionsProduct();
     const size_t padded_num_elements =
         num_elements + XNN_EXTRA_BYTES / sizeof(WeightsDataType);
-    if (weights_data.empty()) {
-      weights.data.resize(padded_num_elements);
-      if constexpr (std::is_floating_point_v<WeightsDataType>) {
-        // std::sin is too slow for dummy data generation.
-        int i = 0;
-        std::generate(
-            weights.data.begin(), weights.data.begin() + num_elements, [&i]() {
-              return static_cast<WeightsDataType>(i++ % 100 - 50) * 0.1f;
-            });
-      } else {
-        std::iota(weights.data.begin(), weights.data.begin() + num_elements, 0);
-      }
-      std::fill(weights.data.begin() + num_elements, weights.data.end(),
-                static_cast<WeightsDataType>(0));
-    } else {
-      if constexpr (std::is_same_v<T, int8_t>) {
-        if (t_info.type == Type::kI4) {
-          weights.data.resize(padded_num_elements, 0);
-          const uint8_t* u8_packed =
-              reinterpret_cast<const uint8_t*>(weights_data.data());
-          for (size_t i = 0; i < num_elements; ++i) {
-            size_t byte_idx = i / 2;
-            if (byte_idx < weights_data.size()) {
-              size_t bit_shift = (i % 2) * 4;
-              int8_t q = (u8_packed[byte_idx] >> bit_shift) & 0x0F;
-              if (q & 0x08) {
-                q |= 0xF0;  // Sign extend
-              }
-              weights.data[i] = q;
-            }
-          }
-        } else if (t_info.type == Type::kI2) {
-          weights.data.resize(padded_num_elements, 0);
-          const uint8_t* u8_packed =
-              reinterpret_cast<const uint8_t*>(weights_data.data());
-          for (size_t i = 0; i < num_elements; ++i) {
-            size_t byte_idx = i / 4;
-            if (byte_idx < weights_data.size()) {
-              size_t bit_shift = (i % 4) * 2;
-              int8_t q = (u8_packed[byte_idx] >> bit_shift) & 0x03;
-              if (q & 0x02) {
-                q |= 0xFC;  // Sign extend
-              }
-              weights.data[i] = q;
-            }
-          }
-        } else {
-          weights.data.resize(weights_data.size());
-          for (size_t i = 0; i < weights_data.size(); ++i) {
-            weights.data[i] = weights_data[i];
-          }
-          weights.data.resize(padded_num_elements,
-                              static_cast<WeightsDataType>(0));
-        }
-      } else {
-        weights.data.resize(weights_data.size());
-        for (size_t i = 0; i < weights_data.size(); ++i) {
-          weights.data[i] = weights_data[i];
-        }
-        weights.data.resize(padded_num_elements,
-                            static_cast<WeightsDataType>(0));
-      }
-    }
-
     const size_t elements_count = static_cast<size_t>(
-        ml_drift::GetTotalElementsCountForLayout(desc, weights.shape));
+        ml_drift::GetTotalElementsCountForLayout(desc, *mld_shape));
     const size_t data_size =
         (elements_count *
              static_cast<size_t>(ml_drift::SizeInBitsOf(desc.type)) +
@@ -253,23 +308,123 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       return absl::ResourceExhaustedError("Failed to allocate memory.");
     }
     absl::Span<uint8_t> data(data_ptr.get(), data_size);
-    if constexpr (std::is_same_v<WeightsDataType, int8_t>) {
-      if (desc.type == ml_drift::DataType::kUint4 ||
-          desc.type == ml_drift::DataType::kInt4) {
-        RearrangeWeightsInt8AsUint4(weights, desc, data, 8, 8u);
-      } else if (desc.type == ml_drift::DataType::kUint2 ||
-                 desc.type == ml_drift::DataType::kInt2) {
-        RearrangeWeightsInt8AsUint2(weights, desc, data, 2, 2u);
-      } else {
-        RearrangeWeightsInt8AsUint8(weights, desc, data, 128, 128u);
+
+    bool packed_directly = false;
+    if constexpr (std::is_same_v<T, int8_t>) {
+      if constexpr (std::is_same_v<WeightsDataType, int8_t>) {
+        if (!weights_data.empty() && t_info.type == Type::kI8 &&
+            weights_data.size() >= num_elements &&
+            (desc.type == ml_drift::DataType::kUint8 ||
+             desc.type == ml_drift::DataType::kInt8)) {
+          packed_directly = TryDirectRearrangeInt8AsUint8I4O4(
+              weights_data.data(), *mld_shape, desc, data);
+        }
       }
-    } else {
-      RearrangeWeights(weights, desc, data);
     }
 
+    if (!packed_directly) {
+      if (weights_data.empty()) {
+        weights.data.resize(padded_num_elements);
+        if constexpr (std::is_floating_point_v<WeightsDataType>) {
+          // std::sin is too slow for dummy data generation.
+          int i = 0;
+          std::generate(weights.data.begin(),
+                        weights.data.begin() + num_elements, [&i]() {
+                          return static_cast<WeightsDataType>(i++ % 100 - 50) *
+                                 0.1f;
+                        });
+        } else {
+          std::iota(weights.data.begin(), weights.data.begin() + num_elements,
+                    0);
+        }
+        std::fill(weights.data.begin() + num_elements, weights.data.end(),
+                  static_cast<WeightsDataType>(0));
+      } else {
+        if constexpr (std::is_same_v<T, int8_t>) {
+          if (t_info.type == Type::kI4) {
+            weights.data.resize(padded_num_elements, 0);
+            const uint8_t* u8_packed =
+                reinterpret_cast<const uint8_t*>(weights_data.data());
+            for (size_t i = 0; i < num_elements; ++i) {
+              size_t byte_idx = i / 2;
+              if (byte_idx < weights_data.size()) {
+                size_t bit_shift = (i % 2) * 4;
+                int8_t q = (u8_packed[byte_idx] >> bit_shift) & 0x0F;
+                if (q & 0x08) {
+                  q |= 0xF0;  // Sign extend
+                }
+                weights.data[i] = q;
+              }
+            }
+          } else if (t_info.type == Type::kI2) {
+            weights.data.resize(padded_num_elements, 0);
+            const uint8_t* u8_packed =
+                reinterpret_cast<const uint8_t*>(weights_data.data());
+            for (size_t i = 0; i < num_elements; ++i) {
+              size_t byte_idx = i / 4;
+              if (byte_idx < weights_data.size()) {
+                size_t bit_shift = (i % 4) * 2;
+                int8_t q = (u8_packed[byte_idx] >> bit_shift) & 0x03;
+                if (q & 0x02) {
+                  q |= 0xFC;  // Sign extend
+                }
+                weights.data[i] = q;
+              }
+            }
+          } else {
+            weights.data.resize(padded_num_elements,
+                                static_cast<WeightsDataType>(0));
+            const size_t copy_elems =
+                std::min(weights_data.size(), padded_num_elements);
+            if constexpr (std::is_same_v<T, WeightsDataType>) {
+              std::memcpy(weights.data.data(), weights_data.data(),
+                          copy_elems * sizeof(WeightsDataType));
+            } else {
+              std::copy_n(weights_data.data(), copy_elems, weights.data.data());
+            }
+          }
+        } else {
+          weights.data.resize(padded_num_elements,
+                              static_cast<WeightsDataType>(0));
+          const size_t copy_elems =
+              std::min(weights_data.size(), padded_num_elements);
+          if constexpr (std::is_same_v<T, WeightsDataType>) {
+            std::memcpy(weights.data.data(), weights_data.data(),
+                        copy_elems * sizeof(WeightsDataType));
+          } else {
+            std::copy_n(weights_data.data(), copy_elems, weights.data.data());
+          }
+        }
+      }
+
+      if constexpr (std::is_same_v<WeightsDataType, int8_t>) {
+        if (desc.type == ml_drift::DataType::kUint4 ||
+            desc.type == ml_drift::DataType::kInt4) {
+          RearrangeWeightsInt8AsUint4(weights, desc, data, 8, 8u);
+        } else if (desc.type == ml_drift::DataType::kUint2 ||
+                   desc.type == ml_drift::DataType::kInt2) {
+          RearrangeWeightsInt8AsUint2(weights, desc, data, 2, 2u);
+        } else {
+          RearrangeWeightsInt8AsUint8(weights, desc, data, 128, 128u);
+        }
+      } else {
+        RearrangeWeights(weights, desc, data);
+      }
+    }
+
+    bool is_embedding = (t_info.name == "model.embed_tokens.weight" ||
+                         t_info.name == "token_embd.weight");
+    if (!is_embedding) {
+      for (const std::weak_ptr<graph::Operation>& weak_op : t_info.consumers) {
+        if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+            consumer != nullptr && consumer->GetName() == "EmbeddingLookup") {
+          is_embedding = true;
+          break;
+        }
+      }
+    }
     ml_drift::TensorDescriptor weights_td = CreatePackedWeightsTensorDescriptor(
-        desc, weights.shape, elements_count,
-        t_info.name == "model.embed_tokens.weight");
+        desc, weights.shape, elements_count, is_embedding);
     const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
     if (mld_mem_size > data_size) {
       std::vector<uint8_t> safe_data(mld_mem_size, 0);

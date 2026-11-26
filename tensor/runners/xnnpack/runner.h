@@ -60,7 +60,10 @@ class XnnpackRunner : public NnpackRunner {
       : NnpackRunner(std::move(graph)) {}
 
   ~XnnpackRunner() override {
-    if (threadpool_ != nullptr) {
+    // Destroy `runtime_` before `threadpool_` because XNNPACK retains a raw
+    // pointer to `threadpool_` inside the runtime.
+    runtime_.reset();
+    if (threadpool_ != nullptr && owns_threadpool_) {
       pthreadpool_destroy(threadpool_);
     }
   }
@@ -70,11 +73,15 @@ class XnnpackRunner : public NnpackRunner {
         runtime_(std::move(other.runtime_)),
         weights_cache_(other.weights_cache_),
         workspace_(other.workspace_),
-        threadpool_(std::exchange(other.threadpool_, nullptr)) {}
+        threadpool_(std::exchange(other.threadpool_, nullptr)),
+        owns_threadpool_(std::exchange(other.owns_threadpool_, false)),
+        profile_logged_(other.profile_logged_) {}
 
   XnnpackRunner& operator=(XnnpackRunner&& other) noexcept {
     if (this != &other) {
-      if (threadpool_ != nullptr) {
+      // Destroy the current runtime before destroying an owned threadpool.
+      runtime_.reset();
+      if (threadpool_ != nullptr && owns_threadpool_) {
         pthreadpool_destroy(threadpool_);
       }
       NnpackRunner::operator=(std::move(other));
@@ -82,6 +89,8 @@ class XnnpackRunner : public NnpackRunner {
       weights_cache_ = other.weights_cache_;
       workspace_ = other.workspace_;
       threadpool_ = std::exchange(other.threadpool_, nullptr);
+      owns_threadpool_ = std::exchange(other.owns_threadpool_, false);
+      profile_logged_ = other.profile_logged_;
     }
     return *this;
   }
@@ -90,13 +99,30 @@ class XnnpackRunner : public NnpackRunner {
     // Fails once the runtime exists, which keeps the pool below from being
     // destroyed while the runtime still uses it.
     LRT_TENSOR_RETURN_IF_ERROR(NnpackRunner::SetNumThreads(num_threads));
-    if (threadpool_ != nullptr) {
+    if (threadpool_ != nullptr && owns_threadpool_) {
       pthreadpool_destroy(threadpool_);
-      threadpool_ = nullptr;
     }
+    threadpool_ = nullptr;
+    owns_threadpool_ = false;
     if (num_threads > 1) {
       threadpool_ = pthreadpool_create(num_threads);
+      owns_threadpool_ = threadpool_ != nullptr;
     }
+    return absl::OkStatus();
+  }
+
+  // Attaches an externally owned `pthreadpool_t` (must outlive this runner) so
+  // multiple compiled passes can share a single worker pool without thread
+  // oversubscription.
+  absl::Status SetThreadpool(pthreadpool_t threadpool) {
+    const size_t num_threads =
+        threadpool != nullptr ? pthreadpool_get_threads_count(threadpool) : 1;
+    LRT_TENSOR_RETURN_IF_ERROR(NnpackRunner::SetNumThreads(num_threads));
+    if (threadpool_ != nullptr && owns_threadpool_) {
+      pthreadpool_destroy(threadpool_);
+    }
+    threadpool_ = threadpool;
+    owns_threadpool_ = false;
     return absl::OkStatus();
   }
 
@@ -137,6 +163,7 @@ class XnnpackRunner : public NnpackRunner {
   xnn_weights_cache_t weights_cache_ = nullptr;
   xnn_workspace_t workspace_ = nullptr;
   pthreadpool_t threadpool_ = nullptr;
+  bool owns_threadpool_ = false;
   bool profile_logged_ = false;
 };
 
