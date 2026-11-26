@@ -52,12 +52,14 @@ limitations under the License.
 #include <variant>
 #include <vector>
 
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/inlined_vector.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/buffer.h"
@@ -473,10 +475,36 @@ struct BlockwiseQuantization : Quantization {
     return id == internal::TypeId::Get<BlockwiseQuantization>();
   }
 
+  // Returns a thread-safe cached BF16 representation of `scales` so multi-pass
+  // backends (such as XNNPACK prepack + prefill + decode) do not re-allocate or
+  // re-convert hundreds of millions of blockwise scales on every pass.
+  std::shared_ptr<const std::vector<bf16_t>> GetOrCreateBf16Scales() const;
+
+  bool HasCachedBf16Scales() const;
+
+  void InvalidateBf16ScalesCache();
+
+  // Per-block quantization scales. Any caller that mutates `scales` in-place
+  // after `GetOrCreateBf16Scales()` has been called must invoke
+  // `InvalidateBf16ScalesCache()` to keep the cached BF16 scales coherent.
   std::vector<float> scales;
   ZeroPoints zero_points;
   int block_size = 0;
   int quantized_dimension = 0;
+
+ private:
+  struct CachedBf16Scales {
+    CachedBf16Scales() = default;
+    CachedBf16Scales(const CachedBf16Scales& other);
+    CachedBf16Scales& operator=(const CachedBf16Scales& other);
+    CachedBf16Scales(CachedBf16Scales&& other) noexcept;
+    CachedBf16Scales& operator=(CachedBf16Scales&& other) noexcept;
+
+    mutable absl::Mutex mu;
+    std::shared_ptr<const std::vector<bf16_t>> scales ABSL_GUARDED_BY(mu);
+  };
+
+  mutable CachedBf16Scales bf16_cache_;
 };
 
 using Shape = std::vector<int32_t>;

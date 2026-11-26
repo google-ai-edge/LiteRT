@@ -168,6 +168,10 @@ class Buffer {
     return LockedBufferSpan<std::byte>::Empty();
   }
 
+  // Releases materialized host memory when the buffer can be deterministically
+  // re-materialized on demand (no-op for eager caller-owned CPU buffers).
+  virtual void ReleaseMaterializedData() {}
+
   // Tries to cast the buffer to the given type T.
   template <typename T>
   absl::StatusOr<T&> As() {

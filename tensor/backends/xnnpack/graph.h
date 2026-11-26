@@ -19,6 +19,7 @@ limitations under the License.
 #include <cstdint>
 #include <memory>
 #include <utility>
+#include <vector>
 
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/status/status.h"  // from @com_google_absl
@@ -27,6 +28,18 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
+
+// Deterministic content and size metadata recorded for each constant tensor
+// buffer defined on an `XnnpackGraph`, enabling `SharedXnnpackState` to match
+// disk-backed `.xnwc` entries by weight/bias content identity and validate
+// minimum packed byte bounds.
+struct XnnConstantFingerprint {
+  const void* data_ptr = nullptr;
+  const void* source_buffer = nullptr;
+  const void* source_quantization = nullptr;
+  uint64_t content_hash = 0;
+  uint64_t min_packed_bytes = 0;
+};
 
 class XnnpackGraph : public NnpackGraph {
  public:
@@ -46,6 +59,7 @@ class XnnpackGraph : public NnpackGraph {
     LRT_TENSOR_RETURN_IF_ERROR(
         xnn_create_subgraph(external_value_ids, flags, &subgraph));
     subgraph_.reset(subgraph);
+    constant_fingerprints_.clear();
     return absl::OkStatus();
   }
 
@@ -53,9 +67,18 @@ class XnnpackGraph : public NnpackGraph {
 
   xnn_subgraph_t GetSubgraph() const { return subgraph_.get(); }
   xnn_subgraph_t ReleaseSubgraph() { return subgraph_.release(); }
+  void DeleteSubgraph() { subgraph_.reset(); }
+
+  std::vector<XnnConstantFingerprint>& constant_fingerprints() {
+    return constant_fingerprints_;
+  }
+  const std::vector<XnnConstantFingerprint>& constant_fingerprints() const {
+    return constant_fingerprints_;
+  }
 
  private:
   UniquePtr subgraph_;
+  std::vector<XnnConstantFingerprint> constant_fingerprints_;
 };
 
 }  // namespace litert::tensor

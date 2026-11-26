@@ -30,6 +30,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/str_join.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/types/source_location.h"  // from @com_google_absl
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
@@ -38,6 +39,8 @@ limitations under the License.
 namespace litert::tensor::graph {
 namespace {
 
+// Heap-allocated `thread_local` pointer avoids non-trivial TLS destructor
+// ordering issues across shared libraries and thread teardown.
 thread_local std::shared_ptr<Scope>* g_current_scope = nullptr;
 
 std::shared_ptr<Scope>& MutableCurrentScope() {
@@ -48,6 +51,66 @@ std::shared_ptr<Scope>& MutableCurrentScope() {
 }
 
 }  // namespace
+
+BlockwiseQuantization::CachedBf16Scales::CachedBf16Scales(
+    const CachedBf16Scales&) {}
+
+BlockwiseQuantization::CachedBf16Scales&
+BlockwiseQuantization::CachedBf16Scales::operator=(
+    const CachedBf16Scales& other) {
+  if (this != &other) {
+    absl::MutexLock lock(mu);
+    scales.reset();
+  }
+  return *this;
+}
+
+BlockwiseQuantization::CachedBf16Scales::CachedBf16Scales(
+    CachedBf16Scales&&) noexcept {}
+
+BlockwiseQuantization::CachedBf16Scales&
+BlockwiseQuantization::CachedBf16Scales::operator=(
+    CachedBf16Scales&& other) noexcept {
+  if (this != &other) {
+    absl::MutexLock lock(mu);
+    scales.reset();
+  }
+  return *this;
+}
+
+std::shared_ptr<const std::vector<bf16_t>>
+BlockwiseQuantization::GetOrCreateBf16Scales() const {
+  {
+    absl::MutexLock lock(bf16_cache_.mu);
+    if (bf16_cache_.scales != nullptr &&
+        bf16_cache_.scales->size() == scales.size()) {
+      return bf16_cache_.scales;
+    }
+  }
+  auto built = std::make_shared<std::vector<bf16_t>>(scales.size());
+  bf16_t* dst = built->data();
+  const float* src = scales.data();
+  const size_t n = scales.size();
+  for (size_t i = 0; i < n; ++i) {
+    dst[i] = bf16_t(src[i]);
+  }
+  absl::MutexLock lock(bf16_cache_.mu);
+  if (bf16_cache_.scales == nullptr ||
+      bf16_cache_.scales->size() != scales.size()) {
+    bf16_cache_.scales = std::move(built);
+  }
+  return bf16_cache_.scales;
+}
+
+bool BlockwiseQuantization::HasCachedBf16Scales() const {
+  absl::MutexLock lock(bf16_cache_.mu);
+  return bf16_cache_.scales != nullptr;
+}
+
+void BlockwiseQuantization::InvalidateBf16ScalesCache() {
+  absl::MutexLock lock(bf16_cache_.mu);
+  bf16_cache_.scales.reset();
+}
 
 std::string Scope::FullPath() const {
   std::vector<absl::string_view> parts;
@@ -126,10 +189,12 @@ std::optional<Tensor> Scope::GetBoundaryTensor(absl::string_view role) const {
   return it->second.Lock();
 }
 
-std::shared_ptr<Scope> CurrentScope() { return MutableCurrentScope(); }
+std::shared_ptr<Scope> CurrentScope() {
+  return g_current_scope != nullptr ? *g_current_scope : nullptr;
+}
 
 ScopeGuard::ScopeGuard(absl::string_view kind, absl::string_view name)
-    : prev_scope_(MutableCurrentScope()), scope_(std::make_shared<Scope>()) {
+    : prev_scope_(CurrentScope()), scope_(std::make_shared<Scope>()) {
   scope_->kind = std::string(kind);
   scope_->name = name.empty() ? std::string(kind) : std::string(name);
   scope_->parent = prev_scope_;
@@ -139,7 +204,14 @@ ScopeGuard::ScopeGuard(absl::string_view kind, absl::string_view name)
   MutableCurrentScope() = scope_;
 }
 
-ScopeGuard::~ScopeGuard() { MutableCurrentScope() = std::move(prev_scope_); }
+ScopeGuard::~ScopeGuard() {
+  if (prev_scope_ == nullptr) {
+    delete g_current_scope;
+    g_current_scope = nullptr;
+  } else {
+    MutableCurrentScope() = std::move(prev_scope_);
+  }
+}
 
 ScopeGuard& ScopeGuard::Attr(absl::string_view key, int64_t value) {
   scope_->SetAttr(key, value);

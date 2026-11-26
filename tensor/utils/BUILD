@@ -19,6 +19,26 @@ cc_library(
     ],
 )
 
+cc_library(
+    name = "parallel",
+    srcs = ["parallel.cc"],
+    hdrs = ["parallel.h"],
+    linkopts = select({
+        "@platforms//os:android": ["-llog"],
+        "//conditions:default": [],
+    }),
+    deps = ["@pthreadpool"],
+)
+
+cc_test(
+    name = "parallel_test",
+    srcs = ["parallel_test.cc"],
+    deps = [
+        ":parallel",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 cc_test(
     name = "macros_test",
     srcs = ["macros_test.cc"],

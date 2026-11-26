@@ -91,6 +91,30 @@ class XnnpackBuildContext : public NnpackBuildContext {
 absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
     std::vector<TensorHandle> outputs);
 
+// Callback invoked when an `XnnpackGraph` is prepared against an
+// `xnn_weights_cache_t`, forwarding constant weight/bias fingerprints to the
+// cache implementation (`cache_context == cache->context`).
+using XnnConstantFingerprintSink = void (*)(
+    void* cache_context, absl::Span<const XnnConstantFingerprint> fingerprints);
+
+// Associates `sink` with `cache` so `NotifyXnnWeightsCacheConstantFingerprints`
+// forwards constant tensor fingerprints to `sink(cache->context, ...)`.
+// `cache` is used as a map key and must call
+// `UnregisterXnnWeightsCacheFingerprintSink(cache)` before destruction; `sink`
+// is a plain function pointer. Thread-safe (guarded by an internal mutex).
+void RegisterXnnWeightsCacheFingerprintSink(xnn_weights_cache_t cache,
+                                            XnnConstantFingerprintSink sink);
+
+// Removes any fingerprint sink registered for `cache`. Safe to call with a null
+// or unregistered `cache`. Thread-safe (guarded by an internal mutex).
+void UnregisterXnnWeightsCacheFingerprintSink(xnn_weights_cache_t cache);
+
+// Dispatches `fingerprints` to the sink registered for `cache` (if non-null and
+// non-empty), releasing the registry mutex before invoking `sink`. Thread-safe.
+void NotifyXnnWeightsCacheConstantFingerprints(
+    xnn_weights_cache_t cache,
+    absl::Span<const XnnConstantFingerprint> fingerprints);
+
 }  // namespace litert::tensor
 
 #endif  // THIRD_PARTY_ODML_LITERT_TENSOR_BACKENDS_XNNPACK_CONVERSION_H_

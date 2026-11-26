@@ -78,6 +78,20 @@ class NnpackGraph {
     return fp16_buffers_;
   }
 
+  // Retains shared ownership of cached BF16 blockwise scales across the
+  // lifetime of the lowered XNNPACK/YNNPACK subgraph. XNNPACK's blockwise
+  // 4-bit quantized dot microkernels (`qb4w`) natively require
+  // `xnn_datatype_bf16` scales (via
+  // `xnn_define_blockwise_quantized_tensor_value_v2`), which halve scale
+  // bandwidth vs. FP32 while preserving FP32's 8-bit exponent dynamic range.
+  std::vector<std::shared_ptr<const std::vector<bf16_t>>>& bf16_scale_refs() {
+    return bf16_scale_refs_;
+  }
+  const std::vector<std::shared_ptr<const std::vector<bf16_t>>>&
+  bf16_scale_refs() const {
+    return bf16_scale_refs_;
+  }
+
   std::vector<std::vector<char>>& constant_buffers() {
     return constant_buffers_;
   }
@@ -100,6 +114,7 @@ class NnpackGraph {
   absl::flat_hash_set<graph::Tensor> external_outputs_;
   std::vector<std::vector<float>> dequantized_buffers_;
   std::vector<std::vector<fp16_t>> fp16_buffers_;
+  std::vector<std::shared_ptr<const std::vector<bf16_t>>> bf16_scale_refs_;
   std::vector<std::vector<char>> constant_buffers_;
   std::vector<std::shared_ptr<Buffer>> keep_alive_buffers_;
 };

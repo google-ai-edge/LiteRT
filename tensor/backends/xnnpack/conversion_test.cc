@@ -26,11 +26,14 @@ limitations under the License.
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include "xnnpack.h"  // from @XNNPACK  // from @XNNPACK
+#include "absl/cleanup/cleanup.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/arithmetic.h"
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/xnnpack/arithmetic.h"
+#include "tensor/backends/xnnpack/graph.h"
 #include "tensor/datatypes.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/matchers.h"
@@ -291,6 +294,58 @@ TEST(XnnpackConversionTest,
   EXPECT_THAT(BuildXnnpackGraph({output}), IsOk());
 }
 
+TEST(XnnpackConversionTest, FingerprintSinkRegistrationDispatchAndEdgeCases) {
+  struct SinkState {
+    int calls = 0;
+    std::vector<XnnConstantFingerprint> received;
+  };
+  SinkState state;
+  xnn_weights_cache_provider provider{};
+  provider.context = &state;
+  xnn_weights_cache_t cache = &provider;
+
+  const auto sink = +[](void* cache_context,
+                        absl::Span<const XnnConstantFingerprint> fingerprints) {
+    auto* s = static_cast<SinkState*>(cache_context);
+    ++s->calls;
+    s->received.assign(fingerprints.begin(), fingerprints.end());
+  };
+
+  int dummy_weight = 42;
+  const std::vector<XnnConstantFingerprint> fps = {
+      XnnConstantFingerprint{.data_ptr = &dummy_weight,
+                             .content_hash = 0xCAFEBABEULL,
+                             .min_packed_bytes = 64},
+  };
+
+  // Null cache or null sink registration is a safe no-op.
+  RegisterXnnWeightsCacheFingerprintSink(/*cache=*/nullptr, sink);
+  RegisterXnnWeightsCacheFingerprintSink(cache, /*sink=*/nullptr);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 0);
+
+  // Valid registration dispatches non-empty fingerprints and skips empty/null.
+  RegisterXnnWeightsCacheFingerprintSink(cache, sink);
+  const absl::Cleanup unregister_sink = [cache]() {
+    UnregisterXnnWeightsCacheFingerprintSink(cache);
+  };
+  NotifyXnnWeightsCacheConstantFingerprints(/*cache=*/nullptr, fps);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, {});
+  EXPECT_EQ(state.calls, 0);
+
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 1);
+  ASSERT_EQ(state.received.size(), 1u);
+  EXPECT_EQ(state.received[0].data_ptr, &dummy_weight);
+  EXPECT_EQ(state.received[0].content_hash, 0xCAFEBABEULL);
+  EXPECT_EQ(state.received[0].min_packed_bytes, 64u);
+
+  // Unregistering stops future notifications (and null unregister is a no-op).
+  UnregisterXnnWeightsCacheFingerprintSink(/*cache=*/nullptr);
+  UnregisterXnnWeightsCacheFingerprintSink(cache);
+  NotifyXnnWeightsCacheConstantFingerprints(cache, fps);
+  EXPECT_EQ(state.calls, 1);
+}
 // This test is disabled because the lowering should not do implicit data
 // conversions.
 //

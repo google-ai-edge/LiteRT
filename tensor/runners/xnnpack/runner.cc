@@ -33,6 +33,7 @@ limitations under the License.
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/graph.h"
+#include "tensor/backends/xnnpack/conversion.h"
 #include "tensor/backends/xnnpack/graph.h"
 #include "tensor/backends/xnnpack/utils.h"
 #include "tensor/buffer.h"
@@ -116,6 +117,10 @@ void PrintXnnProfileSummary(xnn_runtime_t rt) {
 absl::Status XnnpackRunner::CreateRuntime() {
   auto& xnn_graph = static_cast<XnnpackGraph&>(*graph_);
   xnn_subgraph_t sg = xnn_graph.GetSubgraph();
+  if (weights_cache_ != nullptr && !xnn_graph.constant_fingerprints().empty()) {
+    NotifyXnnWeightsCacheConstantFingerprints(
+        weights_cache_, xnn_graph.constant_fingerprints());
+  }
   xnn_runtime* raw_runtime = nullptr;
   const uint32_t flags = IsXnnProfilingEnabled() ? XNN_FLAG_BASIC_PROFILING : 0;
   LRT_TENSOR_RETURN_IF_ERROR(XnnStatusToAbsl(
@@ -123,11 +128,17 @@ absl::Status XnnpackRunner::CreateRuntime() {
                             &raw_runtime),
       "xnn_create_runtime_v4"));
   runtime_.reset(raw_runtime);
-  // Blockwise FP16 scale buffers are only consumed when packing weights during
-  // `xnn_create_runtime_v4`; release them now so multi-signature runtimes do
-  // not hold duplicate host copies per pass.
+  // `xnn_create_runtime_v4` copies `subgraph->values` into `runtime->values`,
+  // and blockwise FP16/BF16 scale buffers are only consumed when packing
+  // weights during `xnn_create_runtime_v4`; release them now so multi-signature
+  // runtimes do not retain subgraph descriptors or temporary scale copies.
+  xnn_graph.DeleteSubgraph();
+  xnn_graph.constant_fingerprints().clear();
+  xnn_graph.constant_fingerprints().shrink_to_fit();
   xnn_graph.fp16_buffers().clear();
   xnn_graph.fp16_buffers().shrink_to_fit();
+  xnn_graph.bf16_scale_refs().clear();
+  xnn_graph.bf16_scale_refs().shrink_to_fit();
   return absl::OkStatus();
 }
 
