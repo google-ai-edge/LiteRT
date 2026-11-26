@@ -16,6 +16,8 @@
 load("@rules_cc//cc:cc_binary.bzl", "cc_binary")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load("@rules_cc//cc:cc_test.bzl", "cc_test")
+load("@rules_shell//shell:sh_binary.bzl", "sh_binary")
+load("@rules_shell//shell:sh_library.bzl", "sh_library")
 
 # copybara:uncomment load("//litert:version.bzl", "LITERT_ANDROID_NDK_MIN_SDK_VERSION")
 load("//litert/build_common:litert_build_defs.bzl", "if_oss")
