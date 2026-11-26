@@ -372,6 +372,7 @@ litert_test(
     ungrte = True,
     use_sys_malloc = True,
     deps = [
+        "//litert/vendors/qualcomm/core:common",
         "//litert/vendors/qualcomm/core:tensor_pool",
         "//litert/vendors/qualcomm/core/builders:pad_op_builder",
         "//litert/vendors/qualcomm/core/wrappers:op_wrapper",

@@ -10,14 +10,15 @@
 #include <variant>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include "litert/vendors/qualcomm/core/builders/op_builder.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/tensor_wrapper.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace qnn {
 
@@ -66,7 +67,8 @@ std::optional<std::int32_t> GetQuantizedPadConstValue(
 std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
                                   const std::vector<TensorWrapperRef>& inputs,
                                   const std::vector<TensorWrapperRef>& outputs,
-                                  const std::uint32_t scheme_value) {
+                                  const std::uint32_t scheme_value,
+                                  const BackendType backend_type) {
   std::vector<OpWrapper> res;
   // TFLite Pad has input and padding tensors; PadV2 adds a third scalar
   // constant-value tensor.
@@ -106,6 +108,21 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
       const std::int32_t pad_const_value = pad_const_data.value();
       pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
                                           pad_const_value);
+    } else if (scheme_value == QNN_OP_PAD_SCHEME_CONSTANT &&
+               backend_type != BackendType::kLpaiBackend) {
+      // HTP saturates omitted pad_constant_value on negative SFIXED_POINT_8
+      // zero-points; pass the zero-point explicitly for non-LPAI backends.
+      if (std::holds_alternative<ScaleOffsetQuantizeParamsWrapper>(
+              input_tensor.GetQuantParams())) {
+        const auto& quant_param = std::get<ScaleOffsetQuantizeParamsWrapper>(
+            input_tensor.GetQuantParams());
+        pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+                                            quant_param.GetZeroPoint());
+      } else {
+        QNN_LOG_ERROR(
+            "Unsupported quantization type for pad const value tensor.");
+        return {};
+      }
     }
   } else if (input_tensor.IsF16() || input_tensor.IsF32()) {
     if (inputs.size() >= kPadConstValueIndex + 1) {
@@ -132,8 +149,10 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
 
 std::vector<OpWrapper> BuildConstantPadOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
-  return BuildPadOp(tensor_pool, inputs, outputs, QNN_OP_PAD_SCHEME_CONSTANT);
+    const std::vector<TensorWrapperRef>& outputs,
+    const BackendType backend_type) {
+  return BuildPadOp(tensor_pool, inputs, outputs, QNN_OP_PAD_SCHEME_CONSTANT,
+                    backend_type);
 }
 
 std::vector<OpWrapper> BuildMirrorPadOp(
@@ -153,7 +172,8 @@ std::vector<OpWrapper> BuildMirrorPadOp(
           "QNN only support reflect and symmetric mode for mirror pad op.")
       return {};
   }
-  return BuildPadOp(tensor_pool, inputs, outputs, scheme_value);
+  return BuildPadOp(tensor_pool, inputs, outputs, scheme_value,
+                    BackendType::kHtpBackend);
 }
 
 }  // namespace qnn
