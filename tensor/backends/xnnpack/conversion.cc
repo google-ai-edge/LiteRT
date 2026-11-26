@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
@@ -306,25 +307,102 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
           ") is smaller than block_count (", expected_block_count, ")"));
     }
     LRT_TENSOR_RETURN_IF_ERROR(
-        bwq.zero_points.Validate<int32_t>(bwq.scales.size()));
-    if (!bwq.zero_points.IsUniform()) {
-      return absl::UnimplementedError(absl::StrCat(
-          info.name,
-          ": XNNPACK doesn't support blockwise quantization with different "
-          "zero points"));
+        bwq.zero_points.Validate<float>(bwq.scales.size()));
+    const absl::StatusOr<int32_t> uniform_zp =
+        bwq.zero_points.Scalar<int32_t>();
+    // XNNPACK's `xnn_define_blockwise_quantized_tensor_value_v2` only accepts a
+    // single scalar `int32_t zero_point` (no per-block affine zero points) and
+    // does not support blockwise INT8 (`Q8_0`), so XNNPACK converts `Q8_0` to
+    // per-channel symmetric `qcint8` and `Q4_1`/`Q4_K` to symmetric `qbint4`
+    // via `GetOrCreateCpuSymmetricFallback`. For native per-block affine zero
+    // points on CPU without symmetric re-quantization, prefer the YNNPACK
+    // backend.
+    if (info.type == Type::kI8) {
+      // Other layouts are unsupported rather than invalid.
+      if (dims.size() != 2 || value.data.data() == nullptr ||
+          bwq.quantized_dimension != 0 ||
+          dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": XNNPACK only supports blockwise INT8 tensors as 2D constant "
+            "weights quantized along dimension 0"));
+      }
+      // TODO(b/577601974): Remove this transitional lossy fallback once the
+      // lossless YNNPACK blockwise backend lands (cl/1014238277).
+      ABSL_LOG_FIRST_N(WARNING, 1)
+          << "XNNPACK does not natively support blockwise INT8 weights; "
+             "re-quantizing '"
+          << info.name
+          << "' to per-channel INT8 via lossy CPU symmetric fallback.";
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          auto fallback,
+          bwq.GetOrCreateCpuSymmetricFallback(
+              Type::kI8, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
+              value.data.data(), value.data.size()));
+      const float* scales_ptr = fallback->scales.data();
+      data_ptr = fallback->data->data();
+      defined_dtype = xnn_datatype_qcint8;
+      graph_->cpu_fallback_refs().push_back(std::move(fallback));
+      LRT_TENSOR_RETURN_IF_ERROR(
+          xnn_define_channelwise_quantized_tensor_value_v3(
+              sg, defined_dtype, /*zero_point=*/0, scales_ptr, dims.size(),
+              /*channel_dim=*/0, dims.data(), data_ptr, external_id,
+              value.flags, &value.id, /*channelwise_zero_point=*/nullptr))
+          << "Could not define channelwise fallback tensor for blockwise INT8.";
+    } else if (info.type == Type::kI4 &&
+               (bwq.HasCachedCpuSymmetricFallback() ||
+                (bwq.zero_points.Data<float>().ok() && !uniform_zp.ok()))) {
+      if (dims.size() != 2 || value.data.data() == nullptr ||
+          bwq.quantized_dimension != 0 ||
+          dims[1] % static_cast<size_t>(bwq.block_size) != 0) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": XNNPACK only supports affine blockwise INT4 tensors as 2D "
+            "constant weights quantized along dimension 0"));
+      }
+      // TODO(b/577601974): Remove this transitional lossy fallback once the
+      // lossless YNNPACK blockwise backend lands (cl/1014238277).
+      ABSL_LOG_FIRST_N(WARNING, 1)
+          << "XNNPACK does not natively support affine blockwise INT4 "
+             "zero-points; re-quantizing '"
+          << info.name
+          << "' to symmetric Q4_0 via lossy CPU symmetric fallback.";
+      LRT_TENSOR_ASSIGN_OR_RETURN(
+          auto fallback,
+          bwq.GetOrCreateCpuSymmetricFallback(
+              Type::kI4, static_cast<int>(dims[0]), static_cast<int>(dims[1]),
+              value.data.data(), value.data.size()));
+      const void* scale_ptr = fallback->bf16_scales->data();
+      data_ptr = fallback->data->data();
+      defined_dtype = xnn_datatype_qbint4;
+      graph_->cpu_fallback_refs().push_back(std::move(fallback));
+      LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
+          sg, defined_dtype, /*zero_point=*/0, scale_ptr, dims.size(),
+          bwq.quantized_dimension, bwq.block_size, dims.data(), data_ptr,
+          external_id, value.flags, xnn_datatype_bf16, &value.id))
+          << "Could not define symmetric blockwise INT4 fallback tensor.";
+    } else {
+      if (!bwq.zero_points.IsUniform()) {
+        return absl::UnimplementedError(absl::StrCat(
+            info.name,
+            ": XNNPACK doesn't support blockwise quantization with different "
+            "zero points"));
+      }
+      if (!uniform_zp.ok()) {
+        return uniform_zp.status();
+      }
+      const int32_t zero_point = *uniform_zp;
+      std::shared_ptr<const std::vector<bf16_t>> bf16_scales =
+          bwq.GetOrCreateBf16Scales();
+      const void* scale_ptr = bf16_scales->data();
+      graph_->bf16_scale_refs().push_back(std::move(bf16_scales));
+      LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
+          sg, defined_dtype, zero_point, scale_ptr, dims.size(),
+          bwq.quantized_dimension, bwq.block_size,
+          dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
+          value.flags, xnn_datatype_bf16, &value.id))
+          << "Could not define a new blockwise quantized tensor value.";
     }
-    LRT_TENSOR_ASSIGN_OR_RETURN(const int32_t zero_point,
-                                bwq.zero_points.Scalar<int32_t>());
-    std::shared_ptr<const std::vector<bf16_t>> bf16_scales =
-        bwq.GetOrCreateBf16Scales();
-    const void* scale_ptr = bf16_scales->data();
-    graph_->bf16_scale_refs().push_back(std::move(bf16_scales));
-    LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
-        sg, defined_dtype, zero_point, scale_ptr, dims.size(),
-        bwq.quantized_dimension, bwq.block_size,
-        dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
-        value.flags, xnn_datatype_bf16, &value.id))
-        << "Could not define a new blockwise quantized tensor value.";
   } else {
     return absl::UnimplementedError("Unsupported quantization type.");
   }

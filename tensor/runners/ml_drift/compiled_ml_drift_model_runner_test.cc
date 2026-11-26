@@ -1084,5 +1084,161 @@ TEST(CompiledMlDriftModelRunnerTest, ReleasesUploadedSharedDescriptorData) {
   }
 }
 
+TEST(CompiledMlDriftModelRunnerTest,
+     TiedEmbeddingLookupAndFullyConnectedShareQuantizedWeightsForCustomNames) {
+  using TextureRunner =
+      CompiledMlDriftModelRunner<MlDriftClTextureWeightsBackend>;
+  constexpr int kVocab = 12;
+  constexpr int kDim = 64;
+  constexpr int kBlockSize = 32;
+  constexpr int kBlocksPerRow = kDim / kBlockSize;
+
+  auto q4_buf = OwningCpuBuffer::Allocate<Type::kI4>(kVocab * kDim);
+  int4_t* q4_packed = q4_buf->Span<int4_t>().data();
+  std::vector<float> q4_scales(kVocab * kBlocksPerRow);
+  std::vector<float> q4_zps(kVocab * kBlocksPerRow);
+  std::vector<float> q4_ref(kVocab * kDim);
+
+  std::vector<int8_t> q8_data(kVocab * kDim);
+  std::vector<float> q8_scales(kVocab * kBlocksPerRow);
+  std::vector<float> q8_ref(kVocab * kDim);
+
+  for (int v = 0; v < kVocab; ++v) {
+    for (int b = 0; b < kBlocksPerRow; ++b) {
+      const int blk = v * kBlocksPerRow + b;
+      q4_scales[blk] = 0.03125f * static_cast<float>((blk % 4) + 1);
+      q4_zps[blk] = (blk % 2 == 0) ? -2.0f : 1.5f;
+      q8_scales[blk] = 0.015625f * static_cast<float>((blk % 5) + 1);
+      for (int j = 0; j < kBlockSize; j += 2) {
+        const int idx = v * kDim + b * kBlockSize + j;
+        const int qa = ((idx * 3 + 1) % 16) - 8;
+        const int qb = ((idx * 5 + 4) % 16) - 8;
+        q4_packed[idx / 2].a = static_cast<int8_t>(qa);
+        q4_packed[idx / 2].b = static_cast<int8_t>(qb);
+        q4_ref[idx] = q4_scales[blk] * (static_cast<float>(qa) - q4_zps[blk]);
+        q4_ref[idx + 1] =
+            q4_scales[blk] * (static_cast<float>(qb) - q4_zps[blk]);
+      }
+      for (int j = 0; j < kBlockSize; ++j) {
+        const int idx = v * kDim + b * kBlockSize + j;
+        q8_data[idx] = static_cast<int8_t>((idx * 7 + 3) % 51 - 25);
+        q8_ref[idx] = q8_scales[blk] * static_cast<float>(q8_data[idx]);
+      }
+    }
+  }
+
+  for (bool is_q4_affine : {true, false}) {
+    MlDriftClTextureWeightsBackend::Environment shared_env;
+    ASSERT_THAT(MlDriftClTextureWeightsBackend::InitEnvironment(&shared_env),
+                IsOk());
+    TextureRunner::SharedWeightsCache shared_weights;
+
+    // Deliberately use a non-default tensor name (`custom_vocab.weight`, not
+    // `token_embd.weight` or `embed_tokens`) to verify graph-level shared
+    // quantized weight handling across `EmbeddingLookup` and `FullyConnected`
+    // on Mali's 2D texture weights layout (`k2DYIsSpatialIOAndXIsOGroupI4O4`).
+    auto make_emb_w = [&]() {
+      return is_q4_affine
+                 ? TensorMLD(
+                       {.name = "custom_vocab.weight",
+                        .type = Type::kI4,
+                        .shape = {kVocab, kDim},
+                        .buffer = q4_buf,
+                        .quantization = std::make_shared<BlockwiseQuantization>(
+                            q4_scales, ZeroPoints::Float(q4_zps), kBlockSize,
+                            /*quantized_dimension=*/0)})
+                 : TensorMLD(
+                       {.name = "custom_vocab.weight",
+                        .type = Type::kI8,
+                        .shape = {kVocab, kDim},
+                        .buffer = q8_data,
+                        .quantization = std::make_shared<BlockwiseQuantization>(
+                            q8_scales, std::vector<int64_t>{}, kBlockSize,
+                            /*quantized_dimension=*/0)});
+    };
+    TensorMLD emb_w = make_emb_w();
+
+    TensorMLD ids_prefill({.name = "ids", .type = Type::kI32, .shape = {1, 3}});
+    TensorMLD y_prefill =
+        FullyConnected(EmbeddingLookup(ids_prefill, emb_w), emb_w);
+    y_prefill.SetName("logits");
+
+    TextureRunner prefill_runner({ids_prefill}, {y_prefill},
+                                 ml_drift::CalculationsPrecision::kF32,
+                                 &shared_env, &shared_weights);
+    ASSERT_THAT(prefill_runner.BuildModel(), IsOk());
+
+    auto desc_it = shared_weights.descriptors.find("custom_vocab.weight");
+    ASSERT_NE(desc_it, shared_weights.descriptors.end());
+    EXPECT_EQ(desc_it->second.GetStorageType(),
+              ml_drift::TensorStorageType::kTexture2D);
+    EXPECT_GT(shared_weights.cache_misses, 0u);
+
+    TensorMLD ids_decode({.name = "ids", .type = Type::kI32, .shape = {1, 1}});
+    TensorMLD y_decode =
+        FullyConnected(EmbeddingLookup(ids_decode, emb_w), emb_w);
+    y_decode.SetName("logits");
+    TextureRunner decode_runner({ids_decode}, {y_decode},
+                                ml_drift::CalculationsPrecision::kF32,
+                                &shared_env, &shared_weights);
+    ASSERT_THAT(decode_runner.BuildModel(), IsOk());
+    EXPECT_EQ(shared_weights.cache_hits, shared_weights.cache_misses);
+
+    const std::vector<int32_t> tokens = {1, 7, 10};
+    TensorMLD fed_prefill(
+        {.name = "ids", .type = Type::kI32, .shape = {1, 3}, .buffer = tokens});
+    ASSERT_THAT(prefill_runner.SetInput("ids", fed_prefill), IsOk());
+    ASSERT_THAT(prefill_runner.Run(), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> prefill_logits,
+                                    prefill_runner.GetFloatOutput("logits"));
+
+    const std::vector<int32_t> last_tok = {tokens.back()};
+    TensorMLD fed_decode({.name = "ids",
+                          .type = Type::kI32,
+                          .shape = {1, 1},
+                          .buffer = last_tok});
+    ASSERT_THAT(decode_runner.SetInput("ids", fed_decode), IsOk());
+    ASSERT_THAT(decode_runner.Run(), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> decode_logits,
+                                    decode_runner.GetFloatOutput("logits"));
+
+    const std::vector<float>& w_ref = is_q4_affine ? q4_ref : q8_ref;
+    std::vector<float> expected_last(kVocab, 0.0f);
+    for (int v = 0; v < kVocab; ++v) {
+      for (int d = 0; d < kDim; ++d) {
+        expected_last[v] +=
+            w_ref[tokens.back() * kDim + d] * w_ref[v * kDim + d];
+      }
+    }
+    EXPECT_THAT(absl::MakeConstSpan(prefill_logits).last(kVocab),
+                testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
+    EXPECT_THAT(decode_logits,
+                testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
+
+    // Also verify the default buffer-preferring `MlDriftClBackend` path.
+    MlDriftClBackend::Environment buf_env;
+    ASSERT_THAT(MlDriftClBackend::InitEnvironment(&buf_env), IsOk());
+    Runner::SharedWeightsCache buf_weights;
+    TensorMLD buf_emb_w = make_emb_w();
+    TensorMLD buf_ids({.name = "ids", .type = Type::kI32, .shape = {1, 1}});
+    TensorMLD buf_y =
+        FullyConnected(EmbeddingLookup(buf_ids, buf_emb_w), buf_emb_w);
+    buf_y.SetName("logits");
+    Runner buf_runner({buf_ids}, {buf_y}, ml_drift::CalculationsPrecision::kF32,
+                      &buf_env, &buf_weights);
+    ASSERT_THAT(buf_runner.BuildModel(), IsOk());
+    auto buf_desc_it = buf_weights.descriptors.find("custom_vocab.weight");
+    ASSERT_NE(buf_desc_it, buf_weights.descriptors.end());
+    EXPECT_EQ(buf_desc_it->second.GetStorageType(),
+              ml_drift::TensorStorageType::kBuffer);
+    ASSERT_THAT(buf_runner.SetInput("ids", fed_decode), IsOk());
+    ASSERT_THAT(buf_runner.Run(), IsOk());
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::vector<float> buf_decode_logits,
+                                    buf_runner.GetFloatOutput("logits"));
+    EXPECT_THAT(buf_decode_logits,
+                testing::Pointwise(testing::FloatNear(1e-3f), expected_last));
+  }
+}
+
 }  // namespace
 }  // namespace litert::tensor

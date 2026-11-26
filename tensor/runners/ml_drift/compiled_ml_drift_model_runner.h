@@ -17,14 +17,12 @@ limitations under the License.
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_COMPILED_ML_DRIFT_MODEL_RUNNER_H_
 
 #include <algorithm>
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
 #include <optional>
 #include <string>
-#include <thread>  // NOLINT(build/c++11)
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -69,6 +67,7 @@ limitations under the License.
 #include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+#include "tensor/utils/parallel.h"
 
 namespace litert::tensor {
 
@@ -966,35 +965,38 @@ class CompiledMlDriftModelRunner {
     std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) {
       return a.out->ohwi.DimensionsProduct() > b.out->ohwi.DimensionsProduct();
     });
-    std::atomic<size_t> next{0};
-    auto worker = [&] {
-      for (size_t j = next.fetch_add(1, std::memory_order_relaxed);
-           j < jobs.size(); j = next.fetch_add(1, std::memory_order_relaxed)) {
-        Job& job = jobs[j];
-        PreparedInt4Weights& p = *job.out;
-        absl::StatusOr<ml_drift_runner_internal::RearrangedInt4Weights>
-            rearranged = ml_drift_runner_internal::RearrangeInt4Weights(
-                absl::MakeConstSpan(job.raw.data(), job.raw.size()), p.ohwi,
-                p.desc, p.elements_count, /*want_sum_i=*/job.fc);
-        if (!rearranged.ok()) {
-          p.status = rearranged.status();
-          continue;
-        }
-        p.rearranged = std::move(rearranged->data);
-        p.sum_i = std::move(rearranged->sum_i);
-      }
-    };
-    int num_threads = std::max(
-        1, std::min<int>(
-               4, static_cast<int>(std::thread::hardware_concurrency())));
+    size_t max_threads = 4;
     if (const char* e = std::getenv("LRT_WEIGHT_PREP_THREADS"); e != nullptr) {
       int parsed = 0;
-      if (absl::SimpleAtoi(e, &parsed)) num_threads = std::max(1, parsed);
+      if (absl::SimpleAtoi(e, &parsed)) {
+        max_threads = static_cast<size_t>(std::max(1, parsed));
+      }
     }
-    std::vector<std::thread> threads;
-    for (int t = 1; t < num_threads; ++t) threads.emplace_back(worker);
-    worker();
-    for (std::thread& t : threads) t.join();
+    // Dispatch strided workers over the largest-first sorted job list so the
+    // biggest tensors (e.g. tied LM head) overlap across threads even when
+    // `max_threads < pool_threads`.
+    const size_t num_workers = std::min(max_threads, jobs.size());
+    ParallelFor(
+        num_workers, /*min_grain=*/1,
+        [&](size_t w_begin, size_t w_end) {
+          for (size_t w = w_begin; w < w_end; ++w) {
+            for (size_t j = w; j < jobs.size(); j += num_workers) {
+              Job& job = jobs[j];
+              PreparedInt4Weights& p = *job.out;
+              absl::StatusOr<ml_drift_runner_internal::RearrangedInt4Weights>
+                  rearranged = ml_drift_runner_internal::RearrangeInt4Weights(
+                      absl::MakeConstSpan(job.raw.data(), job.raw.size()),
+                      p.ohwi, p.desc, p.elements_count, /*want_sum_i=*/job.fc);
+              if (!rearranged.ok()) {
+                p.status = rearranged.status();
+                continue;
+              }
+              p.rearranged = std::move(rearranged->data);
+              p.sum_i = std::move(rearranged->sum_i);
+            }
+          }
+        },
+        num_workers);
     return prepared;
   }
 
@@ -1192,10 +1194,24 @@ class CompiledMlDriftModelRunner {
               AddWeightsSumI(weights_tensor, info, std::move(*prepared.sum_i)));
         }
 
+        bool is_embedding = (op->GetName() == "EmbeddingLookup" ||
+                             info.name == "model.embed_tokens.weight" ||
+                             info.name == "token_embd.weight");
+        if (!is_embedding) {
+          for (const std::weak_ptr<graph::Operation>& weak_op :
+               info.consumers) {
+            if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+                consumer != nullptr &&
+                consumer->GetName() == "EmbeddingLookup") {
+              is_embedding = true;
+              break;
+            }
+          }
+        }
         ml_drift::TensorDescriptor weights_td =
             CreatePackedWeightsTensorDescriptor(
                 desc, weights_ohwi, static_cast<size_t>(elements_count),
-                /*is_embedding=*/(op->GetName() == "EmbeddingLookup"));
+                is_embedding);
 
         weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));
 

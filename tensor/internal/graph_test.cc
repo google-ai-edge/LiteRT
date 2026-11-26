@@ -521,5 +521,146 @@ TEST(ScopeTest, BindOptionalTensorWrapper) {
   EXPECT_FALSE(captured_scope->GetBoundaryTensor("empty").has_value());
 }
 
+TEST(QuantizationTest, BlockwiseFloatZeroPointsAndPredicates) {
+  BlockwiseQuantization sym({0.25f, 0.5f}, {}, /*block_size=*/32);
+  EXPECT_TRUE(sym.zero_points.IsSymmetric());
+  EXPECT_THAT(sym.zero_points.At<float>(0), IsOkAndHolds(FloatEq(0.0f)));
+  EXPECT_THAT(sym.zero_points.At<float>(1), IsOkAndHolds(FloatEq(0.0f)));
+
+  BlockwiseQuantization all_zero_fzp({0.25f, 0.5f},
+                                     ZeroPoints::Float({0.0f, 0.0f}),
+                                     /*block_size=*/32);
+  EXPECT_TRUE(all_zero_fzp.zero_points.IsSymmetric());
+
+  BlockwiseQuantization broadcast_fzp({0.25f, 0.5f}, ZeroPoints::Float({-2.5f}),
+                                      /*block_size=*/32);
+  EXPECT_FALSE(broadcast_fzp.zero_points.IsSymmetric());
+  EXPECT_THAT(broadcast_fzp.zero_points.At<float>(0),
+              IsOkAndHolds(FloatEq(-2.5f)));
+  EXPECT_THAT(broadcast_fzp.zero_points.At<float>(7),
+              IsOkAndHolds(FloatEq(-2.5f)));
+
+  BlockwiseQuantization per_block_fzp({0.25f, 0.5f},
+                                      ZeroPoints::Float({0.0f, -6.25f}),
+                                      /*block_size=*/32);
+  EXPECT_FALSE(per_block_fzp.zero_points.IsSymmetric());
+  EXPECT_THAT(per_block_fzp.zero_points.At<float>(0),
+              IsOkAndHolds(FloatEq(0.0f)));
+  EXPECT_THAT(per_block_fzp.zero_points.At<float>(1),
+              IsOkAndHolds(FloatEq(-6.25f)));
+  EXPECT_FALSE(per_block_fzp.zero_points.At<float>(2).ok());
+
+  BlockwiseQuantization int_zp({0.25f, 0.5f}, {0, -3}, /*block_size=*/32);
+  EXPECT_FALSE(int_zp.zero_points.IsSymmetric());
+  EXPECT_THAT(int_zp.zero_points.At<float>(0), IsOkAndHolds(FloatEq(0.0f)));
+  EXPECT_THAT(int_zp.zero_points.At<float>(1), IsOkAndHolds(FloatEq(-3.0f)));
+}
+
+TEST(QuantizationTest,
+     BlockwiseCpuSymmetricFallbackI8AndI4AndCacheInvalidation) {
+  constexpr int kRows = 2;
+  constexpr int kCols = 64;
+  constexpr int kBlockSize = 32;
+
+  // 1. Blockwise INT8 (`Q8_0`) -> per-channel symmetric `qcint8`.
+  std::vector<int8_t> raw_i8(kRows * kCols);
+  for (int i = 0; i < kRows * kCols; ++i) {
+    raw_i8[i] = static_cast<int8_t>((i % 25) - 12);
+  }
+  BlockwiseQuantization bq_i8({0.125f, 0.5f, 0.25f, 0.0625f}, {}, kBlockSize);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto fb_i8, bq_i8.GetOrCreateCpuSymmetricFallback(
+                      Type::kI8, kRows, kCols, raw_i8.data(), raw_i8.size()));
+  ASSERT_NE(fb_i8, nullptr);
+  EXPECT_EQ(fb_i8->type, Type::kI8);
+  ASSERT_EQ(fb_i8->scales.size(), static_cast<size_t>(kRows));
+  EXPECT_EQ(fb_i8->bf16_scales, nullptr);
+
+  // Subsequent call returns the exact cached pointer.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto fb_i8_cached,
+      bq_i8.GetOrCreateCpuSymmetricFallback(Type::kI8, kRows, kCols,
+                                            raw_i8.data(), raw_i8.size()));
+  EXPECT_EQ(fb_i8_cached.get(), fb_i8.get());
+
+  const auto sym_i8 = fb_i8->data->Span<const int8_t>();
+  for (int r = 0; r < kRows; ++r) {
+    for (int c = 0; c < kCols; ++c) {
+      const int blk = r * (kCols / kBlockSize) + (c / kBlockSize);
+      const float ref =
+          bq_i8.scales[blk] * static_cast<float>(raw_i8[r * kCols + c]);
+      const float deq =
+          fb_i8->scales[r] * static_cast<float>(sym_i8[r * kCols + c]);
+      EXPECT_NEAR(deq, ref, 0.05f);
+    }
+  }
+
+  bq_i8.InvalidateBf16ScalesCache();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto fb_i8_rebuilt,
+      bq_i8.GetOrCreateCpuSymmetricFallback(Type::kI8, kRows, kCols,
+                                            raw_i8.data(), raw_i8.size()));
+  EXPECT_NE(fb_i8_rebuilt.get(), fb_i8.get());
+
+  // 2. Affine blockwise INT4 (`Q4_1` / `Q4_K`) -> symmetric `qbint4`.
+  auto buf_i4 = OwningCpuBuffer::Allocate<Type::kI4>(kRows * kCols);
+  int4_t* packed_i4 = buf_i4->Span<int4_t>().data();
+  for (int idx = 0; idx < (kRows * kCols) / 2; ++idx) {
+    packed_i4[idx].a = static_cast<int8_t>((idx % 15) - 7);
+    packed_i4[idx].b = static_cast<int8_t>(((idx * 3 + 5) % 15) - 7);
+  }
+  BlockwiseQuantization bq_i4({0.25f, 0.125f, 0.5f, 0.0625f},
+                              ZeroPoints::Float({-2.0f, 1.5f, 0.0f, -3.5f}),
+                              kBlockSize);
+  auto raw_i4_lock = buf_i4->Lock();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto fb_i4,
+      bq_i4.GetOrCreateCpuSymmetricFallback(
+          Type::kI4, kRows, kCols, raw_i4_lock.data(), raw_i4_lock.size()));
+  ASSERT_NE(fb_i4, nullptr);
+  EXPECT_EQ(fb_i4->type, Type::kI4);
+  EXPECT_TRUE(fb_i4->scales.empty());
+  ASSERT_NE(fb_i4->bf16_scales, nullptr);
+  EXPECT_EQ(fb_i4->bf16_scales->size(), 4u);
+
+  const auto sym_i4 = fb_i4->data->Span<const int4_t>();
+  for (int blk = 0; blk < 4; ++blk) {
+    const float max_abs = 10.0f * bq_i4.scales[blk];
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const float expected_zp,
+                                    bq_i4.zero_points.At<float>(blk));
+    for (int j = 0; j < kBlockSize; j += 2) {
+      const int idx = (blk * kBlockSize + j) / 2;
+      const float ref_a =
+          bq_i4.scales[blk] *
+          (static_cast<float>(static_cast<int>(packed_i4[idx].a)) -
+           expected_zp);
+      const float ref_b =
+          bq_i4.scales[blk] *
+          (static_cast<float>(static_cast<int>(packed_i4[idx].b)) -
+           expected_zp);
+      const float deq_a = static_cast<float>((*fb_i4->bf16_scales)[blk]) *
+                          static_cast<float>(static_cast<int>(sym_i4[idx].a));
+      const float deq_b = static_cast<float>((*fb_i4->bf16_scales)[blk]) *
+                          static_cast<float>(static_cast<int>(sym_i4[idx].b));
+      // Symmetric 4-bit re-quantization step is at most max(|w|) / 8.
+      EXPECT_NEAR(deq_a, ref_a, max_abs / 7.0f + 0.05f);
+      EXPECT_NEAR(deq_b, ref_b, max_abs / 7.0f + 0.05f);
+    }
+  }
+
+  // Error validation checks.
+  EXPECT_THAT(bq_i4.GetOrCreateCpuSymmetricFallback(
+                  Type::kI4, kRows, /*cols=*/48, raw_i4_lock.data(),
+                  raw_i4_lock.size()),
+              Not(IsOk()));
+  EXPECT_THAT(bq_i4.GetOrCreateCpuSymmetricFallback(
+                  Type::kI4, kRows, kCols, raw_i4_lock.data(), /*raw_bytes=*/4),
+              Not(IsOk()));
+  EXPECT_THAT(
+      bq_i4.GetOrCreateCpuSymmetricFallback(
+          Type::kFP32, kRows, kCols, raw_i4_lock.data(), raw_i4_lock.size()),
+      Not(IsOk()));
+}
+
 }  // namespace
 }  // namespace litert::tensor::graph

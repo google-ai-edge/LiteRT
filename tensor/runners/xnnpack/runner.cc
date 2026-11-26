@@ -139,6 +139,8 @@ absl::Status XnnpackRunner::CreateRuntime() {
   xnn_graph.fp16_buffers().shrink_to_fit();
   xnn_graph.bf16_scale_refs().clear();
   xnn_graph.bf16_scale_refs().shrink_to_fit();
+  xnn_graph.cpu_fallback_refs().clear();
+  xnn_graph.cpu_fallback_refs().shrink_to_fit();
   return absl::OkStatus();
 }
 

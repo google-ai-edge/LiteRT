@@ -267,9 +267,19 @@ MlDriftDummyWeightCreator::CreateFcWeights(
       RearrangeWeights(weights, desc, data);
     }
 
+    bool is_embedding = (t_info.name == "model.embed_tokens.weight" ||
+                         t_info.name == "token_embd.weight");
+    if (!is_embedding) {
+      for (const std::weak_ptr<graph::Operation>& weak_op : t_info.consumers) {
+        if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+            consumer != nullptr && consumer->GetName() == "EmbeddingLookup") {
+          is_embedding = true;
+          break;
+        }
+      }
+    }
     ml_drift::TensorDescriptor weights_td = CreatePackedWeightsTensorDescriptor(
-        desc, weights.shape, elements_count,
-        t_info.name == "model.embed_tokens.weight");
+        desc, weights.shape, elements_count, is_embedding);
     const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
     if (mld_mem_size > data_size) {
       std::vector<uint8_t> safe_data(mld_mem_size, 0);

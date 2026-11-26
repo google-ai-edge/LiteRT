@@ -225,6 +225,7 @@ cc_library(
         "//tensor/internal:graph",
         "//tensor/internal:graph_traversal",
         "//tensor/utils:macros",
+        "//tensor/utils:parallel",
         "@com_google_absl//absl/container:flat_hash_map",
         "@com_google_absl//absl/container:flat_hash_set",
         "@com_google_absl//absl/container:node_hash_map",

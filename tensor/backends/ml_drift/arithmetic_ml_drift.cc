@@ -435,9 +435,39 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
                  out_info.quantization->As<const BlockwiseQuantization>();
              bwq.ok()) {
     bwq_ptr = &(*bwq);
+    if (bwq_ptr->quantized_dimension != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Weights tensor (", out_info.name,
+          ") has unsupported blockwise quantized_dimension ",
+          bwq_ptr->quantized_dimension, "; expected 0."));
+    }
     LRT_TENSOR_ASSIGN_OR_RETURN(auto ohwi, ShapeToOHWI(out_info.shape));
-    int num_blocks = ohwi.i / bwq_ptr->block_size;
+    if (bwq_ptr->block_size <= 0 || ohwi.i % bwq_ptr->block_size != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Weights tensor (", out_info.name, ") has invalid block_size ",
+          bwq_ptr->block_size, " for input dimension ", ohwi.i, "."));
+    }
+    if (ohwi.o == 1) {
+      return absl::UnimplementedError(absl::StrCat(
+          "Weights tensor (", out_info.name,
+          ") has a single output channel, whose blockwise scale ML Drift "
+          "can't read."));
+    }
+    const int num_blocks = ohwi.i / bwq_ptr->block_size;
+    if (num_blocks > 1 && bwq_ptr->block_size % 4 != 0) {
+      return absl::InvalidArgumentError(absl::StrCat(
+          "Weights tensor (", out_info.name, ") has block_size ",
+          bwq_ptr->block_size, " which must be a multiple of 4 when ",
+          "num_blocks > 1."));
+    }
     scale_zp_shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
+    if (bwq_ptr->scales.size() !=
+        static_cast<size_t>(scale_zp_shape.DimensionsProduct())) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Weights tensor (", out_info.name, ") has ",
+                       bwq_ptr->scales.size(), " blockwise scales, expected ",
+                       scale_zp_shape.DimensionsProduct(), "."));
+    }
   } else {
     return absl::InvalidArgumentError("Unsupported quantization type");
   }
@@ -497,7 +527,6 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
     // A per-tensor scale is repeated for each output channel, see above.
     scale_values.data.assign(scale_zp_shape.o, scale_values.data[0]);
   }
-
 
   auto scale_desc = ScaleOrZeroPointToTensorDesc(
       ctx.gpu_model_builder->gpu_info(), scale_values, float_type);
