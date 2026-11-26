@@ -128,6 +128,8 @@ inline LiteRtStatus InitQnnOptions(
       static_cast<::qnn::BackendType>(qualcomm_options.GetBackend()));
   qnn_options.SetEnableWeightSharing(qualcomm_options.GetEnableWeightSharing());
   qnn_options.SetEnableJustInTime(qualcomm_options.GetEnableJustInTime());
+  qnn_options.SetEnableZeroCopyContextLoading(
+      qualcomm_options.GetEnableZeroCopyContextLoading());
   qnn_options.SetOpNameFormat(static_cast<::qnn::OpNameFormat>(
       qualcomm_options.GetOpNameFormat()));
   qnn_options.SetUseConvHMX(qualcomm_options.GetUseConvHMX());

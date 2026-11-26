@@ -791,6 +791,7 @@ TEST(QualcommOptionsFromFlagsTest, DefaultValue) {
   EXPECT_EQ(options.Value().GetLogLevel(), QualcommOptions::LogLevel::kInfo);
   EXPECT_EQ(options.Value().GetProfiling(), QualcommOptions::Profiling::kOff);
   EXPECT_FALSE(options.Value().GetEnableWeightSharing());
+  EXPECT_FALSE(options.Value().GetEnableZeroCopyContextLoading());
   EXPECT_TRUE(options.Value().GetUseConvHMX());
   EXPECT_TRUE(options.Value().GetUseFoldReLU());
   EXPECT_EQ(options.Value().GetOpNameFormat(),
@@ -892,6 +893,15 @@ TEST(QualcommOptionsFromFlagsTest, HtpContextInitAcceleration) {
   ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
   EXPECT_TRUE(options.Value().GetHtpContextInitAcceleration());
   absl::SetFlag(&FLAGS_qualcomm_htp_context_init_acceleration, false);
+}
+
+TEST(QualcommOptionsFromFlagsTest, EnableZeroCopyContextLoading) {
+  absl::SetFlag(&FLAGS_qualcomm_enable_zero_copy_context_loading, true);
+  Expected<QualcommOptions> options = QualcommOptions::Create();
+  ASSERT_TRUE(options.HasValue());
+  ASSERT_TRUE(UpdateQualcommOptionsFromFlags(options.Value()).HasValue());
+  EXPECT_TRUE(options.Value().GetEnableZeroCopyContextLoading());
+  absl::SetFlag(&FLAGS_qualcomm_enable_zero_copy_context_loading, false);
 }
 
 }  // namespace

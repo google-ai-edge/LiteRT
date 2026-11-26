@@ -24,9 +24,15 @@
 #include <utility>
 #include <vector>
 
-#if defined(__ANDROID__)
+#if defined(__linux__)
 #include <dirent.h>
+#include <fcntl.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
 #include <sys/stat.h>
+#include <unistd.h>
+
+#include <optional>
 
 #include <fstream>
 #include <unordered_map>
@@ -49,6 +55,10 @@
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_cpu_options.h"
 #include "litert/cc/internal/scoped_file.h"
+#include "litert/cc/litert_model.h"
+#include "litert/core/build_stamp.h"
+#include "litert/core/dispatch_op_schema.h"
+#include "litert/core/model/model.h"
 #include "litert/cc/internal/scoped_weight_source.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_compiled_model.h"
@@ -67,6 +77,13 @@
 ABSL_FLAG(std::string, graph, "", "Model filename to use for testing.");
 ABSL_FLAG(std::string, dispatch_library_dir, "/data/local/tmp/run_model_test",
           "Path to the dispatch library.");
+#if defined(__linux__)
+ABSL_FLAG(bool, load_model_into_dma_buf, false,
+          "Simulate a caller that already holds the model in one DMA-BUF: "
+          "stage --graph into a DMA-BUF and create the model from that fd. "
+          "With --qualcomm_enable_zero_copy_context_loading, HTP then reads "
+          "the weights from this DMA-BUF in place.");
+#endif
 ABSL_FLAG(std::string, compiler_plugin_library_dir, "",
           "Path to the compiler plugin library. Only for JIT compilation.");
 ABSL_FLAG(std::string, compiler_cache_dir, "",
@@ -132,7 +149,7 @@ ABSL_FLAG(bool, report_peak_memory_footprint, true,
 namespace litert {
 namespace {
 
-#if defined(__ANDROID__)
+#if defined(__linux__)
 struct DmaBufSummary {
   uint64_t total_bytes = 0;
   struct Entry {
@@ -264,10 +281,10 @@ void ReportMemoryUsage() {
     ABSL_LOG(INFO) << "DMA-BUF usage: 0 bytes (no dmabuf fds found).";
   }
 }
-#endif  // defined(__ANDROID__)
+#endif  // defined(__linux__)
 
 void MaybeReportPeakMemoryFootprint() {
-#if defined(__ANDROID__)
+#if defined(__linux__)
   if (absl::GetFlag(FLAGS_report_peak_memory_footprint)) {
     ReportMemoryUsage();
   }
@@ -675,6 +692,91 @@ Expected<void> RunModelWithInputList(
   return {};
 }
 
+#if defined(__linux__)
+// CompiledModel::Create(env, LiteRtModel, options) is protected (embedders such
+// as AICore are friends or use the C API). Expose it for this test tool.
+struct ProtectedCreate : CompiledModel {
+  using CompiledModel::Create;
+};
+
+// Stages `path` into one DMA-BUF (what a caller like AICore already has) and
+// keeps it alive. HTP needs weights 4KB-aligned in memory, so the file is
+// placed `pad` bytes into the buffer; pass the same value as the fd offset.
+class StagedDmaBuf {
+ public:
+  StagedDmaBuf() = default;
+  StagedDmaBuf(const StagedDmaBuf&) = delete;
+  StagedDmaBuf& operator=(const StagedDmaBuf&) = delete;
+  ~StagedDmaBuf() {
+    if (base_ != nullptr) munmap(base_, size_);
+    if (fd_ >= 0) close(fd_);
+  }
+
+  Expected<void> Stage(const std::string& path, size_t pad) {
+    LITERT_ASSIGN_OR_RETURN(auto file, ScopedFile::Open(path));
+    LITERT_ASSIGN_OR_RETURN(const size_t file_size, file.GetSize());
+    file_size_ = file_size;
+    pad_ = pad;
+    size_ = (pad + file_size + 4095) & ~size_t{4095};
+    const int heap = open("/dev/dma_heap/system", O_RDONLY | O_CLOEXEC);
+    if (heap < 0) return Error(kLiteRtStatusErrorRuntimeFailure, "open dma_heap");
+    struct {
+      uint64_t len;
+      uint32_t fd;
+      uint32_t fd_flags;
+      uint64_t heap_flags;
+    } alloc{size_, 0, O_RDWR | O_CLOEXEC, 0};
+    const int rc = ioctl(heap, _IOWR('H', 0x0, decltype(alloc)), &alloc);
+    close(heap);
+    if (rc < 0) return Error(kLiteRtStatusErrorRuntimeFailure, "dma_heap alloc");
+    fd_ = static_cast<int>(alloc.fd);
+    base_ = mmap(nullptr, size_, PROT_READ | PROT_WRITE, MAP_SHARED, fd_, 0);
+    if (base_ == MAP_FAILED) {
+      base_ = nullptr;
+      return Error(kLiteRtStatusErrorRuntimeFailure, "mmap dma-buf");
+    }
+    size_t done = 0;
+    while (done < file_size) {
+      const ssize_t n = pread(file.file(), static_cast<char*>(base_) + pad + done,
+                              file_size - done, done);
+      if (n <= 0) return Error(kLiteRtStatusErrorFileIO, "read model");
+      done += n;
+    }
+    return {};
+  }
+
+  int fd() const { return fd_; }
+  size_t pad() const { return pad_; }
+  size_t file_size() const { return file_size_; }
+
+ private:
+  int fd_ = -1;
+  void* base_ = nullptr;
+  size_t size_ = 0;
+  size_t pad_ = 0;
+  size_t file_size_ = 0;
+};
+
+// Returns how many bytes the model must be shifted so that the dispatch
+// bytecode (and therefore its weights) starts on a 4KB boundary.
+Expected<size_t> ComputeBytecodePad(Environment& env, const std::string& path) {
+  LITERT_ASSIGN_OR_RETURN(auto model, Model::CreateFromFile(path));
+  for (LiteRtSubgraph subgraph : model.Get()->Subgraphs()) {
+    for (LiteRtOp op : subgraph->Ops()) {
+      if (op->OpCode() != kLiteRtOpCodeTflCustom) continue;
+      auto code = op->CustomCode();
+      if (!code.HasValue() ||
+          *code != litert::internal::kLiteRtDispatchOpCustomName) {
+        continue;
+      }
+      const auto opts = litert::internal::GetDispatchOpOptions(op->CustomOptions());
+      return (4096 - opts.bytecode_offset % 4096) % 4096;
+    }
+  }
+  return size_t{0};
+}
+#endif  // defined(__linux__)
+
 Expected<void> RunModel() {
   if (absl::GetFlag(FLAGS_graph).empty()) {
     return Error(kLiteRtStatusErrorInvalidArgument,
@@ -691,9 +793,34 @@ Expected<void> RunModel() {
   LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
 
   ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
-  LITERT_ASSIGN_OR_RETURN(
-      auto compiled_model,
-      CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+  ABSL_LOG(INFO) << "Peak memory footprint before loading model:";
+  MaybeReportPeakMemoryFootprint();
+
+#if defined(__linux__)
+  // Must outlive `compiled_model`: HTP reads weights from this DMA-BUF.
+  StagedDmaBuf staged;
+  std::optional<Model> staged_model;
+  if (absl::GetFlag(FLAGS_load_model_into_dma_buf)) {
+    LITERT_ASSIGN_OR_RETURN(const size_t pad,
+                            ComputeBytecodePad(env, absl::GetFlag(FLAGS_graph)));
+    LITERT_RETURN_IF_ERROR(staged.Stage(absl::GetFlag(FLAGS_graph), pad));
+    LITERT_ASSIGN_OR_RETURN(
+        auto m, Model::CreateFromFd(env, staged.fd(), staged.pad(),
+                                    staged.file_size()));
+    staged_model = std::move(m);
+  }
+#endif
+  auto compiled_model_or =
+#if defined(__linux__)
+      staged_model.has_value()
+          ? ProtectedCreate::Create(env, staged_model->Get(), options)
+          :
+#endif
+          CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options);
+  LITERT_ASSIGN_OR_RETURN(auto compiled_model, std::move(compiled_model_or));
+
+  ABSL_LOG(INFO) << "Peak memory footprint right after loading model:";
+  MaybeReportPeakMemoryFootprint();
 
   size_t signature_index = absl::GetFlag(FLAGS_signature_index);
   ABSL_LOG(INFO) << "Signature index: " << signature_index;
