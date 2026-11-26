@@ -374,6 +374,7 @@ LiteRtStatus LiteRtGetCompilerPluginSDKVersion(
 struct LiteRtCompiledResultT {
   std::vector<std::string> byte_codes;
   std::vector<std::string> per_op_data;
+  bool one_byte_code_per_call = false;
 };
 
 LiteRtStatus LiteRtGetCompiledResultByteCode(
@@ -390,8 +391,8 @@ LiteRtStatus LiteRtGetCompiledResultByteCode(
                static_cast<int>(compiled_result->byte_codes.size()));
     return kLiteRtStatusErrorIndexOOB;
   }
-  *byte_code = compiled_result->byte_codes[0].data();
-  *byte_code_size = compiled_result->byte_codes[0].size();
+  *byte_code = compiled_result->byte_codes[byte_code_idx].data();
+  *byte_code_size = compiled_result->byte_codes[byte_code_idx].size();
   return kLiteRtStatusOk;
 }
 
@@ -421,7 +422,7 @@ LiteRtStatus LiteRtGetCompiledResultCallInfo(
 
   *call_info = compiled_result->per_op_data.at(call_idx).data();
   *call_info_size = compiled_result->per_op_data.at(call_idx).size();
-  *byte_code_idx = 0;
+  *byte_code_idx = compiled_result->one_byte_code_per_call ? call_idx : 0;
 
   return kLiteRtStatusOk;
 }
@@ -807,6 +808,9 @@ int32_t GetOrInsertOpCode(
 
   auto new_code = std::make_unique<tflite::OperatorCodeT>();
   new_code->builtin_code = static_cast<tflite::BuiltinOperator>(op_code);
+  new_code->deprecated_builtin_code = static_cast<int8_t>(std::min<int32_t>(
+      new_code->builtin_code,
+      tflite::BuiltinOperator_PLACEHOLDER_FOR_GREATER_OP_CODES));
   if (!custom_code.empty()) {
     new_code->custom_code = std::string(custom_code);
   }
@@ -819,13 +823,31 @@ int32_t GetOrInsertOpCode(
 
 // Scans all operations in the model's main subgraph, rebuilds the global
 // OperatorCode list, and updates each operation's internal opcode index to
-// reference the new list.
-void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
+// reference the new list. Preserves original OperatorCodeT metadata when
+// `src_op_codes` is provided.
+void ReconstructTflOpCodes(
+    LiteRtModelT& temp_model,
+    absl::Span<const litert::internal::TflOpCodePtr> src_op_codes = {}) {
   std::vector<litert::internal::TflOpCodePtr> new_op_codes;
+  absl::flat_hash_map<int32_t, int32_t> src_ind_to_new_index;
   OpCodeMap op_code_to_index;
 
   LiteRtSubgraph subgraph = temp_model.MainSubgraph();
   for (LiteRtOpT* op : subgraph->Ops()) {
+    const int32_t src_ind = litert::internal::GetTflOpCodeInd(*op);
+    if (src_ind >= 0 &&
+        static_cast<size_t>(src_ind) < src_op_codes.size() &&
+        src_op_codes[src_ind] != nullptr) {
+      auto [it, inserted] = src_ind_to_new_index.emplace(
+          src_ind, static_cast<int32_t>(new_op_codes.size()));
+      if (inserted) {
+        new_op_codes.push_back(
+            std::make_unique<tflite::OperatorCodeT>(*src_op_codes[src_ind]));
+      }
+      litert::internal::SetTflOpCodeInd(*op, it->second);
+      continue;
+    }
+
     std::string custom_code_str = "";
     if (op->OpCode() == kLiteRtOpCodeTflCustom) {
       if (litert::Expected<absl::string_view> custom_code = op->CustomCode()) {
@@ -842,8 +864,11 @@ void ReconstructTflOpCodes(LiteRtModelT& temp_model) {
 
 // Clones the given subgraph's operations, tensors, and connectivity into a
 // temporary model container and serializes it to a FlatBuffer byte stream.
+// Emits a model signature when `signature_key` is non-empty and preserves
+// original operator codes when `src_op_codes` is non-empty.
 litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
-    LiteRtSubgraph subgraph) {
+    LiteRtSubgraph subgraph, absl::string_view signature_key = "",
+    absl::Span<const litert::internal::TflOpCodePtr> src_op_codes = {}) {
   LiteRtModelT temp_model;
   LiteRtSubgraphT& dest_subgraph = temp_model.EmplaceSubgraph();
   absl::flat_hash_map<const LiteRtTensorT*, LiteRtTensorT*> tensor_map;
@@ -913,7 +938,30 @@ litert::Expected<litert::OwningBufferRef<uint8_t>> SerializeSubgraph(
     dest_subgraph.Outputs().push_back(it->second);
   }
 
-  ReconstructTflOpCodes(temp_model);
+  if (!signature_key.empty()) {
+    std::vector<std::string> input_names;
+    std::vector<LiteRtTensor> input_tensors;
+    input_names.reserve(dest_subgraph.NumInputs());
+    input_tensors.reserve(dest_subgraph.NumInputs());
+    for (LiteRtTensor tensor : dest_subgraph.Inputs()) {
+      input_names.push_back(std::string(tensor->Name()));
+      input_tensors.push_back(tensor);
+    }
+    std::vector<std::string> output_names;
+    std::vector<LiteRtTensor> output_tensors;
+    output_names.reserve(dest_subgraph.NumOutputs());
+    output_tensors.reserve(dest_subgraph.NumOutputs());
+    for (LiteRtTensor tensor : dest_subgraph.Outputs()) {
+      output_names.push_back(std::string(tensor->Name()));
+      output_tensors.push_back(tensor);
+    }
+    temp_model.EmplaceSignature(
+        &dest_subgraph, std::move(input_names), std::move(input_tensors),
+        std::move(output_names), std::move(output_tensors),
+        std::string(signature_key));
+  }
+
+  ReconstructTflOpCodes(temp_model, src_op_codes);
 
   // Serialize the temp_model
   auto serialized = litert::internal::SerializeModel(std::move(temp_model),
@@ -1268,6 +1316,90 @@ void FreeSignatureKeys(size_t num_subgraphs, char** signature_keys) {
   ::free(signature_keys);
 }
 
+namespace {
+
+// Compiles a serialized TFLite model buffer via `adapter` and returns the
+// single resulting compiled bytecode module.
+litert::Expected<std::string> CompileModelBuffer(
+    litert::google_tensor::Adapter& adapter, absl::string_view model_buffer,
+    absl::string_view options_str) {
+  char** compiled_code_data = nullptr;
+  size_t* compiled_code_sizes = nullptr;
+  size_t num_bytecodes = 0;
+  // Ensure memory allocated by the C API is freed.
+  absl::Cleanup code_cleanup = [&] {
+    if (compiled_code_data) {
+      adapter.FreeCompiledCode(compiled_code_data, compiled_code_sizes,
+                               num_bytecodes);
+    }
+  };
+
+  const litert::Expected<void> compile_status = adapter.Compile(
+      model_buffer.data(), model_buffer.size(), options_str.data(),
+      options_str.size(), &compiled_code_data, &compiled_code_sizes,
+      &num_bytecodes);
+  if (!compile_status) {
+    LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());
+    return compile_status.Error();
+  }
+  if (num_bytecodes != 1) {
+    LITERT_LOG(LITERT_ERROR,
+               "Compiler returned unexpected number of bytecodes. "
+               "Expected: 1, Actual: %zu",
+               num_bytecodes);
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Compiler returned unexpected number of bytecodes.");
+  }
+  if (compiled_code_data == nullptr || compiled_code_sizes == nullptr ||
+      compiled_code_data[0] == nullptr) {
+    LITERT_LOG(LITERT_ERROR,
+               "Compiler returned null bytecode buffer or size array.");
+    return litert::Unexpected(
+        kLiteRtStatusErrorRuntimeFailure,
+        "Compiler returned null bytecode buffer or size array.");
+  }
+
+  return std::string(compiled_code_data[0], compiled_code_sizes[0]);
+}
+
+// Compiles each partition subgraph individually for multi-subgraph On-Device
+// Compilation (ODC), populating one standalone compiled module per partition.
+// TODO(b/462579220): Compile all subgraphs in a single call once the ODC
+// backend supports multi-subgraph models natively.
+LiteRtStatus CompilePartitionsOdc(litert::compiler::Model& model,
+                                  absl::string_view options_str,
+                                  litert::google_tensor::Adapter& adapter,
+                                  LiteRtCompiledResult* compiled_result) {
+  const size_t num_partitions = model.NumSubgraphs();
+  const auto& src_op_codes = litert::internal::GetTflOpCodes(*model.Get());
+  auto result = std::make_unique<LiteRtCompiledResultT>();
+  result->one_byte_code_per_call = true;
+  result->byte_codes.reserve(num_partitions);
+  result->per_op_data.reserve(num_partitions);
+
+  for (size_t i = 0; i < num_partitions; ++i) {
+    LITERT_ASSIGN_OR_RETURN(auto subgraph, model.Subgraph(i));
+    std::string signature_key = absl::StrCat("subgraph_", i, "_fn");
+    LITERT_ASSIGN_OR_RETURN(
+        auto serialized_subgraph,
+        SerializeSubgraph(subgraph.Get(), signature_key, src_op_codes));
+    const absl::string_view model_buffer(
+        reinterpret_cast<const char*>(serialized_subgraph.Data()),
+        serialized_subgraph.Size());
+    LITERT_ASSIGN_OR_RETURN(
+        std::string compiled_bytecode,
+        CompileModelBuffer(adapter, model_buffer, options_str));
+    result->byte_codes.push_back(std::move(compiled_bytecode));
+    result->per_op_data.push_back(std::move(signature_key));
+  }
+
+  *compiled_result = result.release();
+  return kLiteRtStatusOk;
+}
+
+}  // namespace
+
 LiteRtStatus LiteRtCompilerPluginCompile(
     LiteRtCompilerPlugin compiler_plugin, const char* soc_model,
     LiteRtModel partitions, LiteRtCompiledResult* compiled_result) {
@@ -1290,12 +1422,6 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (soc_model == nullptr) {
       soc_model = "Unspecified";
     }
-    // Currently ODC only supports Single subgraph models.
-    if (num_partitions > 1) {
-      LITERT_LOG(LITERT_ERROR, "%s",
-                 "ODC mode does not support multiple subgraphs");
-      return kLiteRtStatusErrorInvalidArgument;
-    }
   }
 
   LITERT_LOG(LITERT_INFO,
@@ -1306,6 +1432,24 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     LITERT_LOG(LITERT_ERROR,
                "No subgraphs selected for GoogleTensor compilation.");
     return kLiteRtStatusErrorInvalidArgument;
+  }
+
+  LITERT_ASSIGN_OR_RETURN(GoogleTensorOptions google_tensor_options,
+                          GetGoogleTensorOptions(compiler_plugin));
+  LITERT_RETURN_IF_ERROR(PopulateCompilerConfig(compiler_plugin, soc_model,
+                                                google_tensor_options));
+
+  std::string google_tensor_options_str;
+  if (!google_tensor_options.SerializeToString(&google_tensor_options_str)) {
+    LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize opaque options proto.");
+    return kLiteRtStatusErrorRuntimeFailure;
+  }
+
+  // Keep single-subgraph ODC on the standard C API serialization path below to
+  // avoid cloning tensors/weights and preserve original FlatBuffer metadata.
+  if (!adapter->IsAot() && num_partitions > 1) {
+    return CompilePartitionsOdc(model, google_tensor_options_str, *adapter,
+                                compiled_result);
   }
 
   // Serialize model.
@@ -1336,66 +1480,16 @@ LiteRtStatus LiteRtCompilerPluginCompile(
   // Compile model.
   LITERT_LOG(LITERT_INFO, "%s", "Compiling model...");
 
-  third_party::odml::litert::litert::vendors::google_tensor::compiler::
-      GoogleTensorOptions google_tensor_options;
-
-  // map to opaque options
-  LITERT_ASSIGN_OR_RETURN(auto lrt_google_tensor_options,
-                          compiler_plugin->CreateGoogleTensorOptions());
-  LiteRtStatus lrt_status = LrtOptionsToGoogleTensorOptions(
-      lrt_google_tensor_options, google_tensor_options);
-  LrtDestroyGoogleTensorOptions(lrt_google_tensor_options);
-  LITERT_RETURN_IF_ERROR(lrt_status);
-
-  LITERT_RETURN_IF_ERROR(PopulateCompilerConfig(
-      compiler_plugin, soc_model ? soc_model : "", google_tensor_options));
-
-  // serialize to string
-  std::string google_tensor_options_str;
-  if (!google_tensor_options.SerializeToString(&google_tensor_options_str)) {
-    LITERT_LOG(LITERT_ERROR, "%s", "Failed to serialize opaque options proto.");
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
   // TODO(b/398984678): add support for multiple bytecodes
-  const absl::string_view model_buffer_view(buffer_str);
-
-  char** compiled_code_data = nullptr;
-  size_t* compiled_code_sizes = nullptr;
-  size_t num_bytecodes = 0;
-
-  // Ensure memory allocated by the C API is freed.
-  absl::Cleanup code_cleanup = [&] {
-    if (compiled_code_data) {
-      adapter->FreeCompiledCode(compiled_code_data, compiled_code_sizes,
-                                num_bytecodes);
-    }
-  };
-  const auto compile_status = adapter->Compile(
-      model_buffer_view.data(), model_buffer_view.size(),
-      google_tensor_options_str.data(), google_tensor_options_str.size(),
-      &compiled_code_data, &compiled_code_sizes, &num_bytecodes);
-  if (!compile_status) {
-    LITERT_LOG(LITERT_ERROR, "%s", compile_status.Error().Message().c_str());
-    return compile_status.Error().Status();
-  }
+  LITERT_ASSIGN_OR_RETURN(
+      std::string compiled_bytecode,
+      CompileModelBuffer(*adapter, buffer_str, google_tensor_options_str));
 
   // Result
   auto result = std::make_unique<LiteRtCompiledResultT>();
 
-  if (num_bytecodes != 1) {
-    LITERT_LOG(LITERT_ERROR,
-               "Compiler returned unexpected number of bytecodes.Expected: "
-               "1, Actual: %d",
-               num_bytecodes);
-    return kLiteRtStatusErrorRuntimeFailure;
-  }
-
   // Append the CustomOp TFLite file as the bytecode.
-  result->byte_codes.resize(num_bytecodes);
-  for (auto i = 0; i < num_bytecodes; ++i) {
-    result->byte_codes[i].assign(compiled_code_data[i], compiled_code_sizes[i]);
-  }
+  result->byte_codes.push_back(std::move(compiled_bytecode));
 
   // Append signature names as per_op_data.
   for (auto i = 0; i < num_partitions; ++i) {
