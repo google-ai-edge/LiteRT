@@ -92,6 +92,7 @@ constexpr std::pair<const char*, const char*> kPluginSocModels[] = {
     {"mt6893", "mt6893"},
     {"mt6895", "mt6895"},
     {"mt6897", "mt6897"},
+    {"mt6899", "mt6899"},
     {"mt6983", "mt6983"},
     {"mt6985", "mt6985"},
     {"mt6989", "mt6989"},

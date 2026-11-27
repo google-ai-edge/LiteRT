@@ -79,7 +79,7 @@ TEST(TestMediatekPlugin, GetConfigInfo) {
   ASSERT_EQ(plugin.Api()->get_num_compiler_plugin_supported_models(
                 plugin.Get(), &num_supported_soc_models),
             kLiteRtStatusOk);
-  ASSERT_EQ(num_supported_soc_models, 16);
+  ASSERT_EQ(num_supported_soc_models, 17);
 
   const char* config_id;
   ASSERT_EQ(plugin.Api()->get_compiler_plugin_supported_soc_model(
