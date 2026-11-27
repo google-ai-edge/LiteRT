@@ -616,6 +616,84 @@ TEST(QuantizedComparisonsTest, NotEqualInt16Quantized) {
   EXPECT_THAT(model.GetOutput(), ElementsAre(false, true, true, true));
 }
 
+TEST(QuantizedComparisonsTest, EqualInt16QuantizedSmallScale) {
+  // Adjacent quantized values must stay distinct even when the scale is small.
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_EQUAL);
+  model.PopulateTensor<int16_t>(model.input1(), {0, 1, 100, -32767});
+  model.PopulateTensor<int16_t>(model.input2(), {1, 1, 101, -32766});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, true, false, false));
+}
+
+TEST(QuantizedComparisonsTest, NotEqualInt16QuantizedSmallScale) {
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_NOT_EQUAL);
+  model.PopulateTensor<int16_t>(model.input1(), {0, 1, 100, -32767});
+  model.PopulateTensor<int16_t>(model.input2(), {1, 1, 101, -32766});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, false, true, true));
+}
+
+TEST(ComparisonsTest, NotEqualInt16) {
+  ComparisonOpModel model({1, 1, 1, 4}, {1, 1, 1, 4}, TensorType_INT16,
+                          BuiltinOperator_NOT_EQUAL);
+  model.PopulateTensor<int16_t>(model.input1(), {-1, 9, 7, 3});
+  model.PopulateTensor<int16_t>(model.input2(), {1, 2, 7, 5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, true, false, true));
+  EXPECT_THAT(model.GetOutputShape(), ElementsAre(1, 1, 1, 4));
+}
+
+TEST(QuantizedComparisonsTest, LessInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -100.f, 100.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_LESS);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10, -0.5, 0.2, -1.5});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {0.9, -0.9, 0.3, -0.5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, false, true, true));
+}
+
+TEST(QuantizedComparisonsTest, LessEqualInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -100.f, 100.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_LESS_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10, -0.5, 0.2, -1.5});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {0.9, -0.9, 0.3, -0.5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, false, true, true));
+}
+
+TEST(QuantizedComparisonsTest, GreaterInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -100.f, 100.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_GREATER);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10, -0.5, 0.2, -1.5});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {0.9, -0.9, 0.3, -0.5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, true, false, false));
+}
+
+TEST(QuantizedComparisonsTest, GreaterEqualInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 2, 2, 1}, -100.f, 100.f},
+                          {TensorType_INT16, {1, 2, 2, 1}, -1.f, 1.f},
+                          TensorType_INT16, BuiltinOperator_GREATER_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10, -0.5, 0.2, -1.5});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {0.9, -0.9, 0.3, -0.5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, true, false, false));
+}
+
 TEST(ComparisonsTest, GreaterQuantized) {
   const float kMin = -1.f;
   const float kMax = 128.f;
