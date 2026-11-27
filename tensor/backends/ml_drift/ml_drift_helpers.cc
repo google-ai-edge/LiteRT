@@ -15,15 +15,20 @@ limitations under the License.
 
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <optional>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
 #include "absl/hash/hash.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
@@ -253,6 +258,19 @@ absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> GetTensorHandle(
     return handle;
   }
 
+  if (info.buffer == nullptr && t.group != nullptr &&
+      t.group->producer == nullptr && !info.name.empty() &&
+      ctx.shared_weight_descriptors != nullptr) {
+    if (auto shared_it = ctx.shared_weight_descriptors->find(info.name);
+        shared_it != ctx.shared_weight_descriptors->end()) {
+      auto handle = ctx.gpu_model_builder->AddConstantTensor(
+          CopyDescriptorWithoutData(shared_it->second));
+      ctx.graph_tensor_to_handle.insert({t, handle});
+      ctx.weight_name_to_handle.insert({info.name, handle});
+      return handle;
+    }
+  }
+
   if (info.buffer) {
     if (auto mld_buffer_or = info.buffer->As<MlDriftBuffer>();
         mld_buffer_or.ok()) {
@@ -354,6 +372,22 @@ GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
       it != ctx.constant_handles_in_tensor_layout.end()) {
     return it->second;
   }
+  if (info.buffer == nullptr && t.group != nullptr &&
+      t.group->producer == nullptr && !info.name.empty() &&
+      ctx.shared_weight_descriptors != nullptr) {
+    if (auto shared_it = ctx.shared_weight_descriptors->find(info.name);
+        shared_it != ctx.shared_weight_descriptors->end()) {
+      const ml_drift::TensorDescriptor& desc = shared_it->second;
+      if (desc.GetDataType() == mld_data_type &&
+          desc.GetBHWCShape() == shape &&
+          desc.GetLayout() != ml_drift::Layout::kLinear) {
+        auto handle = ctx.gpu_model_builder->AddConstantTensor(
+            CopyDescriptorWithoutData(desc));
+        ctx.constant_handles_in_tensor_layout.insert({t, handle});
+        return handle;
+      }
+    }
+  }
   if (info.buffer == nullptr || info.buffer->As<MlDriftBuffer>().ok()) {
     return absl::UnimplementedError(absl::StrCat(
         "Tensor ", info.name, " isn't a constant that can be uploaded."));
@@ -365,6 +399,20 @@ GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
                        ml_drift::TensorDescriptor::PhysicalLayout1D::kDCHWBC4));
   ctx.constant_handles_in_tensor_layout.insert({t, handle});
   return handle;
+}
+
+std::optional<bool> ParseBoolEnvValue(absl::string_view env_value) {
+  if (env_value.empty()) return std::nullopt;
+  bool value = false;
+  return absl::SimpleAtob(env_value, &value) ? std::optional<bool>(value)
+                                             : std::nullopt;
+}
+
+std::optional<bool> BoolFromEnv(const char* env_var_name) {
+  if (env_var_name == nullptr) return std::nullopt;
+  const char* raw_env = std::getenv(env_var_name);
+  if (raw_env == nullptr) return std::nullopt;
+  return ParseBoolEnvValue(raw_env);
 }
 
 absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
@@ -391,6 +439,142 @@ absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
     values[o] *= -scale;
   }
   return values;
+}
+
+namespace {
+
+template <typename Fn>
+void ParallelForRanges(size_t total, size_t min_grain, Fn&& fn,
+                       size_t max_threads = 8) {
+  if (total == 0) return;
+  const size_t hw = std::max<size_t>(1, std::thread::hardware_concurrency());
+  const size_t workers = std::min<size_t>(
+      {max_threads, hw, (total + std::max<size_t>(1, min_grain) - 1) /
+                            std::max<size_t>(1, min_grain)});
+  if (workers <= 1) {
+    fn(0, total);
+    return;
+  }
+  const size_t chunk = (total + workers - 1) / workers;
+  std::vector<std::thread> threads;
+  threads.reserve(workers - 1);
+  for (size_t t = 1; t < workers; ++t) {
+    const size_t begin = t * chunk;
+    if (begin >= total) break;
+    const size_t end = std::min(total, begin + chunk);
+    threads.emplace_back([&, begin, end]() { fn(begin, end); });
+  }
+  fn(0, std::min(total, chunk));
+  for (std::thread& t : threads) t.join();
+}
+
+}  // namespace
+
+absl::StatusOr<std::vector<int32_t>> ComputePackedInt2WeightsSumI(
+    absl::Span<const uint8_t> src, const ml_drift::OHWI& shape) {
+  const int out_channels = shape.o;
+  if (out_channels <= 0 || shape.h <= 0 || shape.w <= 0 || shape.i <= 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Non-positive INT2 weight dimensions: [", shape.o, ", ",
+                     shape.h, ", ", shape.w, ", ", shape.i, "]"));
+  }
+  const size_t row_elems = static_cast<size_t>(shape.h) *
+                           static_cast<size_t>(shape.w) *
+                           static_cast<size_t>(shape.i);
+  const size_t total_elems = static_cast<size_t>(out_channels) * row_elems;
+  const size_t expected_bytes = (total_elems + 3) / 4;
+  if (src.size() < expected_bytes) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Packed INT2 weight buffer too small: got ", src.size(),
+                     " bytes, expected at least ", expected_bytes, " bytes"));
+  }
+  std::vector<int32_t> sum_i(out_channels, 0);
+  const uint8_t* raw = src.data();
+  const bool aligned_row = (row_elems & 3u) == 0;
+  const size_t row_bytes = row_elems >> 2;
+  auto sum_row = [&](int o) {
+    if (aligned_row) {
+      const uint8_t* row = raw + static_cast<size_t>(o) * row_bytes;
+      int64_t unsigned_sum = 0;
+      for (size_t j = 0; j < row_bytes; ++j) {
+        const uint8_t u = row[j] ^ 0xAAu;
+        const uint8_t pair_sum =
+            static_cast<uint8_t>((u & 0x33u) + ((u >> 2) & 0x33u));
+        unsigned_sum += static_cast<int64_t>(pair_sum & 0x0Fu) +
+                        static_cast<int64_t>(pair_sum >> 4);
+      }
+      sum_i[o] = static_cast<int32_t>(unsigned_sum -
+                                      2 * static_cast<int64_t>(row_elems));
+    } else {
+      int32_t row_sum = 0;
+      const size_t base = static_cast<size_t>(o) * row_elems;
+      for (size_t k = 0; k < row_elems; ++k) {
+        const size_t idx = base + k;
+        const uint8_t crumb = (raw[idx >> 2] >> ((idx & 3u) * 2)) & 0x03u;
+        row_sum += static_cast<int32_t>(crumb ^ 0x02u) - 2;
+      }
+      sum_i[o] = row_sum;
+    }
+  };
+  if (total_elems < (512ULL << 10)) {
+    for (int o = 0; o < out_channels; ++o) sum_row(o);
+  } else {
+    const size_t min_grain_rows =
+        std::max<size_t>(1, ((64ULL << 10) + row_elems - 1) / row_elems);
+    ParallelForRanges(
+        static_cast<size_t>(out_channels), min_grain_rows,
+        [&](size_t begin, size_t end) {
+          for (size_t o = begin; o < end; ++o) {
+            sum_row(static_cast<int>(o));
+          }
+        },
+        /*max_threads=*/8);
+  }
+  return sum_i;
+}
+
+absl::StatusOr<std::vector<int32_t>> ComputeInt8WeightsSumI(
+    absl::Span<const int8_t> src, const ml_drift::OHWI& shape) {
+  const int out_channels = shape.o;
+  if (out_channels <= 0 || shape.h <= 0 || shape.w <= 0 || shape.i <= 0) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Non-positive INT8 weight dimensions: [", shape.o, ", ",
+                     shape.h, ", ", shape.w, ", ", shape.i, "]"));
+  }
+  const size_t row_elems = static_cast<size_t>(shape.h) *
+                           static_cast<size_t>(shape.w) *
+                           static_cast<size_t>(shape.i);
+  const size_t total_elems = static_cast<size_t>(out_channels) * row_elems;
+  if (src.size() < total_elems) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("INT8 weight buffer too small: got ", src.size(),
+                     " bytes, expected at least ", total_elems, " bytes"));
+  }
+  std::vector<int32_t> sum_i(out_channels, 0);
+  const int8_t* raw = src.data();
+  auto sum_row = [&](int o) {
+    const int8_t* row = raw + static_cast<size_t>(o) * row_elems;
+    int64_t row_sum = 0;
+    for (size_t j = 0; j < row_elems; ++j) {
+      row_sum += static_cast<int64_t>(row[j]);
+    }
+    sum_i[o] = static_cast<int32_t>(row_sum);
+  };
+  if (total_elems < (512ULL << 10)) {
+    for (int o = 0; o < out_channels; ++o) sum_row(o);
+  } else {
+    const size_t min_grain_rows =
+        std::max<size_t>(1, ((64ULL << 10) + row_elems - 1) / row_elems);
+    ParallelForRanges(
+        static_cast<size_t>(out_channels), min_grain_rows,
+        [&](size_t begin, size_t end) {
+          for (size_t o = begin; o < end; ++o) {
+            sum_row(static_cast<int>(o));
+          }
+        },
+        /*max_threads=*/8);
+  }
+  return sum_i;
 }
 
 }  // namespace litert::tensor
