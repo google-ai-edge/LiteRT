@@ -557,6 +557,10 @@ export class Tensor implements Deletable, WithEnvironment {
     return argMax(this, axis, outputType);
   }
 
+  cast(dtype: DType): Tensor {
+    return cast(this, dtype);
+  }
+
   resizeBilinear(
     size: [number, number] | number[],
     alignCornersOrOptions?: boolean | ResizeOptions,
@@ -1991,6 +1995,24 @@ export function argMax(
   a.ensureNotDeleted();
   const wasm = getGlobalLiteRt().liteRtWasm;
   const resultHandle = wasm.argMax(a.liteRtTensorHandle, axis, outputType);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Casts a tensor to a new data type.
+ *
+ * @param a The input tensor.
+ * @param dtype The target data type.
+ * @returns The cast tensor.
+ */
+export function cast(a: Tensor, dtype: DType): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = unwrapWasmResult(
+    wasm.cast(a.liteRtTensorHandle, {
+      value: getDataType(dtype).elementType,
+    }),
+  );
   return new Tensor(resultHandle, a.environment);
 }
 
