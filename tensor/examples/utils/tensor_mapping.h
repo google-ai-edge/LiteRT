@@ -167,6 +167,10 @@ class LazyTensorMapping : public TensorMapping {
   // freed with the last reference, so no unloader is needed.
   size_t ReleaseTensorsNotPinned();
 
+  // Drops cached tensors that can be reloaded from the underlying checkpoint
+  // (`name_mapping_`) and were not overridden via `Set()`. Frees unpacked host
+  // weight buffers once all runtime passes have been compiled.
+  void EvictReloadableCache();
  private:
   // Loads the tensor that maps to `model_name` from the checkpoint.
   //
@@ -183,6 +187,7 @@ class LazyTensorMapping : public TensorMapping {
   absl::flat_hash_set<std::string> pinned_names_;
   std::vector<std::unique_ptr<TensorMappingHooks>> hooks_;
   absl::flat_hash_map<std::string, TensorHandle> tensors_;
+  absl::flat_hash_set<std::string> set_override_names_;
 };
 
 }  // namespace litert::tensor::examples

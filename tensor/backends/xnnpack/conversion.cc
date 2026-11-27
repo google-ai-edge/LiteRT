@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -487,6 +488,7 @@ XnnpackBuildContext::DefinePerTensorQuantizedWeightsAsChannelwise(
   }
   // The value isn't in the tensor index: the other consumers of `weights` get
   // the per-tensor quantized value.
+  value.packed_only = true;
   graph_->mutable_values().push_back(std::move(value));
   return graph_->mutable_values().back().id;
 }
@@ -590,10 +592,29 @@ absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
   }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(auto plan, GetExecutionPlan(outputs));
+  absl::flat_hash_set<graph::Tensor> fc_filter_candidates;
+  absl::flat_hash_set<graph::Tensor> non_fc_filter_uses;
+  for (const TensorHandle& out : outputs) {
+    non_fc_filter_uses.insert(out.GetRaw());
+  }
   for (const graph::Operation* op : plan) {
-    for (const graph::Tensor& t : op->inputs) {
-      if (auto info_or = graph::GetInfo(t);
-          !info_or.ok() || info_or->buffer != nullptr) {
+    bool is_static_fc =
+        op->GetName() == "FullyConnected" && op->inputs.size() >= 2;
+    if (is_static_fc && op->inputs.size() > 2 &&
+        op->inputs[2].group != nullptr) {
+      auto bias_info = graph::GetInfo(op->inputs[2]);
+      is_static_fc = bias_info.ok() && bias_info->buffer != nullptr;
+    }
+    for (size_t i = 0; i < op->inputs.size(); ++i) {
+      const graph::Tensor& t = op->inputs[i];
+      auto info_or = graph::GetInfo(t);
+      if (is_static_fc && i == 1 && info_or.ok() &&
+          info_or->buffer != nullptr) {
+        fc_filter_candidates.insert(t);
+      } else {
+        non_fc_filter_uses.insert(t);
+      }
+      if (!info_or.ok() || info_or->buffer != nullptr) {
         continue;
       }
       if (auto producer_or = graph::GetProducer(t);
@@ -608,6 +629,17 @@ absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
   XnnpackBuildContext ctx(std::move(outputs), std::move(external_ids));
   LRT_TENSOR_RETURN_IF_ERROR(BuildNnpackGraph(ctx));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto graph, ctx.Finalize());
+  for (const graph::Tensor& filter : fc_filter_candidates) {
+    if (non_fc_filter_uses.contains(filter)) continue;
+    auto it = graph->tensor_index().find(filter);
+    if (it != graph->tensor_index().end() &&
+        it->second < graph->mutable_values().size()) {
+      NnpackValue& val = graph->mutable_values()[it->second];
+      if (val.flags == 0) {
+        val.packed_only = true;
+      }
+    }
+  }
   return std::unique_ptr<XnnpackGraph>(
       static_cast<XnnpackGraph*>(graph.release()));
 }
