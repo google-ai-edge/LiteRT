@@ -113,16 +113,25 @@ class PersistentWeightCache {
 
   // Appends `extra_entries` (skipping names already in `path`) to an existing
   // valid cache at `path` for `identifier` via a temporary file renamed over
-  // `path`. Returns OK without touching (or checking) `path` when
-  // `extra_entries` is empty; otherwise fails if `path` cannot be opened and
-  // verified for `identifier`. Static: it works on the file at `path`, not on
-  // an opened cache (it opens the file itself and builds the new one in its
-  // own temporary cache).
+  // `path`. On Apple APFS when `!verify_all_bytes`, clones `path` with
+  // copy-on-write (`clonefile`) and appends only the new entries plus a delta
+  // index; falls back to rewriting the cache on other filesystems or when
+  // `verify_all_bytes` is true. Returns OK without touching (or checking)
+  // `path` when `extra_entries` is empty; otherwise fails if `path` cannot be
+  // opened and verified for `identifier`. Static: it works on the file at
+  // `path`, not on an opened cache.
   static absl::Status Append(
       absl::string_view path, uint64_t identifier,
       absl::Span<const std::pair<std::string, ::ml_drift::TensorDescriptor>>
           extra_entries,
       bool verify_all_bytes = true);
+
+  // Tests: exercises the incremental delta-index append path on any filesystem
+  // by copying `path` to a temporary file before appending.
+  static absl::Status AppendIncrementalForTesting(
+      absl::string_view path, uint64_t identifier,
+      absl::Span<const std::pair<std::string, ::ml_drift::TensorDescriptor>>
+          extra_entries);
 
   // Internal: an index entry, the location and CRC32Cs of one weight in the
   // file. Public only so that the index (de)serialization in the .cc file can
