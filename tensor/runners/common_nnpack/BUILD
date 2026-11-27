@@ -28,7 +28,6 @@ cc_library(
         "//tensor:buffer",
         "//tensor:datatypes",
         "//tensor/backends/common_nnpack:graph",
-        "//tensor/backends/common_nnpack:utils",
         "//tensor/internal:graph",
         "//tensor/utils:macros",
         "@com_google_absl//absl/algorithm:container",
