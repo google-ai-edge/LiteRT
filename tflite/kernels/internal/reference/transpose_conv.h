@@ -24,10 +24,11 @@ namespace tflite {
 
 namespace reference_ops {
 
+template <typename WeightT>
 inline void TransposeConv(
     const ConvParams& params, const RuntimeShape& input_shape,
     const float* input_data, const RuntimeShape& filter_shape,
-    const float* filter_data, const RuntimeShape& bias_shape,
+    const WeightT* filter_data, const RuntimeShape& bias_shape,
     const float* bias_data, const RuntimeShape& output_shape,
     float* output_data, const RuntimeShape& im2col_shape, float* im2col_data) {
   const int stride_width = params.stride_width;
@@ -87,9 +88,9 @@ inline void TransposeConv(
                     (out_y < output_height)) {
                   float input_value = input_data[Offset(
                       input_shape, batch, in_y, in_x, in_channel)];
-                  float filter_value =
+                  float filter_value = static_cast<float>(
                       filter_data[Offset(filter_shape, out_channel, filter_y,
-                                         filter_x, in_channel)];
+                                         filter_x, in_channel)]);
                   output_data[Offset(output_shape, batch, out_y, out_x,
                                      out_channel)] +=
                       input_value * filter_value;
