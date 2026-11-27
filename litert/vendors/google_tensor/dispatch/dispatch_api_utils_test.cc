@@ -23,8 +23,12 @@
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/optional_ref.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
+#include "litert/c/litert_common.h"
 #include "litert/cc/internal/litert_dispatch_delegate_vendor_options.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/litert_environment.h"
+#include "litert/cc/litert_expected.h"
+#include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
@@ -33,6 +37,7 @@
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_test_fixtures.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_device_context.h"
 #include "litert/vendors/google_tensor/dispatch/litert_dispatch_graph.h"
+#include "litert/vendors/google_tensor/dispatch/litert_dispatch_invocation_context.h"
 #include "litert/vendors/google_tensor/dispatch/sb_api.h"
 
 namespace litert::google_tensor {
@@ -249,6 +254,87 @@ TEST_F(DispatchApiUtilsFixtureTest, AnnotateCoherencyEdgesSuccess) {
 
   LITERT_ASSERT_OK(LiteRtDispatchGraphDestroy(graph));
   LITERT_ASSERT_OK(LiteRtDispatchDeviceContextDestroy(custom_context));
+}
+
+using DispatchApiRunOptionsTest = testing::SimpleModelTest;
+
+Expected<internal::LiteRtOptionsPtr> BuildGtCAPIOptions(
+    LiteRtEnvironment env, GoogleTensorOptions::PerformanceMode mode) {
+  LITERT_ASSIGN_OR_RETURN(auto cc_options, Options::Create());
+  LITERT_ASSIGN_OR_RETURN(auto& gt,
+                          cc_options.GetOptions<GoogleTensorOptions>());
+  gt.SetPerformanceMode(mode);
+  auto env_wrap = Environment::WrapCObject(env, OwnHandle::kNo);
+  return internal::LiteRtOptionsPtrBuilder::Build(cc_options,
+                                                  env_wrap.GetHolder());
+}
+
+TEST_F(DispatchApiRunOptionsTest, PerInvokePerformanceModeLifecycle) {
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto saver_opts,
+      BuildGtCAPIOptions(env(),
+                         GoogleTensorOptions::PerformanceMode::kPowerSaver));
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto burst_opts,
+      BuildGtCAPIOptions(env(), GoogleTensorOptions::PerformanceMode::kBurst));
+
+  LiteRtDispatchDeviceContext custom_context = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextCreate(
+      LrtGetRuntimeContext(), saver_opts.get(), &custom_context));
+
+  LiteRtDispatchInvocationContext icontext = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), custom_context,
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+      &icontext));
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "1");
+
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(icontext, burst_opts.get()));
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "5");
+
+  // Shared-graph sibling context applies its own run options on Invoke.
+  LiteRtDispatchInvocationContext sibling = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreateFromGraph(
+      custom_context, icontext->graph(), &sibling));
+  (void)sibling->Invoke();
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "1");
+  (void)icontext->Invoke();
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "5");
+
+  // Clearing run options restores the compilation baseline.
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(icontext, nullptr));
+  EXPECT_EQ(icontext->graph()->GetAppliedAnnotation("edgetpu_performance_mode"),
+            "1");
+
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(sibling));
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(icontext));
+  LITERT_ASSERT_OK(LiteRtDispatchDeviceContextDestroy(custom_context));
+
+  // Default graph falls back to kBalanced ("2") when cleared.
+  LiteRtDispatchInvocationContext default_icontext = nullptr;
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextCreate(
+      LrtGetRuntimeContext(), device_context(),
+      kLiteRtDispatchExecutableTypeMlModel, &model_bytecode(),
+      /*function_name=*/nullptr, /*num_inputs=*/2, /*num_outputs=*/1,
+      &default_icontext));
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextSetOptions(
+      default_icontext, burst_opts.get()));
+  EXPECT_EQ(default_icontext->graph()->GetAppliedAnnotation(
+                "edgetpu_performance_mode"),
+            "5");
+  LITERT_ASSERT_OK(
+      LiteRtDispatchInvocationContextSetOptions(default_icontext, nullptr));
+  EXPECT_EQ(default_icontext->graph()->GetAppliedAnnotation(
+                "edgetpu_performance_mode"),
+            "2");
+  LITERT_ASSERT_OK(LiteRtDispatchInvocationContextDestroy(default_icontext));
 }
 
 }  // namespace
