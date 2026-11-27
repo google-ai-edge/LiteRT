@@ -135,6 +135,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::uint32_t> lpai_core_selection;
   std::optional<std::string> qnn_lib_dir;
   std::optional<std::string> dsp_skel_dir;
+  std::optional<std::string> graph_name_prefix;
 };
 
 LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
@@ -373,6 +374,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
         } else if (key == "dsp_skel_dir") {
           status = LrtQualcommOptionsSetDspSkelDir(parsed_options,
                                                    std::string(value).c_str());
+        } else if (key == "graph_name_prefix") {
+          status = LrtQualcommOptionsSetGraphNamePrefix(
+              parsed_options, std::string(value).c_str());
         }
 
         return status;
@@ -601,6 +605,10 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
   if (options->dsp_skel_dir.has_value()) {
     LITERT_RETURN_IF_ERROR(
         encoder.EncodeString("dsp_skel_dir", *options->dsp_skel_dir));
+  }
+  if (options->graph_name_prefix.has_value()) {
+    LITERT_RETURN_IF_ERROR(
+        encoder.EncodeString("graph_name_prefix", *options->graph_name_prefix));
   }
   *identifier = LrtQualcommOptionsGetIdentifier();
   litert::internal::MakeCStringPayload(encoder.Str(), payload, payload_deleter);
@@ -1686,5 +1694,23 @@ LiteRtStatus LrtQualcommOptionsGetDspSkelDir(LrtQualcommOptions options,
   *dsp_skel_dir =
       options->dsp_skel_dir.has_value() ? options->dsp_skel_dir->c_str() : "";
 
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetGraphNamePrefix(
+    LrtQualcommOptions options, const char* graph_name_prefix) {
+  if (options == nullptr) return kLiteRtStatusErrorInvalidArgument;
+  options->graph_name_prefix = graph_name_prefix ? graph_name_prefix : "";
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetGraphNamePrefix(
+    LrtQualcommOptions options, const char** graph_name_prefix) {
+  if (options == nullptr || graph_name_prefix == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *graph_name_prefix = options->graph_name_prefix.has_value()
+                           ? options->graph_name_prefix->c_str()
+                           : "";
   return kLiteRtStatusOk;
 }

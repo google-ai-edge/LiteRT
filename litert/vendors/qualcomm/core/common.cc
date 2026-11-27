@@ -784,6 +784,14 @@ void Options::SetDspSkelDir(absl::string_view dsp_skel_dir) {
 
 absl::string_view Options::GetDspSkelDir() const { return dsp_skel_dir_; }
 
+void Options::SetGraphNamePrefix(absl::string_view graph_name_prefix) {
+  graph_name_prefix_ = graph_name_prefix;
+}
+
+absl::string_view Options::GetGraphNamePrefix() const {
+  return graph_name_prefix_;
+}
+
 std::string Options::Dump() const {
   // Grouped by category; append a field() line to the right section to add one.
   std::string out =

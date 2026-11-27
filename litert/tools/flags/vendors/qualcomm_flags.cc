@@ -601,6 +601,12 @@ ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
           "FastRPC. If not set, falls back to qualcomm_qnn_lib_dir, then to "
           "the plugin directory (shared_library_dir).");
 
+ABSL_FLAG(std::string, qualcomm_graph_name_prefix, "",
+          "Prefix for QNN graph names. Applies to all backends; also controls "
+          "the DLC filename stem when using the IR backend. For a single "
+          "partition the name is exactly the prefix; for multiple partitions "
+          "it becomes \"{prefix}_{idx}\".");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1131,6 +1137,12 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const std::string dsp_skel_dir = absl::GetFlag(FLAGS_qualcomm_dsp_skel_dir);
   if (!dsp_skel_dir.empty()) {
     opts.SetDspSkelDir(dsp_skel_dir);
+  }
+
+  const std::string graph_name_prefix =
+      absl::GetFlag(FLAGS_qualcomm_graph_name_prefix);
+  if (!graph_name_prefix.empty()) {
+    opts.SetGraphNamePrefix(graph_name_prefix);
   }
 
   const auto custom_op_package =
