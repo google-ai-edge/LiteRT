@@ -167,6 +167,20 @@ class LazyTensorMapping : public TensorMapping {
   // freed with the last reference, so no unloader is needed.
   size_t ReleaseTensorsNotPinned();
 
+  // Drops cached tensors that can be reloaded from the underlying checkpoint
+  // (`name_mapping_`) and were not overridden via `Set()`. Frees unpacked host
+  // weight buffers once all runtime passes have been compiled.
+  void EvictReloadableCache();
+
+  // Controls whether newly loaded tensors are inserted into the internal cache.
+  // Disabling caching during a single graph trace lets unfused per-layer
+  // weights that are immediately concatenated into fused projections be freed
+  // layer-by-layer instead of accumulating in RAM. Tensors already stored in
+  // the cache (e.g. `Set()` overrides or in-memory map entries) are still
+  // returned directly.
+  void SetCacheLoadedTensors(bool enabled) { cache_loaded_tensors_ = enabled; }
+  bool cache_loaded_tensors() const { return cache_loaded_tensors_; }
+
  private:
   // Loads the tensor that maps to `model_name` from the checkpoint.
   //
@@ -183,6 +197,8 @@ class LazyTensorMapping : public TensorMapping {
   absl::flat_hash_set<std::string> pinned_names_;
   std::vector<std::unique_ptr<TensorMappingHooks>> hooks_;
   absl::flat_hash_map<std::string, TensorHandle> tensors_;
+  absl::flat_hash_set<std::string> set_override_names_;
+  bool cache_loaded_tensors_ = true;
 };
 
 }  // namespace litert::tensor::examples
