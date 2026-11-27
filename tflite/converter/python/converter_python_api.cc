@@ -36,11 +36,13 @@ limitations under the License.
 #include "tflite/converter/debug/debug_options.pb.h"
 #include "tflite/converter/metrics/error_collector.h"
 #include "tflite/converter/model_flags.pb.h"
+#include "tflite/converter/python/converter_flags_to_v2_options.h"
 #include "tflite/converter/python/flatbuffer_to_mlir.h"
 #include "tflite/converter/python/graphdef_to_tfl_flatbuffer.h"
 #include "tflite/converter/python/interpreter_wrapper/python_error_reporter.h"
 #include "tflite/converter/python/interpreter_wrapper/python_utils.h"
 #include "tflite/converter/python/jax_to_tfl_flatbuffer.h"
+#include "tflite/converter/python/mlir_bytecode_to_tflite.h"
 #include "tflite/converter/python/saved_model_to_tfl_flatbuffer.h"
 #include "tflite/converter/python/tf_tfl_flatbuffer_helpers.h"
 #include "tflite/converter/quantization/lite/quantize_model.h"
@@ -585,7 +587,7 @@ PyObject* ConvertMlirBytecode(PyObject* converter_flags_proto_txt_raw,
   }
 
   absl::Status status = tensorflow::internal::ConvertMlirBytecodeToTFLite(
-      converter_flags, model_dir, output_file_path);
+      ToConverterV2Options(converter_flags), model_dir, output_file_path);
 
   if (!status.ok()) {
     PyErr_SetString(PyExc_Exception, absl::StatusMessageAsCStr(status));
