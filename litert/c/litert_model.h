@@ -98,6 +98,12 @@ LiteRtStatus LiteRtGetTensorDefiningOp(LiteRtTensor tensor,
                                        bool* has_defining_op,
                                        LiteRtTensorDefiningOp* defining_op);
 
+// Get the subgraph that owns this tensor, or NULL if the tensor is not
+// attached to a committed subgraph (for example, while staged in
+// LiteRtBuilder).
+LiteRtStatus LiteRtGetTensorSubgraph(LiteRtTensor tensor,
+                                     LiteRtSubgraph* subgraph);
+
 // WEIGHTS (constant data)
 
 // Get static weights associated with a given tensor. All tensors have weights,
