@@ -52,10 +52,34 @@ cc_library(
 )
 
 cc_library(
+    name = "metal_decode_quantized_fc",
+    srcs = ["metal_decode_quantized_fc.cc"],
+    hdrs = ["metal_decode_quantized_fc.h"],
+    deps = [
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@ml_drift//ml_drift/common:data_type",
+        "@ml_drift//ml_drift/common:gpu_info",
+        "@ml_drift//ml_drift/common:gpu_model_builder",
+        "@ml_drift//ml_drift/common:kernel_info",
+        "@ml_drift//ml_drift/common:shape",
+        "@ml_drift//ml_drift/common:types",
+        "@ml_drift//ml_drift/common:util",
+        "@ml_drift//ml_drift/common/task:buffer_desc",
+        "@ml_drift//ml_drift/common/task:gpu_operation",
+        "@ml_drift//ml_drift/common/task:tensor_desc",
+        "@ml_drift//ml_drift/common/task:tuning_type",
+        "@ml_drift//ml_drift/common/task:util",
+        "@ml_drift//ml_drift/common/task:weights_layout",
+    ],
+)
+
+cc_library(
     name = "arithmetic_ml_drift",
     srcs = ["arithmetic_ml_drift.cc"],
     hdrs = ["arithmetic_ml_drift.h"],
     deps = [
+        ":metal_decode_quantized_fc",
         ":ml_drift_helpers",
         "//ml_drift_delegate/delegate/composite:tiled_quantized_fully_connected_kernel",
         "//tensor",
@@ -78,6 +102,7 @@ cc_library(
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/kernels:elementwise",
         "@ml_drift//ml_drift/common/kernels:embedding_lookup",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
@@ -226,7 +251,6 @@ cc_test(
         "@ml_drift//ml_drift/common:precision",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
-        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/task:tensor_desc",
     ],
 )
