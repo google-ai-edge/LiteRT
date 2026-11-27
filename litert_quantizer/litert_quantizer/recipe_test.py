@@ -18,10 +18,12 @@ import unittest  # pylint: disable=unused-import, required for OSS.
 
 from absl.testing import absltest
 from absl.testing import parameterized
+import numpy as np
 
 from litert_quantizer import quantizer
 from litert_quantizer import recipe
 from litert_quantizer.utils import test_utils
+from litert_quantizer.utils import tfl_flatbuffer_utils
 from litert_quantizer.utils import tfl_interpreter_utils
 
 _TEST_DATA_PREFIX_PATH = test_utils.get_path_to_datafile('')
@@ -77,14 +79,121 @@ class RecipeTest(parameterized.TestCase):
         pathlib.Path(self._test_model_path).stat().st_size,
     )
 
+  def _verify_quantized_model(
+      self,
+      quant_result: quantizer.QuantizationResult,
+      float_model_path: str,
+      min_max_range: tuple[int | float, int | float] | None = None,
+  ) -> None:
+    quantized_model = quant_result.quantized_model
+    if quantized_model is None:
+      self.fail('Expected non-None quantized model.')
+    self.assertFalse(
+        tfl_flatbuffer_utils.is_float_model(
+            tfl_flatbuffer_utils.read_model(quantized_model)
+        )
+    )
+    self.assertLess(
+        len(quantized_model),
+        pathlib.Path(float_model_path).stat().st_size,
+    )
+    model_bytes = bytes(quantized_model)
+    interpreter = tfl_interpreter_utils.create_tfl_interpreter(model_bytes)
+    input_data = tfl_interpreter_utils.create_random_normal_input_data(
+        model_bytes,
+        num_samples=1,
+        min_max_range=min_max_range,
+    )
+    signature_key, samples = next(iter(input_data.items()))
+    tfl_interpreter_utils.invoke_interpreter_signature(
+        interpreter, samples[0], signature_key=signature_key
+    )
+    output_tensor = interpreter.get_tensor(
+        interpreter.get_output_details()[0]['index']
+    )
+    self.assertTrue(np.all(np.isfinite(output_tensor)))
+
+  def _create_blockwise_embedding_model(self) -> str:
+    # `tests/models/embedding_lookup.tflite` has a [16, 8] table; expand the
+    # embedding dimension to 32 in memory so it is divisible by block size 32.
+    model_path = (
+        pathlib.Path(_TEST_DATA_PREFIX_PATH)
+        / 'tests/models/embedding_lookup.tflite'
+    )
+    model = tfl_flatbuffer_utils.read_model(model_path)
+    (embedding_op,) = model.subgraphs[0].operators
+    table_tensor = model.subgraphs[0].tensors[embedding_op.inputs[1]]
+    output_tensor = model.subgraphs[0].tensors[embedding_op.outputs[0]]
+    table = tfl_flatbuffer_utils.get_tensor_data(table_tensor, model.buffers)
+    if table is None:
+      self.fail('Expected embedding table tensor data.')
+    expanded_table = np.tile(table, (1, 4)).astype(np.float32)
+    table_tensor.shape = list(expanded_table.shape)
+    output_tensor.shape = [1, expanded_table.shape[1]]
+    output_tensor.shapeSignature = None
+    model.buffers[table_tensor.buffer].data = np.frombuffer(
+        expanded_table.tobytes(), dtype=np.uint8
+    )
+    expanded_model_path = self.create_tempfile().full_path
+    tfl_flatbuffer_utils.write_model(model, expanded_model_path)
+    return expanded_model_path
+
   def test_quantization_from_dynamic_wi2c_afp32_func_succeeds(self):
     quant_result = self._quantize_with_recipe_func(
         recipe.dynamic_wi2c_afp32, self._test_model_path
     )
-    self.assertLess(
-        len(quant_result.quantized_model),
-        pathlib.Path(self._test_model_path).stat().st_size,
+    self._verify_quantized_model(quant_result, self._test_model_path)
+
+  @parameterized.named_parameters(
+      dict(
+          testcase_name='channelwise',
+          granularity=recipe.QuantGranularity.CHANNELWISE,
+      ),
+      dict(
+          testcase_name='tensorwise',
+          granularity=recipe.QuantGranularity.TENSORWISE,
+      ),
+  )
+  def test_quantization_from_weight_only_wi2_config_succeeds(self, granularity):
+    qt = quantizer.Quantizer(self._test_model_path)
+    qt.add_weight_only_config(
+        regex='.*',
+        operation_name=recipe.TFLOperationName.FULLY_CONNECTED,
+        num_bits=2,
+        granularity=granularity,
     )
+    self._verify_quantized_model(qt.quantize(), self._test_model_path)
+
+  def test_quantization_from_dynamic_wi2b32_afp32_embedding_lookup_succeeds(
+      self,
+  ):
+    model_path = self._create_blockwise_embedding_model()
+    qt = quantizer.Quantizer(model_path)
+    qt.load_quantization_recipe(
+        recipe.dynamic_wi2b32_afp32(
+            operation_name=recipe.TFLOperationName.EMBEDDING_LOOKUP
+        )
+    )
+    # `embedding_lookup.tflite` has 16 rows, so lookup indices must be in
+    # [0, 16).
+    self._verify_quantized_model(
+        qt.quantize(), model_path, min_max_range=(0, 16)
+    )
+
+  def test_conv2d_int2_config_rejected_by_policy(self):
+    qt = quantizer.Quantizer(self._test_model_path)
+    with self.assertRaisesRegex(ValueError, 'Unsupported op'):
+      qt.add_dynamic_config(
+          regex='.*',
+          operation_name=recipe.TFLOperationName.CONV_2D,
+          num_bits=2,
+      )
+    with self.assertRaisesRegex(ValueError, 'Unsupported op'):
+      qt.add_weight_only_config(
+          regex='.*',
+          operation_name=recipe.TFLOperationName.CONV_2D,
+          num_bits=2,
+      )
 
   @unittest.skip('skipping due to b/438971945')
   def test_quantization_from_weight_only_wi8_afp32_func_succeeds(self):
