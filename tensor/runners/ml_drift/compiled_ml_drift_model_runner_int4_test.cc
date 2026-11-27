@@ -222,5 +222,82 @@ TEST(CreatePackedWeightsTensorDescriptorTest, WideTypesAreNotPacked) {
   }
 }
 
+struct Int8Case {
+  int o;
+  int i;
+  int output_group_size;
+  ml_drift::WeightsLayout layout;
+};
+
+class RearrangeInt8WeightsTest : public ::testing::TestWithParam<Int8Case> {};
+
+TEST_P(RearrangeInt8WeightsTest, DirectFastPathMatchesMlDriftReference) {
+  const Int8Case& c = GetParam();
+  const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+  ml_drift::WeightsDescription desc;
+  desc.type = ml_drift::DataType::kUint8;
+  desc.layout = c.layout;
+  desc.output_group_size = c.output_group_size;
+  const size_t elements_count =
+      static_cast<size_t>(ml_drift::GetTotalElementsCountForLayout(desc, ohwi));
+
+  ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> weights;
+  weights.shape = ohwi;
+  weights.data.resize(static_cast<size_t>(c.o) * c.i);
+  for (size_t k = 0; k < weights.data.size(); ++k) {
+    weights.data[k] = static_cast<int8_t>((k * 37 + 11) % 256 - 128);
+  }
+
+  std::vector<uint8_t> expected(elements_count, 0xA5u);
+  ml_drift::RearrangeWeightsInt8AsUint8(weights, desc, absl::MakeSpan(expected),
+                                        128, 128u);
+
+  std::vector<uint8_t> actual(elements_count, 0x5Au);
+  ASSERT_TRUE(TryDirectRearrangeInt8AsUint8I4O4(weights.data.data(), ohwi, desc,
+                                                absl::MakeSpan(actual)));
+  EXPECT_EQ(actual, expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ShapesAndLayouts, RearrangeInt8WeightsTest,
+    ::testing::Values(
+        // Non-multiple-of-4 dimensions across both layouts and group sizes.
+        Int8Case{6, 7, 1, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int8Case{5, 9, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int8Case{13, 19, 3, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int8Case{6, 7, 1,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+        Int8Case{5, 9, 2,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+        // >= 512K elements with non-multiple-of-4 boundaries to cover the
+        // `ParallelFor` path in both layouts.
+        Int8Case{515, 1027, 4, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int8Case{515, 1027, 4,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}),
+    [](const ::testing::TestParamInfo<Int8Case>& info) {
+      return absl::StrCat(
+          info.param.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4
+              ? "Buffer"
+              : "Texture",
+          "O", info.param.o, "I", info.param.i, "G",
+          info.param.output_group_size);
+    });
+
+TEST(RearrangeInt8WeightsTest, ReturnsFalseForUnsupportedShapeOrSmallBuffer) {
+  const ml_drift::OHWI ohwi(8, 1, 1, 8);
+  ml_drift::WeightsDescription desc;
+  desc.type = ml_drift::DataType::kUint8;
+  desc.layout = ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  desc.output_group_size = 1;
+  const std::vector<int8_t> weights(64, 1);
+  std::vector<uint8_t> short_dst(16, 0);
+  EXPECT_FALSE(TryDirectRearrangeInt8AsUint8I4O4(
+      weights.data(), ohwi, desc, absl::MakeSpan(short_dst)));
+  std::vector<uint8_t> valid_dst(64, 0);
+  EXPECT_FALSE(TryDirectRearrangeInt8AsUint8I4O4(
+      weights.data(), ml_drift::OHWI(8, 2, 1, 8), desc,
+      absl::MakeSpan(valid_dst)));
+}
+
 }  // namespace
 }  // namespace litert::tensor::ml_drift_runner_internal

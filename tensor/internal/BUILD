@@ -256,3 +256,17 @@ cc_library(
         "@com_google_absl//absl/strings:string_view",
     ],
 )
+
+cc_test(
+    name = "tensor_hash_test",
+    srcs = ["tensor_hash_test.cc"],
+    deps = [
+        ":graph",
+        ":tensor_hash",
+        ":type_id",
+        "//tensor:buffer",
+        "//tensor:datatypes",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_googletest//:gtest_main",
+    ],
+)

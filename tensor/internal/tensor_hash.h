@@ -18,7 +18,13 @@ limitations under the License.
 
 // Canonical FNV-1a mixing and deterministic constant-tensor fingerprinting
 // shared across backend lowering (`backends/xnnpack/conversion.cc`) and model
-// weight cache validation (`models/common/`).
+// weight cache validation (`models/common/weight_cache_hash.h`). Uses explicit
+// 64-bit FNV-1a rather than `absl::Hash` because `absl::Hash` mixes a
+// per-process randomized seed, whereas persistent on-disk weight caches
+// (`.xnwc`, `.weights`) require deterministic cross-process hashes. When
+// constant weight buffers expose `HasDeterministicRawHash()` (e.g.
+// `LazyGgufMatrixBuffer`, `LazyPermutedBlockwiseBuffer`, `LazyConcatBuffer`),
+// hashing samples raw mmap'd checkpoint bytes without materializing weights.
 
 #include <algorithm>
 #include <cstddef>
@@ -72,7 +78,13 @@ inline void FnvMixSampledBytes(uint64_t* hash_state, const std::byte* data,
   }
 }
 
+inline void FnvMixRawCallback(uint64_t* hash_state, const std::byte* data,
+                              size_t len) {
+  FnvMixSampledBytes(hash_state, data, len);
+}
+
 inline void MixTensorQuantization(const Quantization* quantization,
+                                  bool ensure_materialized,
                                   uint64_t* hash_state) {
   if (quantization == nullptr) return;
   if (auto pc = quantization->As<PerChannelAffineQuantization>(); pc.ok()) {
@@ -92,6 +104,9 @@ inline void MixTensorQuantization(const Quantization* quantization,
                          fzps->size() * sizeof(float));
     }
   } else if (auto bw = quantization->As<BlockwiseQuantization>(); bw.ok()) {
+    if (ensure_materialized) {
+      bw->EnsureMaterialized();
+    }
     FnvMixScalar(hash_state, int32_t{2});
     FnvMixScalar(hash_state, bw->block_size);
     FnvMixScalar(hash_state, bw->quantized_dimension);
@@ -113,7 +128,8 @@ inline void MixTensorQuantization(const Quantization* quantization,
 
 inline void HashConstantTensorInfo(const TensorInformation& info,
                                    const std::byte* raw_data, size_t raw_size,
-                                   bool include_name, uint64_t* hash_state) {
+                                   bool include_name, bool allow_materialize,
+                                   uint64_t* hash_state) {
   if (include_name) {
     FnvMixString(hash_state, info.name);
   }
@@ -122,13 +138,33 @@ inline void HashConstantTensorInfo(const TensorInformation& info,
   for (int32_t dim : info.shape) {
     FnvMixScalar(hash_state, dim);
   }
-  if (raw_data == nullptr && info.buffer != nullptr) {
+  if (info.buffer != nullptr && info.buffer->HasDeterministicRawHash()) {
+    FnvMixScalar(hash_state, uint8_t{1});
+    info.buffer->HashDeterministicContent(&FnvMixRawCallback, hash_state);
+    if (info.quantization != nullptr) {
+      if (auto pc = info.quantization->As<PerChannelAffineQuantization>();
+          pc.ok()) {
+        FnvMixScalar(hash_state, int32_t{1});
+        FnvMixScalar(hash_state, pc->quantized_dimension);
+      } else if (auto bw = info.quantization->As<BlockwiseQuantization>();
+                 bw.ok()) {
+        FnvMixScalar(hash_state, int32_t{2});
+        FnvMixScalar(hash_state, bw->block_size);
+        FnvMixScalar(hash_state, bw->quantized_dimension);
+      }
+    }
+    return;
+  }
+  FnvMixScalar(hash_state, uint8_t{0});
+  if (raw_data == nullptr && info.buffer != nullptr &&
+      (allow_materialize || info.buffer->IsMaterialized())) {
     LockedBufferSpan<const std::byte> locked = info.buffer->Lock();
     FnvMixSampledBytes(hash_state, locked.data(), locked.size());
   } else {
     FnvMixSampledBytes(hash_state, raw_data, raw_size);
   }
-  MixTensorQuantization(info.quantization.get(), hash_state);
+  MixTensorQuantization(info.quantization.get(),
+                        /*ensure_materialized=*/allow_materialize, hash_state);
 }
 
 inline uint64_t ComputeConstantTensorHash(const TensorInformation& info,
@@ -136,7 +172,7 @@ inline uint64_t ComputeConstantTensorHash(const TensorInformation& info,
                                           size_t raw_size) {
   uint64_t hash_state = kFnvOffsetBasis;
   HashConstantTensorInfo(info, raw_data, raw_size, /*include_name=*/true,
-                         &hash_state);
+                         /*allow_materialize=*/false, &hash_state);
   return hash_state == 0 ? 1ULL : hash_state;
 }
 

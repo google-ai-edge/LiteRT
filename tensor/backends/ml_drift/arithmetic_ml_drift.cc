@@ -461,29 +461,16 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
           "num_blocks > 1."));
     }
     scale_zp_shape = ml_drift::OHWI(ohwi.o, 1, 1, num_blocks);
-    if (bwq_ptr->scales.size() !=
+    if (bwq_ptr->NumBlocks() !=
         static_cast<size_t>(scale_zp_shape.DimensionsProduct())) {
       return absl::InvalidArgumentError(
           absl::StrCat("Weights tensor (", out_info.name, ") has ",
-                       bwq_ptr->scales.size(), " blockwise scales, expected ",
+                       bwq_ptr->NumBlocks(), " blockwise scales, expected ",
                        scale_zp_shape.DimensionsProduct(), "."));
     }
   } else {
     return absl::InvalidArgumentError("Unsupported quantization type");
   }
-
-  const std::vector<float>& raw_scales =
-      pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
-  const ZeroPoints& zero_points =
-      pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
-  const size_t expected_zp_count =
-      (pcq_ptr != nullptr && raw_scales.size() == 1)
-          ? static_cast<size_t>(scale_zp_shape.o)
-          : raw_scales.size();
-  LRT_TENSOR_RETURN_IF_ERROR(zero_points.Validate<float>(expected_zp_count),
-                             _ << "Invalid zero points for weights tensor ("
-                               << out_info.name << ")");
-  const bool has_non_zero_zp = !zero_points.IsSymmetric();
 
   std::string scale_key;
   std::string zp_key;
@@ -492,25 +479,24 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
         absl::StrCat(out_info.name, ":scale:", static_cast<int>(float_type));
     zp_key = absl::StrCat(out_info.name, ":zp:", static_cast<int>(float_type));
     auto scale_it = ctx.weight_name_to_handle.find(scale_key);
-    auto zp_it = ctx.weight_name_to_handle.find(zp_key);
-    if (scale_it != ctx.weight_name_to_handle.end() &&
-        (!has_non_zero_zp || zp_it != ctx.weight_name_to_handle.end())) {
+    if (scale_it != ctx.weight_name_to_handle.end()) {
+      auto zp_it = ctx.weight_name_to_handle.find(zp_key);
       std::optional<ml_drift::GpuModelBuilder::TensorHandle> cached_zp =
-          has_non_zero_zp ? std::make_optional(zp_it->second) : std::nullopt;
+          zp_it != ctx.weight_name_to_handle.end()
+              ? std::make_optional(zp_it->second)
+              : std::nullopt;
       return ScaleZpInfo{scale_it->second, cached_zp, scale_zp_shape};
     }
     if (ctx.shared_weight_descriptors != nullptr) {
       auto shared_scale_it = ctx.shared_weight_descriptors->find(scale_key);
-      auto shared_zp_it = ctx.shared_weight_descriptors->find(zp_key);
-      if (shared_scale_it != ctx.shared_weight_descriptors->end() &&
-          (!has_non_zero_zp ||
-           shared_zp_it != ctx.shared_weight_descriptors->end())) {
+      if (shared_scale_it != ctx.shared_weight_descriptors->end()) {
         auto scale_handle = ctx.gpu_model_builder->AddConstantTensor(
             CopyDescriptorWithoutData(shared_scale_it->second));
         ctx.weight_name_to_handle.insert({scale_key, scale_handle});
         std::optional<ml_drift::GpuModelBuilder::TensorHandle>
             zero_point_handle;
-        if (has_non_zero_zp) {
+        auto shared_zp_it = ctx.shared_weight_descriptors->find(zp_key);
+        if (shared_zp_it != ctx.shared_weight_descriptors->end()) {
           zero_point_handle = ctx.gpu_model_builder->AddConstantTensor(
               CopyDescriptorWithoutData(shared_zp_it->second));
           ctx.weight_name_to_handle.insert({zp_key, *zero_point_handle});
@@ -519,6 +505,29 @@ absl::StatusOr<ScaleZpInfo> CreateScaleAndZeroPointToFCTensor(
       }
     }
   }
+
+  if (bwq_ptr != nullptr) {
+    bwq_ptr->EnsureMaterialized();
+    if (bwq_ptr->scales.size() !=
+        static_cast<size_t>(scale_zp_shape.DimensionsProduct())) {
+      return absl::InvalidArgumentError(
+          absl::StrCat("Weights tensor (", out_info.name, ") has ",
+                       bwq_ptr->scales.size(), " blockwise scales, expected ",
+                       scale_zp_shape.DimensionsProduct(), "."));
+    }
+  }
+  const std::vector<float>& raw_scales =
+      pcq_ptr != nullptr ? pcq_ptr->scales : bwq_ptr->scales;
+  const ZeroPoints& zero_points =
+      pcq_ptr != nullptr ? pcq_ptr->zero_points : bwq_ptr->zero_points;
+  const size_t expected_zp_count =
+      (pcq_ptr != nullptr && raw_scales.size() == 1)
+          ? static_cast<size_t>(scale_zp_shape.o)
+          : raw_scales.size();
+  LRT_TENSOR_RETURN_IF_ERROR(
+      zero_points.Validate<float>(expected_zp_count),
+      _ << "Invalid zero points for weights tensor (" << out_info.name << ")");
+  const bool has_non_zero_zp = !zero_points.IsSymmetric();
 
   ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> scale_values;
   scale_values.shape = scale_zp_shape;
@@ -1294,7 +1303,6 @@ absl::Status OpMixin<FullyConnectedOperation, MlDriftMixinTag>::ToMlDrift(
       out = ctx.gpu_model_builder->Cast(out, ml_drift::DataType::kFloat16);
     }
   } else if (weights_info.type == Type::kI8) {
-    // TODO(piyu): Support caching scale and zero point tensor.
     LRT_TENSOR_ASSIGN_OR_RETURN(
         (auto [scale_handle, zero_point_handle, scale_zp_shape]),
         CreateScaleAndZeroPointToFCTensor(ctx, op.inputs[1], float_type));

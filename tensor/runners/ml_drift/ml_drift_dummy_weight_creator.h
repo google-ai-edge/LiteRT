@@ -42,6 +42,18 @@ ml_drift::TensorDescriptor CreatePackedWeightsTensorDescriptor(
     const ml_drift::OHWI& weights_shape, size_t elements_count,
     bool is_embedding);
 
+// Directly packs a 2-D `int8_t` weight matrix (`shape.h == 1 && shape.w == 1`)
+// into ML Drift's `I4O4` `uint8_t` tile layout (`kOSpatialIOGroupI4O4` or
+// `k2DYIsSpatialIOAndXIsOGroupI4O4`), flipping the sign bit (`^ 0x80u`) to map
+// signed `[-128, 127]` into unsigned `[0, 255]` (padding out-of-bounds lanes
+// with `0x80u`, i.e., signed `0`). Returns `false` if the shape, layout,
+// `output_group_size`, or `dst` buffer size is unsupported so callers can fall
+// back to `ml_drift::RearrangeWeightsInt8AsUint8`.
+bool TryDirectRearrangeInt8AsUint8I4O4(const int8_t* src,
+                                       const ml_drift::OHWI& shape,
+                                       const ml_drift::WeightsDescription& desc,
+                                       absl::Span<uint8_t> dst);
+
 class MlDriftDummyWeightCreator {
  public:
   explicit MlDriftDummyWeightCreator(ml_drift::GpuModelBuilder* model_builder);
