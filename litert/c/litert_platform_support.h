@@ -17,6 +17,10 @@
 
 #include "litert/c/litert_common.h"
 
+#if LITERT_HAS_ION_SUPPORT || LITERT_HAS_FASTRPC_SUPPORT
+#include <dlfcn.h>
+#endif  // LITERT_HAS_ION_SUPPORT || LITERT_HAS_FASTRPC_SUPPORT
+
 #ifdef __cplusplus
 extern "C" {
 #endif  // __cplusplus
@@ -47,7 +51,27 @@ inline bool LiteRtHasAhwbSupport() {
 
 inline bool LiteRtHasIonSupport() {
 #if LITERT_HAS_ION_SUPPORT
-  return true;
+  void* handle = dlopen("libion.so", RTLD_NOW | RTLD_LOCAL);
+  if (!handle) {
+    return false;
+  }
+  typedef int (*LiteRtIonOpenFn)();
+  typedef int (*LiteRtIonCloseFn)(int);
+  LiteRtIonOpenFn ion_open =
+      reinterpret_cast<LiteRtIonOpenFn>(dlsym(handle, "ion_open"));
+  LiteRtIonCloseFn ion_close =
+      reinterpret_cast<LiteRtIonCloseFn>(dlsym(handle, "ion_close"));
+  void* ion_alloc_fd = dlsym(handle, "ion_alloc_fd");
+  bool supported = false;
+  if (ion_open && ion_close && ion_alloc_fd) {
+    int fd = ion_open();
+    if (fd >= 0) {
+      supported = true;
+      ion_close(fd);
+    }
+  }
+  dlclose(handle);
+  return supported;
 #else
   return false;
 #endif
@@ -63,7 +87,15 @@ inline bool LiteRtHasDmaBufSupport() {
 
 inline bool LiteRtHasFastRpcSupport() {
 #if LITERT_HAS_FASTRPC_SUPPORT
-  return true;
+  void* handle = dlopen("libcdsprpc.so", RTLD_NOW | RTLD_LOCAL);
+  if (!handle) {
+    return false;
+  }
+  bool supported = dlsym(handle, "rpcmem_alloc") != nullptr &&
+                   dlsym(handle, "rpcmem_free") != nullptr &&
+                   dlsym(handle, "rpcmem_to_fd") != nullptr;
+  dlclose(handle);
+  return supported;
 #else
   return false;
 #endif
