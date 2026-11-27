@@ -106,12 +106,14 @@ tf_cc_test(
         ":util",
         "//tflite:framework",
         "//tflite:string_util",
+        "//tflite:type_to_tflitetype",
         "//tflite:util",
         "//tflite/core/c:c_api_types",
-        "//tflite/testing:util",
+        "@com_google_absl//absl/log:absl_check",
         "@com_google_absl//absl/status",
         "@com_google_googletest//:gtest_main",
         "@org_tensorflow//tensorflow/core:framework",
+        "@org_tensorflow//tensorflow/core/platform:tstring",
     ],
 )
 
