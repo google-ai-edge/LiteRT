@@ -108,6 +108,17 @@ struct LeakyReluOperation : LeakyReluOperationData, Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+// Elementwise `min(max(x, min), max)`.
+struct ClampOperationData {
+  float min;
+  float max;
+};
+
+struct ClampOperation : ClampOperationData, Operation {
+  absl::string_view GetName() const override { return "Clamp"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct EluOperation : Operation {
   absl::string_view GetName() const override { return "Elu"; }
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION

@@ -216,19 +216,28 @@ class NnpackRunner {
   }
 
   const NnpackGraph& graph() const { return *graph_; }
-  NnpackGraph& mutable_graph() { return *graph_; }
+  NnpackGraph& mutable_graph() {
+    shapes_dirty_ = true;
+    OnExternalBuffersMutated();
+    return *graph_;
+  }
   const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
   external_buffers() const {
     return external_buffers_;
   }
   absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
   mutable_external_buffers() {
+    shapes_dirty_ = true;
+    OnExternalBuffersMutated();
     return external_buffers_;
   }
 
  protected:
   virtual uint32_t FlagExternalInput() const = 0;
   virtual uint32_t FlagExternalOutput() const = 0;
+
+  virtual void OnShapesChanged() {}
+  virtual void OnExternalBuffersMutated() {}
 
   virtual absl::Status CreateRuntime() = 0;
   virtual absl::Status SetExternalValueShape(uint32_t id,
@@ -246,6 +255,8 @@ class NnpackRunner {
   std::unique_ptr<NnpackGraph> graph_;
   // Buffers that need to be kept alive to execute the runtime.
   absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>> external_buffers_;
+  std::vector<LockedBufferSpan<const std::byte>> locks_scratch_;
+  std::vector<size_t> dims_scratch_;
   size_t num_threads_ = 1;
   bool runtime_prepared_ = false;
   bool shapes_dirty_ = true;
