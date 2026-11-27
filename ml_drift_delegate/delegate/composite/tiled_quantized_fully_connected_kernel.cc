@@ -497,6 +497,12 @@ std::unique_ptr<::ml_drift::GPUOperation> CreateTiledQuantizedFullyConnected(
       tiled_max_spatial = 0;
     }
     use_tiled = tiled_max_spatial <= 0 || total_spatial <= tiled_max_spatial;
+  } else if (gpu_info.IsApple() &&
+             precision == ::ml_drift::CalculationsPrecision::kF16) {
+    // On Apple GPUs in FP16 precision, `FullyConnectedInt4/8ExternalWeights`
+    // dispatches `ConvAppleMPP` directly on quantized weights (with zero
+    // weight conversion up to `recommended_single_conv` spatial size = 64).
+    use_tiled = false;
   } else {
     const double weight_bytes_per_param =
         (::ml_drift::SizeInBitsOf(weights.desc.type) +
