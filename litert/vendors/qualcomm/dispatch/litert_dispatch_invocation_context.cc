@@ -85,6 +85,14 @@ std::string_view inline GetEventUnit(QnnProfile_EventUnit_t unit) {
 }
 
 namespace {
+std::filesystem::path GetTensorDumpFolder(const ::qnn::Options& options) {
+  auto dump_dir = options.GetTensorDumpDir();
+  if (dump_dir.empty()) {
+    dump_dir = "dumped_tensors";
+  }
+  return std::filesystem::path(std::string(dump_dir));
+}
+
 bool IsPerformanceModeSet(const ::qnn::Options& options,
                           ::qnn::BackendType backend_type) {
   switch (backend_type) {
@@ -143,12 +151,14 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       });
 
   output_buffer_handles_.resize(real_outputs.size());
+  have_dump_tensors_ = !dumped_outputs.empty();
 
   outputs_.clear();
   std::move(real_outputs.begin(), real_outputs.end(),
             std::back_inserter(outputs_));
   std::move(dumped_outputs.begin(), dumped_outputs.end(),
             std::back_inserter(outputs_));
+  dump_folder_ = GetTensorDumpFolder(qnn_manager_.GetOptions());
 }
 
 LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
@@ -182,12 +192,14 @@ LiteRtDispatchInvocationContextT::LiteRtDispatchInvocationContextT(
       });
 
   output_buffer_handles_.resize(real_outputs.size());
+  have_dump_tensors_ = !dumped_outputs.empty();
 
   outputs_.clear();
   std::move(real_outputs.begin(), real_outputs.end(),
             std::back_inserter(outputs_));
   std::move(dumped_outputs.begin(), dumped_outputs.end(),
             std::back_inserter(outputs_));
+  dump_folder_ = GetTensorDumpFolder(qnn_manager_.GetOptions());
 }
 
 LiteRtDispatchInvocationContextT::~LiteRtDispatchInvocationContextT() {
@@ -545,11 +557,10 @@ Expected<void> LiteRtDispatchInvocationContextT::Execute() {
     LITERT_RETURN_IF_ERROR(Profile());
   }
 
-  // TODO (chunhsue-qti): pass folder as option
-  std::string dump_folder = "/data/local/tmp/dumped_tensors/";
+  if (!have_dump_tensors_) return {};
   for (int i = 0; i < outputs_.size(); ++i) {
     if (outputs_.at(i).IsMarkedDump()) {
-      auto status = WriteTensorTo(dump_folder, outputs_[i]);
+      auto status = WriteTensorTo(dump_folder_, outputs_[i]);
       if (!status) {
         LITERT_LOG(LITERT_ERROR, "Failed to dump tensor id: %d", i);
       }

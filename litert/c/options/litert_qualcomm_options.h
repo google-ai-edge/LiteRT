@@ -275,6 +275,16 @@ LiteRtStatus LrtQualcommOptionsGetHtpWeightSharingChannelTileSize(
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
+// Sets the initial output directory for tensor dumps.
+// An empty string uses the default directory.
+LiteRtStatus LrtQualcommOptionsSetTensorDumpDir(LrtQualcommOptions options,
+                                             const char* tensor_dump_dir);
+
+// Returns a borrowed string, empty if unset, valid until this option changes
+// or the options object is destroyed.
+LiteRtStatus LrtQualcommOptionsGetTensorDumpDir(LrtQualcommOptions options,
+                                             const char** tensor_dump_dir);
+
 // htp_performance_mode
 
 // Configures the HTP device to optimize for performance or power efficiency.

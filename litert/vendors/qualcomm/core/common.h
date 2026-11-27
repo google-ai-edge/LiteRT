@@ -204,6 +204,9 @@ class Options {
   void SetHtpDlbcWeights(bool htp_dlbc_weights);
   bool GetHtpDlbcWeights() const;
 
+  void SetTensorDumpDir(absl::string_view tensor_dump_dir);
+  absl::string_view GetTensorDumpDir() const;
+
   void SetHtpPerformanceMode(HtpPerformanceMode htp_performance_mode);
   HtpPerformanceMode GetHtpPerformanceMode() const;
 
@@ -334,6 +337,7 @@ class Options {
   DspPdSession dsp_pd_session_ = DspPdSession::kUnsigned;
   DspEncoding dsp_encoding_ = DspEncoding::kStatic;
   std::vector<std::int32_t> dump_tensor_ids_;
+  std::string tensor_dump_dir_;
   std::string ir_json_dir_;
   std::string dlc_dir_;
   std::string graph_transform_;

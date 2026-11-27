@@ -166,6 +166,7 @@ inline LiteRtStatus InitQnnOptions(
   qnn_options.SetGraphPriority(
       static_cast<::qnn::GraphPriority>(qualcomm_options.GetGraphPriority()));
   qnn_options.SetDumpTensorIds(qualcomm_options.GetDumpTensorIds());
+  qnn_options.SetTensorDumpDir(qualcomm_options.GetTensorDumpDir());
   qnn_options.SetSaverOutputDir(qualcomm_options.GetSaverOutputDir());
   qnn_options.SetGraphIOTensorMemType(static_cast<::qnn::GraphIOTensorMemType>(
       qualcomm_options.GetGraphIOTensorMemType()));

@@ -35,6 +35,10 @@ bazel run //litert/tools:apply_plugin_main -- \
 The `bazel build` of `qnn_compiler_plugin_so` is required before
 `apply_plugin_main` can load the Qualcomm compiler plugin via `--libs`.
 
+Tensor dumps also support a dispatch-time destination, described below. Unlike
+the compile-time directory knobs above, an empty tensor dump directory preserves
+the existing default destination.
+
 The sections below describe each feature, how to enable it, and how the artifact
 relates to the QAIRT SDK. For deeper information on the QNN-side artifacts and
 tools, refer to the QAIRT SDK documentation under
@@ -43,6 +47,35 @@ tools, refer to the QAIRT SDK documentation under
 --------------------------------------------------------------------------------
 
 # Features
+
+## Tensor dumps
+
+Compile with `--qualcomm_dump_tensor_ids=<ids>` to mark selected tensors as
+extra graph outputs. Use `-1` to mark all op outputs. Then set the destination
+when executing the compiled model:
+
+```bash
+run_model --graph=<compiled.tflite> --accelerator=npu \
+    --dispatch_library_dir=<dispatch-library-dir> \
+    --qualcomm_tensor_dump_dir=<dump-dir>
+```
+
+`tensor_dump_dir` is a **dispatch option**. Changing it does not require
+recompiling the model, and setting it alone does not mark tensors for dumping.
+It is also available as the TOML key `tensor_dump_dir`, the C API
+`LrtQualcommOptionsSetTensorDumpDir()`, and the C++ API
+`QualcommOptions::SetTensorDumpDir()`.
+
+Configure the directory before creating the compiled model. Per-inference
+options do not change it. If no directory is configured, dispatch uses
+`dumped_tensors/` in the process's current working directory. Relative paths
+are resolved against the current working directory when tensors are written.
+
+Dispatch creates the directory recursively and writes `<tensor-name>.raw` data
+and `<tensor-name>.csv` containing scale and zero point. Repeated runs overwrite
+the same filenames. Dump failures are logged without failing inference.
+
+--------------------------------------------------------------------------------
 
 ## Saver
 

@@ -165,6 +165,11 @@ ABSL_FLAG(litert::qualcomm::QualcommOptions::DspEncoding, qualcomm_dsp_encoding,
 ABSL_FLAG(::litert::tools::IntList, qualcomm_dump_tensor_ids, {},
           "Debug Feature. Ids to dump as outputs. Comma-separated list of "
           "string. Use -1 to dump all op outputs.");
+ABSL_FLAG(
+    std::string, qualcomm_tensor_dump_dir, "",
+    "Directory for tensor dumps during inference. Select tensors at compile "
+    "time with --qualcomm_dump_tensor_ids. Empty uses dumped_tensors/ in the "
+    "current working directory.");
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1051,6 +1056,7 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto dump_tensor_ids =
       absl::GetFlag(FLAGS_qualcomm_dump_tensor_ids).elements;
   opts.SetDumpTensorIds(dump_tensor_ids);
+  opts.SetTensorDumpDir(absl::GetFlag(FLAGS_qualcomm_tensor_dump_dir));
 
   const std::string ir_json_dir = absl::GetFlag(FLAGS_qualcomm_ir_json_dir);
   opts.SetIrJsonDir(ir_json_dir);

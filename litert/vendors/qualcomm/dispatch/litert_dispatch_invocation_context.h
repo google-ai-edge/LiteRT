@@ -133,9 +133,11 @@ class LiteRtDispatchInvocationContextT {
   std::vector<LiteRtTensorBufferHandle> input_buffer_handles_;
   std::vector<LiteRtTensorBufferHandle> output_buffer_handles_;
   std::optional<LiteRtSchedulingInfo> scheduling_info_;
-  // Per-invocation performance-mode override (set via SetOptions). nullopt
+  // Per-invocation option overrides (set via SetOptions). nullopt
   // means to use the device-context options from qnn_manager_.
   std::optional<::qnn::Options> run_options_;
+  bool have_dump_tensors_ = false;
+  std::filesystem::path dump_folder_;
 };
 
 #endif  // ODML_LITERT_LITERT_VENDORS_QUALCOMM_DISPATCH_LITERT_DISPATCH_INVOCATION_CONTEXT_H_

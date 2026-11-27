@@ -429,6 +429,16 @@ TEST(QnnOptionTest, SetGraphIOTensorMemType) {
             GraphIOTensorMemType::kMemHandle);
 }
 
+TEST(QnnOptionTest, TensorDumpDir) {
+  Options options;
+  EXPECT_TRUE(options.GetTensorDumpDir().empty());
+  options.SetTensorDumpDir("/tmp/tensor_dumps");
+  EXPECT_EQ(options.GetTensorDumpDir(), "/tmp/tensor_dumps");
+  EXPECT_NE(options.Dump().find("/tmp/tensor_dumps"), std::string::npos);
+  options.SetTensorDumpDir("");
+  EXPECT_TRUE(options.GetTensorDumpDir().empty());
+}
+
 TEST(QnnOptionTest, Default) {
   Options options;
   EXPECT_EQ(options.GetLogLevel(), LogLevel::kInfo);

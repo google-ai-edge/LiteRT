@@ -156,6 +156,8 @@ ABSL_DECLARE_FLAG(int32_t, qualcomm_htp_weight_sharing_channel_tile_size);
 
 // DISPATCH OPTIONS ////////////////////////////////////////////////////////////
 
+ABSL_DECLARE_FLAG(std::string, qualcomm_tensor_dump_dir);
+
 ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::HtpPerformanceMode,
                   qualcomm_htp_performance_mode);
 
