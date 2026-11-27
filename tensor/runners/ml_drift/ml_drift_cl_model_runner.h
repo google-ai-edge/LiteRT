@@ -19,6 +19,7 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <utility>
@@ -116,9 +117,46 @@ struct MlDriftClBackend {
     return ctx->GetTensor(id);
   }
 
+  static bool UseStagingUploadForConstTensor(
+      Environment* env, const ml_drift::TensorDescriptor& desc,
+      size_t data_size) {
+    constexpr size_t kMinStagingBytes = 64 * 1024;
+    if (data_size < kMinStagingBytes) return false;
+    const ml_drift::TensorStorageType storage = desc.GetStorageType();
+    if (storage != ml_drift::TensorStorageType::kBuffer &&
+        storage != ml_drift::TensorStorageType::kImageBuffer) {
+      return false;
+    }
+    if (env->device().GetInfo().IsMali()) {
+      // Mali OpenCL returns incorrect results when uploading via a staging
+      // buffer (matches LiteRT's `GpuInferenceContextOpenCl`).
+      return false;
+    }
+    if (env->device().GetInfo().IsNvidia()) {
+      // On discrete NVIDIA GPUs, device buffers live in VRAM so staging copies
+      // do not save host RSS and add per-tensor synchronization overhead.
+      return false;
+    }
+    if (const char* env_flag = std::getenv("LRT_CL_STAGING_UPLOAD");
+        env_flag != nullptr && env_flag[0] == '0' && env_flag[1] == '\0') {
+      return false;
+    }
+    return true;
+  }
+
   static absl::Status CreateConstTensor(Environment* env,
                                         const ml_drift::TensorDescriptor& desc,
                                         Tensor* tensor) {
+    const auto& data = desc.GetData();
+    if (!data.empty() &&
+        UseStagingUploadForConstTensor(env, desc, data.size())) {
+      ml_drift::TensorDescriptor desc_without_data;
+      desc.CopyWithoutData(&desc_without_data);
+      LRT_TENSOR_RETURN_IF_ERROR(
+          tensor->CreateFromDescriptor(desc_without_data, env->context()));
+      return tensor->WriteDataViaStaging(data.data(), env->queue(),
+                                         &env->context());
+    }
     return tensor->CreateFromDescriptor(desc, env->context());
   }
 
@@ -132,7 +170,8 @@ struct MlDriftClBackend {
   static absl::Status CreateConstTensorFromHostData(
       Environment* env, const ml_drift::TensorDescriptor& desc,
       absl::Span<const uint8_t> data, bool zero_copy, Tensor* tensor,
-      std::shared_ptr<const void>* keep_alive) {
+      std::shared_ptr<const void>* keep_alive,
+      bool* async_pending = nullptr) {
     keep_alive->reset();
     if (data.size() < desc.GetMemorySizeInBytes()) {
       return absl::InvalidArgumentError(
@@ -157,7 +196,22 @@ struct MlDriftClBackend {
     desc.CopyWithoutData(&desc_without_data);
     LRT_TENSOR_RETURN_IF_ERROR(
         tensor->CreateFromDescriptor(desc_without_data, env->context()));
-    return tensor->WriteData(data.data(), env->queue(), /*async=*/false);
+    if (UseStagingUploadForConstTensor(env, desc_without_data, data.size())) {
+      // On Adreno OpenCL, uploading large `kBuffer`/`kImageBuffer` weights via
+      // a short-lived staging buffer (`clEnqueueCopyBuffer`) avoids permanently
+      // CPU-mapping the destination `cl_mem` into the process's `RssFile`/
+      // `RssShmem`, cutting warm GPU Peak RSS by ~1-2 GB.
+      return tensor->WriteDataViaStaging(data.data(), env->queue(),
+                                         &env->context());
+    }
+    const bool use_async =
+        async_pending != nullptr && env->device().GetInfo().IsNvidia();
+    LRT_TENSOR_RETURN_IF_ERROR(
+        tensor->WriteData(data.data(), env->queue(), /*async=*/use_async));
+    if (use_async) {
+      *async_pending = true;
+    }
+    return absl::OkStatus();
   }
 
   ABSL_ATTRIBUTE_NO_SANITIZE_CFI
