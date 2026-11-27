@@ -19,7 +19,7 @@ import pluginJs from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 export default [
-  {ignores: ['dist/*', 'wasm/*']},
+  {ignores: ['dist/*', 'spec_dist/*', 'wasm/*']},
   {files: ['**/*.{js,mjs,cjs,ts}']},
   {languageOptions: {globals: globals.browser}},
   pluginJs.configs.recommended,

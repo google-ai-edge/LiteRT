@@ -46,6 +46,7 @@
     "typescript": "^5.5.4"
   },
   "dependencies": {
-    "@litertjs/wasm-utils": "^2.5.3"
+    "@litertjs/wasm-utils": "^2.5.3",
+    "@litertjs/webgpu-utils": "^2.5.3"
   }
 }
