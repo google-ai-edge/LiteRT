@@ -298,6 +298,36 @@ Tensor<Mixins...> LeakyRelu(
   return output;
 }
 
+// Clamps each element of `a` to `[min, max]`. Backends lower it to a single
+// elementwise clamp that can be fused into the producing op.
+template <class... Mixins>
+Tensor<Mixins...> Clamp(
+    Tensor<Mixins...> a, float min, float max,
+    absl::SourceLocation loc = absl::SourceLocation::current()) {
+  if (absl::Status status = graph::GetStatus(a.GetRaw()); !status.ok()) {
+    return {status, loc};
+  }
+  if (!(min <= max)) {
+    return {absl::InvalidArgumentError(absl::StrCat(
+                "Clamp requires min <= max, got [", min, ", ", max, "].")),
+            loc};
+  }
+  auto op = std::make_shared<graph::ClampOperation>();
+  RegisterMixins<Mixins...>(op);
+  op->min = min;
+  op->max = max;
+  AddInputs(op, a);
+  Tensor<Mixins...> output = AddOutput(op, loc);
+  auto a_info = graph::GetInfo(a.GetRaw());
+  auto o_info = graph::GetInfo(output.GetRaw());
+  if (!a_info.ok()) return {a_info.status(), loc};
+  if (!o_info.ok()) return {o_info.status(), loc};
+  o_info->shape = a_info->shape;
+  o_info->type = a_info->type;
+  graph::OpDebugger::DebugOp(*op);
+  return output;
+}
+
 template <class... Mixins>
 Tensor<Mixins...> Elu(
     Tensor<Mixins...> a,
@@ -2049,9 +2079,27 @@ Tensor<Mixins...> Slice(
           "Slice size tensor length must equal input rank.");
     }
     output_info.shape.assign(size_data.begin(), size_data.end());
+    absl::Span<const int32_t> begin_data;
+    std::optional<LockedBufferSpan<const std::byte>> begin_lock;
+    if (auto begin_info = GetInfo(begin.GetRaw());
+        begin_info.ok() && begin_info->buffer != nullptr) {
+      begin_lock.emplace(begin_info->buffer->Lock());
+      begin_data = begin_lock->As<const int32_t>();
+    }
     for (size_t i = 0; i < output_info.shape.size(); ++i) {
-      if (output_info.shape[i] == -1) {
-        output_info.shape[i] = input_info.shape[i];
+      if (input_info.shape[i] < 0) {
+        if (output_info.shape[i] <= -1) {
+          output_info.shape[i] = -1;
+        }
+        continue;
+      }
+      const int32_t raw_begin =
+          i < begin_data.size() ? begin_data[i] : int32_t{0};
+      const int32_t eff_begin =
+          raw_begin < 0 ? (input_info.shape[i] + raw_begin) : raw_begin;
+      if (output_info.shape[i] <= -1) {
+        const int32_t tail_trim = -1 - output_info.shape[i];
+        output_info.shape[i] = input_info.shape[i] - eff_begin - tail_trim;
       }
     }
   } else {
