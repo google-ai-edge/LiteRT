@@ -682,18 +682,27 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
           }
         }
 #ifdef __EMSCRIPTEN__
-        if (delegate_data_->weight_loader == nullptr) {
-          return absl::FailedPreconditionError(
-              "Cannot upload converted weights on web: the delegate has no "
-              "external weight loader. The model likely does not declare any "
-              "external weight tensors; check that it was converted with "
-              "external weights and that its external buffer table is "
-              "populated.");
+        if (delegate_data_->weight_loader != nullptr) {
+          ABSL_RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
+              delegate_data_->weight_loader, gpu_weights_conversion_model,
+              io_mapping,
+              shared_mem_manager->GetWeightIdToExternalBufferIdMap(),
+              upload_weights_infos));
+        } else {
+          for (const auto& upload_info : upload_weights_infos) {
+            if (upload_info.data == nullptr) {
+              return absl::FailedPreconditionError(absl::StrCat(
+                  "Cannot write weight tensor: data pointer is null "
+                  "for input_id ",
+                  upload_info.input_id));
+            }
+            ABSL_RETURN_IF_ERROR(conversion_context_->WriteDataToWeightTensor(
+                upload_info.input_id,
+                absl::MakeConstSpan(
+                    static_cast<const uint8_t*>(upload_info.data),
+                    upload_info.size)));
+          }
         }
-        ABSL_RETURN_IF_ERROR(conversion_context_->UploadWeightsOnWeb(
-            delegate_data_->weight_loader, gpu_weights_conversion_model,
-            io_mapping, shared_mem_manager->GetWeightIdToExternalBufferIdMap(),
-            upload_weights_infos));
 #else
         for (const auto& upload_info : upload_weights_infos) {
           auto upload_fn = [this, upload_info]() -> absl::Status {
@@ -732,7 +741,9 @@ absl::Status DelegateKernel::InitializeExternalSharedConstantTensors(
         } else {
           ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
         }
+#ifndef __EMSCRIPTEN__
         ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+#endif  // !__EMSCRIPTEN__
         if (delegate_data_->options->wait_for_weights_conversion_complete &&
             delegate_data_->weights_conversion_counter) {
           delegate_data_->weights_conversion_counter->Wait();
@@ -1002,7 +1013,9 @@ absl::Status DelegateKernel::GraphToGpuModelWithGpuConverters(
   // this can be called later(but before ctx_ enqueue calls) and without
   // explicit wait(if the same queue used for ctx_ enqueue calls).
   ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
+#ifndef __EMSCRIPTEN__
   ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+#endif  // !__EMSCRIPTEN__
 
   for (const auto& [converted_weight_id, main_model_weight_id] :
        weights_mapping) {
@@ -1416,7 +1429,9 @@ absl::Status DelegateKernel::IrModelToGpuModelWithGpuConverters(
   // this can be called later(but before ctx_ enqueue calls) and without
   // explicit wait(if the same queue used for ctx_ enqueue calls).
   ABSL_RETURN_IF_ERROR(conversion_context_->Dispatch());
+#ifndef __EMSCRIPTEN__
   ABSL_RETURN_IF_ERROR(backend_->WaitForCompletion());
+#endif  // !__EMSCRIPTEN__
 
   for (const auto& [converted_weight_id, main_model_weight_id] :
        weights_mapping) {
