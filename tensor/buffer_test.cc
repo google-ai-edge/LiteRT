@@ -166,6 +166,24 @@ TEST(OwningCpuBuffer, AlignedAllocationIsAligned) {
               Each(Pointer(ResultOf(&OwningCpuBuffer::IsAligned, Eq(true)))));
 }
 
+TEST(OwningCpuBuffer, LargeMmapAllocationIsAlignedAndWritable) {
+  constexpr size_t kLargeBytes =
+      OwningCpuBuffer::kMmapAllocationThresholdBytes + 137;
+  OwningCpuBuffer::CustomAllocPtr raw =
+      OwningCpuBuffer::AlignedAlloc(kLargeBytes);
+  ASSERT_THAT(raw, NotNull());
+  EXPECT_TRUE(OwningCpuBuffer::IsAligned(raw.get()));
+  raw.get()[0] = std::byte{0x5A};
+  raw.get()[kLargeBytes - 1] = std::byte{0xA5};
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      std::shared_ptr<OwningCpuBuffer> buffer,
+      OwningCpuBuffer::Own(std::move(raw), kLargeBytes));
+  ASSERT_THAT(buffer, NotNull());
+  EXPECT_EQ(buffer->size(), kLargeBytes);
+  EXPECT_EQ(buffer->data()[0], std::byte{0x5A});
+  EXPECT_EQ(buffer->data()[kLargeBytes - 1], std::byte{0xA5});
+}
+
 TEST(OwningCpuBuffer, TransferOwnershipFromRawData) {
   const int32_t reference_data[] = {1, 2, 3, 4, 5};
   OwningCpuBuffer::CustomAllocPtr data =

@@ -664,6 +664,53 @@ TEST(QuantizationTest,
       Not(IsOk()));
 }
 
+TEST(QuantizationTest, CpuSymmetricFallbackParallelLargeTensorAndNonFinite) {
+  // Exceed the 65536-element `ParallelFor` grain so multi-threaded tiling runs.
+  constexpr int kRows = 1024;
+  constexpr int kCols = 256;
+  constexpr int kBlockSize = 32;
+  constexpr size_t kBlocksPerRow = kCols / kBlockSize;
+
+  std::vector<int8_t> raw_i8(static_cast<size_t>(kRows) * kCols);
+  std::vector<float> scales(static_cast<size_t>(kRows) * kBlocksPerRow);
+  for (int r = 0; r < kRows; ++r) {
+    for (size_t b = 0; b < kBlocksPerRow; ++b) {
+      scales[static_cast<size_t>(r) * kBlocksPerRow + b] =
+          0.01f * static_cast<float>((r + b) % 9 + 1);
+    }
+    for (int c = 0; c < kCols; ++c) {
+      raw_i8[static_cast<size_t>(r) * kCols + c] =
+          static_cast<int8_t>(((r * 13 + c * 7) % 127) - 63);
+    }
+  }
+  BlockwiseQuantization bq_i8(scales, /*zero_points=*/{}, kBlockSize);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+      auto fb_i8, bq_i8.GetOrCreateCpuSymmetricFallback(
+                      Type::kI8, kRows, kCols, raw_i8.data(), raw_i8.size()));
+  ASSERT_NE(fb_i8, nullptr);
+  ASSERT_EQ(fb_i8->scales.size(), static_cast<size_t>(kRows));
+  const auto sym_i8 = fb_i8->data->Span<const int8_t>();
+  for (int r : {0, 1, 255, 513, kRows - 1}) {
+    for (int c = 0; c < kCols; c += 17) {
+      const float ref =
+          static_cast<float>(raw_i8[static_cast<size_t>(r) * kCols + c]) *
+          scales[static_cast<size_t>(r) * kBlocksPerRow + c / kBlockSize];
+      const float got =
+          static_cast<float>(sym_i8[static_cast<size_t>(r) * kCols + c]) *
+          fb_i8->scales[r];
+      EXPECT_NEAR(got, ref, fb_i8->scales[r] + 1e-4f);
+    }
+  }
+
+  // Non-finite scale in a later tile must fail cleanly.
+  scales[static_cast<size_t>(kRows - 3) * kBlocksPerRow + 2] =
+      std::numeric_limits<float>::infinity();
+  BlockwiseQuantization bad_bq(scales, /*zero_points=*/{}, kBlockSize);
+  EXPECT_THAT(bad_bq.GetOrCreateCpuSymmetricFallback(
+                  Type::kI8, kRows, kCols, raw_i8.data(), raw_i8.size()),
+              Not(IsOk()));
+}
+
 TEST(QuantizationTest, LazyBlockwiseMaterializationAndRelease) {
   std::atomic<int> materialize_calls{0};
   auto bq = BlockwiseQuantization::CreateLazily(
@@ -876,6 +923,22 @@ TEST(QuantizationTest, CpuSymmetricFallbackLargeTensorInt8AndInt4) {
     const float actual0 = static_cast<float>(fb_i4_ptr[pair_base].a) * fb_s;
     EXPECT_NEAR(actual0, expected0, fb_s + 1e-2f);
   }
+}
+
+TEST(ScopeTest, ScopeBoundaryRetentionGuardUsesWeakRefForLeaves) {
+  std::shared_ptr<Scope> captured_scope;
+  std::weak_ptr<TensorGroup> weak_leaf;
+  {
+    ScopeBoundaryRetentionGuard guard(/*retain_leaf_tensors=*/false);
+    ScopeGuard scope("test_scope");
+    Tensor leaf = NewTensor(absl::SourceLocation::current());
+    weak_leaf = leaf.group;
+    scope.Bind("weight", leaf);
+    captured_scope = scope.scope();
+    EXPECT_TRUE(captured_scope->GetBoundaryTensor("weight").has_value());
+  }
+  EXPECT_TRUE(weak_leaf.expired());
+  EXPECT_FALSE(captured_scope->GetBoundaryTensor("weight").has_value());
 }
 
 }  // namespace

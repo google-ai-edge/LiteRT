@@ -42,6 +42,7 @@ limitations under the License.
 #include "tensor/buffer.h"
 #include "tensor/datatypes.h"
 #include "tensor/utils/macros.h"
+#include "tensor/utils/parallel.h"
 
 namespace litert::tensor::graph {
 namespace {
@@ -52,6 +53,7 @@ constexpr float kMaxFp16Normal = 65504.0f;
 // Heap-allocated `thread_local` pointer avoids non-trivial TLS destructor
 // ordering issues across shared libraries and thread teardown.
 thread_local std::shared_ptr<Scope>* g_current_scope = nullptr;
+thread_local bool g_retain_scope_boundary_leaves = true;
 
 std::shared_ptr<Scope>& MutableCurrentScope() {
   if (g_current_scope == nullptr) {
@@ -77,48 +79,77 @@ absl::StatusOr<std::shared_ptr<OwningCpuBuffer>> BuildSymmetricInt8Fallback(
   int8_t* dst = out_buf->Span<int8_t>().data();
   dst_scales.resize(rows);
   float* dst_scales_ptr = dst_scales.data();
-  bool has_non_finite = false;
+  const bool is_symmetric = zero_points.IsSymmetric();
+  const size_t row_grain =
+      std::max<size_t>(1, size_t{65536} / static_cast<size_t>(cols));
+  std::atomic<bool> has_non_finite{false};
   LRT_TENSOR_RETURN_IF_ERROR(
       zero_points.Visit(total_blocks, [&](auto zp_view) {
-        std::vector<float> row_vals(cols);
-        for (size_t r = 0; r < static_cast<size_t>(rows); ++r) {
-          const int8_t* src_row = src + r * static_cast<size_t>(cols);
-          float amax = 0.0f;
-          for (size_t b = 0; b < blocks_per_row; ++b) {
-            const size_t blk_idx = r * blocks_per_row + b;
-            const float s = scales[blk_idx];
-            const float zp = static_cast<float>(zp_view[blk_idx]);
-            if (!std::isfinite(s) || !std::isfinite(zp)) {
-              has_non_finite = true;
-              return;
-            }
-            const size_t c_base = b * static_cast<size_t>(block_size);
-            for (int j = 0; j < block_size; ++j) {
-              const float v =
-                  (static_cast<float>(src_row[c_base + j]) - zp) * s;
-              if (!std::isfinite(v)) {
-                has_non_finite = true;
-                return;
+        ParallelFor(
+            static_cast<size_t>(rows), row_grain,
+            [&](size_t r_begin, size_t r_end) {
+              std::vector<float> row_vals(cols);
+              for (size_t r = r_begin; r < r_end; ++r) {
+                if (has_non_finite.load(std::memory_order_relaxed)) return;
+                const int8_t* src_row = src + r * static_cast<size_t>(cols);
+                float amax = 0.0f;
+                if (is_symmetric) {
+                  for (size_t b = 0; b < blocks_per_row; ++b) {
+                    const float s = scales[r * blocks_per_row + b];
+                    if (!std::isfinite(s)) {
+                      has_non_finite.store(true, std::memory_order_relaxed);
+                      return;
+                    }
+                    const size_t c_base = b * static_cast<size_t>(block_size);
+                    for (int j = 0; j < block_size; ++j) {
+                      const float v =
+                          static_cast<float>(src_row[c_base + j]) * s;
+                      row_vals[c_base + j] = v;
+                      amax = std::max(amax, std::abs(v));
+                    }
+                  }
+                  if (!std::isfinite(amax)) {
+                    has_non_finite.store(true, std::memory_order_relaxed);
+                    return;
+                  }
+                } else {
+                  for (size_t b = 0; b < blocks_per_row; ++b) {
+                    const size_t blk_idx = r * blocks_per_row + b;
+                    const float s = scales[blk_idx];
+                    const float zp = static_cast<float>(zp_view[blk_idx]);
+                    if (!std::isfinite(s) || !std::isfinite(zp)) {
+                      has_non_finite.store(true, std::memory_order_relaxed);
+                      return;
+                    }
+                    const size_t c_base = b * static_cast<size_t>(block_size);
+                    for (int j = 0; j < block_size; ++j) {
+                      const float v =
+                          (static_cast<float>(src_row[c_base + j]) - zp) * s;
+                      if (!std::isfinite(v)) {
+                        has_non_finite.store(true, std::memory_order_relaxed);
+                        return;
+                      }
+                      row_vals[c_base + j] = v;
+                      amax = std::max(amax, std::abs(v));
+                    }
+                  }
+                }
+                const float row_scale =
+                    std::max(amax / 127.0f, std::numeric_limits<float>::min());
+                dst_scales_ptr[r] = row_scale;
+                const float inv_scale = 1.0f / row_scale;
+                int8_t* dst_row = dst + r * static_cast<size_t>(cols);
+                for (int c = 0; c < cols; ++c) {
+                  const float scaled = row_vals[c] * inv_scale;
+                  dst_row[c] = static_cast<int8_t>(
+                      std::isfinite(scaled)
+                          ? std::clamp(std::rint(scaled), -127.0f, 127.0f)
+                          : 0.0f);
+                }
               }
-              row_vals[c_base + j] = v;
-              amax = std::max(amax, std::abs(v));
-            }
-          }
-          const float row_scale =
-              std::max(amax / 127.0f, std::numeric_limits<float>::min());
-          dst_scales_ptr[r] = row_scale;
-          const float inv_scale = 1.0f / row_scale;
-          int8_t* dst_row = dst + r * static_cast<size_t>(cols);
-          for (int c = 0; c < cols; ++c) {
-            const float scaled = row_vals[c] * inv_scale;
-            dst_row[c] = static_cast<int8_t>(
-                std::isfinite(scaled)
-                    ? std::clamp(std::rint(scaled), -127.0f, 127.0f)
-                    : 0.0f);
-          }
-        }
+            });
       }));
-  if (has_non_finite) {
+  if (has_non_finite.load(std::memory_order_relaxed)) {
     return absl::InvalidArgumentError(
         "Non-finite scale or zero_point in blockwise INT8 tensor.");
   }
@@ -145,58 +176,65 @@ BuildSymmetricInt4Fallback(int rows, int cols, int block_size,
   auto bf16_vec = std::make_shared<std::vector<bf16_t>>(total_blocks);
   bf16_t* dst_bf16 = bf16_vec->data();
   const size_t pairs_per_block = static_cast<size_t>(block_size / 2);
-  bool has_non_finite = false;
+  const size_t block_grain =
+      std::max<size_t>(1, size_t{65536} / static_cast<size_t>(block_size));
+  std::atomic<bool> has_non_finite{false};
   LRT_TENSOR_RETURN_IF_ERROR(
       zero_points.Visit(total_blocks, [&](auto zp_view) {
-        std::vector<float> blk_vals(block_size);
-        for (size_t b = 0; b < total_blocks; ++b) {
-          const float s = scales[b];
-          const float zp = static_cast<float>(zp_view[b]);
-          if (!std::isfinite(s) || !std::isfinite(zp)) {
-            has_non_finite = true;
-            return;
-          }
-          const int4_t* sp = src_packed + b * pairs_per_block;
-          int4_t* dp = dst_packed + b * pairs_per_block;
-          if (zp == 0.0f && s >= kMinFp16Normal && s <= kMaxFp16Normal) {
-            std::memcpy(dp, sp, pairs_per_block * sizeof(int4_t));
-            dst_bf16[b] = bf16_t(s);
-            continue;
-          }
-          float min_val = 0.0f;
-          float max_val = 0.0f;
-          for (int j = 0; j < block_size; j += 2) {
-            const float v0 = (static_cast<float>(sp[j / 2].a) - zp) * s;
-            const float v1 = (static_cast<float>(sp[j / 2].b) - zp) * s;
-            if (!std::isfinite(v0) || !std::isfinite(v1)) {
-              has_non_finite = true;
-              return;
-            }
-            blk_vals[j] = v0;
-            blk_vals[j + 1] = v1;
-            if (j == 0) {
-              min_val = std::min(v0, v1);
-              max_val = std::max(v0, v1);
-            } else {
-              min_val = std::min({min_val, v0, v1});
-              max_val = std::max({max_val, v0, v1});
-            }
-          }
-          const float raw_d =
-              std::max(std::abs(min_val) / 8.0f, std::abs(max_val) / 7.0f);
-          const float d = static_cast<float>(
-              fp16_t(std::clamp(raw_d, kMinFp16Normal, kMaxFp16Normal)));
-          dst_bf16[b] = bf16_t(d);
-          const float inv_d = 1.0f / d;
-          for (int j = 0; j < block_size; j += 2) {
-            const float q0 = std::clamp(blk_vals[j] * inv_d, -8.0f, 7.0f);
-            const float q1 = std::clamp(blk_vals[j + 1] * inv_d, -8.0f, 7.0f);
-            dp[j / 2].a = static_cast<int8_t>(std::rint(q0));
-            dp[j / 2].b = static_cast<int8_t>(std::rint(q1));
-          }
-        }
+        ParallelFor(
+            total_blocks, block_grain, [&](size_t b_begin, size_t b_end) {
+              std::vector<float> blk_vals(block_size);
+              for (size_t b = b_begin; b < b_end; ++b) {
+                if (has_non_finite.load(std::memory_order_relaxed)) return;
+                const float s = scales[b];
+                const float zp = static_cast<float>(zp_view[b]);
+                if (!std::isfinite(s) || !std::isfinite(zp)) {
+                  has_non_finite.store(true, std::memory_order_relaxed);
+                  return;
+                }
+                const int4_t* sp = src_packed + b * pairs_per_block;
+                int4_t* dp = dst_packed + b * pairs_per_block;
+                if (zp == 0.0f && s >= kMinFp16Normal && s <= kMaxFp16Normal) {
+                  std::memcpy(dp, sp, pairs_per_block * sizeof(int4_t));
+                  dst_bf16[b] = bf16_t(s);
+                  continue;
+                }
+                float min_val = 0.0f;
+                float max_val = 0.0f;
+                for (int j = 0; j < block_size; j += 2) {
+                  const float v0 = (static_cast<float>(sp[j / 2].a) - zp) * s;
+                  const float v1 = (static_cast<float>(sp[j / 2].b) - zp) * s;
+                  if (!std::isfinite(v0) || !std::isfinite(v1)) {
+                    has_non_finite.store(true, std::memory_order_relaxed);
+                    return;
+                  }
+                  blk_vals[j] = v0;
+                  blk_vals[j + 1] = v1;
+                  if (j == 0) {
+                    min_val = std::min(v0, v1);
+                    max_val = std::max(v0, v1);
+                  } else {
+                    min_val = std::min({min_val, v0, v1});
+                    max_val = std::max({max_val, v0, v1});
+                  }
+                }
+                const float raw_d = std::max(std::abs(min_val) / 8.0f,
+                                             std::abs(max_val) / 7.0f);
+                const float d = static_cast<float>(
+                    fp16_t(std::clamp(raw_d, kMinFp16Normal, kMaxFp16Normal)));
+                dst_bf16[b] = bf16_t(d);
+                const float inv_d = 1.0f / d;
+                for (int j = 0; j < block_size; j += 2) {
+                  const float q0 = std::clamp(blk_vals[j] * inv_d, -8.0f, 7.0f);
+                  const float q1 =
+                      std::clamp(blk_vals[j + 1] * inv_d, -8.0f, 7.0f);
+                  dp[j / 2].a = static_cast<int8_t>(std::rint(q0));
+                  dp[j / 2].b = static_cast<int8_t>(std::rint(q1));
+                }
+              }
+            });
       }));
-  if (has_non_finite) {
+  if (has_non_finite.load(std::memory_order_relaxed)) {
     return absl::InvalidArgumentError(
         "Non-finite scale or zero_point in blockwise INT4 tensor.");
   }
@@ -409,9 +447,11 @@ BlockwiseQuantization::GetOrCreateBf16Scales() const {
   bf16_t* dst = built->data();
   const float* src = scales.data();
   const size_t n = scales.size();
-  for (size_t i = 0; i < n; ++i) {
-    dst[i] = bf16_t(src[i]);
-  }
+  ParallelFor(n, /*min_grain=*/65536, [&](size_t begin, size_t end) {
+    for (size_t i = begin; i < end; ++i) {
+      dst[i] = bf16_t(src[i]);
+    }
+  });
   absl::MutexLock lock(bf16_cache_.mu);
   if (bf16_cache_.scales == nullptr ||
       bf16_cache_.scales->size() != scales.size()) {
@@ -575,7 +615,7 @@ void Scope::BindTensor(absl::string_view role, const Tensor& tensor) {
   if (!tensor.group || !tensor.group->status.ok()) return;
   BoundaryEntry entry;
   entry.index = tensor.index;
-  if (tensor.group->producer == nullptr) {
+  if (tensor.group->producer == nullptr && g_retain_scope_boundary_leaves) {
     entry.strong_group = tensor.group;
   } else {
     entry.weak_group = tensor.group;
@@ -591,6 +631,16 @@ std::optional<Tensor> Scope::GetBoundaryTensor(absl::string_view role) const {
 
 std::shared_ptr<Scope> CurrentScope() {
   return g_current_scope != nullptr ? *g_current_scope : nullptr;
+}
+
+ScopeBoundaryRetentionGuard::ScopeBoundaryRetentionGuard(
+    bool retain_leaf_tensors)
+    : prev_retain_(g_retain_scope_boundary_leaves) {
+  g_retain_scope_boundary_leaves = retain_leaf_tensors;
+}
+
+ScopeBoundaryRetentionGuard::~ScopeBoundaryRetentionGuard() {
+  g_retain_scope_boundary_leaves = prev_retain_;
 }
 
 ScopeGuard::ScopeGuard(absl::string_view kind, absl::string_view name)
