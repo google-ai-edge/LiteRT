@@ -49,7 +49,7 @@ cc_library(
     hdrs = ["buffer.h"],
     includes = ["utils"],  # copybara:comment
     deps = [
-        "//tensor:datatypes",
+        ":datatypes",
         "//tensor/internal:type_id",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",

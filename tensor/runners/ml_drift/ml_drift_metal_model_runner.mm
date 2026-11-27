@@ -16,6 +16,7 @@ limitations under the License.
 #include "third_party/odml/litert/tensor/runners/ml_drift/ml_drift_metal_model_runner.h"
 
 #import <Metal/Metal.h>
+#include <unistd.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -23,6 +24,7 @@ limitations under the License.
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
@@ -31,6 +33,7 @@ limitations under the License.
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -287,6 +290,62 @@ absl::Status MlDriftMetalBackend::CreateConstTensor(
   @autoreleasepool {
     return tensor->CreateFromDescriptor(desc, env->device());
   }
+}
+
+namespace {
+
+// Keeps a Metal buffer alive in a type-erased `std::shared_ptr<const void>`.
+struct MetalBufferOwner {
+  id<MTLBuffer> buffer = nil;
+};
+
+}  // namespace
+
+absl::Status MlDriftMetalBackend::CreateConstTensorFromHostData(
+    Environment* env, const ml_drift::TensorDescriptor& desc,
+    absl::Span<const uint8_t> data, bool zero_copy, Tensor* tensor,
+    std::shared_ptr<const void>* keep_alive) {
+  keep_alive->reset();
+  const uint64_t size = desc.GetMemorySizeInBytes();
+  if (data.size() < size) {
+    return absl::InvalidArgumentError(
+        absl::StrCat("Constant tensor data has ", data.size(),
+                     " bytes, expected ", size));
+  }
+  if (zero_copy && size > 0 &&
+      desc.GetStorageType() == ml_drift::TensorStorageType::kBuffer) {
+    // `newBufferWithBytesNoCopy` needs a page-aligned pointer and length: wrap
+    // the whole pages holding `data` (memory mappings span whole pages) and
+    // point the tensor at `data` inside them.
+    const uintptr_t page_size = static_cast<uintptr_t>(getpagesize());
+    const uintptr_t address = reinterpret_cast<uintptr_t>(data.data());
+    const uintptr_t page_start = address & ~(page_size - 1);
+    const uint64_t offset = address - page_start;
+    const uint64_t length =
+        (offset + size + page_size - 1) & ~static_cast<uint64_t>(page_size - 1);
+    @autoreleasepool {
+      id<MTLBuffer> buffer = [env->device()
+          newBufferWithBytesNoCopy:reinterpret_cast<void*>(page_start)
+                            length:length
+                           options:MTLResourceStorageModeShared
+                       deallocator:nil];
+      if (buffer != nil) {
+        ml_drift::TensorDescriptor desc_without_data;
+        desc.CopyWithoutData(&desc_without_data);
+        LRT_TENSOR_RETURN_IF_ERROR(ml_drift::metal::CreateTensorSharedBuffer(
+            buffer, desc_without_data, tensor, offset));
+        auto owner = std::make_shared<MetalBufferOwner>();
+        owner->buffer = buffer;
+        *keep_alive = std::move(owner);
+        return absl::OkStatus();
+      }
+    }
+  }
+  ml_drift::TensorDescriptor desc_with_data;
+  desc.CopyWithoutData(&desc_with_data);
+  desc_with_data.SetData(
+      std::vector<uint8_t>(data.begin(), data.begin() + size));
+  return CreateConstTensor(env, desc_with_data, tensor);
 }
 
 absl::Status MlDriftMetalBackend::UploadTensorDescriptorData(
