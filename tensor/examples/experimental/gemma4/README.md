@@ -6,9 +6,7 @@
 > to establish a CPU performance and numerical baseline for the **LiteRT-based
 > Tensor API** Gemma 4 implementation (`CompiledModel` + XNNPACK delegate).
 > Validated optimizations from this experiment will eventually be migrated into
-> the backend-agnostic implementations in
-> `tensor/examples/gemma4/` and
-> `tensor/models/gemma4/`.
+> the backend-agnostic implementation in `tensor/examples/gemma4/`.
 
 ## What This Experiment Explores
 
@@ -32,11 +30,15 @@ Key differences and trade-offs compared with upstream LiteRT-LM + XNNPACK:
 - **CPU-only dynamic shapes**: Resizing active KV and (optionally) prefill query
   row dimensions at runtime relies on CPU/XNNPACK dynamic shape support and does
   not target non-CPU accelerators.
-- **Host embeddings & packed dynamic INT4 prefill**: Token and per-layer
-  embedding lookups run on host using compact bundle storage
-  (`bundle_loader.{h,cc}`), and prefill uses packed dynamic INT4 weights (which
-  changes the original static QAT activation contract relative to upstream
-  LiteRT-LM).
+- **Host embeddings and original activation scales**: Token and per-layer
+  embedding lookups run on the host using compact bundle storage
+  (`bundle_loader.{h,cc}`). Linear layers with published activation scales use
+  explicit INT8 quantize/FC/requantize/dequantize boundaries for prefill and
+  decode. Original INT2 weights are retained or restored from their lossless
+  INT4 containers; the vocabulary head uses dynamic activation quantization.
+
+The C++ `:model_builder` authors E2B only. The runner can also consume externally
+provided E4B models with compact E4B bundles.
 
 ## KV Cache Buffer Transaction Lifecycle (`ActiveKvBank`)
 
@@ -124,14 +126,29 @@ KV capacity scales from 256 to 16,896:
 - **Numerical Parity**: Exact 65/65 forced-token argmax agreement with the
   native Tensor API / XNNPACK runner across all prompt lengths (1 to 16,384) on
   all three phones, with 0 repeated-run divergence. Differences versus upstream
-  LiteRT-LM on multi-token prompts (47–64/65 agreement) come from packed dynamic
-  INT4 prefill changing the original static QAT activation contract.
+  LiteRT-LM on multi-token prompts (47–64/65 agreement) were recorded for a
+  historical packed dynamic INT4 prefill configuration. These measurements do
+  not establish parity for the current static activation quantization path;
+  rerun numerical validation before using them to assess the current code.
 
 ## Targets
 
+- `:bundle_loader_test` — manifest validation, owner ordering, E2B/E4B cache
+  metadata, and invalid quantization parameters without model weight files.
+- `:graph_ops_test` — LiteRT CPU execution of static FC rounding/saturation,
+  RMSNorm, GeGLU, dynamic RoPE, and global PLE projection boundaries.
+- `:model_builder_test` — small-model prefill/decode equivalence, signature
+  contracts, strict dynamic resizing, sliding windows, reset and error handling.
+  This test depends on `:model_builder` so test-only CI compiles the authoring code.
 - `:kv_bank_test` — unit tests for `ActiveKvBank` transaction semantics,
   alignment, and multi-head views.
 - `:runner` / `:runner_lib` — CPU `CompiledModel` runner and benchmarking binary
   (`main.cc`, `runner.h`, `kv_bank.h`, `host_buffer.h`).
 - `:bundle_loader` — unpacked `.litertlm` published-bundle and KV spec loader
   (`bundle_loader.{h,cc}`, `kv_cache.h`).
+- `:graph` — Gemma 4 E2B Tensor API graph layers, dynamic RoPE slicing, and
+  mobile-CT static INT8 linear layers (`gemma4_graph.h`, `transformer.h`,
+  `attention.h`, `feed_forward_network.h`, `mobile_fully_connected.h`,
+  `bundle_matched_ops.h`, `rope.h`, `active_graph_context.h`).
+- `:model_builder` — two-signature (`prefill`/`decode`) TFLite FlatBuffer graph
+  authoring via `AddGemma4Signatures` (`model_builder.{h,cc}`).
