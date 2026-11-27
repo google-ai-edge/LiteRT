@@ -202,6 +202,26 @@ TEST(XnnpackInt4Test, FullyConnectedWithSingleScale) {
       {-8, -1, 0, 7}, /*scales=*/{0.125f}, /*zero_points=*/{});
 }
 
+// QAT TFLite weights store an explicit all-zero integer zero point per
+// channel; they must keep the native channelwise (qcint2/qcint4/qcint8) paths.
+TEST(XnnpackPerChannelExplicitZeroZeroPointTest, Int2FullyConnected) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI2>(
+      {-2, -1, 0, 1}, /*scales=*/{0.25f, 0.5f, 0.125f, 1.0f},
+      /*zero_points=*/ZeroPoints::Int({0, 0, 0, 0}));
+}
+
+TEST(XnnpackPerChannelExplicitZeroZeroPointTest, Int4FullyConnected) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI4>(
+      {-8, -1, 0, 7}, /*scales=*/{0.125f, 0.25f, 0.0625f, 0.5f},
+      /*zero_points=*/ZeroPoints::Int({0, 0, 0, 0}));
+}
+
+TEST(XnnpackPerChannelExplicitZeroZeroPointTest, Int8FullyConnected) {
+  ExpectQuantizedFullyConnectedMatchesReference<Type::kI8>(
+      {-127, -1, 0, 127}, /*scales=*/{0.001f, 0.002f, 0.0005f, 0.004f},
+      /*zero_points=*/ZeroPoints::Int({0, 0, 0, 0}));
+}
+
 // The right-hand side is dequantized to floats, so the batch matmul isn't
 // lowered to a fully connected op.
 TEST(XnnpackInt8Test, BatchMatMulWithFloatZeroPoint) {
