@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/graph_ir.h"
 
@@ -433,6 +438,35 @@ TEST(GraphOptimizer, TransposeCompositionAndUnitAxesUseMetadataReshapes) {
   EXPECT_EQ(graph.nodes[1].inputs[0], 0);
   EXPECT_EQ(graph.nodes[1].body.code, kLiteRtOpCodeTflReshape);
 }
+
+TEST(GraphOptimizer, FoldsTransposeIntoInt8SumWhenOutputOrderIsPreserved) {
+  for (const bool reorder_output : {false, true}) {
+    SCOPED_TRACE(reorder_output);
+    CompilerGraph graph;
+    graph.values = {Value({2, 3, 2}), Value({2, 2, 3}), Value({2, 2})};
+    graph.values[0].graph_input = true;
+    graph.values[2].graph_output = true;
+    graph.inputs = {0};
+    graph.outputs = {2};
+    graph.original_operator_count = 2;
+    graph.nodes = {
+        Shape(0, 1, 0, graph.values[0], graph.values[1],
+              reorder_output ? std::vector<int32_t>{2, 0, 1}
+                             : std::vector<int32_t>{0, 2, 1}),
+        Shape(1, 2, 1, graph.values[1], graph.values[2], {})};
+    auto& plan = graph.nodes[1].body;
+    plan.code = kLiteRtOpCodeTflSum;
+    plan.parameters = {2};
+
+    std::string reason;
+    ASSERT_TRUE(OptimizeGraph(graph, nullptr, reason)) << reason;
+    EXPECT_EQ(graph.nodes[0].removed, !reorder_output);
+    EXPECT_EQ(graph.nodes[1].inputs[0], reorder_output ? 1 : 0);
+    EXPECT_EQ(plan.parameters, std::vector<int32_t>{reorder_output ? 2 : 1});
+    EXPECT_EQ(plan.inputs[0].shape, graph.values[reorder_output ? 1 : 0].shape);
+  }
+}
+
 TEST(GraphOptimizer, IdentityShapeDoesNotAttributeUnrelatedInputConsumers) {
   CompilerGraph graph;
   graph.values = {Value(), Value(), Value(), Value()};

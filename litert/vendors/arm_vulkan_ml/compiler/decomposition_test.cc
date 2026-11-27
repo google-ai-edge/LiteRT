@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/decomposition.h"
 
@@ -128,6 +133,170 @@ struct Fixture {
         BufferRef<uint8_t>(bytes.data(), bytes.size()));
   }
 };
+
+void ExpectQuantizedLowering(
+    Fixture& fixture,
+    const std::vector<std::pair<int32_t, int>>& expected_scales,
+    size_t rescale_count) {
+  auto model = fixture.Load();
+  ASSERT_TRUE(model);
+  auto subgraph = FirstSubgraph(model);
+  std::string reason;
+  auto plan = AnalyzeOperation(subgraph.Ops()[0], reason);
+  ASSERT_TRUE(plan) << reason;
+  std::vector<std::pair<int32_t, int>> scales;
+  for (const auto& scale : plan->scales) {
+    scales.emplace_back(scale.multiplier, scale.shift);
+  }
+  EXPECT_EQ(scales, expected_scales);
+  auto compiled = CompilePartition(subgraph, reason);
+  ASSERT_TRUE(compiled) << reason;
+  EXPECT_THAT(
+      compiled->metrics.operators,
+      ::testing::Contains(::testing::Pair(
+          static_cast<uint32_t>(OperatorEnum::Rescale), rescale_count)));
+}
+
+TEST(DecompositionTest, Int8SquaredDifferenceBroadcastsUnequalRanks) {
+  Fixture f(tflite::BuiltinOperator_SQUARED_DIFFERENCE);
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  const int lhs = f.Tensor(kInt8, {2, 2, 3}, 0.25f, -3);
+  const int rhs = f.Tensor(kInt8, {2, 1}, 3.0f / 256, 5);
+  f.op->inputs = f.graph->inputs = {lhs, rhs};
+  f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {2, 2, 3}, 0.125f, -128)};
+  ExpectQuantizedLowering(
+      f,
+      {{1073741824, 23}, {1073741824, 31}, {1610612736, 36}, {1073741824, 43}},
+      5);
+}
+
+TEST(DecompositionTest, Int8SquaredDifferenceDoubleRoundsOutputNearTie) {
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  constexpr float kEpsilon = 1.0f / (1 << 20);
+  for (const bool double_round : {false, true}) {
+    SCOPED_TRACE(double_round);
+    Fixture f(tflite::BuiltinOperator_SQUARED_DIFFERENCE);
+    const int lhs = f.Tensor(kInt8, {1}, 0.5f);
+    const int rhs = f.Tensor(kInt8, {1}, 0.5f);
+    f.op->inputs = f.graph->inputs = {lhs, rhs};
+    // At 1.5 + epsilon the first rounding makes (3, 0) an exact tie.
+    const float output_scale = 1.5f + (double_round ? kEpsilon : -kEpsilon);
+    f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {1}, output_scale)};
+    ExpectQuantizedLowering(f,
+                            {{1073741824, 23},
+                             {1073741824, 31},
+                             {1073741824, 31},
+                             {double_round ? 1431654855 : 1431656676, 45}},
+                            double_round ? 6 : 5);
+  }
+}
+
+TEST(DecompositionTest, Int8SquaredDifferenceDoubleRoundsSignedInputTies) {
+  Fixture f(tflite::BuiltinOperator_SQUARED_DIFFERENCE);
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  const int lhs = f.Tensor(kInt8, {2}, 0.5f);
+  // Input codes -1 and 1 become exact ties after the rounded high multiply.
+  constexpr float kRhsScale = (0.5f - 1.0f / (1 << 18)) / (1 << 7);
+  const int rhs = f.Tensor(kInt8, {2}, kRhsScale);
+  f.op->inputs = f.graph->inputs = {lhs, rhs};
+  f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {2}, 1.0f)};
+  ExpectQuantizedLowering(
+      f,
+      {{1073741824, 23}, {1073741824, 31}, {2147467264, 39}, {1073741824, 44}},
+      6);
+}
+
+TEST(DecompositionTest, Int8SquaredDifferenceFitsOneRescaleForSignedTie) {
+  Fixture f(tflite::BuiltinOperator_SQUARED_DIFFERENCE);
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  const int lhs = f.Tensor(kInt8, {2}, 0.5f);
+  // Input code -3 reaches a tie after the builtin's rounded high multiply.
+  constexpr float kRhsScale = (0.5f - 1.0f / (1 << 16)) / (3 * (1 << 7));
+  const int rhs = f.Tensor(kInt8, {2}, kRhsScale);
+  f.op->inputs = f.graph->inputs = {lhs, rhs};
+  f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {2}, 1.0f)};
+  auto model = f.Load();
+  ASSERT_TRUE(model);
+  std::string reason;
+  auto compiled = CompilePartition(FirstSubgraph(model), reason);
+  ASSERT_TRUE(compiled) << reason;
+  constexpr int32_t kFittedMultiplier = 1431655766;
+  EXPECT_EQ(ApplyScale32(-3 * (1 << 7), {kFittedMultiplier, 40}), -1);
+  std::vector<uint8_t> expected(sizeof(kFittedMultiplier));
+  std::memcpy(expected.data(), &kFittedMultiplier, expected.size());
+  EXPECT_THAT(compiled->constants,
+              ::testing::Contains(::testing::Field(&ConstantTensor::bytes,
+                                                   expected)));
+  EXPECT_EQ(compiled->metrics.operators.at(
+                static_cast<uint32_t>(OperatorEnum::Rescale)),
+            5);
+}
+
+TEST(DecompositionTest, Int8SubSharesRequantizationForScalarBroadcast) {
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  // Subtracting zero from the left operand should round just below 0.5.
+  constexpr float kLhsScale = 0.5f - 1.0f / (1 << 18);
+  for (bool scalar : {false, true}) {
+    SCOPED_TRACE(scalar);
+    Fixture f(tflite::BuiltinOperator_SUB);
+    const auto lhs_shape =
+        scalar ? std::vector<int32_t>{} : std::vector<int32_t>{1};
+    const int lhs = f.Constant<int8_t>(kInt8, lhs_shape, {1}, kLhsScale);
+    const int rhs = f.Tensor(kInt8, {2, 3}, 0.5f);
+    f.op->inputs = {lhs, rhs};
+    f.graph->inputs = {rhs};
+    f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {2, 3}, 1.0f)};
+    f.op->builtin_options.Set(tflite::SubOptionsT());
+    ExpectQuantizedLowering(
+        f, {{2147467264, 12}, {1073741824, 11}, {1073741824, 50}}, 3);
+  }
+}
+
+TEST(DecompositionTest, Int8SumRequantizationIsIndependentOfKeepDims) {
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  // A centered sum of 1 must round to 0 for a scale just below 0.5.
+  constexpr float kInputScale = 0.5f - 1.0f / (1 << 18);
+  for (bool keep_dims : {false, true}) {
+    SCOPED_TRACE(keep_dims);
+    Fixture f(tflite::BuiltinOperator_SUM);
+    const int input = f.Tensor(kInt8, {2, 3, 4}, kInputScale);
+    f.op->inputs = {input, f.Control({2}, {1, -1})};
+    f.graph->inputs = {input};
+    const std::vector<int32_t> shape =
+        keep_dims ? std::vector<int32_t>{2, 1, 1} : std::vector<int32_t>{2};
+    f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, shape, 1.0f)};
+    tflite::ReducerOptionsT options;
+    options.keep_dims = keep_dims;
+    f.op->builtin_options.Set(options);
+    ExpectQuantizedLowering(f, {{2147467264, 32}}, 2);
+  }
+}
+
+TEST(DecompositionTest, Int8SumRescaleMatchesOptimizedBuiltinNearTie) {
+  Fixture f(tflite::BuiltinOperator_SUM);
+  constexpr auto kInt8 = tflite::TensorType_INT8;
+  const int input = f.Tensor(kInt8, {2, 2}, 0.5f);
+  f.op->inputs = {input, f.Control({1}, {1})};
+  f.graph->inputs = {input};
+  f.op->outputs = f.graph->outputs = {f.Tensor(kInt8, {2}, 1.0f)};
+  f.op->builtin_options.Set(tflite::ReducerOptionsT());
+  auto model = f.Load();
+  ASSERT_TRUE(model);
+  std::string reason;
+  auto compiled = CompilePartition(FirstSubgraph(model), reason);
+  ASSERT_TRUE(compiled) << reason;
+  // At sum -1, the optimized builtin rounds -0.5 away from zero.
+  constexpr int32_t kMultiplier = (1 << 30) + 1;
+  EXPECT_EQ(ApplyScale32(-1, {kMultiplier, 31}), -1);
+  std::vector<uint8_t> expected(sizeof(kMultiplier));
+  std::memcpy(expected.data(), &kMultiplier, expected.size());
+  EXPECT_THAT(compiled->constants,
+              ::testing::Contains(
+                  ::testing::Field(&ConstantTensor::bytes, expected)));
+  EXPECT_EQ(compiled->metrics.operators.at(
+                static_cast<uint32_t>(OperatorEnum::Rescale)),
+            2);
+}
 
 TEST(DecompositionTest, GatherNdProvesEveryIndexAndPreservesQuantization) {
   for (int variant = 0; variant < 5; ++variant) {

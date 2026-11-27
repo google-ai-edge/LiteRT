@@ -11,6 +11,11 @@
 // WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 // See the License for the specific language governing permissions and
 // limitations under the License.
+//
+// SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+// <open-source-office@arm.com>
+// SPDX-License-Identifier: Apache-2.0
+//
 
 #include "litert/vendors/arm_vulkan_ml/compiler/op_registry.h"
 
@@ -231,7 +236,8 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
           "Constant nonempty axes; keep_dims true/false; non-scalar result"}});
     add({OP(Sum)},
         {{i8, i8, R::kGeneral,
-          "Constant axes; keep_dims=true; proven INT32 accumulation/rescaling"},
+          "Constant axes; non-scalar output; proven INT32 accumulation and "
+          "rescaling"},
          {f32, f32, R::kExtended,
           "Constant axes; keep_dims true/false; non-scalar result"}});
     add({OP(ReduceMax), OP(ReduceMin)},
@@ -395,7 +401,9 @@ const std::vector<OperationRegistration>& GetOperationRegistrations() {
           "Matching shapes; last-axis normalization; L2 normalization has no "
           "fused activation"}});
     add({OP(SquaredDifference)},
-        {{f32, f32, R::kDecomposed, "Static broadcasting"}});
+        {{f32, f32, R::kDecomposed, "Static broadcasting"},
+         {i8, i8, R::kGeneral,
+          "Static broadcasting; INT32 squared difference"}});
     add({OP(FloorMod)},
         {{f32, f32, R::kDecomposed,
           "Static broadcasting; constant normal power-of-two divisors and "
