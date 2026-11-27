@@ -78,6 +78,7 @@ cc_library(
         "@ml_drift//ml_drift/common:operations",
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
+        "@ml_drift//ml_drift/common:util",
         "@ml_drift//ml_drift/common/kernels:elementwise",
         "@ml_drift//ml_drift/common/kernels:embedding_lookup",
         "@ml_drift//ml_drift/common/kernels:fully_connected",
