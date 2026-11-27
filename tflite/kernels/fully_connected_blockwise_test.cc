@@ -44,6 +44,7 @@ limitations under the License.
 #include "tflite/core/model_builder.h"
 #include "tflite/kernels/kernel_util.h"
 #include "tflite/kernels/register_ref.h"
+#include "tflite/kernels/test_delegate_providers.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace tflite {
@@ -281,7 +282,7 @@ class BlockwiseFullyConnectedModel {
   explicit BlockwiseFullyConnectedModel(
       std::vector<uint8_t> buffer,
       Resolver resolver = Resolver::kBuiltinWithoutDefaultDelegates)
-      : buffer_(std::move(buffer)) {
+      : resolver_(resolver), buffer_(std::move(buffer)) {
     model_ = FlatBufferModel::BuildFromBuffer(
         reinterpret_cast<const char*>(buffer_.data()), buffer_.size());
     switch (resolver) {
@@ -304,7 +305,19 @@ class BlockwiseFullyConnectedModel {
   }
 
   bool Built() const { return interpreter_ != nullptr; }
-  TfLiteStatus Allocate() { return interpreter_->AllocateTensors(); }
+  TfLiteStatus Allocate() {
+    if (resolver_ == Resolver::kBuiltinWithoutDefaultDelegates) {
+      for (auto& one :
+           KernelTestDelegateProviders::Get()->CreateAllDelegates()) {
+        if (TfLiteStatus status =
+                interpreter_->ModifyGraphWithDelegate(std::move(one.delegate));
+            status != kTfLiteOk) {
+          return status;
+        }
+      }
+    }
+    return interpreter_->AllocateTensors();
+  }
   TfLiteStatus Invoke() { return interpreter_->Invoke(); }
 
   void SetInput(const std::vector<int32_t>& values) {
@@ -370,6 +383,7 @@ class BlockwiseFullyConnectedModel {
   }
 
  private:
+  Resolver resolver_;
   std::vector<uint8_t> buffer_;
   std::unique_ptr<FlatBufferModel> model_;
   std::unique_ptr<Interpreter> interpreter_;
