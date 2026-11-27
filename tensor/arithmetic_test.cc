@@ -203,6 +203,25 @@ TEST(ArithmeticTest, LeakyReluWorks) {
   ASSERT_NO_FATAL_FAILURE(IsAUnaryElementwiseOp("LeakyRelu", a, LeakyRelu(a)));
 }
 
+TEST(ArithmeticTest, ClampWorks) {
+  Tensor a({.type = Type::kFP32, .shape = {3, 3}});
+  Tensor out = Clamp(a, -2.0f, 3.0f);
+  ASSERT_NO_FATAL_FAILURE(IsAUnaryElementwiseOp("Clamp", a, out));
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(std::shared_ptr op, GetProducer(out));
+  ASSERT_NE(op, nullptr);
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(graph::ClampOperation & clamp,
+                                  op->As<graph::ClampOperation>());
+  EXPECT_EQ(clamp.min, -2.0f);
+  EXPECT_EQ(clamp.max, 3.0f);
+}
+
+TEST(ArithmeticTest, ClampRejectsInvertedRange) {
+  Tensor a({.type = Type::kFP32, .shape = {3, 3}});
+  Tensor out = Clamp(a, 1.0f, -1.0f);
+  EXPECT_EQ(GetStatus(out.GetRaw()).code(),
+            absl::StatusCode::kInvalidArgument);
+}
+
 TEST(ArithmeticTest, EluWorks) {
   Tensor a({.type = Type::kFP32, .shape = {3, 3}});
   ASSERT_NO_FATAL_FAILURE(IsAUnaryElementwiseOp("Elu", a, Elu(a)));
@@ -1117,6 +1136,11 @@ TEST(OperationCastTest, Div) {
 TEST(OperationCastTest, LeakyRelu) {
   Tensor a({.type = Type::kFP32, .shape = {2, 4}});
   VerifyOperationRTTI<graph::LeakyReluOperation>(LeakyRelu(a, 0.1f));
+}
+
+TEST(OperationCastTest, Clamp) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::ClampOperation>(Clamp(a, -1.0f, 1.0f));
 }
 
 TEST(OperationCastTest, Softmax) {

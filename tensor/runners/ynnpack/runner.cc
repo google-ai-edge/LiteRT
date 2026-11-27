@@ -16,9 +16,13 @@ limitations under the License.
 #include "tensor/runners/ynnpack/runner.h"
 
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -34,15 +38,123 @@ limitations under the License.
 #include "tensor/utils/macros.h"
 
 namespace litert::tensor {
+namespace {
+
+inline void CpuRelax() {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__)
+  __builtin_ia32_pause();
+#elif defined(__aarch64__)
+  asm volatile("yield" ::: "memory");
+#else
+  std::this_thread::yield();
+#endif
+}
+
+}  // namespace
+
+YnnpackScheduler::YnnpackScheduler(int num_background_threads,
+                                   std::chrono::nanoseconds spin_duration)
+    : spin_duration_(spin_duration) {
+  if (num_background_threads <= 0) return;
+  workers_.reserve(static_cast<size_t>(num_background_threads));
+  for (int i = 0; i < num_background_threads; ++i) {
+    workers_.emplace_back([this]() { WorkerLoop(); });
+  }
+}
+
+YnnpackScheduler::~YnnpackScheduler() {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    stop_.store(true, std::memory_order_release);
+  }
+  cv_.notify_all();
+  for (std::thread& worker : workers_) {
+    if (worker.joinable()) {
+      worker.join();
+    }
+  }
+}
+
+void YnnpackScheduler::WorkerLoop() {
+  while (true) {
+    Task task;
+    bool got_task = false;
+    if (pending_tasks_.load(std::memory_order_acquire) > 0) {
+      std::lock_guard<std::mutex> lock(mutex_);
+      if (!queue_.empty()) {
+        task = queue_.front();
+        queue_.pop_front();
+        pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
+        got_task = true;
+      }
+    }
+    if (got_task) {
+      task.fn(task.context);
+      continue;
+    }
+    if (stop_.load(std::memory_order_acquire)) {
+      return;
+    }
+    if (spin_duration_.count() > 0) {
+      const auto deadline = std::chrono::steady_clock::now() + spin_duration_;
+      while (pending_tasks_.load(std::memory_order_acquire) == 0 &&
+             !stop_.load(std::memory_order_acquire)) {
+        for (int i = 0; i < 64; ++i) {
+          if (pending_tasks_.load(std::memory_order_acquire) != 0 ||
+              stop_.load(std::memory_order_acquire)) {
+            break;
+          }
+          CpuRelax();
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
+          break;
+        }
+      }
+      if (pending_tasks_.load(std::memory_order_acquire) != 0) {
+        continue;
+      }
+      if (stop_.load(std::memory_order_acquire)) {
+        return;
+      }
+    }
+    std::unique_lock<std::mutex> lock(mutex_);
+    if (queue_.empty() && !stop_.load(std::memory_order_acquire)) {
+      sleeping_workers_.fetch_add(1, std::memory_order_acq_rel);
+      cv_.wait(lock, [this]() {
+        return !queue_.empty() || stop_.load(std::memory_order_acquire);
+      });
+      sleeping_workers_.fetch_sub(1, std::memory_order_acq_rel);
+    }
+    if (!queue_.empty()) {
+      task = queue_.front();
+      queue_.pop_front();
+      pending_tasks_.fetch_sub(1, std::memory_order_relaxed);
+      lock.unlock();
+      task.fn(task.context);
+    } else if (stop_.load(std::memory_order_acquire)) {
+      return;
+    }
+  }
+}
+
+void YnnpackScheduler::Enqueue(void (*fn)(void*), void* context) {
+  {
+    std::lock_guard<std::mutex> lock(mutex_);
+    queue_.push_back(Task{.fn = fn, .context = context});
+    pending_tasks_.fetch_add(1, std::memory_order_release);
+  }
+  if (sleeping_workers_.load(std::memory_order_acquire) > 0) {
+    cv_.notify_one();
+  }
+}
 
 int YnnpackScheduler::NumThreads(void* self) {
-  return reinterpret_cast<YnnpackScheduler*>(self)->pool_.thread_count();
+  return reinterpret_cast<YnnpackScheduler*>(self)->num_background_threads();
 }
 
 void YnnpackScheduler::Schedule(void* self, void* context,
                                 void (*task)(void* context)) {
-  YnnpackScheduler* scheduler = reinterpret_cast<YnnpackScheduler*>(self);
-  scheduler->pool_.enqueue([task, context]() { (*task)(context); });
+  reinterpret_cast<YnnpackScheduler*>(self)->Enqueue(task, context);
 }
 
 const ynn_scheduler* YnnpackScheduler::Vtable() {
@@ -51,30 +163,34 @@ const ynn_scheduler* YnnpackScheduler::Vtable() {
 }
 
 absl::Status YnnpackRunner::CreateRuntime() {
-  // `NnpackRunner` only calls this once, and `SetNumThreads` fails from then
-  // on, so the thread pool is created here, right before the runtime that uses
-  // it, and lives as long as the runner.
-  if (num_threads_ > 1 && scheduler_ == nullptr) {
-    scheduler_ =
-        std::make_unique<YnnpackScheduler>(static_cast<int>(num_threads_) - 1);
-  }
-  if (scheduler_ != nullptr && threadpool_ == nullptr) {
-    ynn_threadpool_t raw_threadpool = nullptr;
-    LRT_TENSOR_RETURN_IF_ERROR(YnnStatusToAbsl(
-        ynn_create_threadpool(YnnpackScheduler::Vtable(), scheduler_.get(),
-                              /*flags=*/0, &raw_threadpool),
-        "ynn_create_threadpool"));
-    threadpool_.reset(raw_threadpool);
+  // `NnpackRunner` only calls this once, and `SetNumThreads` / `SetThreadpool`
+  // fail from then on, so any owned thread pool is created right before the
+  // runtime that uses it, and lives as long as the runner.
+  ynn_threadpool_t active_pool = external_threadpool_;
+  if (active_pool == nullptr) {
+    if (num_threads_ > 1 && scheduler_ == nullptr) {
+      scheduler_ = std::make_unique<YnnpackScheduler>(
+          static_cast<int>(num_threads_) - 1);
+    }
+    if (scheduler_ != nullptr && threadpool_ == nullptr) {
+      ynn_threadpool_t raw_threadpool = nullptr;
+      LRT_TENSOR_RETURN_IF_ERROR(YnnStatusToAbsl(
+          ynn_create_threadpool(YnnpackScheduler::Vtable(), scheduler_.get(),
+                                /*flags=*/0, &raw_threadpool),
+          "ynn_create_threadpool"));
+      threadpool_.reset(raw_threadpool);
+    }
+    active_pool = threadpool_.get();
   }
 
   ynn_subgraph_t sg = static_cast<YnnpackGraph&>(*graph_).GetSubgraph();
   LRT_TENSOR_RETURN_IF_ERROR(
-      YnnStatusToAbsl(ynn_optimize_subgraph(sg, threadpool_.get(), /*flags=*/0),
+      YnnStatusToAbsl(ynn_optimize_subgraph(sg, active_pool, /*flags=*/0),
                       "ynn_optimize_subgraph"));
 
   ynn_runtime* raw_runtime = nullptr;
   LRT_TENSOR_RETURN_IF_ERROR(YnnStatusToAbsl(
-      ynn_create_runtime(sg, threadpool_.get(), /*flags=*/0, &raw_runtime),
+      ynn_create_runtime(sg, active_pool, /*flags=*/0, &raw_runtime),
       "ynn_create_runtime"));
   runtime_.reset(raw_runtime);
   return absl::OkStatus();
