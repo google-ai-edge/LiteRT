@@ -14,9 +14,11 @@
 
 #include "litert/compiler/cc/litert_matchers.h"
 
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <utility>
 #include <vector>
 
@@ -1392,7 +1394,362 @@ TEST(MatchersTest, AllMatchersFailureLogging) {
   VerifyFailure(DebugMatch(cc_tensor_float, m_HasUsers(2, "LblUsers")),
                 m_HasUsers(2, "LblUsers"), cc_tensor_float, "LblUsers",
                 "User count mismatch");
+
+  // 27. m_HasNoUses
+  VerifyFailure(DebugMatch(cc_tensor_float, m_HasNoUses("LblNoUses")),
+                m_HasNoUses("LblNoUses"), cc_tensor_float, "LblNoUses",
+                "User count mismatch");
+
+  // 28. m_Outputs / m_SingleOutput / m_Output
+  VerifyFailure(DebugMatch(cc_op, m_SingleOutput(m_Any(), "LblSingleOut")),
+                m_SingleOutput(m_Any(), "LblSingleOut"), cc_op, "LblSingleOut",
+                "Output count mismatch");
+  VerifyFailure(DebugMatch(cc_op, m_Output(0, m_Any(), "LblOut0")),
+                m_Output(0, m_Any(), "LblOut0"), cc_op, "LblOut0",
+                "Output index out of bounds");
+
+  // 29. m_Capture (null storage)
+  VerifyFailure(DebugMatch(cc_op, m_Capture<Op>(nullptr, "LblCapNull")),
+                m_Capture<Op>(nullptr, "LblCapNull"), cc_op, "LblCapNull",
+                "Storage is null");
+
+  // 30. m_OpCodeAnyOf
+  VerifyFailure(
+      DebugMatch(cc_op, m_OpCodeAnyOf<kLiteRtOpCodeTflMul, kLiteRtOpCodeTflSub>(
+                            "LblAnyCode")),
+      m_OpCodeAnyOf<kLiteRtOpCodeTflMul, kLiteRtOpCodeTflSub>("LblAnyCode"),
+      cc_op, "LblAnyCode", "OpCode mismatch");
+
+  // 31. m_IsUnquantized & m_UnquantizedElementType
+  auto& quant_tensor = subgraph.EmplaceTensor();
+  quant_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {2}));
+  quant_tensor.SetQTypeId(kLiteRtQuantizationPerTensor);
+  Tensor cc_quant_tensor(ctx, &quant_tensor);
+  VerifyFailure(DebugMatch(cc_quant_tensor, m_IsUnquantized("LblUnquant")),
+                m_IsUnquantized("LblUnquant"), cc_quant_tensor, "LblUnquant",
+                "Tensor is quantized");
+  VerifyFailure(
+      DebugMatch(cc_tensor_float,
+                 m_UnquantizedElementType(kLiteRtElementTypeBool, "LblUnqTy")),
+      m_UnquantizedElementType(kLiteRtElementTypeBool, "LblUnqTy"),
+      cc_tensor_float, "LblUnqTy", "Type mismatch");
+
+  // 32. m_HasStaticPositiveShape & m_RankAtLeast
+  auto& dyn_tensor = subgraph.EmplaceTensor();
+  dyn_tensor.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, -1}));
+  Tensor cc_dyn_tensor(ctx, &dyn_tensor);
+  VerifyFailure(
+      DebugMatch(cc_dyn_tensor, m_HasStaticPositiveShape("LblStaticShape")),
+      m_HasStaticPositiveShape("LblStaticShape"), cc_dyn_tensor,
+      "LblStaticShape", "Non-positive or dynamic dimension");
+  VerifyFailure(DebugMatch(cc_tensor_float, m_RankAtLeast(3, "LblRankAtLeast")),
+                m_RankAtLeast(3, "LblRankAtLeast"), cc_tensor_float,
+                "LblRankAtLeast", "Rank below minimum");
+
+  // 33. m_SameShapeAs
+  VerifyFailure(
+      DebugMatch(cc_tensor_float, m_SameShapeAs(&cc_tensor_const, "LblSameSh")),
+      m_SameShapeAs(&cc_tensor_const, "LblSameSh"), cc_tensor_float,
+      "LblSameSh", "Shape mismatch");
+
+  // 34. m_ConstantElements
+  VerifyFailure(
+      DebugMatch(cc_tensor_const,
+                 m_ConstantElements<int32_t>([](int32_t v) { return v < 0; },
+                                             "LblConstElems")),
+      m_ConstantElements<int32_t>([](int32_t v) { return v < 0; },
+                                  "LblConstElems"),
+      cc_tensor_const, "LblConstElems", "Element predicate returned false");
+}
+
+TEST(MatchersTest, OutputsSingleOutputAndIndexedOutputMatching) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  auto& in = subgraph.EmplaceTensor();
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+
+  // 0-output op
+  auto& zero_out_op = subgraph.EmplaceOp();
+  zero_out_op.SetOpCode(kLiteRtOpCodeTflCustom);
+  AttachInput(&in, zero_out_op);
+  Op cc_zero(ctx, &zero_out_op);
+  EXPECT_TRUE(Match(cc_zero, m_Outputs()));
+  EXPECT_TRUE(Match(cc_zero, m_Outputs("EmptyOuts")));
+  EXPECT_FALSE(Match(cc_zero, m_SingleOutput(m_Any())));
+  EXPECT_FALSE(MatchOutput(cc_zero, 0, m_Any()));
+
+  // 1-output op
+  auto& cast_op = subgraph.EmplaceOp();
+  cast_op.SetOpCode(kLiteRtOpCodeTflCast);
+  AttachInput(&in, cast_op);
+  auto& cast_out = subgraph.EmplaceTensor();
+  cast_out.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {2, 3}));
+  AttachOutput(&cast_out, cast_op);
+  Op cc_cast(ctx, &cast_op);
+  Tensor captured_out(ctx, nullptr);
+  EXPECT_TRUE(Match(
+      cc_cast, m_AllOf(m_Op<kLiteRtOpCodeTflCast>(
+                           m_UnquantizedElementType(kLiteRtElementTypeFloat32)),
+                       m_SingleOutput(m_Capture(
+                           &captured_out, m_UnquantizedElementType(
+                                              kLiteRtElementTypeBool))))));
+  EXPECT_EQ(captured_out.Get(), &cast_out);
+  EXPECT_TRUE(Match(Tensor(ctx, &cast_out),
+                    m_SingleOutput(m_ElementType(kLiteRtElementTypeBool))));
+  EXPECT_FALSE(
+      Match(Tensor(ctx, &in), m_SingleOutput(m_Any())));  // No defining op
+
+  // 2-output op
+  auto& split_op = subgraph.EmplaceOp();
+  split_op.SetOpCode(kLiteRtOpCodeTflSplit);
+  AttachInput(&in, split_op);
+  auto& out0 = subgraph.EmplaceTensor();
+  out0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {1, 3}));
+  auto& out1 = subgraph.EmplaceTensor();
+  out1.SetType(MakeRankedTensorType(kLiteRtElementTypeInt32, {1, 3}));
+  AttachOutput(&out0, split_op);
+  AttachOutput(&out1, split_op);
+  Op cc_split(ctx, &split_op);
+
+  EXPECT_FALSE(Match(cc_split, m_SingleOutput(m_Any())));
+  EXPECT_TRUE(
+      Match(cc_split, m_Outputs(m_ElementType(kLiteRtElementTypeFloat32),
+                                m_ElementType(kLiteRtElementTypeInt32))));
+  EXPECT_TRUE(
+      Match(cc_split,
+            m_Outputs(m_ElementType(kLiteRtElementTypeFloat32),
+                      m_ElementType(kLiteRtElementTypeInt32), "SplitOutputs")));
+  EXPECT_FALSE(
+      Match(cc_split, m_Outputs(m_ElementType(kLiteRtElementTypeInt32),
+                                m_ElementType(kLiteRtElementTypeFloat32))));
+  EXPECT_TRUE(
+      Match(cc_split, m_Output(1, m_ElementType(kLiteRtElementTypeInt32))));
+  EXPECT_TRUE(Match(Tensor(ctx, &out0),
+                    m_Output(1, m_ElementType(kLiteRtElementTypeInt32))));
+  EXPECT_FALSE(Match(cc_split, m_Output(2, m_Any())));
+  EXPECT_FALSE(Match(Tensor(ctx, &in), m_Output(0, m_Any())));
+}
+
+TEST(MatchersTest, UnconditionalCaptureAndCommutativeBacktrack) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+
+  // Setup Add(in0, in1) where BOTH inputs are Float32, so permutation 1
+  // (in0 -> lhs, in1 -> rhs) captures lhs = in0 first, then fails on rhs
+  // (in1 is NOT constant), and permutation 2 (in1 -> lhs, in0 -> rhs) must
+  // overwrite lhs = in1 and capture rhs = in0!
+  auto& cst_in0 = subgraph.EmplaceTensor();
+  cst_in0.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}));
+  const float vals[2] = {1.0f, 0.0f};
+  const auto* vals_bytes = reinterpret_cast<const uint8_t*>(vals);
+  std::vector<uint8_t> bytes(vals_bytes, vals_bytes + sizeof(vals));
+  SetWeightsFromOwnedBuffer(cst_in0.Weights(),
+                            OwningBufferRef<uint8_t>(std::move(bytes)));
+
+  auto& dyn_in1 = subgraph.EmplaceTensor();
+  dyn_in1.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2}));
+
+  auto& add_op = subgraph.EmplaceOp();
+  add_op.SetOpCode(kLiteRtOpCodeTflAdd);
+  AttachInput(&cst_in0, add_op);
+  AttachInput(&dyn_in1, add_op);
+  auto& add_out = subgraph.EmplaceTensor();
+  AttachOutput(&add_out, add_op);
+
+  Op cc_add(ctx, &add_op);
+  Tensor lhs(ctx, nullptr);
+  Tensor rhs(ctx, nullptr);
+  // m_Capture succeeds across commutative permutation backtrack:
+  EXPECT_TRUE(Match(
+      cc_add, m_CommutativeOp<kLiteRtOpCodeTflAdd>(
+                  m_Capture(&lhs, m_ElementType(kLiteRtElementTypeFloat32)),
+                  m_Capture(&rhs, m_IsConstant()))));
+  EXPECT_EQ(lhs.Get(), &dyn_in1);
+  EXPECT_EQ(rhs.Get(), &cst_in0);
+
+  // Inner failure does NOT clobber existing storage:
+  Tensor preserved(ctx, &cst_in0);
+  EXPECT_FALSE(Match(Tensor(ctx, &dyn_in1),
+                     m_Capture(&preserved, m_IsConstant(), "PreserveOnFail")));
+  EXPECT_EQ(preserved.Get(), &cst_in0);
+
+  // 1-arg m_Capture(&tensor) and m_Capture(&op) (including via Tensor def_op):
+  Tensor cap_t(ctx, nullptr);
+  Op cap_op(ctx, nullptr);
+  EXPECT_TRUE(Match(Tensor(ctx, &dyn_in1), m_Capture(&cap_t, "CapTensor")));
+  EXPECT_EQ(cap_t.Get(), &dyn_in1);
+  EXPECT_TRUE(Match(Tensor(ctx, &add_out), m_Capture(&cap_op)));
+  EXPECT_EQ(cap_op.Get(), &add_op);
+  EXPECT_FALSE(Match(Tensor(ctx, &dyn_in1), m_Capture(&cap_op)));
+  EXPECT_FALSE(Match(Tensor(ctx, nullptr), m_Capture(&cap_op)));
+  EXPECT_FALSE(Match(Tensor(ctx, nullptr), m_AnyOp()));
+}
+
+TEST(MatchersTest, OpCodeAnyOfAndHasNoUses) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  auto& in = subgraph.EmplaceTensor();
+  auto& select_op = subgraph.EmplaceOp();
+  select_op.SetOpCode(kLiteRtOpCodeTflSelectV2);
+  AttachInput(&in, select_op);
+  auto& out = subgraph.EmplaceTensor();
+  AttachOutput(&out, select_op);
+
+  const auto is_select =
+      m_OpCodeAnyOf<kLiteRtOpCodeTflSelect, kLiteRtOpCodeTflSelectV2>();
+  EXPECT_TRUE(Match(Op(ctx, &select_op), is_select));
+  EXPECT_TRUE(Match(Tensor(ctx, &out), is_select));
+  EXPECT_FALSE(Match(Tensor(ctx, &in), is_select));
+  EXPECT_FALSE(Match(Op(ctx, nullptr), is_select));
+  EXPECT_FALSE(Match(Tensor(ctx, nullptr), is_select));
+  EXPECT_FALSE(MatchOutput(Op(ctx, nullptr), 0, m_Any()));
+  EXPECT_FALSE(Match(Op(ctx, nullptr), m_SingleOutput(m_Any())));
+  EXPECT_FALSE(Match(Op(ctx, nullptr), m_Output(0, m_Any())));
+  EXPECT_FALSE(
+      Match(Op(ctx, &select_op),
+            m_OpCodeAnyOf<kLiteRtOpCodeTflAdd, kLiteRtOpCodeTflMul>()));
+
+  EXPECT_TRUE(Match(Tensor(ctx, &out), m_HasNoUses()));
+  EXPECT_FALSE(Match(Tensor(ctx, &in), m_HasNoUses()));
+}
+
+TEST(MatchersTest, UnquantizedShapeRankAndSameShapeMatchers) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+
+  auto& f32_2x3 = subgraph.EmplaceTensor();
+  f32_2x3.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+  auto& bool_2x3 = subgraph.EmplaceTensor();
+  bool_2x3.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {2, 3}));
+  auto& scalar = subgraph.EmplaceTensor();
+  scalar.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {}));
+  auto& zero_dim = subgraph.EmplaceTensor();
+  zero_dim.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 0}));
+  auto& dyn_dim = subgraph.EmplaceTensor();
+  dyn_dim.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {-1, 3}));
+  auto& unranked = subgraph.EmplaceTensor();
+  TensorType unranked_type;
+  unranked_type.first = kLiteRtUnrankedTensorType;
+  unranked_type.second.unranked_tensor_type.element_type =
+      kLiteRtElementTypeFloat32;
+  unranked.SetType(unranked_type);
+  auto& quant = subgraph.EmplaceTensor();
+  quant.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {2, 3}));
+  quant.SetQTypeId(kLiteRtQuantizationPerTensor);
+
+  EXPECT_TRUE(Match(Tensor(ctx, &f32_2x3), m_IsUnquantized()));
+  EXPECT_TRUE(Match(Tensor(ctx, &f32_2x3),
+                    m_UnquantizedElementType(kLiteRtElementTypeFloat32)));
+  EXPECT_TRUE(Match(Tensor(ctx, &unranked),
+                    m_UnquantizedElementType(kLiteRtElementTypeFloat32)));
+  EXPECT_FALSE(Match(Tensor(ctx, &quant), m_IsUnquantized()));
+  EXPECT_FALSE(Match(Tensor(ctx, &quant),
+                     m_UnquantizedElementType(kLiteRtElementTypeFloat32)));
+  EXPECT_FALSE(Match(Tensor(), m_IsUnquantized()));
+
+  EXPECT_TRUE(Match(Tensor(ctx, &f32_2x3), m_HasStaticPositiveShape()));
+  EXPECT_TRUE(Match(Tensor(ctx, &scalar), m_HasStaticPositiveShape()));
+  EXPECT_FALSE(Match(Tensor(ctx, &zero_dim), m_HasStaticPositiveShape()));
+  EXPECT_FALSE(Match(Tensor(ctx, &dyn_dim), m_HasStaticPositiveShape()));
+  EXPECT_FALSE(Match(Tensor(ctx, &unranked), m_HasStaticPositiveShape()));
+
+  EXPECT_TRUE(Match(Tensor(ctx, &scalar), m_RankAtLeast(0)));
+  EXPECT_FALSE(Match(Tensor(ctx, &scalar), m_RankAtLeast(1)));
+  EXPECT_TRUE(Match(Tensor(ctx, &f32_2x3), m_RankAtLeast(2)));
+  EXPECT_FALSE(Match(Tensor(ctx, &f32_2x3), m_RankAtLeast(3)));
+  EXPECT_FALSE(Match(Tensor(ctx, &unranked), m_RankAtLeast(0)));
+
+  // Relational m_SameShapeAs evaluated left-to-right after m_Capture:
+  auto& cast_op = subgraph.EmplaceOp();
+  cast_op.SetOpCode(kLiteRtOpCodeTflCast);
+  AttachInput(&f32_2x3, cast_op);
+  AttachOutput(&bool_2x3, cast_op);
+
+  Tensor cap_in(ctx, nullptr);
+  Tensor cap_out(ctx, nullptr);
+  EXPECT_TRUE(Match(
+      Op(ctx, &cast_op),
+      m_AllOf(m_Op<kLiteRtOpCodeTflCast>(
+                  m_Capture(&cap_in, m_HasStaticPositiveShape())),
+              m_SingleOutput(m_Capture(&cap_out, m_SameShapeAs(&cap_in))))));
+  EXPECT_EQ(cap_in.Get(), &f32_2x3);
+  EXPECT_EQ(cap_out.Get(), &bool_2x3);
+  EXPECT_FALSE(Match(Tensor(ctx, &f32_2x3), m_SameShapeAs(nullptr)));
+  Tensor empty_ref(ctx, nullptr);
+  EXPECT_FALSE(Match(Tensor(ctx, &f32_2x3), m_SameShapeAs(&empty_ref)));
+}
+
+TEST(MatchersTest, IsSubgraphOutputAndConstantElements) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  auto& sg_out = subgraph.EmplaceTensor();
+  sg_out.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {4}));
+  auto& internal_t = subgraph.EmplaceTensor();
+  internal_t.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {4}));
+  subgraph.Outputs().push_back(&sg_out);
+
+  LiteRtTensorT unattached;
+  unattached.SetType(MakeRankedTensorType(kLiteRtElementTypeBool, {4}));
+
+  EXPECT_TRUE(Match(Tensor(ctx, &sg_out), m_IsSubgraphOutput()));
+  EXPECT_FALSE(Match(Tensor(ctx, &internal_t), m_IsSubgraphOutput()));
+  EXPECT_FALSE(Match(Tensor(ctx, &unattached), m_IsSubgraphOutput()));
+  EXPECT_FALSE(Match(Tensor(), m_IsSubgraphOutput()));
+
+  LoggingMatchTracer tracer;
+  EXPECT_FALSE(
+      Match(Tensor(ctx, &internal_t), m_IsSubgraphOutput("LblSgOut"), &tracer));
+  ASSERT_GE(tracer.logs().size(), 2);
+  EXPECT_EQ(tracer.logs()[1].name, "LblSgOut");
+  EXPECT_EQ(tracer.logs()[1].reason, "Tensor is not subgraph output");
+
+  auto make_f32_const = [&](std::vector<float> values) -> Tensor {
+    auto& t = subgraph.EmplaceTensor();
+    t.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32,
+                                   {static_cast<int32_t>(values.size())}));
+    const auto* raw_begin = reinterpret_cast<const uint8_t*>(values.data());
+    std::vector<uint8_t> raw(raw_begin,
+                             raw_begin + values.size() * sizeof(float));
+    SetWeightsFromOwnedBuffer(t.Weights(),
+                              OwningBufferRef<uint8_t>(std::move(raw)));
+    return Tensor(ctx, &t);
+  };
+
+  auto is_pos_zero_or_one = [](float v) {
+    return (v == 0.0f && !std::signbit(v)) || v == 1.0f;
+  };
+  EXPECT_TRUE(Match(make_f32_const({0.0f, 1.0f, 1.0f, 0.0f}),
+                    m_ConstantElements<float>(is_pos_zero_or_one)));
+  EXPECT_FALSE(Match(make_f32_const({-0.0f, 1.0f}),
+                     m_ConstantElements<float>(is_pos_zero_or_one)));
+  EXPECT_FALSE(Match(
+      make_f32_const({(std::numeric_limits<float>::quiet_NaN)(), 1.0f}),
+      m_ConstantElements<float>([](float v) { return std::isfinite(v); })));
+  EXPECT_FALSE(Match(
+      make_f32_const({(std::numeric_limits<float>::infinity)()}),
+      m_ConstantElements<float>([](float v) { return std::isfinite(v); })));
 }
 
 }  // namespace
 }  // namespace litert::compiler
+
+namespace litert::adl_regression_test {
+namespace {
+
+template <typename M>
+bool m_SingleOutput(M) {
+  return true;
+}
+
+TEST(LitertMatchersAdlTest, SingleOutputNiebloidDoesNotCollideViaAdl) {
+  EXPECT_TRUE(
+      m_SingleOutput(litert::compiler::m_AllOf(litert::compiler::m_Any())));
+
+  using litert::compiler::m_SingleOutput;
+  auto matcher = m_SingleOutput(litert::compiler::m_Any());
+  EXPECT_FALSE(
+      litert::compiler::Match(litert::compiler::Op(nullptr, nullptr), matcher));
+}
+
+}  // namespace
+}  // namespace litert::adl_regression_test

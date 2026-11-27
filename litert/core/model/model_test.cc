@@ -348,10 +348,63 @@ TEST(ModelSubgraphTest, TransferOpsFrom) {
 TEST(ModelSubgraphTest, TransferTensorsFrom) {
   LiteRtSubgraphT subgraph;
   LiteRtSubgraphT other_subgraph;
-  subgraph.EmplaceTensor();
+  auto& tensor = subgraph.EmplaceTensor();
+  EXPECT_EQ(tensor.Subgraph(), &subgraph);
   other_subgraph.TransferTensorsFrom(subgraph.TensorsAllocation());
   EXPECT_EQ(subgraph.Tensors().size(), 0);
   EXPECT_EQ(other_subgraph.Tensors().size(), 1);
+  EXPECT_EQ(tensor.Subgraph(), &other_subgraph);
+}
+
+TEST(ModelSubgraphTest, SubgraphMoveUpdatesTensorParentAndOutputQuery) {
+  LiteRtTensorT unattached;
+  EXPECT_EQ(unattached.Subgraph(), nullptr);
+  EXPECT_FALSE(litert::internal::IsSubgraphOutput(unattached));
+
+  LiteRtSubgraphT subgraph;
+  auto& non_out = subgraph.EmplaceTensor();
+  auto& out = subgraph.EmplaceTensor();
+  subgraph.Outputs().push_back(&out);
+  EXPECT_EQ(non_out.Subgraph(), &subgraph);
+  EXPECT_EQ(out.Subgraph(), &subgraph);
+  EXPECT_FALSE(litert::internal::IsSubgraphOutput(non_out));
+  EXPECT_TRUE(litert::internal::IsSubgraphOutput(out));
+
+  LiteRtSubgraphT moved_ctor(std::move(subgraph));
+  EXPECT_EQ(non_out.Subgraph(), &moved_ctor);
+  EXPECT_EQ(out.Subgraph(), &moved_ctor);
+  EXPECT_TRUE(litert::internal::IsSubgraphOutput(out));
+
+  LiteRtSubgraphT moved_assign;
+  moved_assign = std::move(moved_ctor);
+  EXPECT_EQ(non_out.Subgraph(), &moved_assign);
+  EXPECT_EQ(out.Subgraph(), &moved_assign);
+  EXPECT_TRUE(litert::internal::IsSubgraphOutput(out));
+
+  LiteRtSubgraphT empty_subgraph;
+  LiteRtSubgraphT empty_moved_ctor(std::move(empty_subgraph));
+  EXPECT_EQ(empty_moved_ctor.TensorsAllocation().Size(), 0);
+  LiteRtSubgraphT empty_moved_assign;
+  empty_moved_assign = std::move(empty_moved_ctor);
+  EXPECT_EQ(empty_moved_assign.TensorsAllocation().Size(), 0);
+
+  LiteRtSubgraphT sg_with_staged;
+  auto& staged_in_sg = sg_with_staged.EmplaceTensor();
+  staged_in_sg.SetSubgraph(nullptr);
+  LiteRtSubgraphT sg_staged_ctor(std::move(sg_with_staged));
+  EXPECT_EQ(staged_in_sg.Subgraph(), nullptr);
+  LiteRtSubgraphT sg_staged_assign;
+  sg_staged_assign = std::move(sg_staged_ctor);
+  EXPECT_EQ(staged_in_sg.Subgraph(), nullptr);
+
+  LiteRtBuilderT builder;
+  auto& staged = builder.BuildTensor(non_out);
+  EXPECT_EQ(staged.Subgraph(), nullptr);
+  EXPECT_FALSE(litert::internal::IsSubgraphOutput(staged));
+  auto& built_op = builder.BuildOp(kLiteRtOpCodeTflAbs, {&non_out}, {&staged});
+  (void)built_op;
+  builder.ApplyChanges(&moved_assign);
+  EXPECT_EQ(staged.Subgraph(), &moved_assign);
 }
 
 TEST(ModelSubgraphTest, Name) {

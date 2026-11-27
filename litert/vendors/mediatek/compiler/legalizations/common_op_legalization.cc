@@ -14,6 +14,7 @@
 
 #include "litert/vendors/mediatek/compiler/legalizations/common_op_legalization.h"
 
+#include <cstddef>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -21,6 +22,7 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_op_code.h"
+#include "litert/cc/litert_element_type.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
@@ -46,6 +48,48 @@ bool VerifyCommonOp(const litert::compiler::Op& op, LiteRtOpCode op_code,
 
   if (!check_tensor_types(op.Inputs()) || !check_tensor_types(op.Outputs())) {
     return false;
+  }
+
+  // NeuroPilot rejects broadcasted NotEqual (e.g. scalar RHS) and integer/bool
+  // NotEqual inputs; restrict NPU delegation to same-shape float inputs.
+  if (op_code == kLiteRtOpCodeTflNotEqual) {
+    if (op.Inputs().size() != 2 || op.Outputs().size() != 1) {
+      return false;
+    }
+    const auto lhs = op.Inputs()[0];
+    const auto rhs = op.Inputs()[1];
+    const auto out = op.Outputs()[0];
+    const auto is_float = [](litert::ElementType type) {
+      return type == litert::ElementType::Float32 ||
+             type == litert::ElementType::Float16;
+    };
+    if (!is_float(lhs.ElementType()) ||
+        rhs.ElementType() != lhs.ElementType() ||
+        out.ElementType() != litert::ElementType::Bool ||
+        lhs.HasQuantization() || rhs.HasQuantization() ||
+        out.HasQuantization()) {
+      return false;
+    }
+    auto lhs_type = lhs.RankedTensorType();
+    auto rhs_type = rhs.RankedTensorType();
+    auto out_type = out.RankedTensorType();
+    if (!lhs_type || !rhs_type || !out_type) {
+      return false;
+    }
+    const auto lhs_dims = lhs_type->Layout().Dimensions();
+    const auto rhs_dims = rhs_type->Layout().Dimensions();
+    const auto out_dims = out_type->Layout().Dimensions();
+    if (lhs_dims.empty() || lhs_dims.size() != rhs_dims.size() ||
+        lhs_dims.size() != out_dims.size()) {
+      return false;
+    }
+    for (size_t i = 0; i < lhs_dims.size(); ++i) {
+      if (lhs_dims[i] <= 0 || lhs_dims[i] != rhs_dims[i] ||
+          lhs_dims[i] != out_dims[i]) {
+        return false;
+      }
+    }
+    return true;
   }
 
   if (op.Code() == kLiteRtOpCodeShloComposite) {

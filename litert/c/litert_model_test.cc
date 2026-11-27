@@ -252,6 +252,23 @@ TEST(LiteRtTensorTest, NoDefiningOp) {
   ASSERT_FALSE(has_defining_op);
 }
 
+TEST(LiteRtTensorTest, Subgraph) {
+  LiteRtSubgraph actual_subgraph = nullptr;
+  EXPECT_EQ(LiteRtGetTensorSubgraph(nullptr, &actual_subgraph),
+            kLiteRtStatusErrorInvalidArgument);
+
+  LiteRtTensorT unattached;
+  EXPECT_EQ(LiteRtGetTensorSubgraph(&unattached, nullptr),
+            kLiteRtStatusErrorInvalidArgument);
+  LITERT_ASSERT_OK(LiteRtGetTensorSubgraph(&unattached, &actual_subgraph));
+  EXPECT_EQ(actual_subgraph, nullptr);
+
+  LiteRtSubgraphT subgraph;
+  auto& owned = subgraph.EmplaceTensor();
+  LITERT_ASSERT_OK(LiteRtGetTensorSubgraph(&owned, &actual_subgraph));
+  EXPECT_EQ(actual_subgraph, &subgraph);
+}
+
 TEST(LiteRtTensorTest, Name) {
   static constexpr const char kName[] = "foo";
 

@@ -34,44 +34,44 @@
 #include "litert/compiler/cc/litert_matchers.h"
 #include "litert/compiler/cc/litert_model.h"
 #include "litert/compiler/cc/litert_op_options.h"
+#include "litert/compiler/cc/transformation_utils.h"
 #include "litert/vendors/qualcomm/compiler/transformations/orphan_cleanup_transformation.h"
-#include "litert/vendors/qualcomm/compiler/transformations/transformation_utils.h"
 
 namespace {
 
 using litert::Expected;
 using litert::compiler::AddOptions;
 using litert::compiler::BatchMatmulOptions;
+using litert::compiler::BuildAdd;
+using litert::compiler::BuildBatchMatmul;
+using litert::compiler::BuildConcat;
 using litert::compiler::Builder;
+using litert::compiler::BuildReshape;
+using litert::compiler::BuildReshapeInto;
+using litert::compiler::BuildSlice;
+using litert::compiler::BuildSoftmax;
 using litert::compiler::ConcatenationOptions;
+using litert::compiler::ConstI32;
 using litert::compiler::GetOptionsAs;
+using litert::compiler::HasDims;
+using litert::compiler::HasPerm;
 using litert::compiler::m_AllOf;
 using litert::compiler::m_Any;
 using litert::compiler::m_CaptureOrSameAs;
 using litert::compiler::m_HasOneUse;
 using litert::compiler::m_HasUsers;
 using litert::compiler::m_Op;
-using litert::compiler::m_OpVariadic;
 using litert::compiler::m_Options;
+using litert::compiler::m_OpVariadic;
 using litert::compiler::m_Shape;
 using litert::compiler::Match;
+using litert::compiler::NewLike;
 using litert::compiler::Op;
+using litert::compiler::SingleOutput;
+using litert::compiler::SingleUser;
 using litert::compiler::SoftmaxOptions;
 using litert::compiler::SplitOptions;
 using litert::compiler::Tensor;
-using litert::qnn::BuildAdd;
-using litert::qnn::BuildBatchMatmul;
-using litert::qnn::BuildConcat;
-using litert::qnn::BuildReshape;
-using litert::qnn::BuildReshapeInto;
-using litert::qnn::BuildSlice;
-using litert::qnn::BuildSoftmax;
-using litert::qnn::ConstI32;
-using litert::qnn::HasDims;
-using litert::qnn::HasPerm;
-using litert::qnn::NewLike;
-using litert::qnn::SingleOutput;
-using litert::qnn::SingleUser;
 
 std::optional<Op> MatchPlainBatchMatmul(const Tensor& out) {
   Op batch_matmul(out.ctx(), nullptr);

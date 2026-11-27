@@ -17,7 +17,70 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
-    default_visibility = ["//litert/vendors:__subpackages__"],
+    default_visibility = ["//litert:litert_internal_users"],
+)
+
+_TRANSFORMATION_COPTS = select({
+    "//litert:windows": [],
+    "//conditions:default": [
+        "-Os",
+        "-fno-exceptions",
+        "-fno-unwind-tables",
+        "-fno-asynchronous-unwind-tables",
+        "-ffunction-sections",
+        "-fdata-sections",
+    ],
+})
+
+cc_library(
+    name = "transformation_utils",
+    srcs = ["transformation_utils.cc"],
+    hdrs = ["transformation_utils.h"],
+    copts = _TRANSFORMATION_COPTS,
+    deps = [
+        ":litert_builder",
+        ":litert_model",
+        ":litert_op_options",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_expected",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_macros",
+        "//litert/cc:litert_ranked_tensor_type",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+alias(
+    name = "litert_transformation_utils",
+    actual = ":transformation_utils",
+)
+
+cc_test(
+    name = "transformation_utils_test",
+    srcs = ["transformation_utils_test.cc"],
+    deps = [
+        ":litert_builder",
+        ":litert_model",
+        ":litert_op_options",
+        ":transformation_utils",
+        "//litert/c:litert_common",
+        "//litert/c:litert_layout",
+        "//litert/c:litert_model_types",
+        "//litert/c:litert_op_code",
+        "//litert/c/internal:litert_compiler_context",
+        "//litert/cc:litert_element_type",
+        "//litert/cc:litert_layout",
+        "//litert/cc:litert_ranked_tensor_type",
+        "//litert/core/model",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
 )
 
 cc_library(
@@ -96,7 +159,6 @@ cc_test(
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c/internal:litert_compiler_context",
-        "//litert/test:common",
         "//litert/test:load_test_model",
         "@com_google_googletest//:gtest_main",
     ],

@@ -70,6 +70,7 @@ litert_dynamic_lib(
         "//litert/vendors/mediatek/compiler/legalizations:operand_map",
         "//litert/vendors/mediatek/compiler/transformations:attention_chunk_transformation",
         "//litert/vendors/mediatek/compiler/transformations:attention_mask_transformation",
+        "//litert/vendors/mediatek/compiler/transformations:bool_mask_transformation",
         "//litert/vendors/mediatek/compiler/transformations:entry_embedding_transformation",
         "//litert/vendors/mediatek/compiler/transformations:index_arith_transformation",
         "//litert/vendors/mediatek/compiler/transformations:mlp_quant_transformation",
@@ -181,6 +182,7 @@ litert_test(
     deps = [
         ":compiler_plugin",  # buildcleaner: keep
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
         "//litert/c/internal:litert_compiler_context",
         "//litert/c/internal:litert_logging",
