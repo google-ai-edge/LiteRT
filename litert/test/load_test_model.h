@@ -16,11 +16,11 @@
 #define THIRD_PARTY_ODML_LITERT_LITERT_TEST_LOAD_TEST_MODEL_H_
 
 #include "absl/strings/string_view.h"  // from @com_google_absl
-#include "litert/cc/internal/litert_extended_model.h"
+#include "litert/cc/internal/litert_model.h"
 
 namespace litert::testing {
 
-ExtendedModel LoadTestFileModel(absl::string_view filename);
+Model LoadTestFileModel(absl::string_view filename);
 
 }  // namespace litert::testing
 

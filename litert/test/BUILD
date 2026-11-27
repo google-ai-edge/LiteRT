@@ -134,7 +134,7 @@ cc_library(
     deps = [
         ":common",
         "//litert/cc:litert_macros",
-        "//litert/cc/internal:litert_extended_model",
+        "//litert/cc/internal:litert_model",
         "@com_google_absl//absl/strings:string_view",
     ],
 )

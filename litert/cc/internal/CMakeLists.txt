@@ -26,6 +26,7 @@ set(LITERT_CC_INTERNAL_HEADERS
     litert_extended_model.h
     litert_handle.h
     litert_logging.h
+    litert_model.h
     litert_model_predicates.h
     litert_numerics.h
     litert_op_options.h

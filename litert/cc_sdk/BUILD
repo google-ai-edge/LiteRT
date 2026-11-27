@@ -133,7 +133,6 @@ cc_library(
         # The generated build_config.h. CMake makes it from build_config.h.in.
         "//litert/build_common:build_config",
         # Headers from the TFLite repo that the SDK uses. They are not part of :litert_cc_sdk_files.
-        "//tflite/converter:allocation",
         "//tflite/c:c_api_types",
     ],
 )
