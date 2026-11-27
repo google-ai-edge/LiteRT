@@ -50,24 +50,52 @@ void DynamicBuffer::AddJoinedString(const std::vector<StringRef>& strings,
 
 void DynamicBuffer::AddJoinedString(const std::vector<StringRef>& strings,
                                     StringRef separator) {
-  // Resize the data buffer.
-  int total_len = (strings.size() - 1) * separator.len;
+  // Validate every input before the buffer is modified. As in AddString, an
+  // input that cannot be added is dropped without appending a record.
+  size_t total_len = 0;
+  if (strings.size() > 1) {
+    if (separator.len > 0 && separator.str == nullptr) {
+      return;
+    }
+    if (separator.len > max_length_ ||
+        (separator.len > 0 &&
+         strings.size() - 1 > max_length_ / separator.len)) {
+      return;
+    }
+    total_len = (strings.size() - 1) * separator.len;
+  }
   for (StringRef ref : strings) {
+    if (ref.len > 0 && ref.str == nullptr) {
+      return;
+    }
+    if (ref.len > max_length_ || total_len > max_length_ - ref.len) {
+      return;
+    }
     total_len += ref.len;
   }
+  if (data_.size() >= max_length_ - total_len) {
+    return;
+  }
+  if (total_len == 0) {
+    offset_.push_back(offset_.back());
+    return;
+  }
+  // Resize the data buffer.
   data_.resize(data_.size() + total_len);
 
   char* dst = data_.data() + offset_.back();
   for (size_t i = 0; i < strings.size(); ++i) {
     // Fill separator if not first string.
-    if (i != 0) {
+    if (i != 0 && separator.len > 0) {
       memcpy(dst, separator.str, separator.len);
       dst += separator.len;
     }
 
     // Fill content of the string.
-    memcpy(dst, strings[i].str, strings[i].len);
-    dst += strings[i].len;
+    if (strings[i].len > 0) {
+      memcpy(dst, strings[i].str, strings[i].len);
+      dst += strings[i].len;
+    }
   }
   offset_.push_back(offset_.back() + total_len);
 }
