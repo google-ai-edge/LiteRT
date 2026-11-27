@@ -17,14 +17,18 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <memory>
+#include <optional>
 #include <utility>
 #include <vector>
 
 #include "absl/hash/hash.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -365,6 +369,20 @@ GetConstantTensorHandleInTensorLayout(MlDriftBuildContext& ctx,
                        ml_drift::TensorDescriptor::PhysicalLayout1D::kDCHWBC4));
   ctx.constant_handles_in_tensor_layout.insert({t, handle});
   return handle;
+}
+
+std::optional<bool> ParseBoolEnvValue(absl::string_view env_value) {
+  if (env_value.empty()) return std::nullopt;
+  bool value = false;
+  return absl::SimpleAtob(env_value, &value) ? std::optional<bool>(value)
+                                             : std::nullopt;
+}
+
+std::optional<bool> BoolFromEnv(const char* env_var_name) {
+  if (env_var_name == nullptr) return std::nullopt;
+  const char* raw_env = std::getenv(env_var_name);
+  if (raw_env == nullptr) return std::nullopt;
+  return ParseBoolEnvValue(raw_env);
 }
 
 absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
