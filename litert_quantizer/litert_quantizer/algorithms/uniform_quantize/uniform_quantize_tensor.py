@@ -547,7 +547,11 @@ def tensor_zp_scale_from_min_max(
       signed=signed,
   )
   qmin, qmax = get_quantized_range(qtype)
-  min_bound = 1e-9  # Avoid zero scale.
+  # Tensorwise and channelwise scales are stored as float32 in the flatbuffer
+  # (normal down to ~1.18e-38), so a small 1e-9 bound prevents zero scales on
+  # all-zero channels without sacrificing dynamic range for small-magnitude
+  # channels in 8-bit or 16-bit quantization.
+  min_bound = 1e-9
   pos_clipping_values = None if clipping_values is None else clipping_values
   neg_clipping_values = None if clipping_values is None else -clipping_values
 
@@ -576,9 +580,16 @@ def tensor_zp_scale_from_min_max(
 
   if symmetric:
     bound = np.maximum(np.abs(min_value), np.abs(max_value))
-    bound = np.maximum(bound, min_bound)
     if clipping_values is not None:
       bound = np.clip(bound, neg_clipping_values, pos_clipping_values)
+    # Apply `min_bound` after clipping so that on dead (all-zero or subnormal
+    # noise) channels where `clipping_values` (e.g. from OCTAV) is also zero or
+    # subnormal, `bound` is still floored at `min_bound`. This ensures a
+    # positive normal `scale` so `uniform_quantize` quantizes dead-channel
+    # weights cleanly to `q = round(w / scale) = 0` (which dequantizes to
+    # `0 * scale = 0.0`) instead of dividing by zero or saturating subnormal
+    # noise to `+/-qmax`.
+    bound = np.maximum(bound, min_bound)
     if not qtype.signed:
       half_q = (qmax - 1) / 2
       scale = bound / half_q
@@ -592,14 +603,20 @@ def tensor_zp_scale_from_min_max(
     # This ensures bound_min <= 0 <= bound_max.
     bound_max = np.maximum(max_value, np.zeros_like(max_value))
     bound_min = np.minimum(min_value, np.zeros_like(min_value))
-    bound = np.maximum(bound_max - bound_min, min_bound)
+    bound = bound_max - bound_min
     if clipping_values is not None:
       bound = np.clip(bound, -clipping_values, clipping_values)
+    bound = np.maximum(bound, min_bound)
     scale = bound / (qmax - qmin)
     zp = qmin - bound_min / scale
     zp = np.rint(zp)
 
   if is_blockwise(granularity):
+    # Blockwise scales are stored as float16 in the flatbuffer, where 1e-9
+    # underflows to 0.0 (causing `uniform_quantize` to divide by zero and
+    # runtime delegates such as XNNPACK to reject the non-normal scale).
+    # Clamp blockwise scales to the smallest positive normal float16 (2^-14).
+    scale = np.maximum(scale, np.finfo(np.float16).tiny)
     # Round the scale values to 7 bit mantissa.
     scale = (
         scale.astype(ml_dtypes.bfloat16).astype(np.float16).astype(np.float32)
