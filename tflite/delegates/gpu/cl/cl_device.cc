@@ -204,6 +204,8 @@ bool IsGPUVersionInRange(int gpu_version, int min_version, int max_version) {
 ABSL_ATTRIBUTE_NO_SANITIZE_CFI GpuInfo
 GpuInfoFromDeviceID(cl_device_id id, cl_platform_id platform_id) {
   GpuInfo info;
+  info.opencl_info.platform_name =
+      GetPlatformInfo(platform_id, CL_PLATFORM_NAME);
   info.opencl_info.platform_version =
       GetPlatformInfo(platform_id, CL_PLATFORM_VERSION);
   info.opencl_info.device_name = GetDeviceInfo<std::string>(id, CL_DEVICE_NAME);

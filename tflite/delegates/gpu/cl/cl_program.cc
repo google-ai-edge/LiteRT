@@ -82,7 +82,7 @@ std::string CompilerOptionToString(const GpuInfo& gpu_info,
                                    CompilerOptions option) {
   switch (option) {
     case CompilerOptions::kAdrenoFullSimd:
-      if (gpu_info.opencl_info.IsCLVK()) {
+      if (gpu_info.opencl_info.IsCLVK() || gpu_info.opencl_info.IsRusticl()) {
         return "";
       }
       if (gpu_info.IsAdreno()) {
@@ -96,7 +96,7 @@ std::string CompilerOptionToString(const GpuInfo& gpu_info,
         return "unsupported";
       }
     case CompilerOptions::kAdrenoMoreWaves:
-      if (gpu_info.opencl_info.IsCLVK()) {
+      if (gpu_info.opencl_info.IsCLVK() || gpu_info.opencl_info.IsRusticl()) {
         return "";
       }
       if (gpu_info.IsAdreno()) {
