@@ -539,6 +539,12 @@ ABSL_FLAG(
     std::string, qualcomm_dlc_dir, "",
     "DLC directory. If provided, you can obtain Qnn graphs in DLC format.");
 
+ABSL_FLAG(litert::qualcomm::QualcommOptions::IrExportFormat,
+          qualcomm_ir_export_format,
+          litert::qualcomm::QualcommOptions::IrExportFormat::kDefault,
+          "QNN IR DLC export format. Valid settings: 'default', "
+          "'strip_quant'. 'strip_quant' requires the IR backend.");
+
 ABSL_FLAG(std::string, qualcomm_graph_transform, "",
           "Comma-separated list of graph transform options to apply, e.g. "
           "\"option1,option2\".");
@@ -664,6 +670,32 @@ std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority) {
       return "normal_high";
     case QualcommOptions::GraphPriority::kHigh:
       return "high";
+  }
+  return "default";
+}
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::IrExportFormat* ir_export_format,
+                   std::string* error) {
+  if (text == "default") {
+    *ir_export_format = QualcommOptions::IrExportFormat::kDefault;
+    return true;
+  }
+  if (text == "strip_quant") {
+    *ir_export_format = QualcommOptions::IrExportFormat::kStripQuant;
+    return true;
+  }
+  *error = "Unknown IR export format";
+  return false;
+}
+
+std::string AbslUnparseFlag(
+    QualcommOptions::IrExportFormat ir_export_format) {
+  switch (ir_export_format) {
+    case QualcommOptions::IrExportFormat::kDefault:
+      return "default";
+    case QualcommOptions::IrExportFormat::kStripQuant:
+      return "strip_quant";
   }
   return "default";
 }
@@ -1057,6 +1089,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const std::string dlc_dir = absl::GetFlag(FLAGS_qualcomm_dlc_dir);
   opts.SetDlcDir(dlc_dir);
+
+  const auto ir_export_format =
+      absl::GetFlag(FLAGS_qualcomm_ir_export_format);
+  opts.SetIrExportFormat(ir_export_format);
 
   const std::string graph_transform =
       absl::GetFlag(FLAGS_qualcomm_graph_transform);

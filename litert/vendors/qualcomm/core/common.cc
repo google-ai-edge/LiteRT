@@ -360,6 +360,20 @@ void AbslStringify(Sink& sink, GraphPriority v) {
 }
 
 template <typename Sink>
+void AbslStringify(Sink& sink, IrExportFormat v) {
+  absl::string_view name = "Unknown";
+  switch (v) {
+    case IrExportFormat::kDefault:
+      name = "Default";
+      break;
+    case IrExportFormat::kStripQuant:
+      name = "StripQuant";
+      break;
+  }
+  absl::Format(&sink, "%s(%d)", name, static_cast<int>(v));
+}
+
+template <typename Sink>
 void AbslStringify(Sink& sink, GpuPrecision v) {
   absl::string_view name = "Unknown";
   switch (v) {
@@ -679,6 +693,12 @@ void Options::SetGraphPriority(GraphPriority graph_priority) {
   graph_priority_ = graph_priority;
 }
 
+IrExportFormat Options::GetIrExportFormat() const { return ir_export_format_; }
+
+void Options::SetIrExportFormat(IrExportFormat ir_export_format) {
+  ir_export_format_ = ir_export_format;
+}
+
 void Options::SetGpuPrecision(GpuPrecision gpu_precision) {
   gpu_precision_ = gpu_precision;
 }
@@ -846,6 +866,7 @@ std::string Options::Dump() const {
   absl::StrAppend(&out, "[IR]\n");
   field(2, "IrJsonDir", ir_json_dir_);
   field(2, "DlcDir", dlc_dir_);
+  field(2, "IrExportFormat", ir_export_format_);
 
   // --- SAVER ---
   absl::StrAppend(&out, "[SAVER]\n");

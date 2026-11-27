@@ -306,6 +306,13 @@ TEST(QnnOptionTest, SetDlcDir) {
   EXPECT_TRUE(options.GetDlcDir().empty());
 }
 
+TEST(QnnOptionTest, IrExportFormat) {
+  Options options;
+  EXPECT_EQ(options.GetIrExportFormat(), IrExportFormat::kDefault);
+  options.SetIrExportFormat(IrExportFormat::kStripQuant);
+  EXPECT_EQ(options.GetIrExportFormat(), IrExportFormat::kStripQuant);
+}
+
 TEST(QnnOptionTest, SetGraphTransform) {
   Options options;
   options.SetGraphTransform("option1,option2");
@@ -452,6 +459,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetDspEncoding(), DspEncoding::kStatic);
   EXPECT_TRUE(options.GetIrJsonDir().empty());
   EXPECT_TRUE(options.GetDlcDir().empty());
+  EXPECT_EQ(options.GetIrExportFormat(), IrExportFormat::kDefault);
   EXPECT_TRUE(options.GetGraphTransform().empty());
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);

@@ -92,6 +92,24 @@ LiteRtStatus LrtQualcommOptionsGetGraphPriority(
     LrtQualcommOptions options,
     LrtQualcommOptionsGraphPriority* graph_priority);
 
+// IR export format
+//
+// This option applies only while compiling with the QNN IR backend. The
+// default preserves quantization encodings. StripQuant requests a float DLC
+// by the LiteRT Qualcomm frontend before IR serialization.
+typedef enum LrtQualcommOptionsIrExportFormat {
+  kLiteRtQualcommIrExportFormatDefault = 0,
+  kLiteRtQualcommIrExportFormatStripQuant,
+} LrtQualcommOptionsIrExportFormat;
+
+LiteRtStatus LrtQualcommOptionsSetIrExportFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsIrExportFormat ir_export_format);
+
+LiteRtStatus LrtQualcommOptionsGetIrExportFormat(
+    LrtQualcommOptions options,
+    LrtQualcommOptionsIrExportFormat* ir_export_format);
+
 // profiling
 
 // This option controls the profiling level. A higher level results in a more

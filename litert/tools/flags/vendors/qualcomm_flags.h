@@ -82,6 +82,9 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_ir_json_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dlc_dir);
 
+ABSL_DECLARE_FLAG(litert::qualcomm::QualcommOptions::IrExportFormat,
+                  qualcomm_ir_export_format);
+
 ABSL_DECLARE_FLAG(std::string, qualcomm_graph_transform);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_saver_output_dir);
@@ -121,6 +124,13 @@ bool AbslParseFlag(absl::string_view text,
                    std::string* error);
 
 std::string AbslUnparseFlag(QualcommOptions::GraphPriority graph_priority);
+
+bool AbslParseFlag(absl::string_view text,
+                   QualcommOptions::IrExportFormat* ir_export_format,
+                   std::string* error);
+
+std::string AbslUnparseFlag(
+    QualcommOptions::IrExportFormat ir_export_format);
 
 bool AbslParseFlag(absl::string_view text,
                    QualcommOptions::GraphIOTensorMemType* memory_type,

@@ -618,6 +618,25 @@ class QualcommOptions : public ConcreteOptionsBase {
     return static_cast<GraphPriority>(val);
   }
 
+  enum class IrExportFormat : int {
+    kDefault = kLiteRtQualcommIrExportFormatDefault,
+    kStripQuant = kLiteRtQualcommIrExportFormatStripQuant,
+  };
+
+  void SetIrExportFormat(IrExportFormat ir_export_format) {
+    LrtQualcommOptionsSetIrExportFormat(
+        options_,
+        static_cast<LrtQualcommOptionsIrExportFormat>(ir_export_format));
+  }
+  IrExportFormat GetIrExportFormat() {
+    LrtQualcommOptionsIrExportFormat val;
+    auto status = LrtQualcommOptionsGetIrExportFormat(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return IrExportFormat::kDefault;
+    }
+    return static_cast<IrExportFormat>(val);
+  }
+
   enum class Backend : int {
     kUndefined = kLiteRtQualcommBackendUndefined,
     kGpu = kLiteRtQualcommBackendGpu,
