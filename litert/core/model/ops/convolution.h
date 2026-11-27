@@ -15,9 +15,13 @@
 #ifndef ODML_LITERT_LITERT_CORE_MODEL_OPS_CONVOLUTION_H_
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_CONVOLUTION_H_
 
+#include <algorithm>
+#include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -25,9 +29,12 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/cc/litert_expected.h"
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/op_shape_inference_utils.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 #include "tflite/schema/schema_generated.h"
 
 namespace litert::internal {
@@ -666,6 +673,354 @@ inline void ReferenceDepthwiseConv2D(
       }
     }
   }
+}
+
+// Caller-supplied NHWC spatial parameters for 2D transposed convolution.
+// Filter tensor layout is `[out_c, filter_h, filter_w, in_c]`.
+struct TransposeConvParams {
+  int32_t batch = 0;
+  int32_t in_h = 0;
+  int32_t in_w = 0;
+  int32_t in_c = 0;
+  int32_t out_h = 0;
+  int32_t out_w = 0;
+  int32_t out_c = 0;
+  int32_t filter_h = 0;
+  int32_t filter_w = 0;
+  int32_t stride_h = 0;
+  int32_t stride_w = 0;
+  int32_t pad_t = 0;
+  int32_t pad_l = 0;
+};
+
+// Validated spatial geometry and checked tensor element counts for 2D
+// transposed convolution.
+struct TransposeConvGeometry {
+  TransposeConvParams params;
+  size_t input_num_elements = 0;
+  size_t filter_num_elements = 0;
+  size_t output_num_elements = 0;
+};
+
+// Validates non-negative batch, strictly positive spatial/channel/filter/stride
+// dimensions, and checked element/byte counts for input, filter, output, and
+// optional accumulator buffers.
+inline Expected<TransposeConvGeometry> PrepareTransposeConvGeometry(
+    const TransposeConvParams& params, size_t input_elem_size,
+    size_t filter_elem_size, size_t output_elem_size,
+    size_t acc_elem_size = 0) {
+  if (params.batch < 0 || params.in_h <= 0 || params.in_w <= 0 ||
+      params.in_c <= 0 || params.out_h <= 0 || params.out_w <= 0 ||
+      params.out_c <= 0 || params.filter_h <= 0 || params.filter_w <= 0 ||
+      params.stride_h <= 0 || params.stride_w <= 0) {
+    return Unexpected(
+        kLiteRtStatusErrorInvalidArgument,
+        "TransposeConv requires non-negative batch and positive spatial, "
+        "channel, filter, and stride dimensions");
+  }
+  const std::array<int32_t, 4> in_dims = {params.batch, params.in_h,
+                                          params.in_w, params.in_c};
+  const std::array<int32_t, 4> filter_dims = {params.out_c, params.filter_h,
+                                              params.filter_w, params.in_c};
+  const std::array<int32_t, 4> out_dims = {params.batch, params.out_h,
+                                           params.out_w, params.out_c};
+  Expected<ContiguousLayout> in_layout =
+      PrepareContiguousLayout(in_dims, input_elem_size);
+  if (!in_layout) {
+    return in_layout.Error();
+  }
+  Expected<ContiguousLayout> filter_layout =
+      PrepareContiguousLayout(filter_dims, filter_elem_size);
+  if (!filter_layout) {
+    return filter_layout.Error();
+  }
+  Expected<ContiguousLayout> out_layout =
+      PrepareContiguousLayout(out_dims, output_elem_size);
+  if (!out_layout) {
+    return out_layout.Error();
+  }
+  if (acc_elem_size > 0) {
+    Expected<size_t> acc_bytes =
+        CheckedByteCount(out_layout->num_elements, acc_elem_size);
+    if (!acc_bytes) {
+      return acc_bytes.Error();
+    }
+  }
+  return TransposeConvGeometry{
+      .params = params,
+      .input_num_elements = in_layout->num_elements,
+      .filter_num_elements = filter_layout->num_elements,
+      .output_num_elements = out_layout->num_elements,
+  };
+}
+
+namespace detail {
+
+template <typename T>
+inline constexpr bool kIsSupportedQuantizedConvDataType =
+    std::is_same_v<T, int8_t> || std::is_same_v<T, uint8_t> ||
+    std::is_same_v<T, int16_t> || std::is_same_v<T, uint16_t>;
+
+template <typename T>
+inline constexpr bool kIsSupportedQuantizedConvBiasType =
+    std::is_same_v<T, int32_t> || std::is_same_v<T, uint32_t>;
+
+// Computes the row-major flat index for 4D coordinates within `dims`.
+// Callers must guarantee each coordinate is in `[0, dims[i])` and the product
+// of `dims` fits in `size_t`.
+constexpr size_t FlatIndex4D(const std::array<size_t, 4>& coords,
+                             const std::array<size_t, 4>& dims) {
+  return ((coords[0] * dims[1] + coords[1]) * dims[2] + coords[2]) * dims[3] +
+         coords[3];
+}
+
+inline bool IsSupportedTransposeConvActivation(
+    tflite::ActivationFunctionType faf) {
+  switch (faf) {
+    case tflite::ActivationFunctionType_NONE:
+    case tflite::ActivationFunctionType_RELU:
+    case tflite::ActivationFunctionType_RELU_N1_TO_1:
+    case tflite::ActivationFunctionType_RELU6:
+      return true;
+    default:
+      return false;
+  }
+}
+
+// Validates the fused activation, spatial geometry (including optional `AccT`
+// accumulator allocation size when `AccT != OutputT`), and input, filter,
+// optional bias, and output buffer capacities.
+template <typename AccT, typename InputT, typename FilterT, typename BiasT,
+          typename OutputT>
+inline Expected<TransposeConvGeometry> PrepareAndValidateTransposeConv(
+    absl::Span<const InputT> input, absl::Span<const FilterT> filter,
+    absl::Span<const BiasT> bias, absl::Span<OutputT> output,
+    const TransposeConvParams& params, tflite::ActivationFunctionType faf) {
+  if (!IsSupportedTransposeConvActivation(faf)) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Unsupported TransposeConv fused activation");
+  }
+  constexpr size_t kAccElemSize =
+      std::is_same_v<AccT, OutputT> ? 0 : sizeof(AccT);
+  Expected<TransposeConvGeometry> geom = PrepareTransposeConvGeometry(
+      params, sizeof(InputT), sizeof(FilterT), sizeof(OutputT), kAccElemSize);
+  if (!geom) {
+    return geom.Error();
+  }
+  if (!ValidateBufferCapacity(input, geom->input_num_elements) ||
+      !ValidateBufferCapacity(filter, geom->filter_num_elements) ||
+      !ValidateBufferCapacity(output, geom->output_num_elements) ||
+      (!bias.empty() && !ValidateBufferCapacity(
+                            bias, static_cast<size_t>(geom->params.out_c)))) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "TransposeConv buffer is smaller than required");
+  }
+  return geom;
+}
+
+// Accumulates NHWC 2D transposed convolution into `acc` using pre-validated
+// `geom` and pre-validated buffer capacities. `acc` must not alias `input` or
+// `filter`.
+template <typename InputT, typename FilterT, typename AccT>
+inline void AccumulateTransposeConvUnchecked(absl::Span<const InputT> input,
+                                             absl::Span<const FilterT> filter,
+                                             absl::Span<AccT> acc,
+                                             const TransposeConvGeometry& geom,
+                                             AccT input_zero_point = AccT{0}) {
+  static_assert(
+      (std::is_floating_point_v<InputT> && std::is_floating_point_v<FilterT> &&
+       std::is_floating_point_v<AccT>) ||
+          (kIsSupportedQuantizedConvDataType<InputT> &&
+           kIsSupportedQuantizedConvDataType<FilterT> &&
+           std::is_same_v<AccT, int64_t>),
+      "AccumulateTransposeConvUnchecked supports floating-point or <=16-bit "
+      "integer inputs/filters accumulated into int64_t.");
+  const TransposeConvParams& params = geom.params;
+  const size_t batch = static_cast<size_t>(params.batch);
+  const size_t in_h = static_cast<size_t>(params.in_h);
+  const size_t in_w = static_cast<size_t>(params.in_w);
+  const size_t in_c = static_cast<size_t>(params.in_c);
+  const size_t out_h = static_cast<size_t>(params.out_h);
+  const size_t out_w = static_cast<size_t>(params.out_w);
+  const size_t out_c = static_cast<size_t>(params.out_c);
+  const size_t filter_h = static_cast<size_t>(params.filter_h);
+  const size_t filter_w = static_cast<size_t>(params.filter_w);
+  const size_t filter_oc_stride = filter_h * filter_w * in_c;
+  const std::array<size_t, 4> in_dims = {batch, in_h, in_w, in_c};
+  const std::array<size_t, 4> filter_dims = {out_c, filter_h, filter_w, in_c};
+  const std::array<size_t, 4> out_dims = {batch, out_h, out_w, out_c};
+  std::fill_n(acc.data(), geom.output_num_elements, AccT{0});
+  for (size_t b = 0; b < batch; ++b) {
+    for (size_t ih = 0; ih < in_h; ++ih) {
+      for (size_t iw = 0; iw < in_w; ++iw) {
+        for (size_t ic = 0; ic < in_c; ++ic) {
+          const AccT in_val =
+              static_cast<AccT>(input[FlatIndex4D({b, ih, iw, ic}, in_dims)]) -
+              input_zero_point;
+          for (size_t kh = 0; kh < filter_h; ++kh) {
+            const int64_t oh = static_cast<int64_t>(ih) * params.stride_h +
+                               static_cast<int64_t>(kh) - params.pad_t;
+            if (oh < 0 || oh >= params.out_h) {
+              continue;
+            }
+            for (size_t kw = 0; kw < filter_w; ++kw) {
+              const int64_t ow = static_cast<int64_t>(iw) * params.stride_w +
+                                 static_cast<int64_t>(kw) - params.pad_l;
+              if (ow < 0 || ow >= params.out_w) {
+                continue;
+              }
+              const size_t filter_spatial_offset =
+                  FlatIndex4D({0, kh, kw, ic}, filter_dims);
+              const size_t acc_base = FlatIndex4D(
+                  {b, static_cast<size_t>(oh), static_cast<size_t>(ow), 0},
+                  out_dims);
+              for (size_t oc = 0; oc < out_c; ++oc) {
+                const AccT weight = static_cast<AccT>(
+                    filter[oc * filter_oc_stride + filter_spatial_offset]);
+                acc[acc_base + oc] += in_val * weight;
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+// Applies TFLite's fused activation bounds (`CalculateActivationRange` +
+// `ActivationFunctionWithMinMax`), including finite `[lowest(), max()]`
+// clamping for `NONE` and `[0, max()]` for `RELU` so float overflows clamp to
+// `+/-FLT_MAX`, matching TFLite's reference and optimized builtins.
+template <typename T>
+inline void ApplyTransposeConvActivation(absl::Span<T> data,
+                                         tflite::ActivationFunctionType faf) {
+  static_assert(std::is_floating_point_v<T>,
+                "ApplyTransposeConvActivation operates in unquantized "
+                "floating-point value space.");
+  T min_val = std::numeric_limits<T>::lowest();
+  T max_val = std::numeric_limits<T>::max();
+  switch (faf) {
+    case tflite::ActivationFunctionType_RELU:
+      min_val = static_cast<T>(0);
+      break;
+    case tflite::ActivationFunctionType_RELU6:
+      min_val = static_cast<T>(0);
+      max_val = static_cast<T>(6);
+      break;
+    case tflite::ActivationFunctionType_RELU_N1_TO_1:
+      min_val = static_cast<T>(-1);
+      max_val = static_cast<T>(1);
+      break;
+    case tflite::ActivationFunctionType_NONE:
+    default:
+      break;
+  }
+  for (T& value : data) {
+    value = std::min(std::max(value, min_val), max_val);
+  }
+}
+
+}  // namespace detail
+
+// Reference float NHWC 2D transposed convolution with optional per-channel bias
+// and fused activation (`NONE`, `RELU`, `RELU6`, `RELU_N1_TO_1`) using TFLite's
+// finite activation clamp bounds (`[-FLT_MAX, FLT_MAX]` for `NONE`,
+// `[0, FLT_MAX]` for `RELU`). Supports `batch == 0` with empty input/output
+// buffers after validating `faf`, filter, and optional bias. Unsupported `faf`
+// values return `kLiteRtStatusErrorInvalidArgument` without modifying `output`.
+// `output` must not alias `input` or `filter`.
+inline LiteRtStatus ReferenceTransposeConv(absl::Span<const float> input,
+                                           absl::Span<const float> filter,
+                                           absl::Span<const float> bias,
+                                           absl::Span<float> output,
+                                           const TransposeConvParams& params,
+                                           tflite::ActivationFunctionType faf) {
+  Expected<TransposeConvGeometry> geom =
+      detail::PrepareAndValidateTransposeConv<float>(input, filter, bias,
+                                                     output, params, faf);
+  if (!geom) {
+    return geom.Error().Status();
+  }
+  const size_t total = geom->output_num_elements;
+  if (total == 0) {
+    return kLiteRtStatusOk;
+  }
+  detail::AccumulateTransposeConvUnchecked<float, float, float>(input, filter,
+                                                                output, *geom);
+  if (!bias.empty()) {
+    const size_t out_c = static_cast<size_t>(params.out_c);
+    for (size_t i = 0; i < total; ++i) {
+      output[i] += bias[i % out_c];
+    }
+  }
+  detail::ApplyTransposeConvActivation(output.first(total), faf);
+  return kLiteRtStatusOk;
+}
+
+// Reference quantized NHWC 2D transposed convolution with symmetric per-tensor
+// weights (`weight_zero_point == 0`, scalar `weight_scale`), `int64_t`
+// accumulation for <=16-bit integer `T` and `FilterT`, optional `int32_t` /
+// `uint32_t` per-channel bias, `double` effective-scale rescaling, fused
+// activation (`NONE`, `RELU`, `RELU6`, `RELU_N1_TO_1`), and saturating
+// requantization to `T`. Supports `batch == 0` with empty input/output buffers
+// after validating `faf`, quantization parameters, filter, and optional bias.
+// Unsupported `faf` or invalid quantization parameters return
+// `kLiteRtStatusErrorInvalidArgument` without modifying `output`. `output` must
+// not alias `input` or `filter`.
+template <typename T, typename FilterT, typename BiasT>
+inline LiteRtStatus ReferenceTransposeConvQuantized(
+    absl::Span<const T> input, absl::Span<const FilterT> filter,
+    absl::Span<const BiasT> bias, absl::Span<T> output,
+    const TransposeConvParams& params, tflite::ActivationFunctionType faf,
+    const AffineQuantSpec& input_quant, float weight_scale,
+    const AffineQuantSpec& output_quant) {
+  static_assert(detail::kIsSupportedQuantizedConvDataType<T>,
+                "ReferenceTransposeConvQuantized supports <=16-bit integer "
+                "activation types.");
+  static_assert(detail::kIsSupportedQuantizedConvDataType<FilterT>,
+                "ReferenceTransposeConvQuantized supports <=16-bit integer "
+                "filter types.");
+  static_assert(detail::kIsSupportedQuantizedConvBiasType<BiasT>,
+                "ReferenceTransposeConvQuantized supports int32_t or uint32_t "
+                "bias types.");
+  if (Expected<void> valid = ValidateQuantization<T>(input_quant); !valid) {
+    return valid.Error().Status();
+  }
+  if (Expected<void> valid = ValidateQuantization<T>(output_quant); !valid) {
+    return valid.Error().Status();
+  }
+  if (!std::isfinite(weight_scale) || weight_scale <= 0.0f) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  Expected<TransposeConvGeometry> geom =
+      detail::PrepareAndValidateTransposeConv<int64_t>(input, filter, bias,
+                                                       output, params, faf);
+  if (!geom) {
+    return geom.Error().Status();
+  }
+  const size_t total = geom->output_num_elements;
+  if (total == 0) {
+    return kLiteRtStatusOk;
+  }
+  std::vector<int64_t> acc(total, 0);
+  detail::AccumulateTransposeConvUnchecked<T, FilterT, int64_t>(
+      input, filter, absl::MakeSpan(acc), *geom, input_quant.zero_point);
+  const double effective_scale = static_cast<double>(input_quant.scale) *
+                                 static_cast<double>(weight_scale);
+  const size_t out_c = static_cast<size_t>(params.out_c);
+  for (size_t i = 0; i < total; ++i) {
+    const int64_t with_bias =
+        acc[i] +
+        (!bias.empty() ? static_cast<int64_t>(bias[i % out_c]) : int64_t{0});
+    double real_val = static_cast<double>(with_bias) * effective_scale;
+    detail::ApplyTransposeConvActivation(absl::MakeSpan(&real_val, 1), faf);
+    Expected<T> quantized = QuantizeValueFromDouble<T>(real_val, output_quant);
+    if (!quantized) {
+      return quantized.Error().Status();
+    }
+    output[i] = *quantized;
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace litert::internal
