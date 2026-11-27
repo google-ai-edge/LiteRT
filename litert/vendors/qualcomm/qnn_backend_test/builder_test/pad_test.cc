@@ -8,14 +8,15 @@
 #include <variant>
 #include <vector>
 
+#include "QnnOpDef.h"  // from @qairt
+#include "QnnTypes.h"  // from @qairt
 #include <gtest/gtest.h>
 #include "litert/vendors/qualcomm/core/builders/pad_op_builder.h"
+#include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/tensor_pool.h"
 #include "litert/vendors/qualcomm/core/wrappers/op_wrapper.h"
 #include "litert/vendors/qualcomm/core/wrappers/quantize_params_wrapper.h"
 #include "litert/vendors/qualcomm/qnn_backend_test/test_utils.h"
-#include "QnnOpDef.h"  // from @qairt
-#include "QnnTypes.h"  // from @qairt
 
 namespace litert::qnn {
 namespace {
@@ -50,13 +51,15 @@ std::vector<::qnn::OpWrapper> BuildFloatPadOp(::qnn::TensorPool& tensor_pool) {
 }
 
 std::vector<::qnn::OpWrapper> BuildQuantizedPadDefaultOp(
-    ::qnn::TensorPool& tensor_pool) {
+    ::qnn::TensorPool& tensor_pool, std::int32_t zero_point = 10,
+    ::qnn::BackendType backend_type = ::qnn::BackendType::kHtpBackend) {
   const std::vector<std::uint32_t> input_dims{1, kInputHeight, kInputWidth, 1};
   const std::vector<std::uint32_t> output_dims{1, kOutputHeight, kOutputWidth,
                                                1};
   const std::vector<std::uint32_t> pad_dims{4, 2};
   const ::qnn::QuantizeParamsWrapperVariant quant_params{
-      std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.5f, 10};
+      std::in_place_type<::qnn::ScaleOffsetQuantizeParamsWrapper>, 0.5f,
+      zero_point};
 
   auto& input = tensor_pool.CreateInputTensorWithName(
       "in", QNN_DATATYPE_SFIXED_POINT_8, quant_params, input_dims);
@@ -68,7 +71,8 @@ std::vector<::qnn::OpWrapper> BuildQuantizedPadDefaultOp(
       QNN_DATATYPE_UINT_32, {}, pad_dims,
       pad_data.size() * sizeof(std::uint32_t), pad_data.data());
 
-  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output});
+  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output},
+                                   backend_type);
 }
 
 template <typename T>
@@ -179,8 +183,18 @@ TEST_P(PadOpBuilderQnnModelTest, FloatPadValidatesWithQnn) {
 
 TEST_P(PadOpBuilderQnnModelTest,
        QuantizedPadDefaultConstValueValidatesWithQnn) {
-  EXPECT_TRUE(ValidateQnnPadModel(qnn_model_,
-                                  BuildQuantizedPadDefaultOp(tensor_pool_)));
+  const auto& [options, soc_info] = GetParam();
+  EXPECT_TRUE(ValidateQnnPadModel(
+      qnn_model_, BuildQuantizedPadDefaultOp(tensor_pool_, /*zero_point=*/10,
+                                             options.GetBackendType())));
+}
+
+TEST_P(PadOpBuilderQnnModelTest,
+       QuantizedPadNegativeZeroPointValidatesWithQnn) {
+  const auto& [options, soc_info] = GetParam();
+  EXPECT_TRUE(ValidateQnnPadModel(
+      qnn_model_, BuildQuantizedPadDefaultOp(tensor_pool_, /*zero_point=*/-12,
+                                             options.GetBackendType())));
 }
 
 TEST_P(PadOpBuilderQnnModelTest, QuantizedPadV2Int8ConstValueValidatesWithQnn) {
@@ -203,9 +217,23 @@ TEST(PadOpBuilderTest, QuantizedPadV2ReadsPadConstTensorDataType) {
                                                  13);
 }
 
-TEST(PadOpBuilderTest, QuantizedPadWithNoConstTensorOmitsPadConstantValue) {
+TEST(PadOpBuilderTest, QuantizedPadHtpUsesDefaultZeroPointConstValue) {
+  for (const std::int32_t zero_point : {10, -12}) {
+    ::qnn::TensorPool tensor_pool;
+    auto ops = BuildQuantizedPadDefaultOp(tensor_pool, zero_point,
+                                          ::qnn::BackendType::kHtpBackend);
+
+    ASSERT_EQ(ops.size(), 1);
+    const auto pad_constant_value = GetPadConstantValue(ops.front());
+    ASSERT_TRUE(pad_constant_value.has_value());
+    EXPECT_EQ(*pad_constant_value, zero_point);
+  }
+}
+
+TEST(PadOpBuilderTest, QuantizedPadLpaiWithNoConstTensorOmitsPadConstantValue) {
   ::qnn::TensorPool tensor_pool;
-  auto ops = BuildQuantizedPadDefaultOp(tensor_pool);
+  auto ops = BuildQuantizedPadDefaultOp(tensor_pool, /*zero_point=*/-12,
+                                        ::qnn::BackendType::kLpaiBackend);
 
   ASSERT_EQ(ops.size(), 1);
   const auto pad_constant_value = GetPadConstantValue(ops.front());
