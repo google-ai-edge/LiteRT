@@ -84,6 +84,17 @@ type TensorCopyFunctions = Map<
 export type Dimensions = Int32Array | number[];
 
 /**
+ * A scalar JavaScript primitive that can be auto-materialized into a constant
+ * Tensor matching the companion Tensor's dtype and environment.
+ */
+export type ScalarValue = number | boolean;
+
+/**
+ * Either a Tensor or a scalar JavaScript number/boolean.
+ */
+export type TensorOrScalar = Tensor | ScalarValue;
+
+/**
  * Metadata about a Tensor including its type and layout.
  *
  * This type only includes information about the tensor itself, not the
@@ -361,71 +372,71 @@ export class Tensor implements Deletable, WithEnvironment {
     }
   }
 
-  add(other: Tensor): Tensor {
+  add(other: TensorOrScalar): Tensor {
     return add(this, other);
   }
 
-  mul(other: Tensor): Tensor {
+  mul(other: TensorOrScalar): Tensor {
     return mul(this, other);
   }
 
-  sub(other: Tensor): Tensor {
+  sub(other: TensorOrScalar): Tensor {
     return sub(this, other);
   }
 
-  div(other: Tensor): Tensor {
+  div(other: TensorOrScalar): Tensor {
     return div(this, other);
   }
 
-  pow(other: Tensor): Tensor {
+  pow(other: TensorOrScalar): Tensor {
     return pow(this, other);
   }
 
-  minimum(other: Tensor): Tensor {
+  minimum(other: TensorOrScalar): Tensor {
     return minimum(this, other);
   }
 
-  maximum(other: Tensor): Tensor {
+  maximum(other: TensorOrScalar): Tensor {
     return maximum(this, other);
   }
 
-  floorDiv(other: Tensor): Tensor {
+  floorDiv(other: TensorOrScalar): Tensor {
     return floorDiv(this, other);
   }
 
-  floorMod(other: Tensor): Tensor {
+  floorMod(other: TensorOrScalar): Tensor {
     return floorMod(this, other);
   }
 
-  equal(other: Tensor): Tensor {
+  equal(other: TensorOrScalar): Tensor {
     return equal(this, other);
   }
 
-  notEqual(other: Tensor): Tensor {
+  notEqual(other: TensorOrScalar): Tensor {
     return notEqual(this, other);
   }
 
-  less(other: Tensor): Tensor {
+  less(other: TensorOrScalar): Tensor {
     return less(this, other);
   }
 
-  greater(other: Tensor): Tensor {
+  greater(other: TensorOrScalar): Tensor {
     return greater(this, other);
   }
 
-  lessEqual(other: Tensor): Tensor {
+  lessEqual(other: TensorOrScalar): Tensor {
     return lessEqual(this, other);
   }
 
-  greaterEqual(other: Tensor): Tensor {
+  greaterEqual(other: TensorOrScalar): Tensor {
     return greaterEqual(this, other);
   }
 
-  logicalAnd(other: Tensor): Tensor {
+  logicalAnd(other: TensorOrScalar): Tensor {
     return logicalAnd(this, other);
   }
 
-  logicalOr(other: Tensor): Tensor {
+  logicalOr(other: TensorOrScalar): Tensor {
     return logicalOr(this, other);
   }
 
@@ -433,7 +444,7 @@ export class Tensor implements Deletable, WithEnvironment {
     return logicalNot(this);
   }
 
-  select(trueVal: Tensor, falseVal: Tensor): Tensor {
+  select(trueVal: TensorOrScalar, falseVal: TensorOrScalar): Tensor {
     return select(this, trueVal, falseVal);
   }
 
@@ -555,6 +566,10 @@ export class Tensor implements Deletable, WithEnvironment {
 
   argMax(axis = 0, outputType: 'int32' | 'int64' = 'int32'): Tensor {
     return argMax(this, axis, outputType);
+  }
+
+  cast(dtype: DType): Tensor {
+    return cast(this, dtype);
   }
 
   resizeBilinear(
@@ -1131,27 +1146,215 @@ function typedArrayToLiteRtTensorHandle(
   return liteRtTensorHandle;
 }
 
+function scalarToTensor(
+  value: ScalarValue,
+  dtype: DType,
+  shape: Dimensions,
+  environment: Environment,
+): Tensor {
+  const numVal = typeof value === 'boolean' ? (value ? 1 : 0) : value;
+  switch (dtype) {
+    case 'float32':
+      return new Tensor(
+        new Float32Array([numVal]),
+        shape,
+        'float32',
+        environment,
+      );
+    case 'int32':
+      return new Tensor(
+        new Int32Array([Math.trunc(numVal)]),
+        shape,
+        'int32',
+        environment,
+      );
+    case 'uint8':
+      return new Tensor(
+        new Uint8Array([Math.trunc(numVal)]),
+        shape,
+        'uint8',
+        environment,
+      );
+    case 'int8':
+      return new Tensor(
+        new Int8Array([Math.trunc(numVal)]),
+        shape,
+        'int8',
+        environment,
+      );
+    case 'bool':
+      return new Tensor(
+        new Uint8Array([value ? 1 : 0]),
+        shape,
+        'bool',
+        environment,
+      );
+    case 'uint16':
+      return new Tensor(
+        new Uint16Array([Math.trunc(numVal)]),
+        shape,
+        'uint16',
+        environment,
+      );
+    case 'int16':
+      return new Tensor(
+        new Int16Array([Math.trunc(numVal)]),
+        shape,
+        'int16',
+        environment,
+      );
+    case 'float64':
+      return new Tensor(
+        new Float64Array([numVal]),
+        shape,
+        'float64',
+        environment,
+      );
+    case 'int64':
+      return new Tensor(
+        new BigInt64Array([BigInt(Math.trunc(numVal))]),
+        shape,
+        'int64',
+        environment,
+      );
+    case 'uint64':
+      return new Tensor(
+        new BigUint64Array([BigInt(Math.trunc(numVal))]),
+        shape,
+        'uint64',
+        environment,
+      );
+    case 'float16': {
+      if (typeof Float16Array !== 'undefined') {
+        return new Tensor(
+          new Float16Array([numVal]),
+          shape,
+          'float16',
+          environment,
+        );
+      }
+      const f32 = new Tensor(
+        new Float32Array([numVal]),
+        shape,
+        'float32',
+        environment,
+      );
+      try {
+        return cast(f32, 'float16');
+      } finally {
+        f32.delete();
+      }
+    }
+    default: {
+      const exhaustiveCheck: never = dtype;
+      throw new Error(`Unsupported scalar DType: ${exhaustiveCheck}`);
+    }
+  }
+}
+
+/**
+ * Converts JS scalars in `inputs` to tensors matching the dtype/environment of
+ * the tensor inputs. `context` (e.g. select's condition) supplies the
+ * environment (and participates in the rank-0 decision) and `fallbackDtype`
+ * supplies the dtype when every input is a scalar. Throws if environments
+ * disagree, any tensor is deleted, or no tensor/context is available.
+ */
+function toTensors(
+  inputs: TensorOrScalar[],
+  opts: {context?: Tensor; fallbackDtype?: DType} = {},
+): Tensor[] {
+  const participating: Tensor[] = [];
+  if (opts.context) {
+    participating.push(opts.context);
+  }
+  for (const input of inputs) {
+    if (input instanceof Tensor) {
+      participating.push(input);
+    }
+  }
+  if (participating.length === 0) {
+    throw new Error(
+      'At least one operand to a tensor operation must be a Tensor.',
+    );
+  }
+  const environment = participating[0].environment;
+  for (const t of participating) {
+    t.ensureNotDeleted();
+    if (t.environment !== environment) {
+      throw new Error(
+        'Cannot perform arithmetic operations on tensors from different environments.',
+      );
+    }
+  }
+  if (inputs.every((input) => input instanceof Tensor)) {
+    return inputs as Tensor[];
+  }
+  const firstTensor = inputs.find(
+    (input): input is Tensor => input instanceof Tensor,
+  );
+  const dtype = firstTensor?.type.dtype ?? opts.fallbackDtype;
+  if (dtype === undefined) {
+    throw new Error(
+      'Cannot infer the dtype of a scalar operand without a Tensor operand.',
+    );
+  }
+  const scalarShape = participating.every(
+    (t) => t.type.layout.dimensions.length === 0,
+  )
+    ? []
+    : [1];
+  const created: Tensor[] = [];
+  try {
+    return inputs.map((input) => {
+      if (input instanceof Tensor) {
+        return input;
+      }
+      const t = scalarToTensor(input, dtype, scalarShape, environment);
+      created.push(t);
+      return t;
+    });
+  } catch (e) {
+    for (const t of created) {
+      t.delete();
+    }
+    throw e;
+  }
+}
+
+/** Deletes only the tensors that toTensors created (t !== inputs[i]). */
+function deleteCreated(inputs: TensorOrScalar[], tensors: Tensor[]): void {
+  for (let i = 0; i < tensors.length; i++) {
+    if (tensors[i] !== inputs[i]) {
+      tensors[i].delete();
+    }
+  }
+}
+
 function makeBinOp(
   op: (
     wasm: LiteRtWasm,
     a: LiteRtTensorHandle,
     b: LiteRtTensorHandle,
   ) => LiteRtTensorHandle,
-): (a: Tensor, b: Tensor) => Tensor {
-  return (a: Tensor, b: Tensor) => {
-    if (a.environment !== b.environment) {
+): (a: TensorOrScalar, b: TensorOrScalar) => Tensor {
+  return (a: TensorOrScalar, b: TensorOrScalar) => {
+    if (!(a instanceof Tensor) && !(b instanceof Tensor)) {
       throw new Error(
-        'Cannot perform arithmetic operations on tensors from different environments.',
+        'At least one operand to a binary tensor operation must be a Tensor.',
       );
     }
-    a.ensureNotDeleted();
-    b.ensureNotDeleted();
-    const resultHandle = op(
-      getGlobalLiteRt().liteRtWasm,
-      a.liteRtTensorHandle,
-      b.liteRtTensorHandle,
-    );
-    return new Tensor(resultHandle, a.environment);
+    const inputs = [a, b];
+    const [aTensor, bTensor] = toTensors(inputs);
+    try {
+      const resultHandle = op(
+        getGlobalLiteRt().liteRtWasm,
+        aTensor.liteRtTensorHandle,
+        bTensor.liteRtTensorHandle,
+      );
+      return new Tensor(resultHandle, aTensor.environment);
+    } finally {
+      deleteCreated(inputs, [aTensor, bTensor]);
+    }
   };
 }
 
@@ -1166,122 +1369,114 @@ function makeUnaryOp(
 }
 
 /**
- * Adds two tensors element-wise.
+ * Adds two tensors (or a tensor and a scalar) element-wise.
  */
-export const add: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.add(a, b),
+export const add: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.add(a, b),
 );
 
 /**
- * Multiplies two tensors element-wise.
+ * Multiplies two tensors (or a tensor and a scalar) element-wise.
  */
-export const mul: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.mul(a, b),
+export const mul: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.mul(a, b),
 );
 
 /**
- * Subtracts tensor b from tensor a element-wise.
+ * Subtracts tensor/scalar b from tensor/scalar a element-wise.
  */
-export const sub: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.sub(a, b),
+export const sub: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.sub(a, b),
 );
 
 /**
- * Divides tensor a by tensor b element-wise.
+ * Divides tensor/scalar a by tensor/scalar b element-wise.
  */
-export const div: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.div(a, b),
+export const div: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.div(a, b),
 );
 
 /**
- * Computes the power of one tensor to another (a^b) element-wise.
+ * Computes the power of one tensor/scalar to another (a^b) element-wise.
  */
-export const pow: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.pow(a, b),
+export const pow: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.pow(a, b),
 );
 
 /**
- * Computes the element-wise minimum of two tensors.
+ * Computes the element-wise minimum of two tensors (or a tensor and a scalar).
  */
-export const minimum: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.minimum(a, b),
-);
+export const minimum: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.minimum(a, b));
 
 /**
- * Computes the element-wise maximum of two tensors.
+ * Computes the element-wise maximum of two tensors (or a tensor and a scalar).
  */
-export const maximum: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.maximum(a, b),
-);
+export const maximum: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.maximum(a, b));
 
 /**
  * Computes the element-wise floor division (floor(a / b)).
  */
-export const floorDiv: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.floorDiv(a, b),
-);
+export const floorDiv: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.floorDiv(a, b));
 
 /**
  * Computes the element-wise floor division remainder (floorMod(a, b)).
  */
-export const floorMod: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.floorMod(a, b),
-);
+export const floorMod: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.floorMod(a, b));
 
 /**
  * Returns the truth value of (a == b) element-wise.
  */
-export const equal: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.equal(a, b),
-);
+export const equal: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.equal(a, b));
 
 /**
  * Returns the truth value of (a != b) element-wise.
  */
-export const notEqual: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.notEqual(a, b),
-);
+export const notEqual: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.notEqual(a, b));
 
 /**
  * Returns the truth value of (a < b) element-wise.
  */
-export const less: (a: Tensor, b: Tensor) => Tensor = makeBinOp((wasm, a, b) =>
-  wasm.less(a, b),
+export const less: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = makeBinOp(
+  (wasm, a, b) => wasm.less(a, b),
 );
 
 /**
  * Returns the truth value of (a > b) element-wise.
  */
-export const greater: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.greater(a, b),
-);
+export const greater: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.greater(a, b));
 
 /**
  * Returns the truth value of (a >= b) element-wise.
  */
-export const greaterEqual: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.greaterEqual(a, b),
-);
+export const greaterEqual: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.greaterEqual(a, b));
 
 /**
  * Returns the truth value of (a <= b) element-wise.
  */
-export const lessEqual: (a: Tensor, b: Tensor) => Tensor = (a, b) =>
-  greaterEqual(b, a);
+export const lessEqual: (a: TensorOrScalar, b: TensorOrScalar) => Tensor = (
+  a,
+  b,
+) => greaterEqual(b, a);
 
 /**
  * Computes logical AND element-wise.
  */
-export const logicalAnd: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.logicalAnd(a, b),
-);
+export const logicalAnd: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.logicalAnd(a, b));
 
 /**
  * Computes logical OR element-wise.
  */
-export const logicalOr: (a: Tensor, b: Tensor) => Tensor = makeBinOp(
-  (wasm, a, b) => wasm.logicalOr(a, b),
-);
+export const logicalOr: (a: TensorOrScalar, b: TensorOrScalar) => Tensor =
+  makeBinOp((wasm, a, b) => wasm.logicalOr(a, b));
 
 /**
  * Computes logical NOT element-wise.
@@ -1295,17 +1490,29 @@ export const logicalNot: (a: Tensor) => Tensor = makeUnaryOp((wasm, a) =>
  */
 export function select(
   condition: Tensor,
-  trueVal: Tensor,
-  falseVal: Tensor,
+  trueVal: TensorOrScalar,
+  falseVal: TensorOrScalar,
 ): Tensor {
-  ensureTensorsOk([condition, trueVal, falseVal]);
-  const wasm = getGlobalLiteRt().liteRtWasm;
-  const resultHandle = wasm.select(
-    condition.liteRtTensorHandle,
-    trueVal.liteRtTensorHandle,
-    falseVal.liteRtTensorHandle,
-  );
-  return new Tensor(resultHandle, condition.environment);
+  const inputs = [trueVal, falseVal];
+  const fallbackDtype: DType =
+    typeof trueVal === 'boolean' && typeof falseVal === 'boolean'
+      ? 'bool'
+      : 'float32';
+  const [trueTensor, falseTensor] = toTensors(inputs, {
+    context: condition,
+    fallbackDtype,
+  });
+  try {
+    const wasm = getGlobalLiteRt().liteRtWasm;
+    const resultHandle = wasm.select(
+      condition.liteRtTensorHandle,
+      trueTensor.liteRtTensorHandle,
+      falseTensor.liteRtTensorHandle,
+    );
+    return new Tensor(resultHandle, condition.environment);
+  } finally {
+    deleteCreated(inputs, [trueTensor, falseTensor]);
+  }
 }
 
 /**
@@ -1769,26 +1976,36 @@ export function pad(input: Tensor, paddings: Tensor | number[][]): Tensor {
 /**
  * Inserts a dimension of 1 into a tensor's shape.
  *
+ * Lowered directly to `reshape` because shapes are static in LiteRT graphs and
+ * TFLite `EXPAND_DIMS` is not delegated on ML Drift WebGPU.
+ *
  * @param input The input tensor.
  * @param axis The dimension index at which to expand the shape.
  * @returns The expanded tensor.
  */
 export function expandDims(input: Tensor, axis: number): Tensor {
   input.ensureNotDeleted();
-  const rank = input.type.layout.dimensions.length;
+  const dims = Array.from(input.type.layout.dimensions);
+  const rank = dims.length;
   const normalizedAxis = axis < 0 ? axis + rank + 1 : axis;
   if (normalizedAxis < 0 || normalizedAxis > rank) {
     throw new Error(
       `expandDims axis ${axis} is out of bounds for tensor of rank ${rank}.`,
     );
   }
-  const wasm = getGlobalLiteRt().liteRtWasm;
-  const resultHandle = wasm.expandDims(input.liteRtTensorHandle, normalizedAxis);
-  return new Tensor(resultHandle, input.environment);
+  const newShape = [
+    ...dims.slice(0, normalizedAxis),
+    1,
+    ...dims.slice(normalizedAxis),
+  ];
+  return reshape(input, newShape);
 }
 
 /**
  * Removes dimensions of size 1 from the shape of a tensor.
+ *
+ * Lowered directly to `reshape` because shapes are static in LiteRT graphs and
+ * TFLite `SQUEEZE` is not delegated on ML Drift WebGPU.
  *
  * @param input The input tensor.
  * @param squeezeDims Optional list of dimensions to squeeze. If empty, squeezes all dimensions of size 1.
@@ -1796,9 +2013,33 @@ export function expandDims(input: Tensor, axis: number): Tensor {
  */
 export function squeeze(input: Tensor, squeezeDims?: number[]): Tensor {
   input.ensureNotDeleted();
-  const wasm = getGlobalLiteRt().liteRtWasm;
-  const resultHandle = wasm.squeeze(input.liteRtTensorHandle, squeezeDims);
-  return new Tensor(resultHandle, input.environment);
+  const dims = Array.from(input.type.layout.dimensions);
+  const rank = dims.length;
+  if (squeezeDims === undefined || squeezeDims.length === 0) {
+    return reshape(
+      input,
+      dims.filter((d) => d !== 1),
+    );
+  }
+  const squeezeSet = new Set<number>();
+  for (const rawAxis of squeezeDims) {
+    const normalizedAxis = rawAxis < 0 ? rawAxis + rank : rawAxis;
+    if (normalizedAxis < 0 || normalizedAxis >= rank) {
+      throw new Error(
+        `squeeze axis ${rawAxis} is out of bounds for tensor of rank ${rank}.`,
+      );
+    }
+    if (dims[normalizedAxis] !== 1) {
+      throw new Error(
+        `Cannot squeeze dimension ${rawAxis} (size ${dims[normalizedAxis]}) because its size is not 1.`,
+      );
+    }
+    squeezeSet.add(normalizedAxis);
+  }
+  return reshape(
+    input,
+    dims.filter((_, idx) => !squeezeSet.has(idx)),
+  );
 }
 
 /**
@@ -1991,6 +2232,24 @@ export function argMax(
   a.ensureNotDeleted();
   const wasm = getGlobalLiteRt().liteRtWasm;
   const resultHandle = wasm.argMax(a.liteRtTensorHandle, axis, outputType);
+  return new Tensor(resultHandle, a.environment);
+}
+
+/**
+ * Casts a tensor to a new data type.
+ *
+ * @param a The input tensor.
+ * @param dtype The target data type.
+ * @returns The cast tensor.
+ */
+export function cast(a: Tensor, dtype: DType): Tensor {
+  a.ensureNotDeleted();
+  const wasm = getGlobalLiteRt().liteRtWasm;
+  const resultHandle = unwrapWasmResult(
+    wasm.cast(a.liteRtTensorHandle, {
+      value: getDataType(dtype).elementType,
+    }),
+  );
   return new Tensor(resultHandle, a.environment);
 }
 

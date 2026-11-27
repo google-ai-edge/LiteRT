@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
+import {abs, add, argMax, author, AuthoredModel, avgPool2d, batchMatMul, cast, ceil, CompiledModel, concat, conv2d, cos, cumsum, depthToSpace, depthwiseConv2d, div, elu, embeddingLookup, Environment, equal, exp, expandDims, floor, floorDiv, floorMod, fullyConnected, gather, gatherNd, gelu, greater, greaterEqual, hardSwish, initFromWasmModule, leakyRelu, less, lessEqual, LiteRt, loadAndCompile, loadLiteRt, type LoadLiteRtOptions, loadModelAndWeights, log, logicalAnd, logicalNot, logicalOr, logistic, logSoftmax, maximum, maxPool2d, mean, minimum, mul, neg, nonMaxSuppression, notEqual, oneHot, pack, pad, pow, reduceMax, relu, relu6, reshape, resizeBilinear, resizeNearestNeighbor, reverse, round, rsqrt, select, sin, slice, softmax, spaceToDepth, split, sqrt, squeeze, sub, sum, supportsFeature, tanh, Tensor, TensorBufferType, tile, topK, transpose, transposeConv2d, type TypedArray, unloadLiteRt, unpack} from '@litertjs/core';
 // Placeholder for internal dependency on trusted resource url
 import {type BigIntTypedArray, type NumberTypedArray} from './datatypes';
 import {unwrapWasmResult} from './wasm_binding_types';
@@ -2667,6 +2667,9 @@ describe('LiteRt', () => {
           const expOut = await expModel.run(mat);
           expect(expOut.shape).toEqual([2, 1, 3]);
           expect(Array.from(await expOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          if (accelerator === 'webgpu') {
+            expect(expModel.compiledModel!.isFullyAccelerated).toBeTrue();
+          }
           expOut.delete();
           expModel.delete();
         });
@@ -2677,8 +2680,22 @@ describe('LiteRt', () => {
           const sqOut = await sqModel.run(sqInput);
           expect(sqOut.shape).toEqual([2, 3]);
           expect(Array.from(await sqOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          if (accelerator === 'webgpu') {
+            expect(sqModel.compiledModel!.isFullyAccelerated).toBeTrue();
+          }
           sqOut.delete();
           sqModel.delete();
+
+          const sqAllModel = author((x: Tensor) => x.squeeze(), {accelerator});
+          const sqAllOut = await sqAllModel.run(sqInput);
+          expect(sqAllOut.shape).toEqual([2, 3]);
+          expect(Array.from(await sqAllOut.data())).toEqual([1, 2, 3, 4, 5, 6]);
+          if (accelerator === 'webgpu') {
+            expect(sqAllOut.dtype).toEqual('float32');
+            expect(sqAllModel.compiledModel!.isFullyAccelerated).toBeTrue();
+          }
+          sqAllOut.delete();
+          sqAllModel.delete();
         });
 
         it(`compiles and executes tile on ${accelerator}`, async () => {
@@ -3189,6 +3206,171 @@ describe('LiteRt', () => {
           expect(Array.from(await dusOut.data())).toEqual([1.0, 9.0, 8.0, 4.0]);
           dusOut.delete();
           dusModel.delete();
+        });
+      }
+    });
+
+    describe('authored cast graphs', () => {
+      let u8Tensor: Tensor;
+      let i32Tensor: Tensor;
+      let f32Tensor: Tensor;
+      let boolTensor: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        u8Tensor = new Tensor(new Uint8Array([0, 128, 255, 42]), [2, 2]);
+        i32Tensor = new Tensor(new Int32Array([-3, 0, 7, 100]), [4]);
+        f32Tensor = new Tensor(new Float32Array([-2.7, 0.0, 1.9, 5.0]), [4]);
+        boolTensor = new Tensor(new Uint8Array([0, 1, 1, 0]), [4], 'bool');
+      });
+
+      afterAll(() => {
+        u8Tensor.delete();
+        i32Tensor.delete();
+        f32Tensor.delete();
+        boolTensor.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`casts uint8 to float32 on ${accelerator}`, async () => {
+          const m = author(
+              (x: Tensor) => x.cast('float32'), {accelerator});
+          const out = await m.run(u8Tensor);
+          expect(out.dtype).toEqual('float32');
+          expect(out.shape).toEqual([2, 2]);
+          expect(Array.from(await out.data())).toEqual([0, 128, 255, 42]);
+          out.delete();
+          m.delete();
+        });
+
+        it(`casts int32 <-> float32 on ${accelerator}`, async () => {
+          const i2f = author((x: Tensor) => cast(x, 'float32'), {accelerator});
+          const fOut = await i2f.run(i32Tensor);
+          expect(fOut.dtype).toEqual('float32');
+          expect(Array.from(await fOut.data())).toEqual([-3, 0, 7, 100]);
+          fOut.delete();
+          i2f.delete();
+
+          const f2i = author((x: Tensor) => x.cast('int32'), {accelerator});
+          const iOut = await f2i.run(f32Tensor);
+          expect(iOut.dtype).toEqual('int32');
+          expect(Array.from(await iOut.data())).toEqual([-2, 0, 1, 5]);
+          iOut.delete();
+          f2i.delete();
+        });
+
+        it(`casts bool <-> float32 on ${accelerator}`, async () => {
+          const b2f = author((x: Tensor) => cast(x, 'float32'), {accelerator});
+          const fOut = await b2f.run(boolTensor);
+          expect(fOut.dtype).toEqual('float32');
+          expect(Array.from(await fOut.data())).toEqual([0, 1, 1, 0]);
+          fOut.delete();
+          b2f.delete();
+
+          const f2b = author((x: Tensor) => x.cast('bool'), {accelerator});
+          const bOut = await f2b.run(f32Tensor);
+          expect(bOut.dtype).toEqual('bool');
+          expect(Array.from(await bOut.data())).toEqual([1, 0, 1, 1]);
+          bOut.delete();
+          f2b.delete();
+        });
+
+        it(`supports identity cast on ${accelerator}`, async () => {
+          const idModel = author(
+              (x: Tensor) => x.cast('float32'), {accelerator});
+          const out = await idModel.run(f32Tensor);
+          expect(out.dtype).toEqual('float32');
+          const data = Array.from(await out.data());
+          expect(data[0]).toBeCloseTo(-2.7, 4);
+          expect(data[1]).toBeCloseTo(0.0, 4);
+          expect(data[2]).toBeCloseTo(1.9, 4);
+          expect(data[3]).toBeCloseTo(5.0, 4);
+          out.delete();
+          idModel.delete();
+        });
+      }
+
+      it('casts int32 -> int64 -> int32 on wasm', async () => {
+        const toI64 = author(
+            (x: Tensor) => cast(x, 'int64'), {accelerator: 'wasm'});
+        const out64 = await toI64.run(i32Tensor);
+        expect(out64.dtype).toEqual('int64');
+        expect(Array.from(await out64.data() as BigInt64Array))
+            .toEqual([-3n, 0n, 7n, 100n]);
+
+        const toI32 = author(
+            (x: Tensor) => x.cast('int32'), {accelerator: 'wasm'});
+        const out32 = await toI32.run(out64);
+        expect(out32.dtype).toEqual('int32');
+        expect(Array.from(await out32.data())).toEqual([-3, 0, 7, 100]);
+
+        out64.delete();
+        out32.delete();
+        toI64.delete();
+        toI32.delete();
+      });
+    });
+
+    describe('authored scalar operand ergonomics', () => {
+      let f32In: Tensor;
+      let i32In: Tensor;
+
+      beforeAll(async () => {
+        await resetLiteRt(true, {threads: false});
+        f32In = new Tensor(new Float32Array([-2.0, 0.0, 1.5, 4.0]), [1, 2, 2, 1]);
+        i32In = new Tensor(new Int32Array([-4, 0, 5, 9]), [4]);
+      });
+
+      afterAll(() => {
+        f32In.delete();
+        i32In.delete();
+      });
+
+      for (const accelerator of ['wasm', 'webgpu'] as const) {
+        it(`supports JS number operands in arithmetic, comparisons, and select on ${accelerator}`,
+           async () => {
+          const m = author(
+              (x: Tensor) => {
+                // Both method (Tensor, number) and standalone (number, Tensor).
+                const scaled = sub(10.0, x.mul(2.0).add(1.0)).div(2.0);
+                const clamped = scaled.maximum(0.0).minimum(6.0);
+                const mask = x.greaterEqual(0.0);
+                return select(mask, clamped, -1.0);
+              },
+              {accelerator, gpuOptions: {precision: 'fp32'}});
+          const out = await m.run(f32In);
+          expect(out.shape).toEqual([1, 2, 2, 1]);
+          const vals = Array.from(await out.data());
+          // x = [-2, 0, 1.5, 4]
+          // scaled = (10 - (2*x + 1)) / 2 = [6.5, 4.5, 3.0, 0.5]
+          // clamped = [6.0, 4.5, 3.0, 0.5]
+          // mask (x >= 0) = [false, true, true, true] -> [-1.0, 4.5, 3.0, 0.5]
+          expect(vals[0]).toBeCloseTo(-1.0, 4);
+          expect(vals[1]).toBeCloseTo(4.5, 4);
+          expect(vals[2]).toBeCloseTo(3.0, 4);
+          expect(vals[3]).toBeCloseTo(0.5, 4);
+          if (accelerator === 'webgpu') {
+            expect(m.compiledModel!.isFullyAccelerated).toBeTrue();
+          }
+          out.delete();
+          m.delete();
+        });
+
+        it(`supports JS number operands on int32 tensors and select(cond, num, num) on ${accelerator}`,
+           async () => {
+          const m = author(
+              (x: Tensor) => {
+                const shifted = add(x, 2).maximum(0);
+                const gt = shifted.greater(3);
+                return select(gt, 100.0, 0.0);
+              },
+              {accelerator, gpuOptions: {precision: 'fp32'}});
+          const out = await m.run(i32In);
+          // i32In = [-4, 0, 5, 9] -> shifted = [0, 2, 7, 11] -> gt = [F, F, T, T]
+          expect(out.dtype).toEqual('float32');
+          expect(Array.from(await out.data())).toEqual([0, 0, 100, 100]);
+          out.delete();
+          m.delete();
         });
       }
     });
