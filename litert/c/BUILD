@@ -862,6 +862,7 @@ LITERT_C_API_COMMON_DEPS = [
     "//litert/c/options:litert_qualcomm_options",
     "//litert/c/options:litert_intel_openvino_options",
     "//litert/c/options:litert_samsung_options",
+    "//litert/c/options:litert_amlogic_options",
 ]
 
 LITERT_RUNTIME_C_API_DARWIN_FORCE_LINKOPTS = [
@@ -1113,7 +1114,9 @@ SELECT_LITERT_RUNTIME_C_API_SHARED_LIB = select({
 filegroup(
     name = "libLiteRt.so",
     srcs = SELECT_LITERT_RUNTIME_C_API_SHARED_LIB,
-    visibility = ["//litert:litert_public"],
+    # Public so MediaPipe can DT_NEEDED the same libLiteRt.so that AML
+    # Dispatch links against (avoids dual-runtime TensorBuffer crashes).
+    visibility = ["//visibility:public"],
 )
 
 filegroup(
@@ -1143,8 +1146,9 @@ cc_library(
         "//conditions:default": [],
     }),
     linkstatic = 1,
-    # Make the target public to allow clients to bundle libLiteRt.so
-    visibility = ["//litert:litert_public"],
+    # Public so MediaPipe Tasks can link the same libLiteRt.so used by
+    # libLiteRtDispatch_Amlogic.so (single runtime for TensorBuffer create/get).
+    visibility = ["//visibility:public"],
     deps = [
         ":litert_common",
         ":litert_opencl_types",
