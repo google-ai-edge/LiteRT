@@ -486,12 +486,17 @@ LiteRtStatus LrtQualcommOptionsGetSchematicDir(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsSetCustomOpPackage(
     LrtQualcommOptions options, const char* name,
     const char* interface_provider, const char* compile_package_path,
-    const char* dispatch_package_path, const char* target);
+    const char* dispatch_package_path, const char* target,
+    const char* op_type);
 
 LiteRtStatus LrtQualcommOptionsGetCustomOpPackage(
     LrtQualcommOptions options, const char** name,
     const char** interface_provider, const char** compile_package_path,
-    const char** dispatch_package_path, const char** target);
+    const char** dispatch_package_path, const char** target,
+    const char** op_type);
+
+LiteRtStatus LrtQualcommOptionsGetCustomOpPackageOpType(
+    LrtQualcommOptions options, const char** op_type);
 
 // LPAI OPTIONS ////////////////////////////////////////////////////////////////
 
