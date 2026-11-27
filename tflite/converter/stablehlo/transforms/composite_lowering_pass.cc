@@ -28,7 +28,7 @@ limitations under the License.
 #include "tflite/converter/stablehlo/transforms/composite_avg_pool.h"  // IWYU pragma: keep
 #include "tflite/converter/stablehlo/transforms/composite_utils.h"  // IWYU pragma: keep
 #include "tflite/converter/stablehlo/transforms/stablehlo_passes.h"
-#include "tflite/converter/transforms/passes.h"  // IWYU pragma: keep
+#include "tflite/converter/transforms/tfl_passes.h"  // IWYU pragma: keep
 #include "xla/mlir_hlo/mhlo/IR/hlo_ops.h"  // IWYU pragma: keep
 
 namespace mlir {
