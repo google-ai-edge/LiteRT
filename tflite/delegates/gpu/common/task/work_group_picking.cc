@@ -1,3 +1,9 @@
+/*
+ * SPDX-FileCopyrightText: Copyright 2026 Arm Limited and/or its affiliates
+ * <open-source-office@arm.com>
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 /* Copyright 2020 The TensorFlow Authors. All Rights Reserved.
 
 Licensed under the Apache License, Version 2.0 (the "License");
@@ -214,11 +220,14 @@ int3 GetWorkGroupXY128Conv(const int3& grid) {
 
 int3 GetWorkGroupXY128Simple(const int3& grid) { return int3(16, 8, 1); }
 
-int3 GetWorkGroup(const int3& grid, int max_size) {
-  int wg_z = GetBiggestDividerWithPriority(grid.z, 8);
+int3 GetWorkGroup(const int3& grid, int max_size, const GpuInfo& gpu_info) {
+  const int max_z = std::min({8, max_size, gpu_info.GetMaxWorkGroupSizeForZ()});
+  int wg_z = GetBiggestDividerWithPriority(grid.z, max_z);
   int wg_xy_size = max_size / wg_z;
-  int wg_x = std::min(DivideRoundUp(grid.x, 2), wg_xy_size);
-  int wg_y = std::min(wg_xy_size / wg_x, grid.y);
+  int wg_x = std::min({DivideRoundUp(grid.x, 2), wg_xy_size,
+                       gpu_info.GetMaxWorkGroupSizeForX()});
+  int wg_y =
+      std::min({wg_xy_size / wg_x, grid.y, gpu_info.GetMaxWorkGroupSizeForY()});
   return int3(wg_x, wg_y, wg_z);
 }
 
@@ -277,7 +286,7 @@ void GetPossibleWorkGroups(TuningType tuning_type, const GpuInfo& gpu_info,
   switch (tuning_type) {
     case TuningType::kFast:
       work_groups->push_back(
-          GetWorkGroup(grid, kernel_info.max_work_group_size));
+          GetWorkGroup(grid, kernel_info.max_work_group_size, gpu_info));
       return;
     case TuningType::kExhaustive: {
       GetWorkGroupsAlignedToGrid(gpu_info, kernel_info, grid, work_groups);
