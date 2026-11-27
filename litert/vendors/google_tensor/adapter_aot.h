@@ -105,6 +105,12 @@ enum GoogleTensorCompositeValidationCategory {
 
 struct GoogleTensorCompositeOpDescriptor {
   const char* composite_name;
+  const int32_t* operand_types;
+  size_t num_operands;
+  const int32_t* result_types;
+  size_t num_results;
+  const int32_t* operand_quantization_types;
+  const int32_t* result_quantization_types;
 };
 
 struct GoogleTensorCompositeOpValidationResult {
@@ -152,8 +158,8 @@ class AdapterAot : public Adapter {
       size_t options_size) override;
 
   Expected<std::vector<bool>> AreCompositesSupported(
-      absl::Span<const std::string> composite_names, const char* options_data,
-      size_t options_size) override;
+      absl::Span<const CompositeOpDescriptor> composite_ops,
+      const char* options_data, size_t options_size) override;
 
   bool IsAot() const override { return true; }
 

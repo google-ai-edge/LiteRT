@@ -19,7 +19,7 @@ load("@rules_cc//cc:cc_test.bzl", "cc_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_lib", "make_rpaths")
 
 package(
-    # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
+    # copybara:uncomment default_applicable_licenses = ["//third_party/odml:license"],
     default_visibility = ["//litert:__subpackages__"],
 )
 
@@ -49,6 +49,7 @@ litert_lib(
     ungrte = False,
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/core:dynamic_loading",
@@ -99,6 +100,7 @@ litert_lib(
         ":edgetpu_compiler_api",
         ":edgetpu_compiler_options_cc_proto",
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",
         "//litert/cc:litert_macros",
@@ -120,6 +122,7 @@ litert_lib(
     ],
     deps = [
         "//litert/c:litert_common",
+        "//litert/c:litert_model_types",
         "//litert/cc:litert_expected",
         "@com_google_absl//absl/types:span",
     ] + select({
