@@ -601,6 +601,10 @@ ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
           "FastRPC. If not set, falls back to qualcomm_qnn_lib_dir, then to "
           "the plugin directory (shared_library_dir).");
 
+ABSL_FLAG(std::string, qualcomm_lpai_prepare_config, "",
+          "Path to an LPAI native prepare JSON file. Native prepare JSON is "
+          "supported by QAIRT SDK v2.51.1 or newer.");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1157,6 +1161,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto lpai_core_selection =
       absl::GetFlag(FLAGS_qualcomm_lpai_core_selection);
   opts.SetLpaiCoreSelection(lpai_core_selection);
+
+  const std::string lpai_prepare_config =
+      absl::GetFlag(FLAGS_qualcomm_lpai_prepare_config);
+  opts.SetLpaiPrepareConfig(lpai_prepare_config);
 
   return {};
 }

@@ -772,6 +772,14 @@ std::uint32_t Options::GetLpaiCoreSelection() const {
   return lpai_core_selection_;
 }
 
+void Options::SetLpaiPrepareConfig(absl::string_view lpai_prepare_config) {
+  lpai_prepare_config_ = lpai_prepare_config;
+}
+
+absl::string_view Options::GetLpaiPrepareConfig() const {
+  return lpai_prepare_config_;
+}
+
 void Options::SetQnnLibDir(absl::string_view qnn_lib_dir) {
   qnn_lib_dir_ = qnn_lib_dir;
 }
@@ -871,6 +879,7 @@ std::string Options::Dump() const {
   field(2, "LpaiClientPerfType", lpai_client_perf_type_);
   field(2, "LpaiCoreAffinityType", lpai_core_affinity_type_);
   field(2, "LpaiCoreSelection", lpai_core_selection_);
+  field(2, "LpaiPrepareConfig", lpai_prepare_config_);
 
   // --- DEBUG ---
   absl::StrAppend(&out, "[DEBUG]\n");
