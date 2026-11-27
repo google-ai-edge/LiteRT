@@ -50,6 +50,7 @@
 #include "ml_drift_delegate/delegate/composite/short_conv_step_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/symmetric_quantized_fully_connected.h"
+#include "ml_drift_delegate/delegate/extension/scatter_nd_kernel.h"
 
 namespace litert::ml_drift::ir {
 
@@ -208,6 +209,8 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     return CreateGluFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "qkv_norm_rope") {
     return CreateQkvNormRopeFromIrOp(inputs, outputs, op, model_builder);
+  } else if (op.name == "scatter_nd") {
+    return CreateScatterNdFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "short_conv_step") {
     return CreateShortConvStepFromIrOp(inputs, outputs, op, model_builder);
   } else if (op.name == "qsa_indexer_update") {

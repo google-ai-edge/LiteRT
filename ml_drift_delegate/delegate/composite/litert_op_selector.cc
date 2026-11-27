@@ -59,6 +59,7 @@
 #include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_kernel.h"
 #include "ml_drift_delegate/delegate/composite/sparse_sdpa_transposed_parser.h"
 #include "ml_drift_delegate/delegate/composite/symmetric_quantized_fully_connected.h"
+#include "ml_drift_delegate/delegate/extension/scatter_nd_kernel.h"
 
 namespace litert::ml_drift {
 
@@ -307,6 +308,9 @@ absl::Status LiteRtOpSelector::GPUOperationFromNode(
     if (!absl::IsUnimplemented(status)) {
       return status;
     }
+  }
+  if (node.operation.type == "scatter_nd") {
+    return CreateScatterNdFromNode(inputs, outputs, node, model_builder);
   }
   if (node.operation.type == ToString(::ml_drift::OperationType::kRope)) {
     return CreateRoPEFromNode(inputs, outputs, node, model_builder);
