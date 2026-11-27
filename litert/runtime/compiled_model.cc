@@ -1457,6 +1457,12 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         }
       }
 
+      // Register first: the delegate must outlive the interpreter even when
+      // ModifyGraphWithDelegate fails and leaves delegate kernels in the graph.
+      compiled_model->RegisterDelegate({std::move(delegate),
+                                        accelerator->StartMetricsCollection,
+                                        accelerator->StopMetricsCollection});
+
       if (compiled_model->interp_->ModifyGraphWithDelegate(
               delegate_ptr, compiled_model->active_subgraph_indices_) !=
           kTfLiteOk) {
@@ -1486,10 +1492,6 @@ LiteRtCompiledModelT::Create(LiteRtEnvironmentT* env, LiteRtModel model,
         compiled_model->profiler_->TriggerHook(kLiteRtHookTypeCompilerStop,
                                                nullptr, 0);
       }
-
-      compiled_model->RegisterDelegate({std::move(delegate),
-                                        accelerator->StartMetricsCollection,
-                                        accelerator->StopMetricsCollection});
     }
   }
 
