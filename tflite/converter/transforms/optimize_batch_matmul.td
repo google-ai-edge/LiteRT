@@ -21,7 +21,6 @@ include "mlir/Dialect/Arith/IR/ArithOps.td"
 include "mlir/Dialect/Func/IR/FuncOps.td"
 include "tflite/converter/ir/tfl_ops.td"
 include "tflite/converter/utils/utils.td"
-include "tensorflow/compiler/mlir/tensorflow/ir/tf_ops.td"
 
 // Mirrors `IsRhsFoldableIntoFullyConnected` in optimize_batch_matmul_pass.cc,
 // which is the single gate shared with
