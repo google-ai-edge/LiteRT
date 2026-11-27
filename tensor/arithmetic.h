@@ -2049,9 +2049,27 @@ Tensor<Mixins...> Slice(
           "Slice size tensor length must equal input rank.");
     }
     output_info.shape.assign(size_data.begin(), size_data.end());
+    absl::Span<const int32_t> begin_data;
+    std::optional<LockedBufferSpan<const std::byte>> begin_lock;
+    if (auto begin_info = GetInfo(begin.GetRaw());
+        begin_info.ok() && begin_info->buffer != nullptr) {
+      begin_lock.emplace(begin_info->buffer->Lock());
+      begin_data = begin_lock->As<const int32_t>();
+    }
     for (size_t i = 0; i < output_info.shape.size(); ++i) {
-      if (output_info.shape[i] == -1) {
-        output_info.shape[i] = input_info.shape[i];
+      if (input_info.shape[i] < 0) {
+        if (output_info.shape[i] <= -1) {
+          output_info.shape[i] = -1;
+        }
+        continue;
+      }
+      const int32_t raw_begin =
+          i < begin_data.size() ? begin_data[i] : int32_t{0};
+      const int32_t eff_begin =
+          raw_begin < 0 ? (input_info.shape[i] + raw_begin) : raw_begin;
+      if (output_info.shape[i] <= -1) {
+        const int32_t tail_trim = -1 - output_info.shape[i];
+        output_info.shape[i] = input_info.shape[i] - eff_begin - tail_trim;
       }
     }
   } else {
