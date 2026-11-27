@@ -121,6 +121,19 @@ cc_library(
 )
 
 cc_library(
+    name = "convert_scatter_nd",
+    srcs = ["convert_scatter_nd.cc"],
+    hdrs = ["convert_scatter_nd.h"],
+    deps = [
+        ":convert_aux",
+        "//tflite/c:common",
+        "//tflite/kernels:kernel_util",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@ml_drift//ml_drift/common:ir_model",
+    ],
+)
+
+cc_library(
     name = "convert_cumsum",
     srcs = ["convert_cumsum.cc"],
     hdrs = ["convert_cumsum.h"],
@@ -909,6 +922,21 @@ cc_test(
         "@ml_drift//ml_drift/common:shape",
         "@ml_drift//ml_drift/common:tensor",
         "@ml_drift//ml_drift/common:types",
+    ],
+)
+
+cc_test(
+    name = "convert_scatter_nd_test",
+    srcs = ["convert_scatter_nd_test.cc"],
+    deps = [
+        ":convert_testing_utils",
+        ":stub_delegate",
+        "//tflite:builtin_ops",
+        "//tflite:framework",
+        "//tflite/c:common",
+        "@com_google_googletest//:gtest_main",
+        "@ml_drift//ml_drift/common:ir_model",
+        "@ml_drift//ml_drift/common:operations",
     ],
 )
 

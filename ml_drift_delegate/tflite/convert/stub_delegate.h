@@ -25,6 +25,7 @@ namespace litert::ml_drift::ir {
 struct StubDelegateData {
   IrModelBuilderOptions options;
   CustomIrOpMap custom_parsers;
+  TensorIndexToBufferIdMap shared_buffer_map;
   ::ml_drift::ir::IrModel* ir_model = nullptr;
 };
 
