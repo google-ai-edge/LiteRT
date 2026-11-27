@@ -745,6 +745,8 @@ LiteRtStatus LiteRtCompilerPluginCompile(
     if (backend_options.GetEnableJustInTime()) {
       auto jit_graph = std::make_unique<litert::qnn::QnnJitGraph>();
       jit_graph->context_handle = context_handles[context_handle_idx].Get();
+      jit_graph->profile_handle =
+          context_handles[context_handle_idx].get_profile_handle();
       jit_graph->graph_name = entry_point_name;
       jit_graph->inputs = std::move(inputs);
       jit_graph->outputs = std::move(outputs);

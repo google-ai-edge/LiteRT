@@ -201,6 +201,8 @@ struct QnnJitGraph {
   std::string graph_name;
   std::vector<::qnn::TensorWrapper> inputs;
   std::vector<::qnn::TensorWrapper> outputs;
+  // Borrowed from the compiler-owned context, which outlives JIT execution.
+  Qnn_ProfileHandle_t profile_handle = nullptr;
 };
 
 }  // namespace qnn

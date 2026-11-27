@@ -228,8 +228,8 @@ LiteRtDispatchInvocationContextT::Create(
     static absl::NoDestructor<QnnManager::ContextHandle> empty_context_handle;
     return Ptr(new LiteRtDispatchInvocationContextT(
         qnn, qnn_backend, &device_context, empty_context_handle.get(),
-        jit_graph->context_handle, nullptr, 0, graph_handle, jit_graph->inputs,
-        jit_graph->outputs));
+        jit_graph->context_handle, jit_graph->profile_handle, 0, graph_handle,
+        jit_graph->inputs, jit_graph->outputs));
   }
 
   auto exec_bytecode_ptr =

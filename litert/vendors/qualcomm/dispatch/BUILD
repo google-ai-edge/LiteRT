@@ -19,6 +19,7 @@ load("@rules_shell//shell:sh_test.bzl", "sh_test")
 load("//litert/build_common:litert_build_defs.bzl", "litert_bin", "litert_dispatch_api")
 load("//litert/build_common:special_rule.bzl", "litert_android_linkopts")
 load("//litert/integration_test:litert_device.bzl", "litert_device_test")
+load("//litert/integration_test:litert_device_common.bzl", "device_rlocation")
 
 package(
     # copybara:uncomment default_applicable_licenses = ["@org_tensorflow//tensorflow:license"],
@@ -187,7 +188,11 @@ litert_device_test(
         "dispatch_api_qualcomm_test.cc",
     ],
     backend_id = "qualcomm",
+    exec_args = [
+        "--dispatch_library_dir={}".format(device_rlocation("//litert/vendors/qualcomm/dispatch:libLiteRtDispatch_Qualcomm.so", True)),
+    ],
     data = [
+        "//litert/test:testdata/simple_model.tflite",
         "//litert/test:testdata/simple_add_uint16_qualcomm.bin",
         "//litert/test:testdata/simple_model_npu.tflite",
         "//litert/test:testdata/simple_model_qualcomm.bin",
@@ -197,9 +202,13 @@ litert_device_test(
         "//litert/c:litert_runtime_c_api_shared_lib",
         "//litert/c/internal:litert_runtime_context_testonly",
         "//litert/cc:litert_any",
+        "//litert/cc:litert_common",
+        "//litert/cc:litert_compiled_model",
         "//litert/cc:litert_environment",
         "//litert/cc:litert_environment_options",
         "//litert/cc:litert_options",
+        "//litert/cc:litert_tensor_buffer",
+        "//litert/cc/options:litert_qualcomm_options",
         "//litert/core:filesystem_testonly",
         "//litert/test:common",
         "//litert/test:matchers_oss",

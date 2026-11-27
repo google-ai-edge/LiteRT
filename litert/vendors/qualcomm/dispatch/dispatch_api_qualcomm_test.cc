@@ -19,6 +19,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -34,9 +35,13 @@
 #include "litert/c/litert_tensor_buffer_requirements.h"
 #include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/litert_any.h"
+#include "litert/cc/litert_common.h"
+#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_options.h"
+#include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/options/litert_qualcomm_options.h"
 #include "litert/core/filesystem.h"
 #include "litert/test/common.h"
 #include "litert/test/matchers.h"
@@ -62,6 +67,106 @@ litert::Expected<Environment> CreateDefaultEnvironment() {
   return litert::Environment::Create(
       litert::EnvironmentOptions(absl::MakeConstSpan(environment_options)));
 }
+
+using QualcommOptions = litert::qualcomm::QualcommOptions;
+
+class QualcommJitProfilingTest
+    : public ::testing::TestWithParam<QualcommOptions::Profiling> {};
+
+TEST_P(QualcommJitProfilingTest, ExecutesWithCompilerOwnedProfileHandle) {
+#if !defined(__ANDROID__)
+  GTEST_SKIP()
+      << "JIT execution requires an Android device with a Qualcomm NPU";
+#else
+  if (!::qnn::IsTestHtpBackend()) {
+    GTEST_SKIP() << "JIT profiling test requires the HTP backend";
+  }
+#endif
+
+  // Support both a shared library directory and the device runner's runfiles
+  // layout, where compiler and dispatch libraries are in separate directories.
+  const auto& library_dir = qnn::GetTestDispatchLibraryDir();
+  const std::string compiler_library_dir =
+      litert::internal::Exists(library_dir +
+                              "/libLiteRtCompilerPlugin_Qualcomm.so")
+          ? library_dir
+          : litert::testing::GetLiteRtPath("vendors/qualcomm/compiler");
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      {litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+       absl::string_view(library_dir)},
+      {litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+       absl::string_view(compiler_library_dir)},
+      {litert::EnvironmentOptions::Tag::kMinLoggerSeverity,
+       static_cast<int64_t>(kLiteRtLogSeverityInfo)},
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(auto env,
+                              Environment::Create(litert::EnvironmentOptions(
+                                  absl::MakeConstSpan(environment_options))));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto options, Options::Create());
+  options.SetHardwareAccelerators(litert::HwAccelerators::kNpu);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& qnn_options,
+                              options.GetOptions<QualcommOptions>());
+  qnn_options.SetBackend(QualcommOptions::Backend::kHtp);
+  qnn_options.SetEnableJustInTime(true);
+  qnn_options.SetProfiling(GetParam());
+  qnn_options.SetLogLevel(QualcommOptions::LogLevel::kOff);
+
+  // Start from an uncompiled model so this exercises compiler-to-dispatch JIT.
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto compiled_model,
+      litert::CompiledModel::Create(
+          env, litert::testing::GetTestFilePath(kModelFileName), options));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto accelerated,
+                              compiled_model.IsNonCpuFullyAccelerated());
+  ASSERT_TRUE(accelerated);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto inputs, compiled_model.CreateInputBuffers());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto outputs,
+                              compiled_model.CreateOutputBuffers());
+  ASSERT_EQ(inputs.size(), 2);
+  ASSERT_EQ(outputs.size(), 1);
+  LITERT_ASSERT_OK(
+      inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor)));
+  LITERT_ASSERT_OK(
+      inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor)));
+
+  // Capture only execution logs: compile/finalize events cannot satisfy this
+  // check. Run twice to verify the compiler-owned handle remains reusable.
+  for (int iteration = 0; iteration < 2; ++iteration) {
+    SCOPED_TRACE(iteration);
+    if (iteration == 1) {
+      LITERT_ASSERT_OK(
+          inputs[0].Write<float>(absl::MakeConstSpan(kTestInput0Tensor_2)));
+      LITERT_ASSERT_OK(
+          inputs[1].Write<float>(absl::MakeConstSpan(kTestInput1Tensor_2)));
+    }
+    ::testing::internal::CaptureStderr();
+    auto result = compiled_model.Run(inputs, outputs);
+    const std::string execution_log = ::testing::internal::GetCapturedStderr();
+    ASSERT_TRUE(result) << result.Error() << "\n" << execution_log;
+    if (GetParam() == QualcommOptions::Profiling::kBasic) {
+      EXPECT_THAT(execution_log, ::testing::HasSubstr("Execute Stats:"));
+      EXPECT_THAT(execution_log, ::testing::HasSubstr("QNN (execute) time:"));
+    } else {
+      EXPECT_THAT(execution_log,
+                  ::testing::Not(::testing::HasSubstr("Execute Stats:")));
+    }
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto lock, litert::TensorBufferScopedLock::Create<const float>(
+                       outputs[0], litert::TensorBuffer::LockMode::kRead));
+    EXPECT_THAT(
+        absl::MakeConstSpan(lock.second, kTestOutputSize),
+        Pointwise(::testing::FloatNear(kTol),
+                  iteration == 0 ? kTestOutputTensor : kTestOutputTensor_2));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(
+    ProfilingOffAndBasic, QualcommJitProfilingTest,
+    ::testing::Values(QualcommOptions::Profiling::kOff,
+                      QualcommOptions::Profiling::kBasic),
+    [](const ::testing::TestParamInfo<QualcommOptions::Profiling>& info) {
+      return info.param == QualcommOptions::Profiling::kOff ? "Off" : "Basic";
+    });
 
 TEST(Qualcomm, DispatchApiWithFastRpc) {
 #if !defined(__ANDROID__)
