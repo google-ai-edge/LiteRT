@@ -331,6 +331,7 @@ QUANTIZABLE_COMPOSITES = [
     "od" + "ml.npu_call",
     "od" + "ml.rms_norm",
     "od" + "ml.l2_norm",
+    "od" + "ml.group_norm",
 ]
 QUANTIZABLE_CUSTOM_OPS = [
     "moe",
