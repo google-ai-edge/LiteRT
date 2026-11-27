@@ -25,6 +25,7 @@ limitations under the License.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
+#include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/strings/match.h"  // from @com_google_absl
@@ -2117,6 +2118,170 @@ TEST_F(MlDriftConversionTest,
     TensorMLD out = FullyConnected(x, w);
     EXPECT_THAT(AppendGpuModelBuilder(context_, {out}).status(),
                 absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
+  }
+}
+
+TEST_F(MlDriftConversionTest,
+       LazyBlockwiseQuantizationUsesCacheWithoutMaterializing) {
+  auto make_desc = [&](std::vector<float> vals) {
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> t;
+    t.shape = ml_drift::OHWI(4, 1, 1, 2);
+    t.data = std::move(vals);
+    ml_drift::TensorDescriptor td = ml_drift::ScaleOrZeroPointToTensorDesc(
+        context_.gpu_model_builder->gpu_info(), t,
+        ml_drift::DataType::kFloat32);
+    ml_drift::TensorDescriptor dataless;
+    td.CopyWithoutData(&dataless);
+    return dataless;
+  };
+
+  // 1. Cached `:scale:` and `:zp:` are reused without materializing `bwq`.
+  {
+    absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> shared;
+    const int dt = static_cast<int>(ml_drift::DataType::kFloat32);
+    shared.emplace(absl::StrCat("lazy_cached.weight:scale:", dt),
+                   make_desc(std::vector<float>(8, 0.25f)));
+    shared.emplace(absl::StrCat("lazy_cached.weight:zp:", dt),
+                   make_desc(std::vector<float>(8, -1.0f)));
+
+    MlDriftBuildContext local_ctx;
+    ml_drift::GpuModelBuilder builder(context_.gpu_model_builder->gpu_info(),
+                                      ml_drift::ModelHints{},
+                                      ml_drift::CalculationsPrecision::kF32,
+                                      ml_drift::TensorStorageType::kBuffer);
+    local_ctx.gpu_model_builder = &builder;
+    local_ctx.default_float_type = ml_drift::DataType::kFloat32;
+    local_ctx.shared_weight_descriptors = &shared;
+
+    int materialize_calls = 0;
+    using ZeroPointPresence = BlockwiseQuantization::ZeroPointPresence;
+    BlockwiseQuantization::LazyOptions lazy_options{
+        .zero_points = ZeroPointPresence::kMayHaveFloat,
+    };
+    auto bwq = BlockwiseQuantization::CreateLazily(
+        /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/8,
+        [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+          ++materialize_calls;
+          return {.scales = std::vector<float>(8, 0.5f),
+                  .float_zero_points = std::vector<float>(8, -2.0f)};
+        },
+        lazy_options);
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 64}});
+    TensorMLD w({.name = "lazy_cached.weight",
+                 .type = Type::kI4,
+                 .shape = {4, 64},
+                 .buffer = std::vector<int4_t>(4 * 32, int4_t{0}),
+                 .quantization = bwq});
+    local_ctx.graph_tensor_to_handle[w.GetRaw()] = builder.AddTensor(
+        ml_drift::BHWC(1, 1, 1, 128), ml_drift::DataType::kUint8);
+    TensorMLD out = FullyConnected(x, w);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto map,
+                                    AppendGpuModelBuilder(local_ctx, {out}));
+    EXPECT_EQ(materialize_calls, 0);
+    EXPECT_FALSE(bwq->IsMaterialized());
+    ml_drift::GpuModel model;
+    ASSERT_OK(
+        builder.GetGpuModel({map.at(x.GetRaw()).id,
+                             local_ctx.graph_tensor_to_handle[w.GetRaw()].id},
+                            {map.at(out.GetRaw()).id}, &model));
+    EXPECT_THAT(model.const_tensors, SizeIs(2));
+  }
+
+  // 2. Without cached descriptors, lazy `bwq` materializes on demand.
+  {
+    MlDriftBuildContext local_ctx;
+    ml_drift::GpuModelBuilder builder(context_.gpu_model_builder->gpu_info(),
+                                      ml_drift::ModelHints{},
+                                      ml_drift::CalculationsPrecision::kF32,
+                                      ml_drift::TensorStorageType::kBuffer);
+    local_ctx.gpu_model_builder = &builder;
+    local_ctx.default_float_type = ml_drift::DataType::kFloat32;
+
+    int materialize_calls = 0;
+    using ZeroPointPresence = BlockwiseQuantization::ZeroPointPresence;
+    BlockwiseQuantization::LazyOptions lazy_options{
+        .zero_points = ZeroPointPresence::kMayHaveFloat,
+    };
+    auto bwq = BlockwiseQuantization::CreateLazily(
+        /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/8,
+        [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+          ++materialize_calls;
+          return {.scales = std::vector<float>(8, 0.5f),
+                  .float_zero_points = std::vector<float>(8, -2.0f)};
+        },
+        lazy_options);
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 64}});
+    TensorMLD w({.name = "lazy_uncached.weight",
+                 .type = Type::kI4,
+                 .shape = {4, 64},
+                 .buffer = std::vector<int4_t>(4 * 32, int4_t{0}),
+                 .quantization = bwq});
+    local_ctx.graph_tensor_to_handle[w.GetRaw()] = builder.AddTensor(
+        ml_drift::BHWC(1, 1, 1, 128), ml_drift::DataType::kUint8);
+    TensorMLD out = FullyConnected(x, w);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto map,
+                                    AppendGpuModelBuilder(local_ctx, {out}));
+    EXPECT_EQ(materialize_calls, 1);
+    EXPECT_TRUE(bwq->IsMaterialized());
+    ml_drift::GpuModel model;
+    ASSERT_OK(
+        builder.GetGpuModel({map.at(x.GetRaw()).id,
+                             local_ctx.graph_tensor_to_handle[w.GetRaw()].id},
+                            {map.at(out.GetRaw()).id}, &model));
+    EXPECT_THAT(model.const_tensors, SizeIs(2));
+  }
+
+  // 3. Cached `:scale:` without `:zp:` for a float-ZP lazy weight falls
+  // through to materialize instead of dropping zero points.
+  {
+    absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> shared;
+    const int dt = static_cast<int>(ml_drift::DataType::kFloat32);
+    shared.emplace(absl::StrCat("lazy_partial.weight:scale:", dt),
+                   make_desc(std::vector<float>(8, 0.25f)));
+
+    MlDriftBuildContext local_ctx;
+    ml_drift::GpuModelBuilder builder(context_.gpu_model_builder->gpu_info(),
+                                      ml_drift::ModelHints{},
+                                      ml_drift::CalculationsPrecision::kF32,
+                                      ml_drift::TensorStorageType::kBuffer);
+    local_ctx.gpu_model_builder = &builder;
+    local_ctx.default_float_type = ml_drift::DataType::kFloat32;
+    local_ctx.shared_weight_descriptors = &shared;
+
+    int materialize_calls = 0;
+    using ZeroPointPresence = BlockwiseQuantization::ZeroPointPresence;
+    BlockwiseQuantization::LazyOptions lazy_options{
+        .zero_points = ZeroPointPresence::kMayHaveFloat,
+    };
+    auto bwq = BlockwiseQuantization::CreateLazily(
+        /*block_size=*/32, /*quantized_dimension=*/0, /*num_blocks=*/8,
+        [&]() -> BlockwiseQuantization::MaterializedBlockwiseParams {
+          ++materialize_calls;
+          return {.scales = std::vector<float>(8, 0.5f),
+                  .float_zero_points = std::vector<float>(8, -2.0f)};
+        },
+        lazy_options);
+    TensorMLD x({.type = Type::kFP32, .shape = {1, 2, 64}});
+    TensorMLD w({.name = "lazy_partial.weight",
+                 .type = Type::kI4,
+                 .shape = {4, 64},
+                 .buffer = std::vector<int4_t>(4 * 32, int4_t{0}),
+                 .quantization = bwq});
+    local_ctx.graph_tensor_to_handle[w.GetRaw()] = builder.AddTensor(
+        ml_drift::BHWC(1, 1, 1, 128), ml_drift::DataType::kUint8);
+    TensorMLD out = FullyConnected(x, w);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(auto map,
+                                    AppendGpuModelBuilder(local_ctx, {out}));
+    EXPECT_EQ(materialize_calls, 1);
+    EXPECT_TRUE(bwq->IsMaterialized());
+    EXPECT_TRUE(local_ctx.weight_name_to_handle.contains(
+        absl::StrCat("lazy_partial.weight:zp:", dt)));
+    ml_drift::GpuModel model;
+    ASSERT_OK(
+        builder.GetGpuModel({map.at(x.GetRaw()).id,
+                             local_ctx.graph_tensor_to_handle[w.GetRaw()].id},
+                            {map.at(out.GetRaw()).id}, &model));
+    EXPECT_THAT(model.const_tensors, SizeIs(2));
   }
 }
 

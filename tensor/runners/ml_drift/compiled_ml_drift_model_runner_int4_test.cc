@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -29,12 +30,14 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
+#include "tensor/backends/ml_drift/ml_drift_helpers.h"
 #include "tensor/runners/ml_drift/compiled_ml_drift_model_runner.h"
 #include "tensor/runners/ml_drift/ml_drift_dummy_weight_creator.h"
 #include "tensor/utils/matchers.h"
@@ -115,6 +118,10 @@ INSTANTIATE_TEST_SUITE_P(
         Int4Case{8, 32,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
         Int4Case{6, 12,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+        // Large aligned shapes exercising the cache-tiled direct INT4 path.
+        Int4Case{96, 160, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int4Case{96, 160,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}),
     [](const ::testing::TestParamInfo<Int4Case>& info) {
       return absl::StrCat(
@@ -220,6 +227,320 @@ TEST(CreatePackedWeightsTensorDescriptorTest, WideTypesAreNotPacked) {
     EXPECT_EQ(td.GetStorageType(), ml_drift::TensorStorageType::kBuffer);
     EXPECT_EQ(static_cast<size_t>(td.GetBHWDCShape().c), elements_count);
   }
+}
+
+TEST(RearrangeInt4WeightsTest, DirectTiledMatchesReferenceAcrossMultiGroups) {
+  for (const ml_drift::WeightsLayout layout :
+       {ml_drift::WeightsLayout::kOSpatialIOGroupI4O4,
+        ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}) {
+    for (const int group_size : {1, 4, 8}) {
+      // `o = 84` (21 slices) is not a multiple of `group_size * 4` for 4/8,
+      // exercising padded trailing `d_group` slices inside multi-group mode.
+      const ml_drift::OHWI ohwi(84, 1, 1, 160);
+      ml_drift::WeightsDescription desc;
+      desc.type = ml_drift::DataType::kUint4;
+      desc.layout = layout;
+      desc.output_group_size = group_size;
+      const int elements_count =
+          ml_drift::GetTotalElementsCountForLayout(desc, ohwi);
+      const std::vector<int8_t> packed = PackedInt4(ohwi.o * ohwi.i);
+
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+          const RearrangedInt4Weights actual_with_sum,
+          RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                               /*want_sum_i=*/true));
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+          const RearrangedInt4Weights actual_no_sum,
+          RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                               /*want_sum_i=*/false));
+      EXPECT_FALSE(actual_no_sum.sum_i.has_value());
+      EXPECT_THAT(actual_no_sum.data, ElementsAreArray(actual_with_sum.data));
+
+      ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> unpacked;
+      unpacked.shape = ohwi;
+      unpacked.data.assign(ohwi.o * ohwi.i + 64, 0);
+      ml_drift::UnpackDenseInt4IntoInt8(packed.data(), ohwi.o * ohwi.i,
+                                        unpacked.data.data());
+      std::vector<uint8_t> expected(
+          (static_cast<size_t>(elements_count) * 4 + 7) / 8);
+      ml_drift::RearrangeWeightsInt8AsUint4(unpacked, desc,
+                                            absl::MakeSpan(expected), 8, 8u);
+      EXPECT_THAT(actual_with_sum.data, ElementsAreArray(expected));
+      ASSERT_TRUE(actual_with_sum.sum_i.has_value());
+      EXPECT_THAT(
+          *actual_with_sum.sum_i,
+          ElementsAreArray(ComputeWeightsSumI(
+              ohwi,
+              absl::MakeConstSpan(unpacked.data).first(ohwi.o * ohwi.i))));
+    }
+  }
+}
+
+TEST(RearrangeInt8WeightsTest, DirectMatchesReferenceAcrossLayoutsAndGroups) {
+  struct Int8Case {
+    int o;
+    int i;
+    int group_size;
+    ml_drift::WeightsLayout layout;
+  };
+  const std::vector<Int8Case> cases = {
+      {6, 7, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {5, 9, 2, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {84, 160, 21, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 8, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 21, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {84, 160, 8, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {70, 99, 5, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {70, 99, 5, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+  };
+  for (const Int8Case& c : cases) {
+    const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+    ml_drift::WeightsDescription desc;
+    desc.type = ml_drift::DataType::kUint8;
+    desc.layout = c.layout;
+    desc.output_group_size = c.group_size;
+    const size_t elements_count = static_cast<size_t>(
+        ml_drift::GetTotalElementsCountForLayout(desc, ohwi));
+
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> ref_in;
+    ref_in.shape = ohwi;
+    ref_in.data.resize(static_cast<size_t>(c.o) * c.i);
+    for (size_t k = 0; k < ref_in.data.size(); ++k) {
+      ref_in.data[k] = static_cast<int8_t>((k * 37 + 13) % 256 - 128);
+    }
+
+    std::vector<uint8_t> expected(elements_count, 0xCC);
+    ml_drift::RearrangeWeightsInt8AsUint8(ref_in, desc,
+                                          absl::MakeSpan(expected), 128, 128u);
+
+    std::vector<uint8_t> actual(elements_count, 0x33);
+    ASSERT_TRUE(TryRearrangeInt8AsUint8Direct(ref_in.data, ohwi, desc,
+                                              absl::MakeSpan(actual)));
+    EXPECT_THAT(actual, ElementsAreArray(expected))
+        << "o=" << c.o << " i=" << c.i << " group=" << c.group_size;
+  }
+}
+
+TEST(BuildBlockwiseScaleOrZpDescriptorTest, MatchesReferenceOnMetalAndOpenCl) {
+  ml_drift::GpuInfo apple_metal;
+  apple_metal.gpu_api = ml_drift::GpuApi::kMetal;
+  apple_metal.vendor = ml_drift::GpuVendor::kApple;
+  apple_metal.apple_info.gpu_family = ml_drift::AppleInfo::Family::kApple10;
+  apple_metal.metal_info.buffer_max_size = 1ULL << 30;
+  apple_metal.metal_info.image2d_max_width = 16384;
+  apple_metal.metal_info.image2d_max_height = 16384;
+
+  ml_drift::GpuInfo adreno_cl;
+  adreno_cl.gpu_api = ml_drift::GpuApi::kOpenCl;
+  adreno_cl.vendor = ml_drift::GpuVendor::kQualcomm;
+  adreno_cl.opencl_info.supports_images = true;
+  adreno_cl.opencl_info.image2d_max_width = 16384;
+  adreno_cl.opencl_info.image2d_max_height = 16384;
+  adreno_cl.opencl_info.buffer_max_size = 1ULL << 30;
+
+  for (const ml_drift::GpuInfo* gpu_info : {&apple_metal, &adreno_cl}) {
+    for (const ml_drift::DataType dtype :
+         {ml_drift::DataType::kFloat16, ml_drift::DataType::kFloat32}) {
+      for (const std::pair<int, int>& oi :
+           {std::pair{8, 4}, std::pair{7, 5}, std::pair{96, 64},
+            std::pair{70, 37}}) {
+        const ml_drift::OHWI shape(oi.first, 1, 1, oi.second);
+        std::vector<float> scales(shape.DimensionsProduct());
+        for (size_t k = 0; k < scales.size(); ++k) {
+          scales[k] = static_cast<float>(static_cast<int>(k % 19) - 9) * 0.125f;
+        }
+        ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> ref_src;
+        ref_src.shape = shape;
+        ref_src.data = scales;
+        ml_drift::TensorDescriptor expected =
+            ml_drift::ScaleOrZeroPointToTensorDesc(*gpu_info, ref_src, dtype);
+        expected
+            .UpdateToSupportedStorageType(*gpu_info, expected.GetBHWDCShape())
+            .IgnoreError();
+
+        const ml_drift::TensorDescriptor actual =
+            BuildBlockwiseScaleOrZpDescriptor(*gpu_info, scales, shape, dtype);
+        EXPECT_EQ(actual.GetStorageType(), expected.GetStorageType());
+        EXPECT_EQ(actual.GetDataType(), expected.GetDataType());
+        EXPECT_EQ(actual.GetLayout(), expected.GetLayout());
+        EXPECT_EQ(actual.GetBHWDCShape(), expected.GetBHWDCShape());
+        EXPECT_THAT(actual.GetData(), ElementsAreArray(expected.GetData()));
+      }
+    }
+  }
+}
+
+std::vector<uint8_t> PackedInt2(int num_elements) {
+  std::vector<uint8_t> packed((num_elements + 3) / 4, 0);
+  for (int k = 0; k < num_elements; ++k) {
+    const int value = (k * 3 + 1) % 4 - 2;  // -2..1
+    const uint8_t crumb = static_cast<uint8_t>(value) & 0x03u;
+    packed[k / 4] |= static_cast<uint8_t>(crumb << ((k % 4) * 2));
+  }
+  return packed;
+}
+
+std::vector<int8_t> UnpackInt2ForReference(absl::Span<const uint8_t> packed,
+                                           int num_elements) {
+  std::vector<int8_t> unpacked(num_elements + 64, 0);
+  for (int k = 0; k < num_elements; ++k) {
+    int8_t q = (packed[k / 4] >> ((k % 4) * 2)) & 0x03;
+    if (q & 0x02) q |= 0xFC;
+    unpacked[k] = q;
+  }
+  return unpacked;
+}
+
+TEST(RearrangeInt4WeightsTest, ParallelDirectMatchesLegacyAndSingleThread) {
+  struct ParallelInt4Case {
+    int o;
+    int i;
+    int group_size;
+    ml_drift::WeightsLayout layout;
+  };
+  const std::vector<ParallelInt4Case> cases = {
+      {1024, 1024, 256, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1036, 516, 259, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1024, 1024, 32, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1024, 1024, 256,
+       ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {1036, 516, 259,
+       ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {1036, 516, 32, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+  };
+  for (const ParallelInt4Case& c : cases) {
+    const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+    ml_drift::WeightsDescription desc;
+    desc.type = ml_drift::DataType::kUint4;
+    desc.layout = c.layout;
+    desc.output_group_size = c.group_size;
+    const int elements_count =
+        ml_drift::GetTotalElementsCountForLayout(desc, ohwi);
+    const std::vector<int8_t> packed = PackedInt4(c.o * c.i);
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights parallel,
+        RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/true, /*max_threads=*/8));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights single_thread,
+        RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/true, /*max_threads=*/1));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights no_sum,
+        RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/false, /*max_threads=*/8));
+
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> unpacked;
+    unpacked.shape = ohwi;
+    unpacked.data.assign(c.o * c.i + 64, 0);
+    ml_drift::UnpackDenseInt4IntoInt8(packed.data(), c.o * c.i,
+                                      unpacked.data.data());
+    std::vector<uint8_t> expected(
+        (static_cast<size_t>(elements_count) * 4 + 7) / 8);
+    ml_drift::RearrangeWeightsInt8AsUint4(unpacked, desc,
+                                          absl::MakeSpan(expected), 8, 8u);
+
+    EXPECT_THAT(parallel.data, ElementsAreArray(expected))
+        << "o=" << c.o << " i=" << c.i << " group=" << c.group_size;
+    EXPECT_THAT(single_thread.data, ElementsAreArray(expected));
+    EXPECT_THAT(no_sum.data, ElementsAreArray(expected));
+    ASSERT_TRUE(parallel.sum_i.has_value());
+    ASSERT_TRUE(single_thread.sum_i.has_value());
+    EXPECT_FALSE(no_sum.sum_i.has_value());
+    const std::vector<int32_t> expected_sum = ComputeWeightsSumI(
+        ohwi, absl::MakeConstSpan(unpacked.data).first(c.o * c.i));
+    EXPECT_THAT(*parallel.sum_i, ElementsAreArray(expected_sum));
+    EXPECT_THAT(*single_thread.sum_i, ElementsAreArray(expected_sum));
+  }
+}
+
+TEST(RearrangeInt2WeightsTest, MatchesLegacyUnpackAcrossShapesAndParallelism) {
+  struct Int2Case {
+    int o;
+    int i;
+    int group_size;
+    ml_drift::WeightsLayout layout;
+  };
+  const std::vector<Int2Case> cases = {
+      {6, 7, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {5, 9, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {8, 32, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 1, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 4, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 8, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {6, 7, 2, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {5, 9, 2, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {84, 160, 4, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      // Large parallel shapes (>= 512K elements) across aligned,
+      // non-tile-multiple, odd, and multi-group variants.
+      {1024, 1024, 256, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1036, 516, 259, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1027, 517, 257, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1024, 1024, 32, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {1024, 1024, 256,
+       ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {1027, 517, 32, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      // Non-I4O4 layout exercising the RearrangeInt2Weights fallback path.
+      {8, 32, 2, ml_drift::WeightsLayout::k2DX4I4YIsSpatialIAndXIsOOGroupO4},
+  };
+  for (const Int2Case& c : cases) {
+    const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+    ml_drift::WeightsDescription desc;
+    desc.type = ml_drift::DataType::kUint2;
+    desc.layout = c.layout;
+    desc.output_group_size = c.group_size;
+    const int elements_count =
+        ml_drift::GetTotalElementsCountForLayout(desc, ohwi);
+    const std::vector<uint8_t> packed = PackedInt2(c.o * c.i);
+
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights parallel,
+        RearrangeInt2Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/true, /*max_threads=*/8));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights single_thread,
+        RearrangeInt2Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/true, /*max_threads=*/1));
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+        const RearrangedInt4Weights no_sum,
+        RearrangeInt2Weights(packed, ohwi, desc, elements_count,
+                             /*want_sum_i=*/false, /*max_threads=*/8));
+
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> unpacked;
+    unpacked.shape = ohwi;
+    unpacked.data = UnpackInt2ForReference(packed, c.o * c.i);
+    std::vector<uint8_t> expected(
+        (static_cast<size_t>(elements_count) * 2 + 7) / 8);
+    ml_drift::RearrangeWeightsInt8AsUint2(unpacked, desc,
+                                          absl::MakeSpan(expected), 2, 2u);
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<int32_t> expected_sum,
+                                    ComputePackedInt2WeightsSumI(packed, ohwi));
+
+    EXPECT_THAT(parallel.data, ElementsAreArray(expected))
+        << "o=" << c.o << " i=" << c.i << " group=" << c.group_size;
+    EXPECT_THAT(single_thread.data, ElementsAreArray(expected));
+    EXPECT_THAT(no_sum.data, ElementsAreArray(expected));
+    ASSERT_TRUE(parallel.sum_i.has_value());
+    ASSERT_TRUE(single_thread.sum_i.has_value());
+    EXPECT_FALSE(no_sum.sum_i.has_value());
+    EXPECT_THAT(*parallel.sum_i, ElementsAreArray(expected_sum));
+    EXPECT_THAT(*single_thread.sum_i, ElementsAreArray(expected_sum));
+  }
+}
+
+TEST(RearrangeInt2WeightsTest, RejectsAShortBuffer) {
+  const ml_drift::OHWI ohwi(4, 1, 1, 8);
+  ml_drift::WeightsDescription desc;
+  desc.type = ml_drift::DataType::kUint2;
+  desc.layout = ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  desc.output_group_size = 1;
+  const std::vector<uint8_t> packed(7, 0);  // 8 bytes needed.
+  EXPECT_THAT(
+      RearrangeInt2Weights(packed, ohwi, desc,
+                           ml_drift::GetTotalElementsCountForLayout(desc, ohwi),
+                           /*want_sum_i=*/false),
+      ::absl_testing::StatusIs(absl::StatusCode::kInvalidArgument));
 }
 
 }  // namespace
