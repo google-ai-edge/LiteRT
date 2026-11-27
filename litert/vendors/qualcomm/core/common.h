@@ -247,6 +247,9 @@ class Options {
   void SetHtpContextInitAcceleration(bool enabled);
   bool GetHtpContextInitAcceleration() const;
 
+  void SetHtpConcurrentDeserializationPatchPath(absl::string_view patch_path);
+  absl::string_view GetHtpConcurrentDeserializationPatchPath() const;
+
   std::uint32_t GetNumHvxThreads() const;
   void SetNumHvxThreads(std::uint32_t num_hvx_threads);
 
@@ -340,6 +343,7 @@ class Options {
   std::uint32_t vtcm_size_ = 0;
   std::uint32_t htp_device_id_ = 0;
   bool htp_context_init_acceleration_ = false;
+  std::string htp_concurrent_deserialization_patch_path_;
   std::uint32_t num_hvx_threads_ = 0;
   std::uint32_t htp_file_read_memory_budget_mb_ = 0;
   OptimizationLevel optimization_level_ =

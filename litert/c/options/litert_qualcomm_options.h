@@ -436,6 +436,12 @@ LiteRtStatus LrtQualcommOptionsSetHtpContextInitAcceleration(
 LiteRtStatus LrtQualcommOptionsGetHtpContextInitAcceleration(
     LrtQualcommOptions options, bool* htp_context_init_acceleration);
 
+LiteRtStatus LrtQualcommOptionsSetHtpConcurrentDeserializationPatchPath(
+    LrtQualcommOptions options, const char* patch_path);
+
+LiteRtStatus LrtQualcommOptionsGetHtpConcurrentDeserializationPatchPath(
+    LrtQualcommOptions options, const char** patch_path);
+
 LiteRtStatus LrtQualcommOptionsSetNumHvxThreads(LrtQualcommOptions options,
                                                 uint32_t num_hvx_threads);
 

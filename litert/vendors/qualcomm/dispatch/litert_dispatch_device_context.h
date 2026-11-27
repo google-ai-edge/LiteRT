@@ -22,6 +22,7 @@
 #include "QnnCommon.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/cc/litert_expected.h"
@@ -59,7 +60,8 @@ class LiteRtDispatchDeviceContextT {
 
   litert::Expected<const litert::qnn::QnnManager::ContextHandle&>
   GetOrCreateContext(const void* bytecode_ptr, size_t bytecode_size,
-                     Qnn_ProfileHandle_t profile_handle);
+                     Qnn_ProfileHandle_t profile_handle,
+                     absl::string_view function_name);
 
   const LiteRtRuntimeContext* runtime_context() const {
     return runtime_context_;

@@ -562,6 +562,13 @@ ABSL_FLAG(
     "Use all HTP hardware threads to accelerate context-binary "
     "deserialization. This can contend with concurrent HTP graph execution.");
 
+ABSL_FLAG(std::string, qualcomm_htp_concurrent_deserialization_patch_path, "",
+          "Directory where LiteRT reads and writes per-context patches for "
+          "accelerated HTP deserialization with a different QAIRT version. "
+          "Requires "
+          "--qualcomm_htp_context_init_acceleration=true; LiteRT rejects "
+          "this flag otherwise.");
+
 ABSL_FLAG(uint32_t, qualcomm_num_hvx_thread, 0,
           "The number of hvx threads for the target device. If this option is "
           "set to 0, the max number of hvx threads will be used.");
@@ -1075,6 +1082,11 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto htp_context_init_acceleration =
       absl::GetFlag(FLAGS_qualcomm_htp_context_init_acceleration);
   opts.SetHtpContextInitAcceleration(htp_context_init_acceleration);
+
+  const std::string htp_concurrent_deserialization_patch_path = absl::GetFlag(
+      FLAGS_qualcomm_htp_concurrent_deserialization_patch_path);
+  opts.SetHtpConcurrentDeserializationPatchPath(
+      htp_concurrent_deserialization_patch_path);
 
   const auto num_hvx_threads = absl::GetFlag(FLAGS_qualcomm_num_hvx_thread);
   opts.SetNumHvxThreads(num_hvx_threads);

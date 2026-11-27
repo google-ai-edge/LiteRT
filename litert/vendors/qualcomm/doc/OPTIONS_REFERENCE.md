@@ -32,7 +32,7 @@ consumed at two distinct moments:
 | Phase | Who reads it | Examples |
 |-------|--------------|----------|
 | **Compile time** | Compiler plugin (`apply_plugin_main`, AOT / JIT graph build) | `use_conv_hmx`, `optimization_level`, `vtcm_size`, `graph_priority` |
-| **Dispatch time** | Runtime dispatcher (on-device execution) | `htp_performance_mode`, `htp_context_init_acceleration` |
+| **Dispatch time** | Runtime dispatcher (on-device execution) | `htp_performance_mode`, `htp_context_init_acceleration`, `htp_concurrent_deserialization_patch_path` |
 | **Both** | Compiler plugin and runtime dispatcher | `log_level`, `backend`, `profiling`, `htp_device_id` |
 
 ---
@@ -136,6 +136,7 @@ target:HTP"
 | HTP PD session | `htp_pd_session` | `unsigned` | dispatch | `unsigned` preserves the existing device configuration. `signed` enables QNN SignedPD. `adaptive` uses unsigned PD only when QNN reports support, otherwise it enables SignedPD. |
 | HTP device ID | `htp_device_id` | `0` | both | A nonzero value selects the matching platform-reported HTP `deviceId`; it requires QNN platform information. `0` leaves device selection to QNN's default configuration. |
 | HTP context init acceleration | `htp_context_init_acceleration` | `false` | dispatch | Uses all HTP hardware threads while deserializing a context binary. It can contend with concurrent HTP graph execution. |
+| HTP concurrent deserialization patch | `htp_concurrent_deserialization_patch_path` | empty | dispatch | Read-write directory for persistent per-context patches when an older context binary is used with a newer QAIRT runtime. LiteRT stores each patch as `<QNN graph name>.patch`. Requires `htp_context_init_acceleration=true`; LiteRT rejects the directory without it. The first load measures and stores patch data. Later loads reuse it. |
 | VTCM size | `vtcm_size` | `0` (=max) | compile | VTCM size (MB) of target device. `0` → device max. |
 | HVX threads | `num_hvx_thread` | `0` (=max) | compile | HVX threads for target device. `0` → device max. |
 | HTP file read memory budget | `htp_file_read_memory_budget_mb` | `0` (=off) | dispatch | Caps host memory (MB) QNN uses to read the context binary during HTP deserialization, and releases the bytecode pages afterwards. `0` disables the feature (QNN default). Choose an explicit budget based on the model and target environment; it can trade peak host RSS for initialization time. HTP only; no effect on other backends or Windows. |

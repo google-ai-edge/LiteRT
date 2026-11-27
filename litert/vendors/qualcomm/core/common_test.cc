@@ -349,6 +349,14 @@ TEST(QnnOptionTest, HtpContextInitAcceleration) {
   EXPECT_TRUE(options.GetHtpContextInitAcceleration());
 }
 
+TEST(QnnOptionTest, HtpConcurrentDeserializationPatchPath) {
+  Options options;
+  EXPECT_TRUE(options.GetHtpConcurrentDeserializationPatchPath().empty());
+  options.SetHtpConcurrentDeserializationPatchPath("context.patch");
+  EXPECT_EQ(options.GetHtpConcurrentDeserializationPatchPath(),
+            "context.patch");
+}
+
 TEST(QnnOptionTest, SetHvxThread) {
   Options options;
   options.SetNumHvxThreads(4);
@@ -456,6 +464,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetVtcmSize(), 0);
   EXPECT_EQ(options.GetHtpDeviceId(), 0);
   EXPECT_FALSE(options.GetHtpContextInitAcceleration());
+  EXPECT_TRUE(options.GetHtpConcurrentDeserializationPatchPath().empty());
   EXPECT_EQ(options.GetNumHvxThreads(), 0);
   EXPECT_EQ(options.GetHtpFileReadMemoryBudgetMB(), 0);
   EXPECT_EQ(options.GetOptimizationLevel(),

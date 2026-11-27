@@ -447,6 +447,24 @@ TEST(LiteRtQualcommOptionsTest, HtpContextInitAcceleration) {
   LrtDestroyQualcommOptions(qualcomm_options);
 }
 
+TEST(LiteRtQualcommOptionsTest, HtpConcurrentDeserializationPatchPath) {
+  LrtQualcommOptions qualcomm_options;
+  LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
+
+  const char* patch_path = nullptr;
+  LITERT_ASSERT_OK(LrtQualcommOptionsGetHtpConcurrentDeserializationPatchPath(
+      qualcomm_options, &patch_path));
+  EXPECT_STREQ(patch_path, "");
+
+  LITERT_ASSERT_OK(LrtQualcommOptionsSetHtpConcurrentDeserializationPatchPath(
+      qualcomm_options, "/data/local/tmp/context.patch"));
+  auto parsed = SerializeAndParse(qualcomm_options);
+  EXPECT_EQ(parsed.GetHtpConcurrentDeserializationPatchPath(),
+            "/data/local/tmp/context.patch");
+
+  LrtDestroyQualcommOptions(qualcomm_options);
+}
+
 TEST(LiteRtQualcommOptionsTest, NumHvxThreads) {
   LrtQualcommOptions qualcomm_options;
   LITERT_ASSERT_OK(LrtCreateQualcommOptions(&qualcomm_options));
@@ -685,6 +703,11 @@ TEST(QualcommOptionsTest, CppWrapper) {
   EXPECT_FALSE(options->GetHtpContextInitAcceleration());
   options->SetHtpContextInitAcceleration(true);
   EXPECT_TRUE(options->GetHtpContextInitAcceleration());
+
+  EXPECT_EQ(options->GetHtpConcurrentDeserializationPatchPath(), "");
+  options->SetHtpConcurrentDeserializationPatchPath("context.patch");
+  EXPECT_EQ(options->GetHtpConcurrentDeserializationPatchPath(),
+            "context.patch");
 
   EXPECT_EQ(options->GetNumHvxThreads(), 0);
   options->SetNumHvxThreads(4);

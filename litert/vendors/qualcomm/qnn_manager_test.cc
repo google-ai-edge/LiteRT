@@ -278,6 +278,30 @@ TEST(InitQnnOptionsTest, PropagatesHtpContextInitAcceleration) {
   EXPECT_TRUE(qnn_options.GetHtpContextInitAcceleration());
 }
 
+TEST(InitQnnOptionsTest, PropagatesHtpConcurrentDeserializationPatchPath) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpContextInitAcceleration(true);
+  qualcomm_options->SetHtpConcurrentDeserializationPatchPath("context.patch");
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusOk);
+  EXPECT_EQ(qnn_options.GetHtpConcurrentDeserializationPatchPath(),
+            "context.patch");
+}
+
+TEST(InitQnnOptionsTest,
+     RejectsHtpConcurrentDeserializationPatchWithoutInitAcceleration) {
+  auto qualcomm_options = litert::qualcomm::QualcommOptions::Create();
+  ASSERT_TRUE(qualcomm_options.HasValue());
+  qualcomm_options->SetHtpConcurrentDeserializationPatchPath("context.patch");
+
+  ::qnn::Options qnn_options;
+  EXPECT_EQ(InitQnnOptions(qnn_options, qualcomm_options.Value()),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(QnnManagerTest, BuildHtpContextConfigs) {
   ::qnn::Options options;
   options.SetGraphPriority(::qnn::GraphPriority::kHigh);
@@ -286,14 +310,14 @@ TEST(QnnManagerTest, BuildHtpContextConfigs) {
 
   litert::qnn::HtpContextConfigs storage;
   const auto configs = QnnManager::BuildHtpContextConfigs(
-      options, QnnManager::DefaultContextConfigs(), storage);
+      options, QnnManager::DefaultContextConfigs(), storage, 42);
 
-  ASSERT_EQ(configs.size(), 4);
+  ASSERT_EQ(configs.size(), 5);
   EXPECT_EQ(configs[0]->option, QNN_CONTEXT_CONFIG_OPTION_PRIORITY);
   EXPECT_EQ(configs[0]->priority, QNN_PRIORITY_HIGH);
   EXPECT_EQ(configs[1]->option, QNN_CONTEXT_CONFIG_OPTION_CUSTOM);
   EXPECT_EQ(configs[2]->option, QNN_CONTEXT_CONFIG_OPTION_CUSTOM);
-  EXPECT_EQ(configs[3], nullptr);
+  EXPECT_EQ(configs[4], nullptr);
 
   const auto* budget = static_cast<const QnnHtpContext_CustomConfig_t*>(
       configs[1]->customConfig);
@@ -309,6 +333,13 @@ TEST(QnnManagerTest, BuildHtpContextConfigs) {
   EXPECT_EQ(init_acceleration->option,
             QNN_HTP_CONTEXT_CONFIG_OPTION_INIT_ACCELERATION);
   EXPECT_TRUE(init_acceleration->initAcceleration);
+
+  const auto* patch = static_cast<const QnnHtpContext_CustomConfig_t*>(
+      configs[3]->customConfig);
+  ASSERT_NE(patch, nullptr);
+  EXPECT_EQ(patch->option,
+            QNN_HTP_CONTEXT_CONFIG_OPTION_CONCURRENT_DESERIALIZATION_PATCH);
+  EXPECT_EQ(patch->concurrentDeserializationPatchFd, 42);
 }
 
 TEST(QnnManagerTest, AdspLibraryPathPrecedence) {

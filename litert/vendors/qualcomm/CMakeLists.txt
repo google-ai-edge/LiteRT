@@ -65,6 +65,7 @@ target_link_libraries(qnn_manager
         absl::strings
         absl::str_format
         qnn_backends
+        qnn_miscs
         qnn_wrappers
     PRIVATE
         qnn_saver_utils

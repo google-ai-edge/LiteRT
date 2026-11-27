@@ -118,6 +118,7 @@ struct LrtQualcommOptionsT {
   std::optional<std::uint32_t> vtcm_size;
   std::optional<std::uint32_t> htp_device_id;
   std::optional<bool> htp_context_init_acceleration;
+  std::optional<std::string> htp_concurrent_deserialization_patch_path;
   std::optional<std::uint32_t> num_hvx_threads;
   std::optional<std::uint32_t> htp_file_read_memory_budget_mb;
   std::optional<LrtQualcommOptionsOptimizationLevel> optimization_level;
@@ -296,6 +297,9 @@ LiteRtStatus LrtCreateQualcommOptionsFromToml(const char* toml_payload,
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
           status = LrtQualcommOptionsSetHtpContextInitAcceleration(
               parsed_options, *v);
+        } else if (key == "htp_concurrent_deserialization_patch_path") {
+          status = LrtQualcommOptionsSetHtpConcurrentDeserializationPatchPath(
+              parsed_options, std::string(value).c_str());
         } else if (key == "num_hvx_threads") {
           auto v = litert::internal::ParseTomlInt(value);
           if (!v) return litert::ToLiteRtStatus(v.Error().StatusCC());
@@ -528,6 +532,11 @@ LiteRtStatus LrtGetOpaqueQualcommOptionsData(LrtQualcommOptions options,
     LITERT_RETURN_IF_ERROR(
         encoder.EncodeBool("htp_context_init_acceleration",
                            *options->htp_context_init_acceleration));
+  }
+  if (options->htp_concurrent_deserialization_patch_path.has_value()) {
+    LITERT_RETURN_IF_ERROR(encoder.EncodeString(
+        "htp_concurrent_deserialization_patch_path",
+        *options->htp_concurrent_deserialization_patch_path));
   }
   if (options->num_hvx_threads.has_value()) {
     LITERT_RETURN_IF_ERROR(
@@ -1406,6 +1415,26 @@ LiteRtStatus LrtQualcommOptionsGetHtpContextInitAcceleration(
   }
   *htp_context_init_acceleration =
       options->htp_context_init_acceleration.value_or(false);
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsSetHtpConcurrentDeserializationPatchPath(
+    LrtQualcommOptions options, const char* patch_path) {
+  if (options == nullptr || patch_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  options->htp_concurrent_deserialization_patch_path = patch_path;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LrtQualcommOptionsGetHtpConcurrentDeserializationPatchPath(
+    LrtQualcommOptions options, const char** patch_path) {
+  if (options == nullptr || patch_path == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  *patch_path = options->htp_concurrent_deserialization_patch_path.has_value()
+                    ? options->htp_concurrent_deserialization_patch_path->c_str()
+                    : "";
   return kLiteRtStatusOk;
 }
 

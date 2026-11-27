@@ -75,6 +75,13 @@ std::string Dump(const QnnManager& qnn);
 }  // namespace internal
 
 struct HtpContextConfigs {
+  HtpContextConfigs() = default;
+  HtpContextConfigs(const HtpContextConfigs&) = delete;
+  HtpContextConfigs& operator=(const HtpContextConfigs&) = delete;
+  // Closes `concurrent_deserialization_patch_fd`.
+  ~HtpContextConfigs();
+
+  int concurrent_deserialization_patch_fd = -1;
   QnnContext_Config_t priority = QNN_CONTEXT_CONFIG_INIT;
   QnnHtpContext_CustomConfig_t budget_custom =
       QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
@@ -82,6 +89,10 @@ struct HtpContextConfigs {
   QnnHtpContext_CustomConfig_t init_acceleration_custom =
       QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
   QnnContext_Config_t init_acceleration = QNN_CONTEXT_CONFIG_INIT;
+  QnnHtpContext_CustomConfig_t concurrent_deserialization_patch_custom =
+      QNN_HTP_CONTEXT_CUSTOM_CONFIG_INIT;
+  QnnContext_Config_t concurrent_deserialization_patch =
+      QNN_CONTEXT_CONFIG_INIT;
   std::vector<const QnnContext_Config_t*> ptrs;
 };
 
@@ -107,7 +118,8 @@ class QnnManager {
   static absl::Span<const QnnContext_Config_t*> BuildHtpContextConfigs(
       const ::qnn::Options& options,
       absl::Span<const QnnContext_Config_t*> configs,
-      HtpContextConfigs& storage);
+      HtpContextConfigs& storage,
+      int concurrent_deserialization_patch_fd = -1);
 
   // Get resolved function pointers for qnn sdk calls. Nullptr if functions
   // have not been resolved yet.
@@ -134,7 +146,8 @@ class QnnManager {
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
-      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
+      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+      absl::string_view context_name = "");
 
   //
   // Context Binary
