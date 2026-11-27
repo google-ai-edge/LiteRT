@@ -43,6 +43,15 @@ class InterpreterImpl implements InterpreterApi {
 
     public Options(Options other) {
       super(other);
+      compressQuantizationZeroPoints = other.compressQuantizationZeroPoints;
+    }
+
+    // See Interpreter.Options#setCompressQuantizationZeroPoints(boolean).
+    Boolean compressQuantizationZeroPoints;
+
+    // See Interpreter.Options#getCompressQuantizationZeroPoints().
+    boolean getCompressQuantizationZeroPoints() {
+      return compressQuantizationZeroPoints != null && compressQuantizationZeroPoints;
     }
   }
 
