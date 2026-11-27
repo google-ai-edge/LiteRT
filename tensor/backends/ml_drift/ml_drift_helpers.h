@@ -117,12 +117,15 @@ struct MlDriftBuildContext {
                          size_t bytes, int count = 1);
 };
 
-// `LRT_ALLOW_8BIT_CONVS=1`: let ML Drift run large quantized FullyConnected /
-// convolutions with dynamically INT8-quantized activations and INT8 dot
-// products.
-inline bool Allow8BitConvsFromEnv() {
-  const char* env = std::getenv("LRT_ALLOW_8BIT_CONVS");
-  return env != nullptr && absl::string_view(env) == "1";
+// Parses a boolean environment variable value (`1`/`0`/`true`/`false`/etc.).
+std::optional<bool> ParseBoolEnvValue(absl::string_view env_value);
+std::optional<bool> BoolFromEnv(const char* env_var_name);
+
+// `LRT_ALLOW_8BIT_CONVS=1`/`0`: overrides whether ML Drift may run large
+// quantized FullyConnected / convolutions with dynamically INT8-quantized
+// activations and INT8 dot products.
+inline bool Allow8BitConvsFromEnv(bool default_value = false) {
+  return BoolFromEnv("LRT_ALLOW_8BIT_CONVS").value_or(default_value);
 }
 
 // The additive float zero points `-scale * zero_point` of the `num_channels`
@@ -133,6 +136,18 @@ inline bool Allow8BitConvsFromEnv() {
 // channel.
 absl::StatusOr<std::vector<float>> AdditiveZeroPoints(
     const graph::PerChannelAffineQuantization& pcq, int num_channels);
+
+// Computes per-output-channel sums (`sum_i`, length `shape.o`) of the signed
+// 2-bit quantized values (`[-2, 1]`, packed four per byte in `src`, low bits
+// first) across input channels for `FullyConnected` INT8-activation lowering.
+absl::StatusOr<std::vector<int32_t>> ComputePackedInt2WeightsSumI(
+    absl::Span<const uint8_t> src, const ml_drift::OHWI& shape);
+
+// Computes per-output-channel sums (`sum_i`, length `shape.o`) of the signed
+// 8-bit quantized values (`[-128, 127]`) across input channels for
+// `FullyConnected` INT8-activation lowering.
+absl::StatusOr<std::vector<int32_t>> ComputeInt8WeightsSumI(
+    absl::Span<const int8_t> src, const ml_drift::OHWI& shape);
 
 inline ml_drift::TensorDescriptor CopyDescriptorWithoutData(
     const ml_drift::TensorDescriptor& src) {
