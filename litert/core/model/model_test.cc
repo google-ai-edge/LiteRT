@@ -1136,6 +1136,11 @@ TEST(PrintingTest, TensoVector) {
   EXPECT_EQ(absl::StrFormat("%v", tensors), "(3d_i32<2x2x2>,3d_i32<2x2x2>)");
 }
 
+TEST(PrintingTest, EmptyTensorVector) {
+  std::vector<LiteRtTensor> tensors;
+  EXPECT_EQ(absl::StrFormat("%v", tensors), "()");
+}
+
 TEST(PrintingTest, Op) {
   LiteRtOpT op;
   op.SetOpCode(kLiteRtOpCodeTflAdd);
