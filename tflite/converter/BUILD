@@ -1290,6 +1290,21 @@ cc_library(
 )
 
 cc_library(
+    name = "xla_ops_to_stablehlo",
+    srcs = ["transforms/xla_ops_to_stablehlo.cc"],
+    hdrs = ["transforms/xla_ops_to_stablehlo.h"],
+    deps = [
+        "@llvm-project//llvm:Support",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
+        "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:tensorflow_ops",
+        "@stablehlo//:stablehlo_ops",
+        "@xla//xla:xla_data_proto_cc",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_legalize_tf",
     srcs = [
         "transforms/dilated_conv.cc",
@@ -1350,6 +1365,7 @@ cc_library(
         ":tftext_utils",
         ":validators",
         ":variables_utils",
+        ":xla_ops_to_stablehlo",
         "//tflite/converter/quantization/common/quantization_lib",
         "//tflite/converter/quantization/common/quantization_lib:quantization_config",
         "//tflite/converter/quantization/ir:QuantOps",
@@ -1381,7 +1397,6 @@ cc_library(
         "@llvm-project//mlir:Transforms",
         "@org_tensorflow//tensorflow/compiler/mlir:op_or_arg_name_mapper",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
-        "@org_tensorflow//tensorflow/compiler/mlir/stablehlo:legalize_tf",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:convert_tensor",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow:dynamic_shape_utils",
@@ -1394,16 +1409,11 @@ cc_library(
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:lower_tf_lib",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:tensorflow_passes",
         "@org_tensorflow//tensorflow/compiler/mlir/tensorflow/transforms:unroll_batch_matmul_pass",
-        "@org_tensorflow//tensorflow/compiler/mlir/tf2xla/transforms:xla_legalize_tf",
-        "@org_tensorflow//tensorflow/compiler/mlir/tf2xla/transforms:xla_legalize_tf_with_tf2xla",
         "@org_tensorflow//tensorflow/core:framework",
         "@org_tensorflow//tensorflow/core:lib",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/kernels:tensor_list",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/mlir_hlo",
-        "@xla//xla/mlir_hlo:type_conversion",
-        "@xla//xla/mlir_hlo:unfuse_batch_norm",
     ],
 )
 
@@ -1529,6 +1539,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_carrier",
+    srcs = ["transforms/tfl_carrier.cc"],
+    hdrs = ["transforms/tfl_carrier.h"],
+    deps = [
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_push_transpose_through_ewise_pass",
     srcs = [
         "transforms/push_transpose_through_ewise_pass.cc",
@@ -1650,7 +1671,6 @@ cc_library(
         "@org_tensorflow//tensorflow/core:protos_all_cc",
         "@org_tensorflow//tensorflow/core/platform:logging",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/mlir_hlo",
     ],
 )
 
@@ -2151,8 +2171,10 @@ tf_cc_binary(
         "@org_tensorflow//tensorflow/core/platform:errors",
         "@stablehlo//:chlo_ops",
         "@stablehlo//:stablehlo_ops",
-        "@xla//xla/hlo/translate/hlo_to_mhlo:translate",
-        "@xla//xla/mlir_hlo",
+        "@tsl//tsl/platform:protobuf",
+        "@xla//xla/hlo/parser:hlo_parser",
+        "@xla//xla/hlo/translate:stablehlo",
+        "@xla//xla/service:hlo_proto_cc",
     ],
 )
 
