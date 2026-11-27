@@ -514,10 +514,16 @@ struct NMSTaskParam {
 };
 
 void InplaceMergeBoxInfo(std::vector<BoxInfo>& boxes, int mid_index,
-                         int end_index) {
+                         int end_index, int num_classes_with_background) {
   std::inplace_merge(
       boxes.begin(), boxes.begin() + mid_index, boxes.begin() + end_index,
-      [](const BoxInfo& a, const BoxInfo& b) { return a.score > b.score; });
+      [num_classes_with_background](const BoxInfo& a, const BoxInfo& b) {
+        if (a.score != b.score) return a.score > b.score;
+        const int a_class = a.index % num_classes_with_background;
+        const int b_class = b.index % num_classes_with_background;
+        if (a_class != b_class) return a_class < b_class;
+        return a.index < b.index;
+      });
 }
 
 TfLiteStatus ComputeNMSResult(const NMSTaskParam& nms_task_param, int col_begin,
@@ -558,7 +564,8 @@ TfLiteStatus ComputeNMSResult(const NMSTaskParam& nms_task_param, int col_begin,
     // In-place merge the original boxes and new selected boxes which are both
     // sorted by scores.
     InplaceMergeBoxInfo(resulted_sorted_box_info, sorted_indices_size,
-                        sorted_indices_size + selected.size());
+                        sorted_indices_size + selected.size(),
+                        nms_task_param.num_classes_with_background);
 
     sorted_indices_size =
         std::min(sorted_indices_size + static_cast<int>(selected.size()),
@@ -578,7 +585,7 @@ struct NonMaxSuppressionWorkerTask : cpu_backend_threadpool::Task {
     sorted_box_info.resize(nms_task_param.num_detections_per_class +
                            nms_task_param.max_detections);
     for (int col = col_begin; col < nms_task_param.num_classes;
-         col = (++next_col)) {
+         col = next_col++) {
       if (ComputeNMSResult(nms_task_param, col, col, sorted_indices_size,
                            sorted_box_info) != kTfLiteOk) {
         break;
@@ -697,7 +704,8 @@ TfLiteStatus NonMaxSuppressionMultiClassRegularHelper(TfLiteContext* context,
              sizeof(BoxInfo) * tasks[j].sorted_indices_size);
       InplaceMergeBoxInfo(box_info_after_regular_non_max_suppression,
                           sorted_indices_size,
-                          sorted_indices_size + tasks[j].sorted_indices_size);
+                          sorted_indices_size + tasks[j].sorted_indices_size,
+                          num_classes_with_background);
       sorted_indices_size = std::min(
           sorted_indices_size + tasks[j].sorted_indices_size, max_detections);
     }
