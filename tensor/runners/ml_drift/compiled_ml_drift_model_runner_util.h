@@ -69,7 +69,8 @@ struct GpuWeightConversionSpec {
   size_t raw_bytes = 0;
   // The converted tensor (without data).
   ml_drift::TensorDescriptor dst_desc;
-  // Whether the GPU also computes `sum_i` (INT4 weights only).
+  // Whether the GPU also computes `sum_i` (like the CPU path, for INT4 and
+  // INT8 weights with a FullyConnected consumer and 8-bit convolutions).
   bool needs_sum_i = false;
 };
 
