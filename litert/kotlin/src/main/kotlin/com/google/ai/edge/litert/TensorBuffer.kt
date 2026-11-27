@@ -16,6 +16,8 @@
 
 package com.google.ai.edge.litert
 
+import java.nio.ByteBuffer
+
 /** TensorBuffer represents the raw memory where tensor data is stored. */
 class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
   // TODO(niuchl): Add support for different types of tensor buffers.
@@ -63,6 +65,22 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     nativeWriteLong(handle, data)
   }
 
+  /**
+   * Copies packed tensor bytes from [source] without an intermediate array.
+   *
+   * The source must be direct and have at least the packed tensor size remaining. Read-only sources
+   * are accepted. Copying starts at its position and advances it by the bytes copied on success;
+   * its limit and its position on failure are unchanged. Bytes are copied without type or byte-order
+   * conversion, so the caller must supply the tensor's expected representation.
+   */
+  @Throws(LiteRtException::class)
+  fun writeFrom(source: ByteBuffer) {
+    assertNotDestroyed()
+    require(source.isDirect) { "The source must be a direct ByteBuffer." }
+    val copiedBytes = nativeWriteFrom(handle, source.slice())
+    source.position(source.position() + copiedBytes.toInt())
+  }
+
   @Throws(LiteRtException::class)
   fun readInt(): IntArray {
     assertNotDestroyed()
@@ -105,6 +123,23 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     return nativeReadLong(handle)
   }
 
+  /**
+   * Copies packed tensor bytes into [destination] without an intermediate array.
+   *
+   * The destination must be direct, writable, and have at least the packed tensor size remaining.
+   * Copying starts at its position and advances it by the bytes copied on success; its limit and its
+   * position on failure are unchanged. Bytes are copied without type or byte-order conversion.
+   */
+  @Throws(LiteRtException::class)
+  fun readInto(destination: ByteBuffer) {
+    assertNotDestroyed()
+    require(destination.isDirect && !destination.isReadOnly) {
+      "The destination must be a writable direct ByteBuffer."
+    }
+    val copiedBytes = nativeReadInto(handle, destination.slice())
+    destination.position(destination.position() + copiedBytes.toInt())
+  }
+
   protected override fun destroy() {
     nativeDestroy(handle)
   }
@@ -126,6 +161,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
 
     @JvmStatic private external fun nativeWriteLong(handle: Long, data: LongArray)
 
+    @JvmStatic private external fun nativeWriteFrom(handle: Long, source: ByteBuffer): Long
+
     @JvmStatic private external fun nativeReadInt(handle: Long): IntArray
 
     @JvmStatic private external fun nativeReadInt16(handle: Long): ShortArray
@@ -137,6 +174,8 @@ class TensorBuffer internal constructor(handle: Long) : JniHandle(handle) {
     @JvmStatic private external fun nativeReadBoolean(handle: Long): BooleanArray
 
     @JvmStatic private external fun nativeReadLong(handle: Long): LongArray
+
+    @JvmStatic private external fun nativeReadInto(handle: Long, destination: ByteBuffer): Long
 
     @JvmStatic private external fun nativeDestroy(handle: Long)
   }
