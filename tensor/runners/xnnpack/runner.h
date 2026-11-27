@@ -75,6 +75,10 @@ class XnnpackRunner : public NnpackRunner {
         workspace_(other.workspace_),
         threadpool_(std::exchange(other.threadpool_, nullptr)),
         owns_threadpool_(std::exchange(other.owns_threadpool_, false)),
+        setup_dirty_(other.setup_dirty_),
+        last_externals_(std::move(other.last_externals_)),
+        scratch_externals_(std::move(other.scratch_externals_)),
+        setup_count_(other.setup_count_),
         profile_logged_(other.profile_logged_) {}
 
   XnnpackRunner& operator=(XnnpackRunner&& other) noexcept {
@@ -90,6 +94,10 @@ class XnnpackRunner : public NnpackRunner {
       workspace_ = other.workspace_;
       threadpool_ = std::exchange(other.threadpool_, nullptr);
       owns_threadpool_ = std::exchange(other.owns_threadpool_, false);
+      setup_dirty_ = other.setup_dirty_;
+      last_externals_ = std::move(other.last_externals_);
+      scratch_externals_ = std::move(other.scratch_externals_);
+      setup_count_ = other.setup_count_;
       profile_logged_ = other.profile_logged_;
     }
     return *this;
@@ -136,6 +144,8 @@ class XnnpackRunner : public NnpackRunner {
   xnn_workspace_t workspace() const { return workspace_; }
   pthreadpool_t threadpool() const { return threadpool_; }
   xnn_runtime_t runtime() const { return runtime_.get(); }
+  // Number of `xnn_setup_runtime_v2` calls made by this runner (for testing).
+  size_t setup_count() const { return setup_count_; }
 
  protected:
   uint32_t FlagExternalInput() const override {
@@ -144,6 +154,9 @@ class XnnpackRunner : public NnpackRunner {
   uint32_t FlagExternalOutput() const override {
     return XNN_VALUE_FLAG_EXTERNAL_OUTPUT;
   }
+
+  void OnShapesChanged() override { setup_dirty_ = true; }
+  void OnExternalBuffersMutated() override { setup_dirty_ = true; }
 
   absl::Status CreateRuntime() override;
   absl::Status SetExternalValueShape(uint32_t id,
@@ -164,6 +177,10 @@ class XnnpackRunner : public NnpackRunner {
   xnn_workspace_t workspace_ = nullptr;
   pthreadpool_t threadpool_ = nullptr;
   bool owns_threadpool_ = false;
+  bool setup_dirty_ = true;
+  std::vector<xnn_external_value> last_externals_;
+  std::vector<xnn_external_value> scratch_externals_;
+  size_t setup_count_ = 0;
   bool profile_logged_ = false;
 };
 
