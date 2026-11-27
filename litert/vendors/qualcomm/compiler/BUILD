@@ -296,6 +296,7 @@ litert_lib(
         "//litert/vendors/qualcomm/core/builders:arg_min_max_op_builder",
         "//litert/vendors/qualcomm/core/builders:broadcast_to_op_builder",
         "//litert/vendors/qualcomm/core/builders:cast_op_builder",
+        "//litert/vendors/qualcomm/core/builders:color_transform_op_builder",
         "//litert/vendors/qualcomm/core/builders:concatenation_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv2d_op_builder",
         "//litert/vendors/qualcomm/core/builders:conv3d_op_builder",

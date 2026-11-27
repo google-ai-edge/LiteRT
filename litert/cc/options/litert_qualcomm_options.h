@@ -871,6 +871,27 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  // Sets the desired input color encodings. Each entry is a colon-separated
+  // string "tensor_name:encoding_in:encoding_out", e.g. "data:nv21:bgr".
+  // Multiple entries may be provided as a comma-separated list via the
+  // command-line flag or as a vector here.
+  void SetDesiredInputColorEncodings(const std::vector<std::string>& entries) {
+    std::vector<const char*> ptrs;
+    ptrs.reserve(entries.size());
+    for (const auto& e : entries) ptrs.push_back(e.c_str());
+    LrtQualcommOptionsSetDesiredInputColorEncodings(options_, ptrs.data(),
+                                                    ptrs.size());
+  }
+
+  std::vector<std::string> GetDesiredInputColorEncodings() const {
+    const char** entries;
+    size_t count;
+    auto status = LrtQualcommOptionsGetDesiredInputColorEncodings(
+        options_, &entries, &count);
+    if (status != kLiteRtStatusOk || count == 0) return {};
+    return std::vector<std::string>(entries, entries + count);
+  }
+
  private:
   LrtQualcommOptions options_;
 };

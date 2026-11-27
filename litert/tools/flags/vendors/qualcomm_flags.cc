@@ -601,6 +601,13 @@ ABSL_FLAG(std::string, qualcomm_dsp_skel_dir, "",
           "FastRPC. If not set, falls back to qualcomm_qnn_lib_dir, then to "
           "the plugin directory (shared_library_dir).");
 
+ABSL_FLAG(std::vector<std::string>, qualcomm_desired_input_color_encoding, {},
+          "Comma-separated list of color encoding entries, each in the form "
+          "\"tensor_name:encoding_in:encoding_out\". Inserts a QNN color "
+          "transform op (NV21ToRgb, NV12ToRgb, or ArgbToRgb) before the named "
+          "graph input tensor at compile time. encoding_in: nv21|nv12|argb32|"
+          "rgba. encoding_out: rgb|bgr. Example: \"data:nv21:bgr\".");
+
 namespace litert::qualcomm {
 
 bool AbslParseFlag(absl::string_view text,
@@ -1157,6 +1164,12 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
   const auto lpai_core_selection =
       absl::GetFlag(FLAGS_qualcomm_lpai_core_selection);
   opts.SetLpaiCoreSelection(lpai_core_selection);
+
+  const auto desired_input_color_encoding =
+      absl::GetFlag(FLAGS_qualcomm_desired_input_color_encoding);
+  if (!desired_input_color_encoding.empty()) {
+    opts.SetDesiredInputColorEncodings(desired_input_color_encoding);
+  }
 
   return {};
 }

@@ -160,6 +160,12 @@ enum class LpaiTarget {
   kTensilica = 3,
 };
 
+struct DesiredInputColorEncodingEntry {
+  std::string tensor_name;
+  std::string encoding_in;   // "nv21"|"nv12"|"argb32"|"rgba"
+  std::string encoding_out;  // "rgb"|"bgr"
+};
+
 class Options {
  public:
   Options() = default;
@@ -312,6 +318,11 @@ class Options {
   void SetDspSkelDir(absl::string_view dsp_skel_dir);
   absl::string_view GetDspSkelDir() const;
 
+  void SetDesiredInputColorEncodings(
+      const std::vector<DesiredInputColorEncodingEntry>& entries);
+  std::vector<DesiredInputColorEncodingEntry> GetDesiredInputColorEncodings()
+      const;
+
  private:
   LogLevel log_level_ = LogLevel::kInfo;
   BackendType backend_type_ = BackendType::kHtpBackend;
@@ -362,6 +373,7 @@ class Options {
   std::uint32_t lpai_core_selection_ = 0;
   std::string qnn_lib_dir_;
   std::string dsp_skel_dir_;
+  std::vector<DesiredInputColorEncodingEntry> desired_input_color_encodings_;
 };
 
 // Gets a default logger implementation to stdout.
