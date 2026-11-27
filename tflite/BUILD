@@ -884,7 +884,7 @@ cc_library_with_tflite(
     compatible_with = get_compatible_with_portable(),
     copts = tflite_copts() + tflite_copts_warnings(),
     tflite_deps = [
-        "//tflite/c:c_api",
+        "//tflite/c:c_api_nocreate",
         "//tflite/c:c_api_opaque",
         "//tflite/c:common",
     ],
