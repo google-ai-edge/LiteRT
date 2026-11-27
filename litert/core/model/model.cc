@@ -394,6 +394,7 @@ LiteRtTensorT& LiteRtBuilderT::BuildTensor(const LiteRtWeightsT& weights,
                                            TensorType tensor_type,
                                            std::optional<std::string> name) {
   LiteRtTensorT& tensor = subgraph_.EmplaceTensor();
+  tensor.SetSubgraph(nullptr);
   tensor.SetType(tensor_type);
   tensor.SetQarams(quantization);
   if (weights.GetBufferManager() != nullptr &&
@@ -830,6 +831,13 @@ bool IsConstant(const LiteRtTensorT& tensor) {
 // TODO: reuse this in cc api.
 bool IsSubgraphInput(const LiteRtTensorT& tensor) {
   return !IsConstant(tensor) && tensor.DefiningOp() == nullptr;
+}
+
+bool IsSubgraphOutput(const LiteRtTensorT& tensor) {
+  if (tensor.Subgraph() == nullptr) {
+    return false;
+  }
+  return FindOutput(*tensor.Subgraph(), tensor).has_value();
 }
 
 void AttachInput(LiteRtTensor tensor, LiteRtOpT& op) {

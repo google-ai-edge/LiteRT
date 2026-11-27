@@ -37,9 +37,15 @@ typedef struct LrtCompilerOptions LrtCompilerOptions;
 //   incorrect partition where there exists a path from a selected to another,
 //   where there is an unselected node in between. This feature is currently in
 //   experimental stage.
+//
+// Acyclic:
+//   Groups selected ops across independent branches into partitions while
+//   preserving topological dependencies so no cycles are introduced in the
+//   partitioned host graph.
 typedef enum LiteRtCompilerOptionsPartitionStrategy {
   kLiteRtCompilerOptionsPartitionStrategyDefault = 0,
   kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected = 1,
+  kLiteRtCompilerOptionsPartitionStrategyAcyclic = 2,
 } LiteRtCompilerOptionsPartitionStrategy;
 
 // Creates a compiler options object.
