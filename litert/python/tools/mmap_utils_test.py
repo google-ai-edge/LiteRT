@@ -15,7 +15,6 @@
 """Test mmap_utils with both local and non-local filesystems."""
 
 import logging
-import mmap
 import os
 import sys
 import tempfile
