@@ -94,6 +94,7 @@ set(LITERT_C_PUBLIC_SOURCES
     litert_op_options.cc
     litert_opaque_options.cc
     litert_options.cc
+    litert_platform_support.cc
     litert_profiler.cc
     litert_builder.cc
     litert_tensor_buffer.cc
