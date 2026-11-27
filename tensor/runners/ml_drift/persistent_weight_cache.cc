@@ -22,23 +22,27 @@ limitations under the License.
 #include <io.h>
 #include <process.h>
 #include <windows.h>
-
-#include <atomic>
 #else
+#if defined(__APPLE__)
+#include <sys/clonefile.h>
+#endif
 #include <unistd.h>
 #endif
 
 #include <algorithm>
+#include <atomic>
 #include <cerrno>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <iterator>
 #include <limits>
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
@@ -49,6 +53,7 @@ limitations under the License.
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/match.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -62,11 +67,17 @@ limitations under the License.
 namespace litert::tensor {
 namespace {
 
-// Entry id of the index (name -> entry id, CRC32Cs and location of every
-// weight).
+// Entry id of the base index (name -> entry id, CRC32Cs and location of every
+// weight). Incremental appends add delta indexes under `kIndexId - gen`
+// (`gen = 1..kMaxDeltaIndexes`) so existing bytes stay untouched.
 constexpr uint32_t kIndexId = 0xFFFFFFFFu;
+constexpr uint32_t kMaxDeltaIndexes = 1024;
 // First entry id of the padding entries (in the id space of the index).
 constexpr uint32_t kFirstPaddingId = 0x80000000u;
+// Padding id space reserved for incremental appends so each delta uses distinct
+// ids below `kIndexId - kMaxDeltaIndexes`.
+constexpr uint32_t kFirstDeltaPaddingId = 0xC0000000u;
+constexpr uint32_t kMaxPaddingPerDelta = 100000u;
 // The minimum alignment of `SerializationWeightCache` entries in the file
 // (page-aligned on Apple platforms).
 constexpr uint64_t kBuilderAlignment = ::ml_drift::kMinAlignment;
@@ -90,8 +101,39 @@ uint64_t AlignUp(uint64_t value, uint64_t alignment) {
 }
 
 uint32_t Crc32c(absl::Span<const uint8_t> data) {
-  return static_cast<uint32_t>(absl::ComputeCrc32c(absl::string_view(
-      reinterpret_cast<const char*>(data.data()), data.size())));
+  constexpr size_t kParallelThreshold = 8ULL << 20;
+  if (data.size() < kParallelThreshold) {
+    return static_cast<uint32_t>(absl::ComputeCrc32c(absl::string_view(
+        reinterpret_cast<const char*>(data.data()), data.size())));
+  }
+  const size_t num_chunks =
+      std::min<size_t>(4, (data.size() + (kParallelThreshold / 2) - 1) /
+                              (kParallelThreshold / 2));
+  const size_t chunk_size = (data.size() + num_chunks - 1) / num_chunks;
+  std::vector<absl::crc32c_t> crcs(num_chunks);
+  std::vector<size_t> lens(num_chunks, 0);
+  std::vector<std::thread> workers;
+  workers.reserve(num_chunks - 1);
+  auto run_chunk = [&](size_t idx) {
+    const size_t off = idx * chunk_size;
+    if (off >= data.size()) return;
+    const size_t len = std::min(chunk_size, data.size() - off);
+    lens[idx] = len;
+    crcs[idx] = absl::ComputeCrc32c(absl::string_view(
+        reinterpret_cast<const char*>(data.data() + off), len));
+  };
+  for (size_t i = 1; i < num_chunks; ++i) {
+    workers.emplace_back(run_chunk, i);
+  }
+  run_chunk(0);
+  for (std::thread& t : workers) t.join();
+  absl::crc32c_t combined = crcs[0];
+  for (size_t i = 1; i < num_chunks; ++i) {
+    if (lens[i] > 0) {
+      combined = absl::ConcatCrc32c(combined, crcs[i], lens[i]);
+    }
+  }
+  return static_cast<uint32_t>(combined);
 }
 
 // CRC32C of the first and last `kSampleBytes` of `data` (all of it if small).
@@ -241,10 +283,45 @@ struct Mapping {
   ::ml_drift::ReleaseDataCallback release;
 };
 
+std::string MakeUniqueTempPath(absl::string_view path) {
+  static std::atomic<uint64_t> counter{0};
+#if defined(_WIN32)
+  const int pid = _getpid();
+#else
+  const int pid = static_cast<int>(getpid());
+#endif
+  return absl::StrCat(path, ".tmp.", pid, ".",
+                      counter.fetch_add(1, std::memory_order_relaxed));
+}
+
+absl::Status ReplaceFileAtomically(const std::string& tmp_path,
+                                   const std::string& dst_path) {
+#if defined(_WIN32)
+  if (!MoveFileExA(tmp_path.c_str(), dst_path.c_str(),
+                   MOVEFILE_REPLACE_EXISTING)) {
+    return absl::UnavailableError(absl::StrCat(
+        "Can't move ", tmp_path, " to ", dst_path, ": error ", GetLastError()));
+  }
+#else
+  if (std::rename(tmp_path.c_str(), dst_path.c_str()) != 0) {
+    return absl::UnavailableError(absl::StrCat("Can't rename ", tmp_path,
+                                               " to ", dst_path, ": ",
+                                               std::strerror(errno)));
+  }
+#endif
+  return absl::OkStatus();
+}
+
+bool IsLookupMiss(const absl::Status& status) {
+  return absl::IsInvalidArgument(status) &&
+         absl::StartsWith(status.message(), "Failed to look up ");
+}
+
 absl::Status OpenValidatedCache(
     const std::string& path, uint64_t identifier,
     std::unique_ptr<::ml_drift::SerializationWeightCache>* out_cache,
-    Index* out_index) {
+    Index* out_index, uint32_t* out_next_delta_gen = nullptr,
+    uint32_t* out_next_entry_id = nullptr) {
   const int fd = open(path.c_str(), O_RDONLY | kOpenFlags);
   if (fd < 0) {
     // Only a missing file is `NotFound` (built without a warning).
@@ -279,13 +356,204 @@ absl::Status OpenValidatedCache(
       kIndexId, /*is_quantization_param_tensor=*/true, index_desc);
   absl::StatusOr<Index> index =
       status.ok() ? ParseIndex(index_desc.GetData()) : status;
-  if (index.ok() &&
-      (file_size < 0 || index->data_end > static_cast<uint64_t>(file_size))) {
+  if (!index.ok()) return index.status();
+
+  uint32_t last_delta_gen = 0;
+  for (uint32_t gen = 1; gen <= kMaxDeltaIndexes; ++gen) {
+    ::ml_drift::TensorDescriptor delta_desc;
+    const absl::Status delta_status = cache->LookUp(
+        kIndexId - gen, /*is_quantization_param_tensor=*/true, delta_desc);
+    if (!delta_status.ok()) {
+      if (IsLookupMiss(delta_status)) break;
+      return delta_status;
+    }
+    absl::StatusOr<Index> delta = ParseIndex(delta_desc.GetData());
+    if (!delta.ok()) return delta.status();
+    index->data_end = std::max(index->data_end, delta->data_end);
+    index->entries.insert(index->entries.end(),
+                          std::make_move_iterator(delta->entries.begin()),
+                          std::make_move_iterator(delta->entries.end()));
+    last_delta_gen = gen;
+  }
+  if (file_size < 0 || index->data_end > static_cast<uint64_t>(file_size)) {
     return absl::DataLossError("Truncated weight cache");
   }
-  if (!index.ok()) return index.status();
+  uint32_t next_entry_id = 0;
+  for (const IndexEntry& e : index->entries) {
+    if (e.value.id >= next_entry_id) {
+      next_entry_id = e.value.id + 1;
+    }
+  }
+  if (out_next_delta_gen != nullptr) *out_next_delta_gen = last_delta_gen + 1;
+  if (out_next_entry_id != nullptr) *out_next_entry_id = next_entry_id;
   *out_cache = std::move(cache);
   *out_index = *std::move(index);
+  return absl::OkStatus();
+}
+
+using WeightEntryRef =
+    const std::pair<std::string, ::ml_drift::TensorDescriptor>*;
+
+// Appends `to_add` and a delta index (`kIndexId - delta_gen`) to an existing
+// cloned/copied cache file at `tmp_path` without rewriting prior weight bytes.
+absl::Status AppendIncrementalToFile(const std::string& tmp_path,
+                                     uint64_t identifier,
+                                     absl::Span<const WeightEntryRef> to_add,
+                                     uint32_t next_entry_id,
+                                     uint32_t delta_gen) {
+  ::ml_drift::MLDriftCacheHeader header{};
+  {
+    const int hdr_fd = open(tmp_path.c_str(), O_RDONLY | kOpenFlags);
+    if (hdr_fd < 0) {
+      return absl::UnavailableError(
+          absl::StrCat("Can't open cloned weight cache ", tmp_path, ": ",
+                       std::strerror(errno)));
+    }
+    const auto n = read(hdr_fd, &header, sizeof(header));
+    close(hdr_fd);
+    if (n != static_cast<decltype(n)>(sizeof(header))) {
+      return absl::DataLossError(
+          absl::StrCat("Truncated weight cache header in ", tmp_path));
+    }
+  }
+  ::ml_drift::CacheBuilder builder;
+  if (absl::Status status = builder.Start(tmp_path, identifier,
+                                          /*append=*/true);
+      !status.ok()) {
+    return status;
+  }
+  if (absl::Status status = builder.StartBuildStep(identifier); !status.ok()) {
+    return status;
+  }
+  const uint64_t header_base_offset =
+      AlignUp(sizeof(::ml_drift::MLDriftCacheHeader), kBuilderAlignment);
+  uint64_t cur_pos = header.buffer_list_offset;
+  const uint32_t pad_id_base =
+      kFirstDeltaPaddingId + (delta_gen - 1) * kMaxPaddingPerDelta;
+  uint32_t pad_idx = 0;
+  Index delta_index;
+  delta_index.entries.reserve(to_add.size());
+  static constexpr uint8_t kEmptyByte = 0;
+
+  for (const WeightEntryRef entry : to_add) {
+    const uint64_t next = AlignUp(cur_pos, kBuilderAlignment);
+    if (next % PersistentWeightCache::kEntryAlignment != 0) {
+      if (pad_idx >= kMaxPaddingPerDelta) {
+        return absl::ResourceExhaustedError(
+            "Exceeded padding id budget for incremental weight cache append");
+      }
+      const size_t padding = PersistentWeightCache::kEntryAlignment -
+                             next % PersistentWeightCache::kEntryAlignment;
+      ::ml_drift::TensorDescriptor padding_desc(
+          ::ml_drift::DataType::kUint8, ::ml_drift::TensorStorageType::kBuffer,
+          ::ml_drift::Layout::kLinear);
+      padding_desc.SetBHWCShape(
+          ::ml_drift::BHWC(1, 1, 1, static_cast<int>(padding)));
+      std::vector<uint8_t> zeros(padding, 0);
+      ::ml_drift::BufferLocation pad_loc;
+      if (absl::Status status = builder.Append(
+              pad_id_base + pad_idx++, /*is_quantization_param_tensor=*/true,
+              padding_desc, zeros.data(), zeros.size(), pad_loc);
+          !status.ok()) {
+        return status;
+      }
+      cur_pos = header_base_offset + pad_loc.offset + pad_loc.size;
+    }
+    ::ml_drift::TensorDescriptor meta_desc;
+    entry->second.CopyWithoutData(&meta_desc);
+    const absl::Span<const uint8_t> data = entry->second.GetData();
+    ::ml_drift::BufferLocation loc;
+    const uint32_t id = next_entry_id++;
+    if (absl::Status status = builder.Append(
+            id, /*is_quantization_param_tensor=*/false, meta_desc,
+            data.empty() ? &kEmptyByte : data.data(), data.size(), loc);
+        !status.ok()) {
+      return status;
+    }
+    const uint64_t file_offset = header_base_offset + loc.offset;
+    cur_pos = file_offset + loc.size;
+    delta_index.data_end =
+        std::max(delta_index.data_end, file_offset + data.size());
+    delta_index.entries.push_back(IndexEntry{
+        .name = entry->first,
+        .value =
+            PersistentWeightCache::IndexValue{.id = id,
+                                              .crc = Crc32c(data),
+                                              .sample_crc = SampleCrc32c(data),
+                                              .offset = file_offset,
+                                              .size = data.size()}});
+  }
+
+  std::vector<uint8_t> serialized = SerializeIndex(delta_index);
+  ::ml_drift::TensorDescriptor index_desc(
+      ::ml_drift::DataType::kUint8, ::ml_drift::TensorStorageType::kBuffer,
+      ::ml_drift::Layout::kLinear);
+  index_desc.SetBHWCShape(
+      ::ml_drift::BHWC(1, 1, 1, static_cast<int>(serialized.size())));
+  ::ml_drift::BufferLocation index_loc;
+  if (absl::Status status = builder.Append(
+          kIndexId - delta_gen, /*is_quantization_param_tensor=*/true,
+          index_desc, serialized.data(), serialized.size(), index_loc);
+      !status.ok()) {
+    return status;
+  }
+  return builder.StopBuildStep();
+}
+
+absl::Status CopyFileToNewTemp(const std::string& src_path,
+                               std::string* out_tmp_path) {
+  const int src_fd = open(src_path.c_str(), O_RDONLY | kOpenFlags);
+  if (src_fd < 0) {
+    return absl::UnavailableError(
+        absl::StrCat("Can't open ", src_path, ": ", std::strerror(errno)));
+  }
+  int dst_fd = -1;
+  std::string tmp_path;
+  for (int attempt = 0; attempt < 16 && dst_fd < 0; ++attempt) {
+    tmp_path = MakeUniqueTempPath(src_path);
+    dst_fd =
+        open(tmp_path.c_str(), O_RDWR | O_CREAT | O_EXCL | kOpenFlags, 0644);
+    if (dst_fd < 0 && errno != EEXIST) break;
+  }
+  if (dst_fd < 0) {
+    close(src_fd);
+    return absl::UnavailableError(
+        absl::StrCat("Can't create temporary copy for ", src_path, ": ",
+                     std::strerror(errno)));
+  }
+  std::vector<uint8_t> buf(65536);
+  absl::Status status = absl::OkStatus();
+  while (true) {
+    const auto n = read(src_fd, buf.data(), buf.size());
+    if (n < 0) {
+      if (errno == EINTR) continue;
+      status = absl::UnavailableError(absl::StrCat(
+          "Read failed while copying ", src_path, ": ", std::strerror(errno)));
+      break;
+    }
+    if (n == 0) break;
+    size_t written = 0;
+    while (written < static_cast<size_t>(n)) {
+      const auto w =
+          write(dst_fd, buf.data() + written, static_cast<size_t>(n) - written);
+      if (w < 0) {
+        if (errno == EINTR) continue;
+        status = absl::UnavailableError(
+            absl::StrCat("Write failed while copying ", src_path, ": ",
+                         std::strerror(errno)));
+        break;
+      }
+      written += static_cast<size_t>(w);
+    }
+    if (!status.ok()) break;
+  }
+  close(src_fd);
+  close(dst_fd);
+  if (!status.ok()) {
+    std::remove(tmp_path.c_str());
+    return status;
+  }
+  *out_tmp_path = std::move(tmp_path);
   return absl::OkStatus();
 }
 
@@ -481,28 +749,40 @@ absl::Status PersistentWeightCache::InsertRaw(
     return next.status();
   }
   const uint32_t id = static_cast<uint32_t>(index_.size());
-  if (absl::Status status = cache_->InsertWithWriter(
-          id, /*is_quantization_param_tensor=*/false, desc, data.size(),
-          [data](absl::Span<uint8_t> staging) {
-            if (!data.empty()) {
-              absl::c_copy(data, staging.begin());
-            }
-            return absl::OkStatus();
-          });
-      !status.ok()) {
-    return status;
+  uint32_t crc = 0;
+  std::thread crc_thread;
+  const bool async_crc =
+      !expected_crc.has_value() && data.size() >= (1ULL << 20);
+  if (expected_crc.has_value()) {
+    crc = *expected_crc;
+  } else if (async_crc) {
+    crc_thread = std::thread([&crc, data]() { crc = Crc32c(data); });
+  }
+  absl::Status write_status = cache_->InsertWithWriter(
+      id, /*is_quantization_param_tensor=*/false, desc, data.size(),
+      [data](absl::Span<uint8_t> staging) {
+        if (!data.empty()) {
+          absl::c_copy(data, staging.begin());
+        }
+        return absl::OkStatus();
+      });
+  if (crc_thread.joinable()) crc_thread.join();
+  if (!write_status.ok()) {
+    return write_status;
+  }
+  if (!expected_crc.has_value() && !async_crc) {
+    crc = Crc32c(data);
   }
   // The entry's data ends at the file position.
   const int64_t end = Seek(build_fd_, 0, SEEK_CUR);
   if (end < 0 || static_cast<uint64_t>(end) < data.size()) {
     return absl::InternalError("Can't get the weight cache file position");
   }
-  index_[name] =
-      IndexValue{.id = id,
-                 .crc = expected_crc.has_value() ? *expected_crc : Crc32c(data),
-                 .sample_crc = SampleCrc32c(data),
-                 .offset = static_cast<uint64_t>(end) - data.size(),
-                 .size = data.size()};
+  index_[name] = IndexValue{.id = id,
+                            .crc = crc,
+                            .sample_crc = SampleCrc32c(data),
+                            .offset = static_cast<uint64_t>(end) - data.size(),
+                            .size = data.size()};
   ++num_entries_;
   data_bytes_ += data.size();
   return absl::OkStatus();
@@ -519,10 +799,14 @@ absl::Status PersistentWeightCache::Append(
         extra_entries,
     bool verify_all_bytes) {
   if (extra_entries.empty()) return absl::OkStatus();
+  const std::string path_str(path);
   std::unique_ptr<::ml_drift::SerializationWeightCache> old_cache;
   Index old_index;
-  if (absl::Status status = OpenValidatedCache(std::string(path), identifier,
-                                               &old_cache, &old_index);
+  uint32_t next_delta_gen = 1;
+  uint32_t next_entry_id = 0;
+  if (absl::Status status =
+          OpenValidatedCache(path_str, identifier, &old_cache, &old_index,
+                             &next_delta_gen, &next_entry_id);
       !status.ok()) {
     return status;
   }
@@ -541,8 +825,38 @@ absl::Status PersistentWeightCache::Append(
   }
   if (to_add.empty()) return absl::OkStatus();
 
+#if defined(__APPLE__)
+  if (!verify_all_bytes && next_delta_gen <= kMaxDeltaIndexes) {
+    std::string cloned_tmp;
+    int clone_rc = -1;
+    for (int attempt = 0; attempt < 16; ++attempt) {
+      cloned_tmp = MakeUniqueTempPath(path_str);
+      clone_rc = clonefile(path_str.c_str(), cloned_tmp.c_str(), 0);
+      if (clone_rc == 0 || errno != EEXIST) break;
+    }
+    if (clone_rc == 0) {
+      // Release old FD before mutating the clone and renaming over `path_str`.
+      old_cache.reset();
+      absl::Status status = AppendIncrementalToFile(
+          cloned_tmp, identifier, to_add, next_entry_id, next_delta_gen);
+      if (status.ok()) {
+        status = ReplaceFileAtomically(cloned_tmp, path_str);
+      }
+      if (status.ok()) return absl::OkStatus();
+      std::remove(cloned_tmp.c_str());
+      if (!absl::IsResourceExhausted(status)) return status;
+      // Fall back to a compacting full rewrite if the padding budget ran out.
+      if (absl::Status reopen =
+              OpenValidatedCache(path_str, identifier, &old_cache, &old_index);
+          !reopen.ok()) {
+        return reopen;
+      }
+    }
+  }
+#endif
+
   PersistentWeightCache next;
-  next.path_ = std::string(path);
+  next.path_ = path_str;
   if (absl::Status status = next.StartBuild(identifier); !status.ok()) {
     return status;
   }
@@ -593,6 +907,54 @@ absl::Status PersistentWeightCache::Append(
   return next.Finish();
 }
 
+absl::Status PersistentWeightCache::AppendIncrementalForTesting(
+    absl::string_view path, uint64_t identifier,
+    absl::Span<const std::pair<std::string, ::ml_drift::TensorDescriptor>>
+        extra_entries) {
+  if (extra_entries.empty()) return absl::OkStatus();
+  const std::string path_str(path);
+  std::unique_ptr<::ml_drift::SerializationWeightCache> old_cache;
+  Index old_index;
+  uint32_t next_delta_gen = 1;
+  uint32_t next_entry_id = 0;
+  if (absl::Status status =
+          OpenValidatedCache(path_str, identifier, &old_cache, &old_index,
+                             &next_delta_gen, &next_entry_id);
+      !status.ok()) {
+    return status;
+  }
+  if (next_delta_gen > kMaxDeltaIndexes) {
+    return absl::ResourceExhaustedError("Exceeded maximum delta index count");
+  }
+  absl::flat_hash_set<absl::string_view> known_names;
+  known_names.reserve(old_index.entries.size() + extra_entries.size());
+  for (const IndexEntry& e : old_index.entries) {
+    known_names.insert(e.name);
+  }
+  std::vector<const std::pair<std::string, ::ml_drift::TensorDescriptor>*>
+      to_add;
+  to_add.reserve(extra_entries.size());
+  for (const auto& entry : extra_entries) {
+    if (known_names.insert(entry.first).second) {
+      to_add.push_back(&entry);
+    }
+  }
+  if (to_add.empty()) return absl::OkStatus();
+  old_cache.reset();
+  std::string tmp_path;
+  if (absl::Status status = CopyFileToNewTemp(path_str, &tmp_path);
+      !status.ok()) {
+    return status;
+  }
+  absl::Status status = AppendIncrementalToFile(tmp_path, identifier, to_add,
+                                                next_entry_id, next_delta_gen);
+  if (status.ok()) {
+    status = ReplaceFileAtomically(tmp_path, path_str);
+  }
+  if (!status.ok()) std::remove(tmp_path.c_str());
+  return status;
+}
+
 absl::Status PersistentWeightCache::Finish() {
   if (!building_) {
     return absl::FailedPreconditionError("The weight cache is not building");
@@ -621,19 +983,7 @@ absl::Status PersistentWeightCache::Finish() {
   build_fd_ = -1;
   building_ = false;
   if (status.ok()) {
-#if defined(_WIN32)
-    if (!MoveFileExA(tmp_path_.c_str(), path_.c_str(),
-                     MOVEFILE_REPLACE_EXISTING)) {
-      status = absl::UnavailableError(absl::StrCat(
-          "Can't move ", tmp_path_, " to ", path_, ": error ", GetLastError()));
-    }
-#else
-    if (std::rename(tmp_path_.c_str(), path_.c_str()) != 0) {
-      status = absl::UnavailableError(absl::StrCat("Can't rename ", tmp_path_,
-                                                   " to ", path_, ": ",
-                                                   std::strerror(errno)));
-    }
-#endif
+    status = ReplaceFileAtomically(tmp_path_, path_);
   }
   if (!status.ok() && !tmp_path_.empty()) std::remove(tmp_path_.c_str());
   tmp_path_.clear();

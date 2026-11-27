@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -29,6 +30,7 @@ limitations under the License.
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
@@ -115,6 +117,10 @@ INSTANTIATE_TEST_SUITE_P(
         Int4Case{8, 32,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
         Int4Case{6, 12,
+                 ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+        // Large aligned shapes exercising the cache-tiled direct INT4 path.
+        Int4Case{96, 160, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+        Int4Case{96, 160,
                  ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}),
     [](const ::testing::TestParamInfo<Int4Case>& info) {
       return absl::StrCat(
@@ -219,6 +225,147 @@ TEST(CreatePackedWeightsTensorDescriptorTest, WideTypesAreNotPacked) {
         desc, ohwi, elements_count, /*is_embedding=*/false);
     EXPECT_EQ(td.GetStorageType(), ml_drift::TensorStorageType::kBuffer);
     EXPECT_EQ(static_cast<size_t>(td.GetBHWDCShape().c), elements_count);
+  }
+}
+
+TEST(RearrangeInt4WeightsTest, DirectTiledMatchesReferenceAcrossMultiGroups) {
+  for (const ml_drift::WeightsLayout layout :
+       {ml_drift::WeightsLayout::kOSpatialIOGroupI4O4,
+        ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4}) {
+    for (const int group_size : {1, 4, 8}) {
+      // `o = 84` (21 slices) is not a multiple of `group_size * 4` for 4/8,
+      // exercising padded trailing `d_group` slices inside multi-group mode.
+      const ml_drift::OHWI ohwi(84, 1, 1, 160);
+      ml_drift::WeightsDescription desc;
+      desc.type = ml_drift::DataType::kUint4;
+      desc.layout = layout;
+      desc.output_group_size = group_size;
+      const int elements_count =
+          ml_drift::GetTotalElementsCountForLayout(desc, ohwi);
+      const std::vector<int8_t> packed = PackedInt4(ohwi.o * ohwi.i);
+
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+          const RearrangedInt4Weights actual_with_sum,
+          RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                               /*want_sum_i=*/true));
+      LRT_TENSOR_ASSERT_OK_AND_ASSIGN(
+          const RearrangedInt4Weights actual_no_sum,
+          RearrangeInt4Weights(packed, ohwi, desc, elements_count,
+                               /*want_sum_i=*/false));
+      EXPECT_FALSE(actual_no_sum.sum_i.has_value());
+      EXPECT_THAT(actual_no_sum.data, ElementsAreArray(actual_with_sum.data));
+
+      ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> unpacked;
+      unpacked.shape = ohwi;
+      unpacked.data.assign(ohwi.o * ohwi.i + 64, 0);
+      ml_drift::UnpackDenseInt4IntoInt8(packed.data(), ohwi.o * ohwi.i,
+                                        unpacked.data.data());
+      std::vector<uint8_t> expected(
+          (static_cast<size_t>(elements_count) * 4 + 7) / 8);
+      ml_drift::RearrangeWeightsInt8AsUint4(unpacked, desc,
+                                            absl::MakeSpan(expected), 8, 8u);
+      EXPECT_THAT(actual_with_sum.data, ElementsAreArray(expected));
+      ASSERT_TRUE(actual_with_sum.sum_i.has_value());
+      EXPECT_THAT(
+          *actual_with_sum.sum_i,
+          ElementsAreArray(ComputeWeightsSumI(
+              ohwi,
+              absl::MakeConstSpan(unpacked.data).first(ohwi.o * ohwi.i))));
+    }
+  }
+}
+
+TEST(RearrangeInt8WeightsTest, DirectMatchesReferenceAcrossLayoutsAndGroups) {
+  struct Int8Case {
+    int o;
+    int i;
+    int group_size;
+    ml_drift::WeightsLayout layout;
+  };
+  const std::vector<Int8Case> cases = {
+      {6, 7, 2, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {5, 9, 2, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {84, 160, 21, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 8, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {84, 160, 21, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {84, 160, 8, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+      {70, 99, 5, ml_drift::WeightsLayout::kOSpatialIOGroupI4O4},
+      {70, 99, 5, ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4},
+  };
+  for (const Int8Case& c : cases) {
+    const ml_drift::OHWI ohwi(c.o, 1, 1, c.i);
+    ml_drift::WeightsDescription desc;
+    desc.type = ml_drift::DataType::kUint8;
+    desc.layout = c.layout;
+    desc.output_group_size = c.group_size;
+    const size_t elements_count = static_cast<size_t>(
+        ml_drift::GetTotalElementsCountForLayout(desc, ohwi));
+
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> ref_in;
+    ref_in.shape = ohwi;
+    ref_in.data.resize(static_cast<size_t>(c.o) * c.i);
+    for (size_t k = 0; k < ref_in.data.size(); ++k) {
+      ref_in.data[k] = static_cast<int8_t>((k * 37 + 13) % 256 - 128);
+    }
+
+    std::vector<uint8_t> expected(elements_count, 0xCC);
+    ml_drift::RearrangeWeightsInt8AsUint8(ref_in, desc,
+                                          absl::MakeSpan(expected), 128, 128u);
+
+    std::vector<uint8_t> actual(elements_count, 0x33);
+    ASSERT_TRUE(TryRearrangeInt8AsUint8Direct(ref_in.data, ohwi, desc,
+                                              absl::MakeSpan(actual)));
+    EXPECT_THAT(actual, ElementsAreArray(expected))
+        << "o=" << c.o << " i=" << c.i << " group=" << c.group_size;
+  }
+}
+
+TEST(BuildBlockwiseScaleOrZpDescriptorTest, MatchesReferenceOnMetalAndOpenCl) {
+  ml_drift::GpuInfo apple_metal;
+  apple_metal.gpu_api = ml_drift::GpuApi::kMetal;
+  apple_metal.vendor = ml_drift::GpuVendor::kApple;
+  apple_metal.apple_info.gpu_family = ml_drift::AppleInfo::Family::kApple10;
+  apple_metal.metal_info.buffer_max_size = 1ULL << 30;
+  apple_metal.metal_info.image2d_max_width = 16384;
+  apple_metal.metal_info.image2d_max_height = 16384;
+
+  ml_drift::GpuInfo adreno_cl;
+  adreno_cl.gpu_api = ml_drift::GpuApi::kOpenCl;
+  adreno_cl.vendor = ml_drift::GpuVendor::kQualcomm;
+  adreno_cl.opencl_info.supports_images = true;
+  adreno_cl.opencl_info.image2d_max_width = 16384;
+  adreno_cl.opencl_info.image2d_max_height = 16384;
+  adreno_cl.opencl_info.buffer_max_size = 1ULL << 30;
+
+  for (const ml_drift::GpuInfo* gpu_info : {&apple_metal, &adreno_cl}) {
+    for (const ml_drift::DataType dtype :
+         {ml_drift::DataType::kFloat16, ml_drift::DataType::kFloat32}) {
+      for (const std::pair<int, int>& oi :
+           {std::pair{8, 4}, std::pair{7, 5}, std::pair{96, 64},
+            std::pair{70, 37}}) {
+        const ml_drift::OHWI shape(oi.first, 1, 1, oi.second);
+        std::vector<float> scales(shape.DimensionsProduct());
+        for (size_t k = 0; k < scales.size(); ++k) {
+          scales[k] = static_cast<float>(static_cast<int>(k % 19) - 9) * 0.125f;
+        }
+        ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> ref_src;
+        ref_src.shape = shape;
+        ref_src.data = scales;
+        ml_drift::TensorDescriptor expected =
+            ml_drift::ScaleOrZeroPointToTensorDesc(*gpu_info, ref_src, dtype);
+        expected
+            .UpdateToSupportedStorageType(*gpu_info, expected.GetBHWDCShape())
+            .IgnoreError();
+
+        const ml_drift::TensorDescriptor actual =
+            BuildBlockwiseScaleOrZpDescriptor(*gpu_info, scales, shape, dtype);
+        EXPECT_EQ(actual.GetStorageType(), expected.GetStorageType());
+        EXPECT_EQ(actual.GetDataType(), expected.GetDataType());
+        EXPECT_EQ(actual.GetLayout(), expected.GetLayout());
+        EXPECT_EQ(actual.GetBHWDCShape(), expected.GetBHWDCShape());
+        EXPECT_THAT(actual.GetData(), ElementsAreArray(expected.GetData()));
+      }
+    }
   }
 }
 

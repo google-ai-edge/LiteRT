@@ -372,14 +372,16 @@ absl::Status DefineQuantizedFullyConnected(
 
   if (const size_t block_size = YnnpackBuildContext::GetBlockSize(quantization);
       block_size > 0) {
-    // One scale per channel and block: [N, K / block_size]. The scales are
-    // stored channel major whatever the layout of the weights.
-    LRT_TENSOR_ASSIGN_OR_RETURN(
-        const uint32_t weights_scale_id,
-        ctx.DefineConstant(
-            stored_scales.data(), stored_scales.size() * sizeof(float),
-            Type::kFP32,
-            /*shape=*/{channels, stored_scales.size() / channels}));
+    // One scale per channel and block: [N, K / block_size]. Point directly at
+    // `stored_scales` (owned by `weights.quantization`, which `YnnpackGraph`
+    // retains for the lifetime of the runtime) instead of copying into a new
+    // buffer so YNNPACK's `constant_cache()` hits across compiled passes.
+    const size_t scale_dims[2] = {channels, stored_scales.size() / channels};
+    uint32_t weights_scale_id = kInferredValueId;
+    LRT_TENSOR_RETURN_IF_ERROR(ynn_define_tensor(
+        sg, ynn_type_fp32, /*rank=*/2, scale_dims, stored_scales.data(),
+        /*flags=*/0, &weights_scale_id))
+        << op_name;
     LRT_TENSOR_RETURN_IF_ERROR(ynn::define_blockwise_dot(
         sg, quantized_input_id, input_zero_point_id, input_scale_id, weights_id,
         /*b_zero_point_id=*/YNN_INVALID_VALUE_ID, weights_scale_id, block_size,
@@ -390,20 +392,27 @@ absl::Status DefineQuantizedFullyConnected(
 
   // One scale (and zero point) per channel: [1, N]. A per-tensor scale is
   // repeated for every channel.
-  std::vector<float> scales(stored_scales.begin(), stored_scales.end());
+  uint32_t weights_scale_id = kInferredValueId;
+  const int quantized_dim =
+      YnnpackBuildContext::GetQuantizedDimension(quantization);
   LRT_TENSOR_ASSIGN_OR_RETURN(
       std::vector<int32_t> zero_points,
       YnnpackBuildContext::GetZeroPoints(quantization));
-  if (YnnpackBuildContext::GetQuantizedDimension(quantization) < 0) {
-    scales.assign(channels, stored_scales[0]);
-    // Copied first: `assign` may free the storage `zero_points[0]` lives in.
+  if (quantized_dim < 0) {
+    std::vector<float> scales(channels, stored_scales[0]);
     const int32_t zero_point = zero_points[0];
     zero_points.assign(channels, zero_point);
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        weights_scale_id,
+        ctx.DefineConstant(scales.data(), scales.size() * sizeof(float),
+                           Type::kFP32, /*shape=*/{1, channels}));
+  } else {
+    const size_t scale_dims[2] = {1, channels};
+    LRT_TENSOR_RETURN_IF_ERROR(ynn_define_tensor(
+        sg, ynn_type_fp32, /*rank=*/2, scale_dims, stored_scales.data(),
+        /*flags=*/0, &weights_scale_id))
+        << op_name;
   }
-  LRT_TENSOR_ASSIGN_OR_RETURN(
-      const uint32_t weights_scale_id,
-      ctx.DefineConstant(scales.data(), scales.size() * sizeof(float),
-                         Type::kFP32, /*shape=*/{1, channels}));
   // The zero points of asymmetric weights only add a `b_zero_point * sum(a)`
   // term, which is computed from the activations.
   uint32_t weights_zero_point_id = YNN_INVALID_VALUE_ID;
