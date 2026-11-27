@@ -54,13 +54,16 @@ TEST(OpenVinoCompileContextTest,
 
   const auto& cfg = ctx.ConfigsMap();
   ASSERT_NE(cfg.find("NPU_USE_NPUW"), cfg.end());
-  EXPECT_EQ(cfg.at("NPU_USE_NPUW").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").is<bool>());
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_DEVICES").as<std::string>(), "NPU");
   EXPECT_EQ(cfg.at("NPUW_WEIGHTS_BANK").as<std::string>(),
             "litert_npuw_0123456789abcdef");
-  EXPECT_EQ(cfg.at("NPUW_FUNCALL_FOR_ALL").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_ONLINE_PIPELINE").as<std::string>(), "NONE");
-  EXPECT_EQ(cfg.at("NPUW_CWAI").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPUW_CWAI").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_CWAI").as<bool>());
   EXPECT_EQ(cfg.find("NPUW_UNFOLD_IREQS"), cfg.end());
   EXPECT_EQ(cfg.find("NPUW_ONLINE_ISOLATE"), cfg.end());
 }
@@ -93,17 +96,21 @@ TEST(OpenVinoCompileContextTest,
             kLiteRtStatusOk);
 
   const auto& cfg = ctx.ConfigsMap();
-  EXPECT_EQ(cfg.at("NPU_USE_NPUW").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").is<bool>());
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_DEVICES").as<std::string>(), "NPU");
   EXPECT_EQ(cfg.at("NPUW_WEIGHTS_BANK").as<std::string>(),
             "litert_npuw_fedcba9876543210");
-  EXPECT_EQ(cfg.at("NPUW_FUNCALL_FOR_ALL").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_ONLINE_PIPELINE").as<std::string>(), "REP");
-  EXPECT_EQ(cfg.at("NPUW_UNFOLD_IREQS").as<std::string>(), "NO");
+  EXPECT_TRUE(cfg.at("NPUW_UNFOLD_IREQS").is<bool>());
+  EXPECT_FALSE(cfg.at("NPUW_UNFOLD_IREQS").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_ONLINE_ISOLATE").as<std::string>(), "ATTN,MOE");
   EXPECT_EQ(cfg.at("NPUW_MOE_TOKEN_CHUNK_SIZE").as<std::string>(), "0");
   EXPECT_EQ(cfg.at("NPUW_ONLINE_KEEP_BLOCK_SIZE").as<std::string>(), "4");
-  EXPECT_EQ(cfg.at("NPUW_FOLD").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPUW_FOLD").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FOLD").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_ONLINE_KEEP_BLOCKS").as<std::string>(), "3");
   EXPECT_EQ(cfg.find("NPUW_CWAI"), cfg.end());
 }
@@ -160,8 +167,10 @@ TEST(OpenVinoCompileContextTest,
             "custom_caller_bank");
   EXPECT_EQ(cfg.at("NPUW_DEVICES").as<std::string>(), "NPU,CPU");
   // Unset keys still receive defaults.
-  EXPECT_EQ(cfg.at("NPU_USE_NPUW").as<std::string>(), "YES");
-  EXPECT_EQ(cfg.at("NPUW_FUNCALL_FOR_ALL").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").is<bool>());
+  EXPECT_TRUE(cfg.at("NPU_USE_NPUW").as<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FUNCALL_FOR_ALL").as<bool>());
 }
 
 TEST(OpenVinoCompileContextTest,
@@ -191,7 +200,8 @@ TEST(OpenVinoCompileContextTest,
   EXPECT_EQ(cfg.at("NPUW_ONLINE_PIPELINE").as<std::string>(), "REP");
   EXPECT_EQ(cfg.at("NPUW_ONLINE_ISOLATE").as<std::string>(), "ATTN,MOE");
   EXPECT_EQ(cfg.at("NPUW_MOE_TOKEN_CHUNK_SIZE").as<std::string>(), "0");
-  EXPECT_EQ(cfg.at("NPUW_FOLD").as<std::string>(), "YES");
+  EXPECT_TRUE(cfg.at("NPUW_FOLD").is<bool>());
+  EXPECT_TRUE(cfg.at("NPUW_FOLD").as<bool>());
   EXPECT_EQ(cfg.at("NPUW_WEIGHTS_BANK").as<std::string>(),
             "litert_npuw_fedcba9876543210");
 }
@@ -380,7 +390,8 @@ TEST(OpenVinoCompileContextHfaTest, WeightSharingGivesDenseHfaGraphRep) {
   EXPECT_EQ(Get(prefill, "NPUW_ATTN"), "HFA");
   EXPECT_EQ(Get(prefill, "NPUW_ONLINE_PIPELINE"), "REP");
   EXPECT_EQ(Get(prefill, "NPUW_ONLINE_ISOLATE"), "ATTN");
-  EXPECT_EQ(Get(prefill, "NPUW_FOLD"), "YES");
+  EXPECT_TRUE(prefill.ConfigsMap().at("NPUW_FOLD").is<bool>());
+  EXPECT_TRUE(prefill.ConfigsMap().at("NPUW_FOLD").as<bool>());
   EXPECT_EQ(Get(prefill, "NPUW_MOE_TOKEN_CHUNK_SIZE"), "");
   EXPECT_EQ(Get(prefill, "NPUW_CWAI"), "");
 
@@ -389,7 +400,8 @@ TEST(OpenVinoCompileContextHfaTest, WeightSharingGivesDenseHfaGraphRep) {
             kLiteRtStatusOk);
   EXPECT_EQ(Get(decode, "NPUW_ATTN"), "");
   EXPECT_EQ(Get(decode, "NPUW_ONLINE_PIPELINE"), "NONE");
-  EXPECT_EQ(Get(decode, "NPUW_CWAI"), "YES");
+  EXPECT_TRUE(decode.ConfigsMap().at("NPUW_CWAI").is<bool>());
+  EXPECT_TRUE(decode.ConfigsMap().at("NPUW_CWAI").as<bool>());
 }
 
 TEST(OpenVinoCompileContextHfaTest, WeightSharingGivesDenseStaticControlRep) {
