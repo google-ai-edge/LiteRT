@@ -17,8 +17,6 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
-#include <cstdlib>
-#include <cstring>
 #include <memory>
 #include <numeric>
 #include <type_traits>
@@ -39,12 +37,14 @@ limitations under the License.
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "ml_drift/common/types.h"  // from @ml_drift
+#include "ml_drift/common/util.h"  // from @ml_drift
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
 #include "tensor/datatypes.h"
 #include "tensor/internal/graph.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
+#include "tensor/utils/parallel.h"
 
 namespace litert::tensor {
 
@@ -115,6 +115,118 @@ ml_drift::TensorDescriptor CreatePackedWeightsTensorDescriptor(
   return weights_td;
 }
 
+bool TryRearrangeInt8AsUint8Direct(absl::Span<const int8_t> src,
+                                   const ml_drift::OHWI& weights_shape,
+                                   const ml_drift::WeightsDescription& desc,
+                                   absl::Span<uint8_t> dst) {
+  if (desc.type != ml_drift::DataType::kUint8 || weights_shape.h != 1 ||
+      weights_shape.w != 1 || weights_shape.o <= 0 || weights_shape.i <= 0) {
+    return false;
+  }
+  const bool is_linear_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  const bool is_2d_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+  if (!is_linear_i4o4 && !is_2d_i4o4) return false;
+
+  const size_t o_dim = static_cast<size_t>(weights_shape.o);
+  const size_t i_dim = static_cast<size_t>(weights_shape.i);
+  if (src.size() < o_dim * i_dim) return false;
+
+  const size_t dst_group_size = static_cast<size_t>(desc.GetOutputGroupSize());
+  if (dst_group_size == 0) return false;
+  const size_t dst_slices =
+      static_cast<size_t>(ml_drift::DivideRoundUp(weights_shape.o, 4));
+  const size_t src_slices =
+      static_cast<size_t>(ml_drift::DivideRoundUp(weights_shape.i, 4));
+  const size_t dst_groups = (dst_slices + dst_group_size - 1) / dst_group_size;
+  const size_t required_bytes = dst_groups * src_slices * dst_group_size * 16;
+  if (dst.size() < required_bytes) return false;
+
+  const auto* src_u8 = reinterpret_cast<const uint8_t*>(src.data());
+  uint8_t* dst_u8 = dst.data();
+  constexpr size_t kSTile = 16;  // 64 bytes per source row = 1 cache line.
+  const size_t num_s_tiles = (src_slices + kSTile - 1) / kSTile;
+  // Total work units across `(d, s_tile)`; parallelize across whichever axis
+  // provides clean disjoint writes.
+  const size_t total_tiles = dst_groups * num_s_tiles;
+  ParallelFor(
+      total_tiles, /*min_grain=*/1,
+      [&](size_t tile_begin, size_t tile_end) {
+        for (size_t tile = tile_begin; tile < tile_end; ++tile) {
+          const size_t d = tile / num_s_tiles;
+          const size_t s_tile = tile % num_s_tiles;
+          const size_t s_begin = s_tile * kSTile;
+          const size_t s_end = std::min(s_begin + kSTile, src_slices);
+          const size_t base_slice_stride =
+              is_linear_i4o4 ? dst_group_size : dst_groups * dst_group_size;
+          const size_t d_base_offset = is_linear_i4o4
+                                           ? d * src_slices * dst_group_size
+                                           : d * dst_group_size;
+
+          for (size_t dg = 0; dg < dst_group_size; ++dg) {
+            const size_t d_ch = 4 * (d * dst_group_size + dg);
+            if (d_ch + 3 < o_dim) {
+              const uint8_t* r0 = src_u8 + (d_ch + 0) * i_dim;
+              const uint8_t* r1 = src_u8 + (d_ch + 1) * i_dim;
+              const uint8_t* r2 = src_u8 + (d_ch + 2) * i_dim;
+              const uint8_t* r3 = src_u8 + (d_ch + 3) * i_dim;
+              for (size_t s = s_begin; s < s_end; ++s) {
+                uint8_t* out =
+                    dst_u8 + (d_base_offset + s * base_slice_stride + dg) * 16;
+                const size_t s_ch = s * 4;
+                if (s_ch + 3 < i_dim) {
+                  for (size_t k = 0; k < 4; ++k) {
+                    const size_t col = s_ch + k;
+                    out[k * 4 + 0] = r0[col] ^ 0x80u;
+                    out[k * 4 + 1] = r1[col] ^ 0x80u;
+                    out[k * 4 + 2] = r2[col] ^ 0x80u;
+                    out[k * 4 + 3] = r3[col] ^ 0x80u;
+                  }
+                } else {
+                  for (size_t k = 0; k < 4; ++k) {
+                    const size_t col = s_ch + k;
+                    const bool in_i = col < i_dim;
+                    out[k * 4 + 0] = in_i
+                                         ? static_cast<uint8_t>(r0[col] ^ 0x80u)
+                                         : static_cast<uint8_t>(0x80u);
+                    out[k * 4 + 1] = in_i
+                                         ? static_cast<uint8_t>(r1[col] ^ 0x80u)
+                                         : static_cast<uint8_t>(0x80u);
+                    out[k * 4 + 2] = in_i
+                                         ? static_cast<uint8_t>(r2[col] ^ 0x80u)
+                                         : static_cast<uint8_t>(0x80u);
+                    out[k * 4 + 3] = in_i
+                                         ? static_cast<uint8_t>(r3[col] ^ 0x80u)
+                                         : static_cast<uint8_t>(0x80u);
+                  }
+                }
+              }
+            } else {
+              for (size_t s = s_begin; s < s_end; ++s) {
+                uint8_t* out =
+                    dst_u8 + (d_base_offset + s * base_slice_stride + dg) * 16;
+                const size_t s_ch = s * 4;
+                for (size_t k = 0; k < 4; ++k) {
+                  const size_t col = s_ch + k;
+                  for (size_t oc = 0; oc < 4; ++oc) {
+                    const size_t row = d_ch + oc;
+                    out[k * 4 + oc] =
+                        (row < o_dim && col < i_dim)
+                            ? static_cast<uint8_t>(src_u8[row * i_dim + col] ^
+                                                   0x80u)
+                            : static_cast<uint8_t>(0x80u);
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      /*max_threads=*/16);
+  return true;
+}
+
 MlDriftDummyWeightCreator::MlDriftDummyWeightCreator(
     ml_drift::GpuModelBuilder* model_builder)
     : model_builder_(model_builder) {}
@@ -168,6 +280,51 @@ MlDriftDummyWeightCreator::CreateFcWeights(
 
   auto desc =
       GetFullyConnectedWeightsDesc(model_builder_, *mld_data_type, *mld_shape);
+
+  auto is_embedding_weight = [&]() {
+    if (t_info.name == "model.embed_tokens.weight" ||
+        t_info.name == "token_embd.weight") {
+      return true;
+    }
+    for (const std::weak_ptr<graph::Operation>& weak_op : t_info.consumers) {
+      if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+          consumer != nullptr && consumer->GetName() == "EmbeddingLookup") {
+        return true;
+      }
+    }
+    return false;
+  };
+
+  if constexpr (std::is_same_v<T, int8_t>) {
+    if (*mld_data_type == ml_drift::DataType::kInt8 &&
+        t_info.type == Type::kI8 && !weights_data.empty() &&
+        desc.type == ml_drift::DataType::kUint8) {
+      const size_t elements_count = static_cast<size_t>(
+          ml_drift::GetTotalElementsCountForLayout(desc, *mld_shape));
+      const size_t data_size =
+          (elements_count *
+               static_cast<size_t>(ml_drift::SizeInBitsOf(desc.type)) +
+           7) /
+          8;
+      ml_drift::TensorDescriptor weights_td =
+          CreatePackedWeightsTensorDescriptor(desc, *mld_shape, elements_count,
+                                              is_embedding_weight());
+      const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
+      std::vector<uint8_t> packed(std::max(data_size, mld_mem_size), 0);
+      if (TryRearrangeInt8AsUint8Direct(
+              weights_data, *mld_shape, desc,
+              absl::MakeSpan(packed).first(data_size))) {
+        packed.resize(mld_mem_size);
+        weights_td.SetData(std::move(packed));
+        if (out_descriptor != nullptr) {
+          *out_descriptor = std::move(weights_td);
+          return model_builder_->AddConstantTensor(
+              CopyDescriptorWithoutData(*out_descriptor));
+        }
+        return model_builder_->AddConstantTensor(std::move(weights_td));
+      }
+    }
+  }
 
   auto create_and_rearrange = [&](auto& weights)
       -> absl::StatusOr<ml_drift::GpuModelBuilder::TensorHandle> {
@@ -247,12 +404,11 @@ MlDriftDummyWeightCreator::CreateFcWeights(
              static_cast<size_t>(ml_drift::SizeInBitsOf(desc.type)) +
          7) /
         8;
-    std::unique_ptr<uint8_t, decltype(&std::free)> data_ptr(
-        static_cast<uint8_t*>(std::malloc(data_size)), &std::free);
-    if (!data_ptr) {
-      return absl::ResourceExhaustedError("Failed to allocate memory.");
-    }
-    absl::Span<uint8_t> data(data_ptr.get(), data_size);
+    ml_drift::TensorDescriptor weights_td = CreatePackedWeightsTensorDescriptor(
+        desc, weights.shape, elements_count, is_embedding_weight());
+    const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
+    std::vector<uint8_t> packed(std::max(data_size, mld_mem_size), 0);
+    absl::Span<uint8_t> data = absl::MakeSpan(packed).first(data_size);
     if constexpr (std::is_same_v<WeightsDataType, int8_t>) {
       if (desc.type == ml_drift::DataType::kUint4 ||
           desc.type == ml_drift::DataType::kInt4) {
@@ -266,29 +422,10 @@ MlDriftDummyWeightCreator::CreateFcWeights(
     } else {
       RearrangeWeights(weights, desc, data);
     }
-
-    bool is_embedding = (t_info.name == "model.embed_tokens.weight" ||
-                         t_info.name == "token_embd.weight");
-    if (!is_embedding) {
-      for (const std::weak_ptr<graph::Operation>& weak_op : t_info.consumers) {
-        if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
-            consumer != nullptr && consumer->GetName() == "EmbeddingLookup") {
-          is_embedding = true;
-          break;
-        }
-      }
-    }
-    ml_drift::TensorDescriptor weights_td = CreatePackedWeightsTensorDescriptor(
-        desc, weights.shape, elements_count, is_embedding);
-    const size_t mld_mem_size = weights_td.GetMemorySizeInBytes();
-    if (mld_mem_size > data_size) {
-      std::vector<uint8_t> safe_data(mld_mem_size, 0);
-      std::memcpy(safe_data.data(), data_ptr.get(), data_size);
-      weights_td.UploadDataRaw<uint8_t>(safe_data);
-    } else {
-      absl::Span<const uint8_t> upload_span(data_ptr.get(), mld_mem_size);
-      weights_td.UploadDataRaw<uint8_t>(upload_span);
-    }
+    weights.data.clear();
+    weights.data.shrink_to_fit();
+    packed.resize(mld_mem_size);
+    weights_td.SetData(std::move(packed));
 
     if (out_descriptor != nullptr) {
       *out_descriptor = std::move(weights_td);
