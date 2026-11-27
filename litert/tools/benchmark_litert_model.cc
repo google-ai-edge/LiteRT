@@ -14,6 +14,11 @@ limitations under the License.
 ==============================================================================*/
 #include "litert/tools/benchmark_litert_model.h"
 
+#if !defined(_WIN32)
+#include <unistd.h>
+#endif
+
+#include <algorithm>
 #include <cstdint>
 #include <cstdlib>
 #include <memory>
@@ -28,10 +33,13 @@ limitations under the License.
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_model_types.h"
+#include "litert/c/litert_tensor_buffer_requirements.h"
+#include "litert/c/litert_tensor_buffer_types.h"
 #include "litert/cc/internal/litert_compiled_model_next.h"
+#include "litert/cc/internal/litert_handle.h"
 #include "litert/cc/internal/litert_tflite_error_status_builder.h"
 #include "litert/cc/litert_common.h"
-#include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
@@ -40,6 +48,8 @@ limitations under the License.
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_profiler.h"
 #include "litert/cc/litert_tensor_buffer.h"
+#include "litert/cc/litert_tensor_buffer_requirements.h"
+#include "litert/cc/litert_tensor_buffer_types.h"
 #include "litert/cc/options/litert_cpu_options.h"
 #include "litert/cc/options/litert_google_tensor_options.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -446,12 +456,132 @@ TfLiteStatus BenchmarkLiteRtModel::Init() {
   input_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
       std::move(input_buffers_result));
 
-  LITERT_ASSIGN_OR_RETURN(
-      auto output_buffers_result,
-      compiled_model_->CreateOutputBuffers(signature),
-      AsTfLiteStatus(_ << "Failed to create output buffer."));
-  output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
-      std::move(output_buffers_result));
+  if (params_.Get<bool>("use_host_memory_buffers")) {
+    LITERT_ASSIGN_OR_RETURN(auto output_names,
+                            compiled_model_->GetSignatureOutputNames(signature),
+                            AsTfLiteStatus(_ << "Failed to get output names."));
+    std::vector<litert::TensorBuffer> output_buffers;
+    output_buffers.reserve(output_names.size());
+
+    const int32_t flag_alignment =
+        params_.Get<int32_t>("host_memory_buffer_alignment");
+    if (flag_alignment < 0 ||
+        (flag_alignment > 0 && (flag_alignment & (flag_alignment - 1)) != 0)) {
+      LITERT_LOG(LITERT_ERROR,
+                 "host_memory_buffer_alignment must be 0 or a positive power "
+                 "of 2, got %d",
+                 flag_alignment);
+      return kTfLiteError;
+    }
+
+    size_t page_size = 4096;
+#if defined(_SC_PAGESIZE)
+    int64_t sc_res = sysconf(_SC_PAGESIZE);
+    if (sc_res > 0) {
+      page_size = static_cast<size_t>(sc_res);
+    }
+#endif
+    for (const auto& output_name : output_names) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto requirements,
+          compiled_model_->GetOutputBufferRequirements(signature, output_name),
+          AsTfLiteStatus(_ << "Failed to get output buffer requirements."));
+      LITERT_ASSIGN_OR_RETURN(
+          auto type,
+          compiled_model_->GetOutputTensorType(signature, output_name),
+          AsTfLiteStatus(_ << "Failed to get output tensor type."));
+      LITERT_ASSIGN_OR_RETURN(
+          size_t buffer_size, requirements.BufferSize(),
+          AsTfLiteStatus(_ << "Failed to get buffer size."));
+
+      size_t alignment = litert::kHostMemoryBufferAlignment;
+      if (auto req_alignment = requirements.Alignment();
+          req_alignment && *req_alignment > 0) {
+        alignment = std::max(alignment, *req_alignment);
+      }
+
+      if (flag_alignment > 0) {
+        alignment = static_cast<size_t>(flag_alignment);
+      } else if (params_.Get<bool>("use_gpu") &&
+                 params_.Get<std::string>("gpu_backend") == "opencl") {
+        // OpenCL zero-copy host pointer (such as PowerVR CL_MEM_USE_HOST_PTR)
+        // requires physical page alignment for optimal performance and driver
+        // compatibility.
+        alignment = std::max(alignment, page_size);
+      }
+
+      LiteRtTensorBufferRequirements host_requirements = nullptr;
+      LiteRtTensorBufferType buffer_type = kLiteRtTensorBufferTypeHostMemory;
+      if (auto st = LiteRtCreateTensorBufferRequirementsWithAlignment(
+              /*num_supported_tensor_buffer_types=*/1, &buffer_type,
+              buffer_size, /*num_strides=*/0, /*strides=*/nullptr, alignment,
+              &host_requirements);
+          st != kLiteRtStatusOk) {
+        LITERT_LOG(LITERT_ERROR,
+                   "Failed to create aligned buffer requirements");
+        return kTfLiteError;
+      }
+      LiteRtTensorBuffer raw_buffer = nullptr;
+      auto ranked_type = static_cast<LiteRtRankedTensorType>(type);
+      auto env_holder = environment_->GetHolder();
+      if (auto st =
+              env_holder.runtime->CreateManagedTensorBufferFromRequirements(
+                  env_holder.handle, &ranked_type, host_requirements,
+                  &raw_buffer);
+          st != kLiteRtStatusOk) {
+        LiteRtDestroyTensorBufferRequirements(host_requirements);
+        LITERT_LOG(LITERT_ERROR, "Failed to create aligned host buffer");
+        return kTfLiteError;
+      }
+      LiteRtDestroyTensorBufferRequirements(host_requirements);
+      output_buffers.push_back(litert::TensorBuffer::WrapCObject(
+          env_holder, raw_buffer, litert::OwnHandle::kYes));
+    }
+    output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
+        std::move(output_buffers));
+  } else if (params_.Get<bool>("use_gpu") &&
+             params_.Get<std::string>("gpu_backend") == "opencl") {
+    LITERT_ASSIGN_OR_RETURN(auto output_names,
+                            compiled_model_->GetSignatureOutputNames(signature),
+                            AsTfLiteStatus(_ << "Failed to get output names."));
+    std::vector<litert::TensorBuffer> output_buffers;
+    output_buffers.reserve(output_names.size());
+    for (const auto& output_name : output_names) {
+      LITERT_ASSIGN_OR_RETURN(
+          auto requirements,
+          compiled_model_->GetOutputBufferRequirements(signature, output_name),
+          AsTfLiteStatus(_ << "Failed to get output buffer requirements."));
+      LITERT_ASSIGN_OR_RETURN(
+          auto type,
+          compiled_model_->GetOutputTensorType(signature, output_name),
+          AsTfLiteStatus(_ << "Failed to get output tensor type."));
+      LITERT_ASSIGN_OR_RETURN(
+          size_t buffer_size, requirements.BufferSize(),
+          AsTfLiteStatus(_ << "Failed to get buffer size."));
+      LITERT_ASSIGN_OR_RETURN(
+          auto buffer,
+          litert::TensorBuffer::CreateManaged(
+              *environment_, litert::TensorBufferType::kOpenClBufferPacked,
+              type, buffer_size),
+          AsTfLiteStatus(_ << "Failed to create OpenCL buffer."));
+      output_buffers.push_back(std::move(buffer));
+    }
+    output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
+        std::move(output_buffers));
+  } else {
+    LITERT_ASSIGN_OR_RETURN(
+        auto output_buffers_result,
+        compiled_model_->CreateOutputBuffers(signature),
+        AsTfLiteStatus(_ << "Failed to create output buffer."));
+    output_buffers_ = std::make_unique<std::vector<litert::TensorBuffer>>(
+        std::move(output_buffers_result));
+  }
+
+  for (size_t i = 0; i < output_buffers_->size(); ++i) {
+    auto btype = output_buffers_->at(i).BufferType();
+    LITERT_LOG(LITERT_INFO, "Output buffer %zu type: %d", i,
+               btype ? static_cast<int>(*btype) : -1);
+  }
 
   return kTfLiteOk;
 }

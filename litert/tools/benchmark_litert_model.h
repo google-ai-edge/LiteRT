@@ -295,6 +295,12 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
                             BenchmarkParam::Create<std::string>("version8"));
     default_params.AddParam("input_layer_value_range",
                             BenchmarkParam::Create<std::string>(""));
+    default_params.AddParam("simulate_cpu_readback",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("use_host_memory_buffers",
+                            BenchmarkParam::Create<bool>(false));
+    default_params.AddParam("host_memory_buffer_alignment",
+                            BenchmarkParam::Create<int32_t>(0));
     return default_params;
   }
 
@@ -347,6 +353,26 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
     auto signature = params_.Get<std::string>("signature_to_run_for");
     if (auto res = compiled_model_->Run(signature, *input_buffers_,
                                         *output_buffers_)) {
+      if (params_.Get<bool>("simulate_cpu_readback")) {
+        for (auto& buffer : *output_buffers_) {
+          auto lock_res = buffer.Lock(::litert::TensorBuffer::LockMode::kRead);
+          if (!lock_res) {
+            LITERT_LOG(LITERT_ERROR,
+                       "Failed to lock output buffer for readback: %s",
+                       lock_res.Error().Message().c_str());
+            return kTfLiteError;
+          }
+          volatile uint8_t byte =
+              *static_cast<const uint8_t*>(lock_res.Value());
+          (void)byte;
+          if (auto unlock_res = buffer.Unlock(); !unlock_res) {
+            LITERT_LOG(LITERT_ERROR,
+                       "Failed to unlock output buffer after readback: %s",
+                       unlock_res.Error().Message().c_str());
+            return kTfLiteError;
+          }
+        }
+      }
       return kTfLiteOk;
     } else {
       LITERT_LOG(LITERT_ERROR, "Run failed: %s", res.Error().Message().c_str());
@@ -504,6 +530,18 @@ class BenchmarkLiteRtModel : public BenchmarkModel {
         "xnnpack_weight_cache_file_path", &params_,
         "Path to an XNNPACK packed-weight cache file. Use ':memory' for an "
         "in-memory cache on supported builds."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "simulate_cpu_readback", &params_,
+        "Whether to simulate CPU readback on all output tensors."));
+    flags.push_back(tflite::benchmark::CreateFlag<bool>(
+        "use_host_memory_buffers", &params_,
+        "Whether to use HostMemory TensorBuffers for output tensors."));
+    flags.push_back(tflite::benchmark::CreateFlag<int32_t>(
+        "host_memory_buffer_alignment", &params_,
+        "Byte alignment for HostMemory output buffers (must be 0 or a positive "
+        "power of 2). If 0 (default), uses the model/delegate requirements or "
+        "physical page alignment (4096) on OpenCL GPU for optimal zero-copy "
+        "performance."));
     return flags;
   }
 
