@@ -27,6 +27,7 @@ limitations under the License.
 #include "absl/base/no_destructor.h"  // from @com_google_absl
 #include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
@@ -108,6 +109,7 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
       }
       break;
     case Type::kI4:
+    case Type::kU4:
       if (value.info.quantization) {
         if (value.info.quantization->As<PerChannelAffineQuantization>().ok()) {
           return xnn_datatype_qcint4;
@@ -139,7 +141,6 @@ xnn_datatype GetXnnpackType(const NnpackValue& value) {
     case Type::kI16:
     case Type::kI64:
     case Type::kU2:
-    case Type::kU4:
     case Type::kU8:
     case Type::kU16:
     case Type::kU32:
@@ -169,6 +170,31 @@ absl::Status XnnpackBuildContext::CreateSubgraph(size_t external_value_ids,
   LRT_TENSOR_RETURN_IF_ERROR(static_cast<XnnpackGraph*>(graph_.get())
                                  ->ResetSubgraph(external_value_ids, flags));
   return absl::OkStatus();
+}
+
+namespace {
+
+thread_local bool g_force_bias_qb4w_for_testing = false;
+
+}  // namespace
+
+bool XnnpackBuildContext::ShouldBiasSignedQb4wToZeroPoint8() {
+#if defined(__aarch64__) || defined(_M_ARM64)
+  return true;
+#else
+  return g_force_bias_qb4w_for_testing;
+#endif
+}
+
+XnnpackBuildContext::ScopedForceBiasQb4wForTesting::
+    ScopedForceBiasQb4wForTesting(bool force)
+    : prev_(g_force_bias_qb4w_for_testing) {
+  g_force_bias_qb4w_for_testing = force;
+}
+
+XnnpackBuildContext::ScopedForceBiasQb4wForTesting::
+    ~ScopedForceBiasQb4wForTesting() {
+  g_force_bias_qb4w_for_testing = prev_;
 }
 
 absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
@@ -247,7 +273,7 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
     } else if (const absl::StatusOr<int32_t> scalar_zp =
                    pcq.zero_points.Scalar<int32_t>();
                pcq.scales.size() == 1 && info.type != Type::kI4 &&
-               scalar_zp.ok()) {
+               info.type != Type::kU4 && scalar_zp.ok()) {
       // Single integer zero point (or symmetric). Non-integer float zero points
       // and per-channel zero points are dequantized below.
       LRT_TENSOR_RETURN_IF_ERROR(xnn_define_quantized_tensor_value(
@@ -393,16 +419,41 @@ absl::Status XnnpackBuildContext::DefineTensorValue(const graph::Tensor& tensor,
         return uniform_zp.status();
       }
       const int32_t zero_point = *uniform_zp;
+      int32_t xnn_zero_point = zero_point;
+      XnnpackGraph::BiasedQb4wBuffer* biased_entry = nullptr;
+      if (ShouldBiasSignedQb4wToZeroPoint8() && info.type == Type::kI4 &&
+          zero_point == 0 && data_ptr != nullptr && !is_external) {
+        // Convert signed 4-bit nibbles `[-8, 7]` (`zero_point = 0`) to unsigned
+        // `[0, 15]` (`zero_point = 8`) via `byte ^ 0x88` so XNNPACK can
+        // dispatch Arm64 KleidiAI `qp8_f32_qb4w` kernels (which require
+        // `zero_point == 8`) while remaining bit-exact on all platforms.
+        auto* xnn_graph = static_cast<XnnpackGraph*>(graph_.get());
+        const auto* src_bytes = static_cast<const uint8_t*>(data_ptr);
+        const size_t num_bytes = value.data.size();
+        xnn_graph->biased_qb4w_buffers().push_back({});
+        biased_entry = &xnn_graph->biased_qb4w_buffers().back();
+        biased_entry->data.resize(num_bytes);
+        uint8_t* dst_bytes = biased_entry->data.data();
+        for (size_t i = 0; i < num_bytes; ++i) {
+          dst_bytes[i] = src_bytes[i] ^ uint8_t{0x88};
+        }
+        xnn_graph->weight_aliases().emplace_back(dst_bytes, data_ptr);
+        data_ptr = dst_bytes;
+        xnn_zero_point = 8;
+      }
       std::shared_ptr<const std::vector<bf16_t>> bf16_scales =
           bwq.GetOrCreateBf16Scales();
       const void* scale_ptr = bf16_scales->data();
       graph_->bf16_scale_refs().push_back(std::move(bf16_scales));
       LRT_TENSOR_RETURN_IF_ERROR(xnn_define_blockwise_quantized_tensor_value_v2(
-          sg, defined_dtype, zero_point, scale_ptr, dims.size(),
+          sg, defined_dtype, xnn_zero_point, scale_ptr, dims.size(),
           bwq.quantized_dimension, bwq.block_size,
           dims.empty() ? nullptr : dims.data(), data_ptr, external_id,
           value.flags, xnn_datatype_bf16, &value.id))
           << "Could not define a new blockwise quantized tensor value.";
+      if (biased_entry != nullptr) {
+        biased_entry->value_id = value.id;
+      }
     }
   } else {
     return absl::UnimplementedError("Unsupported quantization type.");
@@ -487,6 +538,7 @@ XnnpackBuildContext::DefinePerTensorQuantizedWeightsAsChannelwise(
   }
   // The value isn't in the tensor index: the other consumers of `weights` get
   // the per-tensor quantized value.
+  value.packed_only = true;
   graph_->mutable_values().push_back(std::move(value));
   return graph_->mutable_values().back().id;
 }
@@ -590,10 +642,29 @@ absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
   }
 
   LRT_TENSOR_ASSIGN_OR_RETURN(auto plan, GetExecutionPlan(outputs));
+  absl::flat_hash_set<graph::Tensor> fc_filter_candidates;
+  absl::flat_hash_set<graph::Tensor> non_fc_filter_uses;
+  for (const TensorHandle& out : outputs) {
+    non_fc_filter_uses.insert(out.GetRaw());
+  }
   for (const graph::Operation* op : plan) {
-    for (const graph::Tensor& t : op->inputs) {
-      if (auto info_or = graph::GetInfo(t);
-          !info_or.ok() || info_or->buffer != nullptr) {
+    bool is_static_fc =
+        op->GetName() == "FullyConnected" && op->inputs.size() >= 2;
+    if (is_static_fc && op->inputs.size() > 2 &&
+        op->inputs[2].group != nullptr) {
+      auto bias_info = graph::GetInfo(op->inputs[2]);
+      is_static_fc = bias_info.ok() && bias_info->buffer != nullptr;
+    }
+    for (size_t i = 0; i < op->inputs.size(); ++i) {
+      const graph::Tensor& t = op->inputs[i];
+      auto info_or = graph::GetInfo(t);
+      if (is_static_fc && i == 1 && info_or.ok() &&
+          info_or->buffer != nullptr) {
+        fc_filter_candidates.insert(t);
+      } else {
+        non_fc_filter_uses.insert(t);
+      }
+      if (!info_or.ok() || info_or->buffer != nullptr) {
         continue;
       }
       if (auto producer_or = graph::GetProducer(t);
@@ -608,6 +679,17 @@ absl::StatusOr<std::unique_ptr<XnnpackGraph>> BuildXnnpackGraph(
   XnnpackBuildContext ctx(std::move(outputs), std::move(external_ids));
   LRT_TENSOR_RETURN_IF_ERROR(BuildNnpackGraph(ctx));
   LRT_TENSOR_ASSIGN_OR_RETURN(auto graph, ctx.Finalize());
+  for (const graph::Tensor& filter : fc_filter_candidates) {
+    if (non_fc_filter_uses.contains(filter)) continue;
+    auto it = graph->tensor_index().find(filter);
+    if (it != graph->tensor_index().end() &&
+        it->second < graph->mutable_values().size()) {
+      NnpackValue& val = graph->mutable_values()[it->second];
+      if (val.flags == 0) {
+        val.packed_only = true;
+      }
+    }
+  }
   return std::unique_ptr<XnnpackGraph>(
       static_cast<XnnpackGraph*>(graph.release()));
 }
