@@ -47,6 +47,7 @@ package_group(
         "//tflite/...",
         "//third_party/ai_lab/...",
         "//third_party/py/ai_edge_jax/...",
+        "//third_party/py/clover/...",
         "//waymo/accelerator/alpine/tools/...",
         "//waymo/ml/compiler/mlir/...",
     ],
@@ -1529,6 +1530,17 @@ cc_library(
 )
 
 cc_library(
+    name = "tfl_carrier",
+    srcs = ["transforms/tfl_carrier.cc"],
+    hdrs = ["transforms/tfl_carrier.h"],
+    deps = [
+        "@llvm-project//mlir:AsmParser",
+        "@llvm-project//mlir:IR",
+        "@llvm-project//mlir:Support",
+    ],
+)
+
+cc_library(
     name = "tensorflow_lite_push_transpose_through_ewise_pass",
     srcs = [
         "transforms/push_transpose_through_ewise_pass.cc",
@@ -1579,6 +1591,7 @@ cc_library(
         "transforms/fuse_a4w2_drq_fully_connected_pass.cc",
         "transforms/generated_post_quantize.inc",
         "transforms/generated_quantize.inc",
+        "transforms/lower_blockwise_dequantize_pass.cc",
         "transforms/lower_quant_annotations_helper.cc",
         "transforms/lower_quant_annotations_pass.cc",
         "transforms/modify_io_nodes.cc",
@@ -2293,9 +2306,11 @@ cc_library(
         ":convert_type",
         ":low_bit_utils",
         ":string_utils",
+        ":tensorflow_lite_ops",
         "//tflite/converter/schema:schema_fbs",
         "@com_google_absl//absl/base",
         "@com_google_absl//absl/base:core_headers",
+        "@com_google_absl//absl/functional:function_ref",
         "@com_google_absl//absl/meta:type_traits",
         "@com_google_absl//absl/status",
         "@com_google_absl//absl/status:statusor",
