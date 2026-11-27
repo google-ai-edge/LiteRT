@@ -144,6 +144,14 @@ std::vector<Op> FindOps(const LiteRtSubgraphT& subgraph, LiteRtOpCode code) {
   return res;
 }
 
+bool ContainsTensor(const LiteRtSubgraphT& subgraph,
+                    const LiteRtTensorT* tensor) {
+  for (const auto* t : subgraph.Tensors()) {
+    if (t == tensor) return true;
+  }
+  return false;
+}
+
 bool IsTopologicallySorted(const LiteRtSubgraphT& subgraph) {
   absl::flat_hash_set<LiteRtOp> seen;
   for (auto* op : subgraph.Ops()) {
@@ -335,7 +343,7 @@ void RunPositive(int head_chunks, int query_chunks, const AttnConfig& cfg) {
   const int concats =
       (query_chunks > 1 ? head_chunks : 0) + (head_chunks > 1 ? 1 : 0);
   EXPECT_EQ(CountOps(subgraph, kLiteRtOpCodeTflConcatenation), concats);
-  EXPECT_FALSE(ag.logits.GetDefiningOp().HasValue());
+  EXPECT_FALSE(ContainsTensor(subgraph, ag.logits.Get()));
 
   // The original output is now written by the final Concat.
   auto concat = ag.out.GetDefiningOp();
@@ -479,7 +487,7 @@ TEST(AttentionChunkTransformationTest, AbsorbTailGrid) {
   EXPECT_EQ(CountOps(subgraph, kLiteRtOpCodeTflTranspose), 6);
   EXPECT_EQ(CountOps(subgraph, kLiteRtOpCodeTflReshape), 3 * 6);
   EXPECT_EQ(CountOps(subgraph, kLiteRtOpCodeTflConcatenation), 2 + 1);
-  EXPECT_FALSE(ag.out.GetDefiningOp().HasValue());
+  EXPECT_FALSE(ContainsTensor(subgraph, ag.out.Get()));
   auto concat = ag.q8.GetDefiningOp();
   ASSERT_TRUE(concat.HasValue());
   ASSERT_EQ(concat->Code(), kLiteRtOpCodeTflConcatenation);
