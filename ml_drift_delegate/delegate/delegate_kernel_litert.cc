@@ -548,6 +548,19 @@ absl::Status DelegateKernelLiteRt::HandleOutputEvents(
       return absl::OkStatus();
     }
 
+#if defined(__EMSCRIPTEN__)
+    // On WebGPU in browser Wasm, all commands execute in-order on the single
+    // queue. Explicit synchronous wait stalls the browser event loop unless
+    // in benchmark mode. Subsequent buffer readbacks naturally synchronize.
+    // Caller's non-DoNotWait wait_type is ignored on web unless benchmark mode
+    // is on.
+    if (!IsBenchmarkMode()) {
+      ABSL_VLOG(1) << "Caller non-DoNotWait wait_type ignored on web outside "
+                      "benchmark mode.";
+      return absl::OkStatus();
+    }
+#endif  // __EMSCRIPTEN__
+
     // Don't distinguish wait_type except DoNotWait. Some backend, e.g. Metal,
     // may distinguish wait_type in WaitForCompletion().
     return backend_->WaitForCompletion();
