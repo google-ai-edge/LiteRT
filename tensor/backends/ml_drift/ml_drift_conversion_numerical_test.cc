@@ -13,10 +13,13 @@ See the License for the specific language governing permissions and
 limitations under the License.
 ==============================================================================*/
 
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,11 +39,14 @@ limitations under the License.
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/model_hints.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
+#include "ml_drift/common/task/compiler_options.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "tensor/arithmetic.h"
@@ -82,24 +88,36 @@ absl::Status UploadInt8Tensor(ml_drift::cl::InferenceContext& ic,
 
 class MlDriftTestBackendBridge : public TestBackendBridge {
  public:
+  explicit MlDriftTestBackendBridge(
+      ml_drift::CalculationsPrecision precision =
+          ml_drift::CalculationsPrecision::kF32)
+      : precision_(precision) {}
+
   ~MlDriftTestBackendBridge() override {
     if (env_.queue()) {
       (void)env_.queue()->WaitForCompletion();
     }
   }
 
+  const std::vector<std::string>& last_node_names() const {
+    return last_node_names_;
+  }
+
   absl::Status Initialize() override {
     LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::LoadOpenCL());
     LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::CreateEnvironment(&env_));
     ml_drift::CreateGpuModelInfo ci = {
-        .precision = ml_drift::CalculationsPrecision::kF32,
+        .precision = precision_,
         .storage_type =
             ml_drift::cl::GetFastestStorageType(env_.device().GetInfo()),
     };
     model_builder_ = std::make_unique<ml_drift::GpuModelBuilder>(
         env_.device().GetInfo(), ci.hints, ci.precision, ci.storage_type);
     context_.gpu_model_builder = model_builder_.get();
-    context_.default_float_type = ml_drift::DataType::kFloat32;
+    context_.default_float_type =
+        precision_ == ml_drift::CalculationsPrecision::kF16
+            ? ml_drift::DataType::kFloat16
+            : ml_drift::DataType::kFloat32;
     dummy_weight_creator_ =
         std::make_unique<MlDriftDummyWeightCreator>(model_builder_.get());
     return absl::OkStatus();
@@ -173,9 +191,13 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
     ml_drift::GpuModel gpu_model;
     LRT_TENSOR_RETURN_IF_ERROR(model_builder_->GetGpuModel(
         graph_input_ids, graph_output_ids, &gpu_model));
+    last_node_names_.clear();
+    for (const auto& node : gpu_model.nodes) {
+      last_node_names_.push_back(node.name);
+    }
 
     ml_drift::CreateGpuModelInfo ci = {
-        .precision = ml_drift::CalculationsPrecision::kF32,
+        .precision = precision_,
         .storage_type =
             ml_drift::cl::GetFastestStorageType(env_.device().GetInfo()),
     };
@@ -186,7 +208,8 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
   absl::Status SetInput(const TensorHandle& tensor,
                         absl::Span<const std::byte> data) override {
     const auto& th = tensor_to_handle_.at(tensor.GetRaw());
-    if (th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat32) {
+    if (th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat32 ||
+        th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat16) {
       ml_drift::TensorFloat32 t;
       t.id = th.id;
       t.shape = th.tensor_desc.GetBHWCShape();
@@ -249,6 +272,9 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
   }
 
  private:
+  ml_drift::CalculationsPrecision precision_ =
+      ml_drift::CalculationsPrecision::kF32;
+  std::vector<std::string> last_node_names_;
   ml_drift::cl::Environment env_;
   std::unique_ptr<ml_drift::GpuModelBuilder> model_builder_;
   MlDriftBuildContext context_;
@@ -934,6 +960,401 @@ TEST(MlDriftBlockwiseQuantizedNumericalTest,
       EXPECT_THAT(actual_logits, testing::Pointwise(testing::FloatNear(1e-3f),
                                                     expected_logits));
     }
+  }
+}
+
+struct ScopedEnvOverride {
+  std::string name;
+  bool had_prev = false;
+  std::string prev_value;
+
+  ScopedEnvOverride(const char* env_name, const char* value) : name(env_name) {
+    if (const char* old = std::getenv(env_name); old != nullptr) {
+      had_prev = true;
+      prev_value = old;
+    }
+    setenv(env_name, value, /*overwrite=*/1);
+  }
+
+  ~ScopedEnvOverride() {
+    if (had_prev) {
+      setenv(name.c_str(), prev_value.c_str(), /*overwrite=*/1);
+    } else {
+      unsetenv(name.c_str());
+    }
+  }
+};
+
+std::shared_ptr<OwningCpuBuffer> PackSignedInt2(
+    absl::Span<const int8_t> vals) {
+  auto buf = OwningCpuBuffer::Allocate<Type::kI2>(vals.size());
+  auto span = buf->Span<std::byte>();
+  uint8_t* dst = reinterpret_cast<uint8_t*>(span.data());
+  std::memset(dst, 0, span.size());
+  for (size_t i = 0; i < vals.size(); ++i) {
+    const uint8_t q = static_cast<uint8_t>(vals[i]) & 0x03u;
+    dst[i / 4] |= static_cast<uint8_t>(q << ((i % 4) * 2));
+  }
+  return buf;
+}
+
+std::shared_ptr<OwningCpuBuffer> PackSignedInt4(
+    absl::Span<const int8_t> vals) {
+  auto buf = OwningCpuBuffer::Allocate<Type::kI4>(vals.size());
+  auto span = buf->Span<std::byte>();
+  uint8_t* dst = reinterpret_cast<uint8_t*>(span.data());
+  std::memset(dst, 0, span.size());
+  for (size_t i = 0; i < vals.size(); ++i) {
+    const uint8_t q = static_cast<uint8_t>(vals[i]) & 0x0Fu;
+    dst[i / 2] |= static_cast<uint8_t>(q << ((i % 2) * 4));
+  }
+  return buf;
+}
+
+std::shared_ptr<OwningCpuBuffer> PackSignedInt8(
+    absl::Span<const int8_t> vals) {
+  auto buf = OwningCpuBuffer::Allocate<Type::kI8>(vals.size());
+  auto span = buf->Span<int8_t>();
+  absl::c_copy(vals, span.data());
+  return buf;
+}
+
+// Verifies `HoistedQuantizedFullyConnected` and FP32 promotion of
+// FP16-subnormal scales across INT8 (including exact Gemma 4 E2B PLE
+// subnormal scales ~1.2e-5..4.0e-5 at seq_len=1 and seq_len=10), INT4
+// (per-channel + block-32 + bias), and INT2 (per-channel + lm_head softcap
+// epilogue fusion + block-32 affine).
+TEST(MlDriftHoistedQuantizedFcTest, Int2Int4Int8AndSubnormalScalesMatchRef) {
+  struct Case {
+    const char* name;
+    Type weight_type;
+    int seq_len;
+    int out_ch;
+    int in_ch;
+    bool blockwise;
+    bool symmetric;
+    bool subnormal_scale;
+    bool with_bias;
+    bool with_softcap;
+  };
+  const Case kCases[] = {
+      {"int8_subnormal_decode", Type::kI8, 1, 256, 1536, false, true, true,
+       false, false},
+      {"int8_subnormal_prefill", Type::kI8, 10, 256, 1536, false, true, true,
+       false, false},
+      {"int8_asymmetric_decode", Type::kI8, 1, 128, 64, false, false, false,
+       false, false},
+      {"int4_per_channel_decode_bias", Type::kI4, 1, 128, 64, false, true,
+       false, true, false},
+      {"int4_block32_decode", Type::kI4, 1, 128, 128, true, true, false, false,
+       false},
+      {"int2_per_channel_decode_wgy", Type::kI2, 1, 128, 64, false, false,
+       false, false, false},
+      {"int2_lm_head_softcap", Type::kI2, 1, 32768, 64, false, false, false,
+       false, true},
+      {"int2_block32_decode", Type::kI2, 1, 128, 128, true, false, false, false,
+       false},
+  };
+
+  for (const Case& tc : kCases) {
+    SCOPED_TRACE(tc.name);
+    // Subnormal scales must route to the hoisted FP32 kernel by default;
+    // normal-scale cases opt in via `LRT_OPENCL_HOISTED_FC=1` to exercise the
+    // INT2/INT4/INT8 hoisted kernel variants.
+    std::optional<ScopedEnvOverride> enable_hoisted;
+    if (!tc.subnormal_scale) {
+      enable_hoisted.emplace("LRT_OPENCL_HOISTED_FC", "1");
+    }
+    ml_drift::cl::Environment probe_env;
+    ASSERT_THAT(ml_drift::cl::LoadOpenCL(), IsOk());
+    ASSERT_THAT(ml_drift::cl::CreateEnvironment(&probe_env), IsOk());
+    const ml_drift::CalculationsPrecision precision =
+        probe_env.IsSupported(ml_drift::CalculationsPrecision::kF16)
+            ? ml_drift::CalculationsPrecision::kF16
+            : ml_drift::CalculationsPrecision::kF32;
+    MlDriftTestBackendBridge bridge(precision);
+    ASSERT_THAT(bridge.Initialize(), IsOk());
+
+    std::vector<int8_t> q_vals(static_cast<size_t>(tc.out_ch) * tc.in_ch);
+    for (size_t idx = 0; idx < q_vals.size(); ++idx) {
+      if (tc.weight_type == Type::kI2) {
+        q_vals[idx] =
+            static_cast<int8_t>((static_cast<int>(idx * 7 + 3) % 4) - 2);
+      } else if (tc.weight_type == Type::kI4) {
+        q_vals[idx] =
+            static_cast<int8_t>((static_cast<int>(idx * 11 + 5) % 15) - 7);
+      } else {
+        q_vals[idx] =
+            static_cast<int8_t>((static_cast<int>(idx * 17 + 9) % 255) - 127);
+      }
+    }
+    std::shared_ptr<OwningCpuBuffer> packed_buf =
+        tc.weight_type == Type::kI2
+            ? PackSignedInt2(q_vals)
+            : (tc.weight_type == Type::kI4 ? PackSignedInt4(q_vals)
+                                           : PackSignedInt8(q_vals));
+
+    std::vector<float> x_data(static_cast<size_t>(tc.seq_len) * tc.in_ch);
+    for (size_t idx = 0; idx < x_data.size(); ++idx) {
+      const float step = tc.subnormal_scale ? 1.5f : 0.08f;
+      x_data[idx] =
+          step * static_cast<float>(static_cast<int>((idx * 5 + 1) % 13) - 6);
+    }
+
+    std::vector<float> bias_data;
+    if (tc.with_bias) {
+      bias_data.resize(tc.out_ch);
+      for (int o = 0; o < tc.out_ch; ++o) {
+        bias_data[o] = 0.05f * static_cast<float>((o % 9) - 4);
+      }
+    }
+
+    constexpr int kBlockSize = 32;
+    const int num_blocks = tc.blockwise ? (tc.in_ch / kBlockSize) : 1;
+    std::vector<float> scales(static_cast<size_t>(tc.out_ch) * num_blocks);
+    std::vector<float> zps(static_cast<size_t>(tc.out_ch) * num_blocks, 0.0f);
+    for (int o = 0; o < tc.out_ch; ++o) {
+      for (int b = 0; b < num_blocks; ++b) {
+        const size_t sb = static_cast<size_t>(o) * num_blocks + b;
+        if (tc.subnormal_scale) {
+          // Strictly below FP16 smallest normal (2^-14 = 6.1035e-5).
+          scales[sb] = 1.2e-5f + 4.0e-6f * static_cast<float>(o % 7);
+        } else {
+          scales[sb] = 0.02f + 0.005f * static_cast<float>((o + b * 3) % 7);
+        }
+        if (!tc.symmetric) {
+          zps[sb] = tc.blockwise
+                        ? (-0.75f + 0.25f * static_cast<float>((o + b) % 5))
+                        : -0.5f;
+        }
+      }
+    }
+
+    ZeroPoints zero_points =
+        tc.symmetric ? ZeroPoints() : ZeroPoints::Float(zps);
+    std::shared_ptr<Quantization> quant =
+        tc.blockwise
+            ? std::static_pointer_cast<Quantization>(
+                  std::make_shared<BlockwiseQuantization>(
+                      scales, std::move(zero_points), kBlockSize,
+                      /*quantized_dimension=*/0))
+            : std::static_pointer_cast<Quantization>(
+                  std::make_shared<PerChannelAffineQuantization>(
+                      scales, std::move(zero_points),
+                      /*quantized_dimension=*/0));
+
+    Tensor<MlDriftMixinTag> x(
+        {.name = "x", .type = Type::kFP32, .shape = {1, tc.seq_len, tc.in_ch}});
+    Tensor<MlDriftMixinTag> w({.name = "w",
+                               .type = tc.weight_type,
+                               .shape = {tc.out_ch, tc.in_ch},
+                               .buffer = packed_buf,
+                               .quantization = std::move(quant)});
+    Tensor<MlDriftMixinTag> out =
+        tc.with_bias
+            ? FullyConnected(x, w,
+                             Tensor<MlDriftMixinTag>(
+                                 {.name = "b",
+                                  .type = Type::kFP32,
+                                  .shape = {tc.out_ch},
+                                  .buffer = bias_data}))
+            : FullyConnected(x, w);
+    if (tc.with_softcap) {
+      out = Mul(Tanh(Mul(out, 1.0f / 30.0f)), 30.0f);
+    }
+
+    ASSERT_THAT(bridge.BuildGraph({TensorHandle(x)}, {TensorHandle(out)}),
+                IsOk());
+    ASSERT_FALSE(bridge.last_node_names().empty());
+    if (precision == ml_drift::CalculationsPrecision::kF16) {
+      EXPECT_TRUE(absl::StrContains(bridge.last_node_names().front(),
+                                    "_hoisted"))
+          << "Got node: " << bridge.last_node_names().front();
+    }
+
+    ASSERT_THAT(
+        bridge.SetInput(
+            TensorHandle(x),
+            absl::MakeConstSpan(reinterpret_cast<const std::byte*>(
+                                    x_data.data()),
+                                x_data.size() * sizeof(float))),
+        IsOk());
+    ASSERT_THAT(bridge.Execute(), IsOk());
+
+    std::vector<float> actual(static_cast<size_t>(tc.seq_len) * tc.out_ch,
+                              0.0f);
+    ASSERT_THAT(bridge.GetOutput(
+                    TensorHandle(out),
+                    absl::MakeSpan(reinterpret_cast<std::byte*>(actual.data()),
+                                   actual.size() * sizeof(float))),
+                IsOk());
+
+    std::vector<float> expected(actual.size(), 0.0f);
+    for (int t = 0; t < tc.seq_len; ++t) {
+      for (int o = 0; o < tc.out_ch; ++o) {
+        float acc = tc.with_bias ? bias_data[o] : 0.0f;
+        for (int i = 0; i < tc.in_ch; ++i) {
+          const int b = tc.blockwise ? (i / kBlockSize) : 0;
+          const size_t sb = static_cast<size_t>(o) * num_blocks + b;
+          const float w_f =
+              scales[sb] *
+              (static_cast<float>(
+                   q_vals[static_cast<size_t>(o) * tc.in_ch + i]) -
+               zps[sb]);
+          acc += x_data[static_cast<size_t>(t) * tc.in_ch + i] * w_f;
+        }
+        if (tc.with_softcap) {
+          acc = std::tanh(acc / 30.0f) * 30.0f;
+        }
+        expected[static_cast<size_t>(t) * tc.out_ch + o] = acc;
+      }
+    }
+    const float tol = tc.subnormal_scale ? 2e-2f : 1e-2f;
+    EXPECT_THAT(actual, Pointwise(FloatNear(tol), expected));
+  }
+}
+
+TEST(MlDriftHoistedQuantizedFcTest, SubnormalScalePromotesToFp32AndRoutes) {
+  auto build_model =
+      [](const std::string& desc, ml_drift::GpuApi api, Type weight_type,
+         int seq_len, float scale_val, bool bufferless_stub,
+         absl::flat_hash_map<std::string, ml_drift::TensorDescriptor>*
+             shared_weights,
+         ml_drift::GpuModel* out_model) -> absl::Status {
+    ml_drift::GpuInfo gpu_info;
+    ml_drift::GetGpuInfoFromDeviceDescription(desc, api, &gpu_info);
+    if (api == ml_drift::GpuApi::kOpenCl) {
+      gpu_info.opencl_info.extensions.push_back("cl_khr_fp16");
+      gpu_info.opencl_info.supports_fp16 = true;
+      gpu_info.opencl_info.compute_units_count = 6;
+    }
+    ml_drift::GpuModelBuilder builder(
+        gpu_info, ml_drift::ModelHints(), ml_drift::CalculationsPrecision::kF16,
+        ml_drift::TensorStorageType::kBuffer);
+    MlDriftBuildContext ctx;
+    ctx.gpu_model_builder = &builder;
+    ctx.default_float_type = ml_drift::DataType::kFloat16;
+    ctx.shared_weight_descriptors = shared_weights;
+    MlDriftDummyWeightCreator weight_creator(&builder);
+
+    constexpr int kOut = 128;
+    constexpr int kIn = 64;
+    std::vector<int8_t> q_vals(kOut * kIn, 1);
+    std::shared_ptr<OwningCpuBuffer> packed_buf =
+        weight_type == Type::kI2 ? PackSignedInt2(q_vals)
+                                 : PackSignedInt8(q_vals);
+    std::vector<float> scales(kOut, scale_val);
+    Tensor<MlDriftMixinTag> x(
+        {.name = "x", .type = Type::kFP32, .shape = {1, seq_len, kIn}});
+    Tensor<MlDriftMixinTag> w(
+        {.name = "w",
+         .type = weight_type,
+         .shape = {kOut, kIn},
+         .buffer = bufferless_stub ? nullptr : packed_buf,
+         .quantization = std::make_shared<PerChannelAffineQuantization>(
+             scales, ZeroPoints(), /*quantized_dimension=*/0)});
+    Tensor<MlDriftMixinTag> out = Tanh(FullyConnected(x, w));
+
+    auto locked = packed_buf->Lock();
+    absl::Span<const int8_t> w_span(
+        reinterpret_cast<const int8_t*>(locked.data()), locked.size());
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        ctx.graph_tensor_to_handle[TensorHandle(w).GetRaw()],
+        weight_creator.CreateFcWeights<int8_t>(w, w_span,
+                                               ctx.default_float_type));
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        auto handles, AppendGpuModelBuilder(ctx, {TensorHandle(out)}));
+    return builder.GetGpuModel({handles.at(TensorHandle(x).GetRaw()).id},
+                               {handles.at(TensorHandle(out).GetRaw()).id},
+                               out_model);
+  };
+
+  // Subnormal INT8 scale (`1.5e-5 < 2^-13`) promotes the scale tensor to FP32
+  // and routes to the hoisted FP32-math kernel by default on both seq_len=1
+  // and seq_len=10, and preserves the FP32 scale across warm-cache bufferless
+  // per-channel stubs carrying dummy `1.0f` scales.
+  absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> shared_weights;
+  {
+    ml_drift::GpuModel prefill_model;
+    ASSERT_THAT(build_model("QUALCOMM Adreno(TM) 750",
+                            ml_drift::GpuApi::kOpenCl, Type::kI8,
+                            /*seq_len=*/10, /*scale_val=*/1.5e-5f,
+                            /*bufferless_stub=*/false, &shared_weights,
+                            &prefill_model),
+                IsOk());
+    ASSERT_EQ(prefill_model.nodes.size(), 1u);
+    const auto& node = prefill_model.nodes.front();
+    EXPECT_TRUE(absl::StrContains(node.name, "fc1x1_int8_weights_hoisted"))
+        << node.name;
+    EXPECT_FALSE(absl::c_linear_search(
+        node.gpu_operation->compiler_options_,
+        ml_drift::CompilerOptions::kClFastRelaxedMath));
+    ASSERT_GE(node.inputs.size(), 3u);
+    const ml_drift::ValueId scale_id = node.inputs[2];
+    ASSERT_TRUE(prefill_model.const_tensors.contains(scale_id));
+    EXPECT_EQ(prefill_model.const_tensors.at(scale_id).GetDataType(),
+              ml_drift::DataType::kFloat32);
+  }
+  {
+    ml_drift::GpuModel warm_stub_decode;
+    ASSERT_THAT(build_model("QUALCOMM Adreno(TM) 750",
+                            ml_drift::GpuApi::kOpenCl, Type::kI8,
+                            /*seq_len=*/1, /*scale_val=*/1.0f,
+                            /*bufferless_stub=*/true, &shared_weights,
+                            &warm_stub_decode),
+                IsOk());
+    ASSERT_EQ(warm_stub_decode.nodes.size(), 1u);
+    const auto& node = warm_stub_decode.nodes.front();
+    EXPECT_TRUE(absl::StrContains(node.name, "fc1x1_int8_weights_hoisted"))
+        << node.name;
+    ASSERT_GE(node.inputs.size(), 3u);
+    const ml_drift::ValueId scale_id = node.inputs[2];
+    ASSERT_TRUE(warm_stub_decode.const_tensors.contains(scale_id));
+    EXPECT_EQ(warm_stub_decode.const_tensors.at(scale_id).GetDataType(),
+              ml_drift::DataType::kFloat32);
+  }
+
+  // Normal INT2 scale (`0.05f`) stays FP16 and keeps ML Drift's default
+  // `fc1x1_int2_weights` kernel (no regression on normal scales), and opts
+  // into `fc1x1_int2_weights_hoisted` when `LRT_OPENCL_HOISTED_FC=1`.
+  {
+    ml_drift::GpuModel adreno840_default;
+    ASSERT_THAT(build_model("QUALCOMM Adreno(TM) 840",
+                            ml_drift::GpuApi::kOpenCl, Type::kI2,
+                            /*seq_len=*/1, /*scale_val=*/0.05f,
+                            /*bufferless_stub=*/false, nullptr,
+                            &adreno840_default),
+                IsOk());
+    ASSERT_EQ(adreno840_default.nodes.size(), 1u);
+    const auto& node = adreno840_default.nodes.front();
+    EXPECT_FALSE(absl::StrContains(node.name, "_hoisted")) << node.name;
+    ASSERT_GE(node.inputs.size(), 3u);
+    const ml_drift::ValueId scale_id = node.inputs[2];
+    ASSERT_TRUE(adreno840_default.const_tensors.contains(scale_id));
+    EXPECT_EQ(adreno840_default.const_tensors.at(scale_id).GetDataType(),
+              ml_drift::DataType::kFloat16);
+  }
+  {
+    ScopedEnvOverride enable_hoisted("LRT_OPENCL_HOISTED_FC", "1");
+    ml_drift::GpuModel adreno840_optin;
+    ASSERT_THAT(build_model("QUALCOMM Adreno(TM) 840",
+                            ml_drift::GpuApi::kOpenCl, Type::kI2,
+                            /*seq_len=*/1, /*scale_val=*/0.05f,
+                            /*bufferless_stub=*/false, nullptr,
+                            &adreno840_optin),
+                IsOk());
+    ASSERT_EQ(adreno840_optin.nodes.size(), 1u);
+    const auto& node840 = adreno840_optin.nodes.front();
+    EXPECT_TRUE(absl::StrContains(node840.name, "fc1x1_int2_weights_hoisted"))
+        << node840.name;
+    EXPECT_FALSE(absl::c_linear_search(
+        node840.gpu_operation->compiler_options_,
+        ml_drift::CompilerOptions::kClFastRelaxedMath));
+    ASSERT_GE(node840.inputs.size(), 3u);
+    const ml_drift::ValueId scale840_id = node840.inputs[2];
+    ASSERT_TRUE(adreno840_optin.const_tensors.contains(scale840_id));
+    EXPECT_EQ(adreno840_optin.const_tensors.at(scale840_id).GetDataType(),
+              ml_drift::DataType::kFloat16);
   }
 }
 
