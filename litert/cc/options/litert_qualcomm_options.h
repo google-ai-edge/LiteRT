@@ -871,6 +871,28 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  void SetModelVersion(const std::string& model_version) {
+    LrtQualcommOptionsSetModelVersion(options_, model_version.c_str());
+  }
+
+  StringView GetModelVersion() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetModelVersion(options_, &val);
+    if (status != kLiteRtStatusOk) return "";
+    return val;
+  }
+
+  void SetCopyright(const std::string& copyright) {
+    LrtQualcommOptionsSetCopyright(options_, copyright.c_str());
+  }
+
+  StringView GetCopyright() const {
+    const char* val;
+    auto status = LrtQualcommOptionsGetCopyright(options_, &val);
+    if (status != kLiteRtStatusOk) return "";
+    return val;
+  }
+
  private:
   LrtQualcommOptions options_;
 };

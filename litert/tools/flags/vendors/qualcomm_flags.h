@@ -92,6 +92,10 @@ ABSL_DECLARE_FLAG(std::string, qualcomm_qnn_lib_dir);
 
 ABSL_DECLARE_FLAG(std::string, qualcomm_dsp_skel_dir);
 
+// DLC metadata options (only effective when backend is IR).
+ABSL_DECLARE_FLAG(std::string, qualcomm_set_model_version);
+ABSL_DECLARE_FLAG(std::string, qualcomm_copyright);
+
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_vtcm_size);
 ABSL_DECLARE_FLAG(uint32_t, qualcomm_htp_device_id);
 ABSL_DECLARE_FLAG(bool, qualcomm_htp_context_init_acceleration);
