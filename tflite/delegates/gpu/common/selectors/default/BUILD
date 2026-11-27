@@ -33,6 +33,7 @@ cc_library(
         "//tflite/delegates/gpu/common/task:gpu_operation",
         "//tflite/delegates/gpu/common/task:weights_layout",
         "//tflite/delegates/gpu/common/tasks:conv_constants",
+        "//tflite/delegates/gpu/common/tasks:conv_coop_mat",
         "//tflite/delegates/gpu/common/tasks:conv_generic",
         "//tflite/delegates/gpu/common/tasks:conv_metal_simd",
         "//tflite/delegates/gpu/common/tasks:conv_weights_converter",

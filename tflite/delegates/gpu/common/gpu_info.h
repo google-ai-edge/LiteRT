@@ -423,6 +423,38 @@ enum class OpenClVersion {
 std::string OpenClVersionToString(OpenClVersion version);
 
 struct OpenClInfo {
+  // Subgroup-scope variants reported for the device's default subgroup size.
+  // Keep accumulator and result types separate: mixed variants are possible.
+  struct CooperativeMatrixConfig {
+    uint32_t m = 0;
+    uint32_t n = 0;
+    uint32_t k = 0;
+    DataType a_type = DataType::UNKNOWN;
+    DataType b_type = DataType::UNKNOWN;
+    DataType accumulator_type = DataType::UNKNOWN;
+    DataType result_type = DataType::UNKNOWN;
+    bool saturating_accumulation = false;
+
+    bool operator==(const CooperativeMatrixConfig& other) const {
+      return m == other.m && n == other.n && k == other.k &&
+             a_type == other.a_type && b_type == other.b_type &&
+             accumulator_type == other.accumulator_type &&
+             result_type == other.result_type &&
+             saturating_accumulation == other.saturating_accumulation;
+    }
+  };
+
+  std::vector<CooperativeMatrixConfig> cooperative_matrix_configs;
+  uint32_t cooperative_matrix_pointer_alignment = 0;  // bytes; 0 = unknown
+  uint32_t cooperative_matrix_stride_multiple = 0;    // bytes; 0 = unknown
+
+  bool SupportsCooperativeMatrix(const CooperativeMatrixConfig& required) const {
+    for (const auto& config : cooperative_matrix_configs) {
+      if (config == required) return true;
+    }
+    return false;
+  }
+
   std::string device_name;
   std::string vendor_name;
   std::string opencl_c_version;
