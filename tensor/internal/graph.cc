@@ -52,6 +52,7 @@ constexpr float kMaxFp16Normal = 65504.0f;
 // Heap-allocated `thread_local` pointer avoids non-trivial TLS destructor
 // ordering issues across shared libraries and thread teardown.
 thread_local std::shared_ptr<Scope>* g_current_scope = nullptr;
+thread_local bool g_retain_scope_boundary_leaves = true;
 
 std::shared_ptr<Scope>& MutableCurrentScope() {
   if (g_current_scope == nullptr) {
@@ -575,7 +576,7 @@ void Scope::BindTensor(absl::string_view role, const Tensor& tensor) {
   if (!tensor.group || !tensor.group->status.ok()) return;
   BoundaryEntry entry;
   entry.index = tensor.index;
-  if (tensor.group->producer == nullptr) {
+  if (tensor.group->producer == nullptr && g_retain_scope_boundary_leaves) {
     entry.strong_group = tensor.group;
   } else {
     entry.weak_group = tensor.group;
@@ -591,6 +592,16 @@ std::optional<Tensor> Scope::GetBoundaryTensor(absl::string_view role) const {
 
 std::shared_ptr<Scope> CurrentScope() {
   return g_current_scope != nullptr ? *g_current_scope : nullptr;
+}
+
+ScopeBoundaryRetentionGuard::ScopeBoundaryRetentionGuard(
+    bool retain_leaf_tensors)
+    : prev_retain_(g_retain_scope_boundary_leaves) {
+  g_retain_scope_boundary_leaves = retain_leaf_tensors;
+}
+
+ScopeBoundaryRetentionGuard::~ScopeBoundaryRetentionGuard() {
+  g_retain_scope_boundary_leaves = prev_retain_;
 }
 
 ScopeGuard::ScopeGuard(absl::string_view kind, absl::string_view name)
