@@ -1422,11 +1422,13 @@ cc_test(
     deps = [
         ":moe_delegate_kernel",
         ":test_main",
+        ":xnnpack_delegate",
         "//tflite:builtin_ops",
         "//tflite:framework",
         "//tflite/core:framework",
         "//tflite/core/c:common",
         "@XNNPACK",
+        "@com_google_absl//absl/algorithm:container",
         "@com_google_googletest//:gtest",
         "@flatbuffers//:runtime_cc",
     ],
