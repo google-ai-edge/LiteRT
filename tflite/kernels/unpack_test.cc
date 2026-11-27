@@ -109,6 +109,198 @@ TEST(UnpackPrepareTest, RejectsAxisOutsideInt16Range) {
   EXPECT_EQ(too_small.AllocateTensors(), kTfLiteError);
 }
 
+}  // namespace
+namespace ops {
+namespace builtin {
+TfLiteRegistration* Register_UNPACK();
+}  // namespace builtin
+}  // namespace ops
+namespace {
+
+class CustomOutputsUnpackOpModel : public SingleOpModel {
+ public:
+  CustomOutputsUnpackOpModel(const TensorData& input,
+                             const std::vector<TensorData>& outputs, int axis) {
+    input_ = AddInput(input);
+    for (const TensorData& output : outputs) {
+      outputs_.push_back(AddOutput(output));
+    }
+    SetBuiltinOp(
+        BuiltinOperator_UNPACK, BuiltinOptions_UnpackOptions,
+        CreateUnpackOptions(builder_, static_cast<int>(outputs.size()), axis)
+            .Union());
+    BuildInterpreter({GetShape(input_)}, /*num_threads=*/1,
+                     /*allow_fp32_relax_to_fp16=*/false,
+                     /*apply_delegate=*/false,
+                     /*allocate_and_delegate=*/false);
+  }
+
+  std::vector<int> GetOutputShapeAt(int index) {
+    return GetTensorShape(outputs_[index]);
+  }
+
+ private:
+  int input_;
+  std::vector<int> outputs_;
+};
+
+TfLiteStatus FailingResizeTensor(TfLiteContext*, TfLiteTensor*,
+                                 TfLiteIntArray* new_size) {
+  TfLiteIntArrayFree(new_size);
+  return kTfLiteError;
+}
+
+void SilentReportError(TfLiteContext*, const char*, ...) {}
+
+TEST(UnpackPrepareTest, ValidQuantizedOutputsSucceed) {
+  CustomOutputsUnpackOpModel valid_quantized(
+      /*input=*/{TensorType_INT8, {2, 3}, 0, 0, 0.5f, 4},
+      /*outputs=*/
+      {{TensorType_INT8, {3}, 0, 0, 0.5f, 4},
+       {TensorType_INT8, {3}, 0, 0, 0.5f, 4}},
+      /*axis=*/0);
+  ASSERT_EQ(valid_quantized.AllocateTensors(), kTfLiteOk);
+  EXPECT_THAT(valid_quantized.GetOutputShapeAt(0), ElementsAreArray({3}));
+  EXPECT_THAT(valid_quantized.GetOutputShapeAt(1), ElementsAreArray({3}));
+}
+
+TEST(UnpackPrepareTest,
+     RejectsMismatchedAxisDimensionAndOutputMetadataWithoutPartialResize) {
+  PrepareOnlyUnpackOpModel mismatched_num(
+      /*input=*/{TensorType_FLOAT32, {3, 2}}, /*num_outputs=*/2, /*axis=*/0);
+  EXPECT_EQ(mismatched_num.AllocateTensors(), kTfLiteError);
+
+  CustomOutputsUnpackOpModel mismatched_second_output_zero_point(
+      /*input=*/{TensorType_INT8, {2, 3}, 0, 0, 0.5f, 4},
+      /*outputs=*/
+      {{TensorType_INT8, {9}, 0, 0, 0.5f, 4},
+       {TensorType_INT8, {9}, 0, 0, 0.5f, 7}},
+      /*axis=*/0);
+  EXPECT_EQ(mismatched_second_output_zero_point.AllocateTensors(),
+            kTfLiteError);
+  EXPECT_THAT(mismatched_second_output_zero_point.GetOutputShapeAt(0),
+              ElementsAreArray({9}));
+
+  // Exercise Prepare() directly when ResizeTensor fails to ensure output_shape
+  // cleanup and error propagation.
+  TfLiteIntArray* in_dims = TfLiteIntArrayCreate(2);
+  in_dims->data[0] = 2;
+  in_dims->data[1] = 3;
+  TfLiteIntArray* out0_dims = TfLiteIntArrayCreate(1);
+  out0_dims->data[0] = 3;
+  TfLiteIntArray* out1_dims = TfLiteIntArrayCreate(1);
+  out1_dims->data[0] = 3;
+  TfLiteTensor tensors[3] = {};
+  tensors[0].type = kTfLiteInt32;
+  tensors[0].dims = in_dims;
+  tensors[1].type = kTfLiteInt32;
+  tensors[1].dims = out0_dims;
+  tensors[2].type = kTfLiteInt32;
+  tensors[2].dims = out1_dims;
+  TfLiteIntArray* node_inputs = TfLiteIntArrayCreate(1);
+  node_inputs->data[0] = 0;
+  TfLiteIntArray* node_outputs = TfLiteIntArrayCreate(2);
+  node_outputs->data[0] = 1;
+  node_outputs->data[1] = 2;
+  TfLiteUnpackParams params = {2, 0};
+  TfLiteNode node = {};
+  node.inputs = node_inputs;
+  node.outputs = node_outputs;
+  node.builtin_data = &params;
+  TfLiteContext ctx = {};
+  ctx.tensors = tensors;
+  ctx.tensors_size = 3;
+  ctx.ResizeTensor = FailingResizeTensor;
+  ctx.ReportError = SilentReportError;
+  TfLiteRegistration* reg = ops::builtin::Register_UNPACK();
+  EXPECT_EQ(reg->prepare(&ctx, &node), kTfLiteError);
+  EXPECT_EQ(tensors[1].dims, out0_dims);
+  EXPECT_EQ(tensors[1].dims->size, 1);
+  EXPECT_EQ(tensors[1].dims->data[0], 3);
+  TfLiteIntArrayFree(in_dims);
+  TfLiteIntArrayFree(out0_dims);
+  TfLiteIntArrayFree(out1_dims);
+  TfLiteIntArrayFree(node_inputs);
+  TfLiteIntArrayFree(node_outputs);
+}
+
+TEST(UnpackPrepareTest, RejectsInconsistentInputOrOutputShapeInEval) {
+  UnpackOpModel<int32_t> mismatched_output_elements(
+      {TensorType_INT32, {2, 3}}, /*axis=*/0);
+  mismatched_output_elements.SetInput({1, 2, 3, 4, 5, 6});
+  mismatched_output_elements.GetOutputTensor(1)->dims->data[0] = 1;
+  const TfLiteStatus mismatched_status = mismatched_output_elements.Invoke();
+  EXPECT_EQ(mismatched_status, kTfLiteError);
+
+  UnpackOpModel<int32_t> mismatched_axis_dim({TensorType_INT32, {2, 3}},
+                                             /*axis=*/0);
+  mismatched_axis_dim.SetInput({1, 2, 3, 4, 5, 6});
+  mismatched_axis_dim.GetInputTensor(0)->dims->data[0] = 1;
+  EXPECT_EQ(mismatched_axis_dim.Invoke(), kTfLiteError);
+
+  UnpackOpModel<int32_t> negative_output_dimension(
+      {TensorType_INT32, {2, 3}}, /*axis=*/0);
+  negative_output_dimension.SetInput({1, 2, 3, 4, 5, 6});
+  negative_output_dimension.GetOutputTensor(0)->dims->data[0] = -1;
+  EXPECT_EQ(negative_output_dimension.Invoke(), kTfLiteError);
+
+  // Input element-count overflow in CheckedNumElements(input): {1073741824, 2}.
+  UnpackOpModel<int32_t> overflowing_input_elements(
+      {TensorType_INT32, {2, 2}}, /*axis=*/0);
+  overflowing_input_elements.SetInput({1, 2, 3, 4});
+  TfLiteTensor* ovf_in = overflowing_input_elements.GetInputTensor(0);
+  ovf_in->dims->data[0] = 1073741824;
+  ovf_in->dims->data[1] = 2;
+  EXPECT_EQ(overflowing_input_elements.Invoke(), kTfLiteError);
+
+  // Output element-count overflow in CheckedNumElements(output): {46341, 46341}.
+  UnpackOpModel<int32_t> overflowing_output_elements(
+      {TensorType_INT32, {2, 2, 1}}, /*axis=*/0);
+  overflowing_output_elements.SetInput({1, 2, 3, 4});
+  TfLiteTensor* ovf_out = overflowing_output_elements.GetOutputTensor(0);
+  ovf_out->dims->data[0] = 46341;
+  ovf_out->dims->data[1] = 46341;
+  EXPECT_EQ(overflowing_output_elements.Invoke(), kTfLiteError);
+
+  UnpackOpModel<int32_t> insufficient_input_bytes(
+      {TensorType_INT32, {2, 3}}, /*axis=*/0);
+  insufficient_input_bytes.SetInput({1, 2, 3, 4, 5, 6});
+  TfLiteTensor* short_in = insufficient_input_bytes.GetInputTensor(0);
+  const size_t orig_in_bytes = short_in->bytes;
+  short_in->bytes = 1;
+  EXPECT_EQ(insufficient_input_bytes.Invoke(), kTfLiteError);
+  short_in->bytes = orig_in_bytes;
+
+  UnpackOpModel<int32_t> insufficient_output_bytes(
+      {TensorType_INT32, {2, 3}}, /*axis=*/0);
+  insufficient_output_bytes.SetInput({1, 2, 3, 4, 5, 6});
+  TfLiteTensor* short_out = insufficient_output_bytes.GetOutputTensor(0);
+  const size_t orig_out_bytes = short_out->bytes;
+  short_out->bytes = 1;
+  EXPECT_EQ(insufficient_output_bytes.Invoke(), kTfLiteError);
+  short_out->bytes = orig_out_bytes;
+
+  if (mismatched_status == kTfLiteError) {
+    UnpackOpModel<int32_t> null_input_data({TensorType_INT32, {2, 3}},
+                                           /*axis=*/0);
+    null_input_data.SetInput({1, 2, 3, 4, 5, 6});
+    TfLiteTensor* in_tensor = null_input_data.GetInputTensor(0);
+    char* original_input_data = in_tensor->data.raw;
+    in_tensor->data.raw = nullptr;
+    EXPECT_EQ(null_input_data.Invoke(), kTfLiteError);
+    in_tensor->data.raw = original_input_data;
+
+    UnpackOpModel<int32_t> null_output_data({TensorType_INT32, {2, 3}},
+                                            /*axis=*/0);
+    null_output_data.SetInput({1, 2, 3, 4, 5, 6});
+    TfLiteTensor* output = null_output_data.GetOutputTensor(0);
+    char* original_output_data = output->data.raw;
+    output->data.raw = nullptr;
+    EXPECT_EQ(null_output_data.Invoke(), kTfLiteError);
+    output->data.raw = original_output_data;
+  }
+}
+
 template <typename T>
 void Check(int axis, const std::initializer_list<int>& input_shape,
            const std::initializer_list<int>& input_data,
