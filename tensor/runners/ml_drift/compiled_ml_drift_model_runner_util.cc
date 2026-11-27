@@ -69,25 +69,26 @@ std::optional<GpuWeightConversionSpec> GetGpuWeightConversionSpec(
   GpuWeightConversionSpec spec;
   spec.ohwi = ml_drift::OHWI(info.shape[0], 1, 1, info.shape[1]);
   const size_t num_values = spec.ohwi.DimensionsProduct();
+  // `CreateAccumulateInputChannels` (`sum_i`) reads whole groups of 4 output
+  // channels and needs `i % 8 == 0` for INT4 (`i % 4 == 0` for INT8). INT2
+  // `sum_i` has no raw GPU converter, so those weights keep the CPU path.
+  spec.needs_sum_i = wants_sum_i;
+  if (spec.needs_sum_i && spec.ohwi.o % 4 != 0) return std::nullopt;
   // The raw type and the kernel layout that the CPU path selects for it.
   if (info.type == Type::kI4) {
-    // ML Drift's raw INT4 converter needs whole input bytes per row group, and
-    // `CreateAccumulateInputChannels` (`sum_i`) needs `i % 8 == 0 &&
-    // o % 4 == 0`.
-    spec.needs_sum_i = wants_sum_i;
+    // ML Drift's raw INT4 converter needs whole input bytes per row group.
     if (spec.ohwi.i % 4 != 0) return std::nullopt;
-    if (spec.needs_sum_i && (spec.ohwi.i % 8 != 0 || spec.ohwi.o % 4 != 0)) {
-      return std::nullopt;
-    }
+    if (spec.needs_sum_i && spec.ohwi.i % 8 != 0) return std::nullopt;
     spec.src_type = ml_drift::DataType::kInt4;
     spec.desc = builder.GetFullyConnectedInt4WeightsDesc(spec.ohwi);
     spec.raw_bytes = (num_values + 1) / 2;
   } else if (info.type == Type::kI8) {
+    if (spec.needs_sum_i && spec.ohwi.i % 4 != 0) return std::nullopt;
     spec.src_type = ml_drift::DataType::kInt8;
     spec.desc = builder.GetFullyConnectedInt8WeightsDesc(spec.ohwi);
     spec.raw_bytes = num_values;
   } else if (info.type == Type::kI2) {
-    if (spec.ohwi.i % 4 != 0) return std::nullopt;
+    if (spec.needs_sum_i || spec.ohwi.i % 4 != 0) return std::nullopt;
     spec.src_type = ml_drift::DataType::kInt2;
     spec.desc = builder.GetFullyConnectedInt2WeightsDesc(spec.ohwi);
     spec.raw_bytes = (num_values + 3) / 4;
