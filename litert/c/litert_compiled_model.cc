@@ -31,11 +31,55 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_scheduling_info.h"
 #include "litert/c/litert_common.h"
+#include "litert/c/litert_environment_options.h"
 #include "litert/c/litert_layout.h"
+#include "litert/c/litert_options.h"
 #include "litert/cc/litert_common.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/core/util/perfetto_profiling.h"
 #include "litert/runtime/compiled_model.h"
+
+namespace {
+
+bool IsCpuOnlyCompilation(LiteRtEnvironment environment,
+                          LiteRtOptions jit_compilation_options) {
+  if (!jit_compilation_options) {
+    return false;
+  }
+  LiteRtHwAcceleratorSet hardware_accelerators = kLiteRtHwAcceleratorNone;
+  if (LiteRtGetOptionsHardwareAccelerators(jit_compilation_options,
+                                           &hardware_accelerators) !=
+          kLiteRtStatusOk ||
+      hardware_accelerators != kLiteRtHwAcceleratorCpu) {
+    return false;
+  }
+  if (environment->GetOption(kLiteRtEnvOptionTagMagicNumberConfigs)
+          .has_value()) {
+    return false;
+  }
+  // Ensure no registered non-CPU accelerator (such as AOT NPU dispatch) can
+  // run without JIT being requested for its hardware.
+  for (const auto& accelerator : environment->GetAcceleratorRegistry()) {
+    LiteRtHwAcceleratorSet supported_hardware = kLiteRtHwAcceleratorNone;
+    if (accelerator->GetHardwareSupport(accelerator.get(),
+                                        &supported_hardware) !=
+        kLiteRtStatusOk) {
+      return false;
+    }
+    if ((supported_hardware & ~kLiteRtHwAcceleratorCpu) != 0) {
+      bool does_jit = false;
+      if (!accelerator->IsTfLiteDelegateResponsibleForJitCompilation ||
+          accelerator->IsTfLiteDelegateResponsibleForJitCompilation(
+              accelerator.get(), &does_jit) != kLiteRtStatusOk ||
+          !does_jit) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+}  // namespace
 
 #ifdef __cplusplus
 extern "C" {
@@ -53,9 +97,12 @@ LiteRtStatus LiteRtCreateCompiledModel(LiteRtEnvironment environment,
       absl::kConstInit);
   // TODO b/491180241 - Experimental multi-threading support for CompiledModel
   // creation.
-  // Note: The entire CompiledModel APIs are not verified to support
-  // multi-threading.
-  absl::MutexLock lock(compiled_model_create_mutex);
+  // Note: Non-CPU (GPU/NPU) CompiledModel creation acquires the process-wide
+  // lock, while independent CPU-only creations can proceed concurrently.
+  const bool is_cpu_only =
+      IsCpuOnlyCompilation(environment, jit_compilation_options);
+  absl::MutexLockMaybe lock(is_cpu_only ? nullptr
+                                        : &compiled_model_create_mutex);
 
   LITERT_ASSIGN_OR_RETURN(auto created_compiled_model,
                           LiteRtCompiledModelT::Create(
