@@ -537,6 +537,13 @@ class OpMixin<ProbeOperation, MlDriftMixinTag> : public MlDriftOperation {
 };
 
 template <>
+class OpMixin<IdentityOperation, MlDriftMixinTag> : public MlDriftOperation {
+ public:
+  absl::Status ToMlDrift(const graph::Operation& op,
+                         MlDriftBuildContext& ctx) const override;
+};
+
+template <>
 class OpMixin<ResizeBilinearOperation, MlDriftMixinTag>
     : public MlDriftOperation {
  public:

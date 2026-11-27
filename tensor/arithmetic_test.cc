@@ -1681,6 +1681,11 @@ TEST(OperationCastTest, Probe) {
   VerifyOperationRTTI<graph::ProbeOperation>(Probe(a));
 }
 
+TEST(OperationCastTest, Identity) {
+  Tensor a({.type = Type::kFP32, .shape = {2, 4}});
+  VerifyOperationRTTI<graph::IdentityOperation>(Identity(a));
+}
+
 TEST(OperationCastTest, NonMaxSuppressionV5) {
   Tensor boxes({.type = Type::kFP32, .shape = {2, 10, 4}});
   Tensor scores({.type = Type::kFP32, .shape = {2, 10}});

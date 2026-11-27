@@ -3419,6 +3419,28 @@ TYPED_TEST_P(NumericalTestSuite, ProbeOp) {
   EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), input_data));
 }
 
+TYPED_TEST_P(NumericalTestSuite, IdentityOp) {
+  using Tag = typename TypeParam::Tag;
+  Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
+  Tensor<Tag> output = Identity(input);
+
+  auto status = this->bridge_->BuildGraph({input}, {output});
+  if (status.code() == absl::StatusCode::kUnimplemented) {
+    GTEST_SKIP() << "Identity op is unimplemented on this backend.";
+  }
+  ASSERT_OK(status);
+
+  std::vector<float> input_data = {1.0f, -2.0f, 3.5f, 0.0f};
+  ASSERT_OK(this->bridge_->SetInput(input, AsBytes(input_data)));
+
+  ASSERT_OK(this->bridge_->Execute());
+
+  std::vector<float> actual_output(4);
+  ASSERT_OK(this->bridge_->GetOutput(output, AsBytes(actual_output)));
+
+  EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), input_data));
+}
+
 TYPED_TEST_P(NumericalTestSuite, PadOp) {
   using Tag = typename TypeParam::Tag;
   Tensor<Tag> input({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
@@ -4585,7 +4607,8 @@ REGISTER_TYPED_TEST_SUITE_P(
     FloorModOp, FloorDivOp, SumOp, ReduceMaxOp, MeanOp, AveragePool2DOp,
     MaxPool2DOp, SplitOp, PackOp, UnpackOp, ResizeNearestNeighborOp,
     LogSoftmaxOp, Relu0To1Op, ReluN1To1Op, ZerosLikeOp, GreaterOp, LogicalOrOp,
-    SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, PadOp, PadV2Op,
+    SpaceToDepthOp, BitwiseXorOp, RightShiftOp, ProbeOp, IdentityOp, PadOp,
+    PadV2Op,
     GatherNdOp, DynamicUpdateSliceOp, QuantizeOp, DequantizeOp,
     DequantizePerChannelOp, RopeOp, TopKOp, NonMaxSuppressionV5Op,
     StableHLOCompositeOp, FullyConnectedQuantizedWeightsOp,

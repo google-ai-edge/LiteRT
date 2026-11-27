@@ -1741,6 +1741,16 @@ absl::Status OpMixin<ProbeOperation, MlDriftMixinTag>::ToMlDrift(
   return CheckGpuOpOk(ctx, op);
 }
 
+absl::Status OpMixin<IdentityOperation, MlDriftMixinTag>::ToMlDrift(
+    const graph::Operation& op, MlDriftBuildContext& ctx) const {
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, graph::GetOutputs(op));
+  LRT_TENSOR_ASSIGN_OR_RETURN(auto input, GetTensorHandle(ctx, op.inputs[0]));
+  auto shape = input.tensor_desc.GetBHWCShape();
+  auto out = ctx.gpu_model_builder->Reshape(input, shape);
+  ctx.graph_tensor_to_handle.insert({outputs[0], out});
+  return CheckGpuOpOk(ctx, op);
+}
+
 absl::Status OpMixin<ResizeBilinearOperation, MlDriftMixinTag>::ToMlDrift(
     const graph::Operation& op, MlDriftBuildContext& ctx) const {
   LRT_TENSOR_ASSIGN_OR_RETURN(auto outputs, graph::GetOutputs(op));

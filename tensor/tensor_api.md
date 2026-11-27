@@ -311,6 +311,7 @@ Support standard arithmetic and logical operations. Many support broadcasting.
 *   `ResizeNearestNeighbor(Tensor input, const std::vector<int>& size, bool align_corners = false, bool half_pixel_centers = false)`: Resizes images using nearest neighbor interpolation.
 *   `NonMaxSuppressionV5(Tensor boxes, Tensor scores, int max_output_size, Tensor iou_threshold, Tensor score_threshold, Tensor soft_nms_sigma)`: Performs non-max suppression on bounding boxes.
 *   `Probe(Tensor a)`: Inserts a probe operation for debugging.
+*   `Identity(Tensor a)`: Returns a distinct tensor with the same shape, dtype, and values as `a` (useful for materializing graph outputs that alias inputs or duplicate another output).
 
 ---
 

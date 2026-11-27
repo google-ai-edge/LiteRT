@@ -687,6 +687,11 @@ struct ProbeOperation : Operation {
   LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
 };
 
+struct IdentityOperation : Operation {
+  absl::string_view GetName() const override { return "Identity"; }
+  LRT_TENSOR_DEFINE_OPERATION_TYPE_IDENTIFICATION
+};
+
 struct ResizeBilinearOperationData {
   bool align_corners;
   bool half_pixel_centers;
