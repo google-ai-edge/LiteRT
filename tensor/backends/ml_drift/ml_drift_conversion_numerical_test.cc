@@ -15,8 +15,10 @@ limitations under the License.
 
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <string>
 #include <utility>
 #include <vector>
@@ -36,15 +38,18 @@ limitations under the License.
 #include "ml_drift/cl/opencl_wrapper.h"  // from @ml_drift
 #include "ml_drift/cl/tensor.h"  // from @ml_drift
 #include "ml_drift/common/data_type.h"  // from @ml_drift
+#include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model_builder.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
 #include "ml_drift/common/precision.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
+#include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
 #include "tensor/arithmetic.h"
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
+#include "tensor/backends/ml_drift/metal_decode_quantized_fc.h"
 #include "tensor/backends/ml_drift/ml_drift_buffer.h"
 #include "tensor/backends/ml_drift/ml_drift_conversion.h"
 #include "tensor/backends/ml_drift/ml_drift_helpers.h"
@@ -82,24 +87,37 @@ absl::Status UploadInt8Tensor(ml_drift::cl::InferenceContext& ic,
 
 class MlDriftTestBackendBridge : public TestBackendBridge {
  public:
+  explicit MlDriftTestBackendBridge(ml_drift::CalculationsPrecision precision =
+                                        ml_drift::CalculationsPrecision::kF32)
+      : precision_(precision) {}
+
   ~MlDriftTestBackendBridge() override {
     if (env_.queue()) {
       (void)env_.queue()->WaitForCompletion();
     }
   }
 
+  const std::vector<std::string>& node_names() const { return node_names_; }
+
   absl::Status Initialize() override {
     LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::LoadOpenCL());
     LRT_TENSOR_RETURN_IF_ERROR(ml_drift::cl::CreateEnvironment(&env_));
+    if (precision_ == ml_drift::CalculationsPrecision::kF16 &&
+        !env_.device().GetInfo().SupportsFP16()) {
+      precision_ = ml_drift::CalculationsPrecision::kF32;
+    }
     ml_drift::CreateGpuModelInfo ci = {
-        .precision = ml_drift::CalculationsPrecision::kF32,
+        .precision = precision_,
         .storage_type =
             ml_drift::cl::GetFastestStorageType(env_.device().GetInfo()),
     };
     model_builder_ = std::make_unique<ml_drift::GpuModelBuilder>(
         env_.device().GetInfo(), ci.hints, ci.precision, ci.storage_type);
     context_.gpu_model_builder = model_builder_.get();
-    context_.default_float_type = ml_drift::DataType::kFloat32;
+    context_.default_float_type =
+        precision_ == ml_drift::CalculationsPrecision::kF16
+            ? ml_drift::DataType::kFloat16
+            : ml_drift::DataType::kFloat32;
     dummy_weight_creator_ =
         std::make_unique<MlDriftDummyWeightCreator>(model_builder_.get());
     return absl::OkStatus();
@@ -173,9 +191,13 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
     ml_drift::GpuModel gpu_model;
     LRT_TENSOR_RETURN_IF_ERROR(model_builder_->GetGpuModel(
         graph_input_ids, graph_output_ids, &gpu_model));
+    node_names_.clear();
+    for (const auto& node : gpu_model.nodes) {
+      node_names_.push_back(node.name);
+    }
 
     ml_drift::CreateGpuModelInfo ci = {
-        .precision = ml_drift::CalculationsPrecision::kF32,
+        .precision = precision_,
         .storage_type =
             ml_drift::cl::GetFastestStorageType(env_.device().GetInfo()),
     };
@@ -186,7 +208,8 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
   absl::Status SetInput(const TensorHandle& tensor,
                         absl::Span<const std::byte> data) override {
     const auto& th = tensor_to_handle_.at(tensor.GetRaw());
-    if (th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat32) {
+    if (th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat32 ||
+        th.tensor_desc.GetDataType() == ml_drift::DataType::kFloat16) {
       ml_drift::TensorFloat32 t;
       t.id = th.id;
       t.shape = th.tensor_desc.GetBHWCShape();
@@ -249,6 +272,9 @@ class MlDriftTestBackendBridge : public TestBackendBridge {
   }
 
  private:
+  ml_drift::CalculationsPrecision precision_ =
+      ml_drift::CalculationsPrecision::kF32;
+  std::vector<std::string> node_names_;
   ml_drift::cl::Environment env_;
   std::unique_ptr<ml_drift::GpuModelBuilder> model_builder_;
   MlDriftBuildContext context_;
@@ -934,6 +960,354 @@ TEST(MlDriftBlockwiseQuantizedNumericalTest,
       EXPECT_THAT(actual_logits, testing::Pointwise(testing::FloatNear(1e-3f),
                                                     expected_logits));
     }
+  }
+}
+
+class ScopedEnvVar {
+ public:
+  ScopedEnvVar(const char* name, const char* value) : name_(name) {
+    if (const char* old = std::getenv(name); old != nullptr) {
+      old_value_ = std::string(old);
+    }
+    if (value != nullptr) {
+      setenv(name_.c_str(), value, 1);
+    } else {
+      unsetenv(name_.c_str());
+    }
+  }
+  ScopedEnvVar(const ScopedEnvVar&) = delete;
+  ScopedEnvVar& operator=(const ScopedEnvVar&) = delete;
+  ~ScopedEnvVar() {
+    if (old_value_.has_value()) {
+      setenv(name_.c_str(), old_value_->c_str(), 1);
+    } else {
+      unsetenv(name_.c_str());
+    }
+  }
+
+ private:
+  std::string name_;
+  std::optional<std::string> old_value_;
+};
+
+TEST(MetalDecodeQuantizedFcNumericalTest,
+     MatchesReferenceAcrossInt2Int4Int8AndReductionModes) {
+  ScopedEnvVar force_on("LRT_METAL_DECODE_FC", "1");
+
+  struct Case {
+    Type wtype;
+    int o;
+    int i;
+    int block_size;  // 0 = per-channel
+    bool affine_zp;
+    bool has_bias;
+    int outs;
+    int wg_x;
+    int wg_y;
+    ml_drift::CalculationsPrecision precision;
+    int int2_mode = 0;
+    bool fuse_residual_add = false;
+    float x_scale = 0.0625f;
+    float w_scale_base = 0.015625f;
+  };
+  const std::vector<Case> cases = {
+      // INT2 per-channel: floor (mode=0) & bitmask (mode=1), outs=1/2/4,
+      // wg_y=1/2/4, FP32 & FP16, sym & affine, plus residual epilogue fusion.
+      {Type::kI2, 64, 128, 0, false, false, 4, 4, 1,
+       ml_drift::CalculationsPrecision::kF16, 0, false},
+      {Type::kI2, 64, 128, 0, true, true, 4, 4, 2,
+       ml_drift::CalculationsPrecision::kF16, 0, true},
+      {Type::kI2, 64, 128, 0, false, false, 4, 4, 1,
+       ml_drift::CalculationsPrecision::kF16, 1, false},
+      {Type::kI2, 48, 96, 0, false, true, 2, 4, 4,
+       ml_drift::CalculationsPrecision::kF32, 0, false},
+      {Type::kI2, 20, 64, 0, true, false, 1, 4, 1,
+       ml_drift::CalculationsPrecision::kF16, 1, false},
+      // Large-K / large-activation per-channel INT2/INT4/INT8 + large-block
+      // INT4 (`block_size = 128 > 32`) exercising chunked scale flushing.
+      {Type::kI2, 32, 4096, 0, false, false, 2, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, false, 0.5f},
+      {Type::kI4, 32, 4096, 0, false, false, 1, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, false, 0.5f},
+      {Type::kI4, 32, 512, 128, true, false, 1, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, false, 0.5f},
+      {Type::kI8, 32, 4096, 0, false, false, 1, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, false, 0.5f},
+      // Subnormal-scale INT8 PLE (`scale in [1.2e-5, 4.8e-5] < 2^-14`) check.
+      {Type::kI8, 64, 256, 0, false, false, 1, 4, 2,
+       ml_drift::CalculationsPrecision::kF16, 0, false, 0.25f, 1.2e-5f},
+      // INT4 blockwise (Q4_0 / Q4_1) and per-channel: wg_y=1/4/8/16,
+      // plus residual epilogue fusion (`dst_tensor.Write(res_value, ...)`).
+      {Type::kI4, 64, 512, 32, false, false, 1, 4, 8,
+       ml_drift::CalculationsPrecision::kF16, 0, true},
+      {Type::kI4, 64, 512, 32, true, true, 1, 4, 16,
+       ml_drift::CalculationsPrecision::kF16, 0, false},
+      {Type::kI4, 32, 128, 32, false, false, 1, 8, 1,
+       ml_drift::CalculationsPrecision::kF32, 0, false},
+      {Type::kI4, 48, 128, 0, true, true, 1, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, false},
+      // INT8 blockwise Q8_0 & per-channel, including non-multiple-of-4 shapes.
+      {Type::kI8, 32, 128, 32, false, true, 1, 4, 4,
+       ml_drift::CalculationsPrecision::kF16, 0, true},
+      {Type::kI8, 37, 69, 0, true, true, 1, 4, 2,
+       ml_drift::CalculationsPrecision::kF32, 0, false},
+      {Type::kI8, 37, 69, 0, false, false, 1, 8, 1,
+       ml_drift::CalculationsPrecision::kF16, 0, false},
+  };
+
+  for (const Case& c : cases) {
+    const std::string outs_s = absl::StrCat(c.outs);
+    const std::string wgx_s = absl::StrCat(c.wg_x);
+    const std::string wgy_s = absl::StrCat(c.wg_y);
+    const std::string int2_s = absl::StrCat(c.int2_mode);
+    ScopedEnvVar env_outs("LRT_METAL_DECODE_FC_OUTS", outs_s.c_str());
+    ScopedEnvVar env_wgx("LRT_METAL_DECODE_FC_WG_X", wgx_s.c_str());
+    ScopedEnvVar env_wgy("LRT_METAL_DECODE_FC_WG_Y", wgy_s.c_str());
+    ScopedEnvVar env_int2("LRT_METAL_DECODE_FC_INT2", int2_s.c_str());
+
+    MlDriftTestBackendBridge bridge(c.precision);
+    ASSERT_THAT(bridge.Initialize(), IsOk());
+
+    std::vector<float> x_vals(c.i);
+    for (int k = 0; k < c.i; ++k) {
+      x_vals[k] = c.x_scale * static_cast<float>((k * 13 + 5) % 19 - 9);
+    }
+    const int num_blocks = c.block_size > 0 ? c.i / c.block_size : 1;
+    std::vector<float> scales(static_cast<size_t>(c.o) * num_blocks);
+    std::vector<float> zps(static_cast<size_t>(c.o) * num_blocks, 0.0f);
+    for (size_t k = 0; k < scales.size(); ++k) {
+      scales[k] = c.w_scale_base * static_cast<float>((k % 7) + 1);
+      if (c.affine_zp) {
+        zps[k] = (k % 3 == 0) ? -1.25f : ((k % 3 == 1) ? 1.5f : 0.0f);
+      }
+    }
+
+    std::vector<float> w_ref(static_cast<size_t>(c.o) * c.i);
+    std::shared_ptr<Buffer> w_buf;
+    if (c.wtype == Type::kI2) {
+      auto buf = OwningCpuBuffer::Allocate<Type::kI2>(c.o * c.i);
+      uint8_t* bytes = reinterpret_cast<uint8_t*>(buf->Span<int2_t>().data());
+      std::memset(bytes, 0, (static_cast<size_t>(c.o) * c.i + 3) / 4);
+      for (int r = 0; r < c.o; ++r) {
+        for (int col = 0; col < c.i; ++col) {
+          const int idx = r * c.i + col;
+          const int q = ((idx * 5 + 1) % 4) - 2;  // [-2, 1]
+          const uint8_t bits = static_cast<uint8_t>(q & 0x3);
+          bytes[idx / 4] |= static_cast<uint8_t>(bits << ((idx % 4) * 2));
+          const int blk =
+              c.block_size > 0 ? r * num_blocks + (col / c.block_size) : r;
+          w_ref[idx] = scales[blk] * (static_cast<float>(q) - zps[blk]);
+        }
+      }
+      w_buf = std::move(buf);
+    } else if (c.wtype == Type::kI4) {
+      auto buf = OwningCpuBuffer::Allocate<Type::kI4>(c.o * c.i);
+      int4_t* packed = buf->Span<int4_t>().data();
+      for (int r = 0; r < c.o; ++r) {
+        for (int col = 0; col < c.i; col += 2) {
+          const int idx = r * c.i + col;
+          const int qa = ((idx * 3 + 2) % 16) - 8;
+          const int qb = (((idx + 1) * 7 + 5) % 16) - 8;
+          packed[idx / 2].a = static_cast<int8_t>(qa);
+          packed[idx / 2].b = static_cast<int8_t>(qb);
+          const int blk0 =
+              c.block_size > 0 ? r * num_blocks + (col / c.block_size) : r;
+          const int blk1 = c.block_size > 0
+                               ? r * num_blocks + ((col + 1) / c.block_size)
+                               : r;
+          w_ref[idx] = scales[blk0] * (static_cast<float>(qa) - zps[blk0]);
+          w_ref[idx + 1] = scales[blk1] * (static_cast<float>(qb) - zps[blk1]);
+        }
+      }
+      w_buf = std::move(buf);
+    } else {
+      auto buf = OwningCpuBuffer::Allocate<Type::kI8>(c.o * c.i);
+      int8_t* raw = buf->Span<int8_t>().data();
+      for (int r = 0; r < c.o; ++r) {
+        for (int col = 0; col < c.i; ++col) {
+          const int idx = r * c.i + col;
+          const int q = ((idx * 11 + 3) % 81) - 40;
+          raw[idx] = static_cast<int8_t>(q);
+          const int blk =
+              c.block_size > 0 ? r * num_blocks + (col / c.block_size) : r;
+          w_ref[idx] = scales[blk] * (static_cast<float>(q) - zps[blk]);
+        }
+      }
+      w_buf = std::move(buf);
+    }
+
+    std::shared_ptr<Quantization> quant;
+    if (c.block_size > 0) {
+      quant = std::make_shared<BlockwiseQuantization>(
+          scales, c.affine_zp ? ZeroPoints::Float(zps) : ZeroPoints(),
+          c.block_size, /*quantized_dimension=*/0);
+    } else {
+      quant = std::make_shared<PerChannelAffineQuantization>(
+          scales, c.affine_zp ? ZeroPoints::Float(zps) : ZeroPoints(),
+          /*quantized_dimension=*/0);
+    }
+
+    Tensor<MlDriftMixinTag> x(
+        {.name = "x", .type = Type::kFP32, .shape = {1, 1, c.i}});
+    Tensor<MlDriftMixinTag> w({.name = "w",
+                               .type = c.wtype,
+                               .shape = {c.o, c.i},
+                               .buffer = w_buf,
+                               .quantization = quant});
+    std::vector<float> bias_vals(c.o, 0.0f);
+    std::vector<float> residual_vals(c.o, 0.0f);
+    Tensor<MlDriftMixinTag> res(
+        {.name = "res", .type = Type::kFP32, .shape = {1, 1, c.o}});
+    Tensor<MlDriftMixinTag> y = [&]() {
+      Tensor<MlDriftMixinTag> fc = [&]() {
+        if (!c.has_bias) return FullyConnected(x, w);
+        for (int r = 0; r < c.o; ++r) {
+          bias_vals[r] = 0.125f * static_cast<float>((r % 9) - 4);
+        }
+        Tensor<MlDriftMixinTag> b({.name = "b",
+                                   .type = Type::kFP32,
+                                   .shape = {c.o},
+                                   .buffer = bias_vals});
+        return FullyConnected(x, w, b);
+      }();
+      if (!c.fuse_residual_add) return fc;
+      for (int r = 0; r < c.o; ++r) {
+        residual_vals[r] = 0.25f * static_cast<float>((r % 7) - 3);
+      }
+      return Add(fc, res);
+    }();
+
+    std::vector<TensorHandle> inputs = {TensorHandle(x)};
+    if (c.fuse_residual_add) {
+      inputs.push_back(TensorHandle(res));
+    }
+    ASSERT_THAT(bridge.BuildGraph(inputs, {TensorHandle(y)}), IsOk());
+    EXPECT_THAT(bridge.node_names(),
+                testing::Contains(testing::HasSubstr("_metal_decode")));
+    ASSERT_THAT(
+        bridge.SetInput(TensorHandle(x),
+                        absl::MakeConstSpan(
+                            reinterpret_cast<const std::byte*>(x_vals.data()),
+                            x_vals.size() * sizeof(float))),
+        IsOk());
+    if (c.fuse_residual_add) {
+      ASSERT_THAT(
+          bridge.SetInput(
+              TensorHandle(res),
+              absl::MakeConstSpan(
+                  reinterpret_cast<const std::byte*>(residual_vals.data()),
+                  residual_vals.size() * sizeof(float))),
+          IsOk());
+    }
+    ASSERT_THAT(bridge.Execute(), IsOk());
+
+    std::vector<float> actual(c.o, 0.0f);
+    ASSERT_THAT(bridge.GetOutput(
+                    TensorHandle(y),
+                    absl::MakeSpan(reinterpret_cast<std::byte*>(actual.data()),
+                                   actual.size() * sizeof(float))),
+                IsOk());
+
+    std::vector<float> expected(c.o, 0.0f);
+    for (int r = 0; r < c.o; ++r) {
+      float sum = bias_vals[r] + residual_vals[r];
+      for (int col = 0; col < c.i; ++col) {
+        sum += x_vals[col] * w_ref[static_cast<size_t>(r) * c.i + col];
+      }
+      expected[r] = sum;
+    }
+    const float tol =
+        c.i >= 1024
+            ? 0.25f
+            : (c.precision == ml_drift::CalculationsPrecision::kF16 ? 2e-2f
+                                                                    : 1e-3f);
+    EXPECT_THAT(actual, testing::Pointwise(testing::FloatNear(tol), expected))
+        << "o=" << c.o << " i=" << c.i << " blk=" << c.block_size
+        << " outs=" << c.outs << " wg=" << c.wg_x << "x" << c.wg_y;
+  }
+}
+
+TEST(MetalDecodeQuantizedFcNumericalTest,
+     RejectsInvalidPreconditionsAndF32F16) {
+  ml_drift::GpuInfo gpu_info;
+  gpu_info.gpu_api = ml_drift::GpuApi::kMetal;
+  gpu_info.vendor = ml_drift::GpuVendor::kApple;
+  gpu_info.apple_info = ml_drift::AppleInfo("Apple A17 Pro");
+
+  auto make_valid = [](ml_drift::GpuModelBuilder* builder,
+                       ml_drift::TensorStorageType w_storage,
+                       ml_drift::WeightsLayout w_layout, int src_c, int w_i) {
+    auto src = builder->AddTensor(ml_drift::BHWC(1, 1, 1, src_c),
+                                  ml_drift::DataType::kFloat16);
+    ml_drift::TensorDescriptor w_td(ml_drift::DataType::kUint4, w_storage,
+                                    ml_drift::Layout::kLinear);
+    w_td.SetBHWDCShape(ml_drift::BHWDC(1, 1, 1, 1, 32 * w_i / 2));
+    auto w_handle = builder->AddConstantTensor(std::move(w_td));
+    ml_drift::TensorDescriptor s_td(ml_drift::DataType::kFloat16,
+                                    ml_drift::TensorStorageType::kBuffer,
+                                    ml_drift::Layout::kLinear);
+    s_td.SetBHWDCShape(ml_drift::BHWDC(1, 1, 1, 1, 32));
+    auto s_handle = builder->AddConstantTensor(std::move(s_td));
+    ml_drift::WeightsDescription desc;
+    desc.type = ml_drift::DataType::kUint4;
+    desc.layout = w_layout;
+    desc.output_group_size = 8;  // 32 / 4
+    ml_drift::GpuModelBuilder::Weights weights(
+        w_handle, desc, ml_drift::OHWI(32, 1, 1, w_i),
+        ml_drift::OHWI(32, 1, 1, 1), s_handle, std::nullopt);
+    return TryAddMetalDecodeQuantizedFullyConnected(builder, src, weights,
+                                                    nullptr, "test_fc");
+  };
+
+  // Valid Metal FP16 config lowers cleanly.
+  {
+    ml_drift::GpuModelBuilder builder(gpu_info, ml_drift::ModelHints(),
+                                      ml_drift::CalculationsPrecision::kF16,
+                                      ml_drift::TensorStorageType::kBuffer);
+    EXPECT_TRUE(make_valid(&builder, ml_drift::TensorStorageType::kBuffer,
+                           ml_drift::WeightsLayout::kOSpatialIOGroupI4O4, 64,
+                           64)
+                    .has_value());
+  }
+  // Rejects kF32F16 so FP32 accumulation is honored.
+  {
+    ml_drift::GpuModelBuilder builder(gpu_info, ml_drift::ModelHints(),
+                                      ml_drift::CalculationsPrecision::kF32F16,
+                                      ml_drift::TensorStorageType::kBuffer);
+    EXPECT_FALSE(make_valid(&builder, ml_drift::TensorStorageType::kBuffer,
+                            ml_drift::WeightsLayout::kOSpatialIOGroupI4O4, 64,
+                            64)
+                     .has_value());
+  }
+  // Rejects non-I4O4 linear layout (kOSpatialIOGroupO4I4).
+  {
+    ml_drift::GpuModelBuilder builder(gpu_info, ml_drift::ModelHints(),
+                                      ml_drift::CalculationsPrecision::kF16,
+                                      ml_drift::TensorStorageType::kBuffer);
+    EXPECT_FALSE(make_valid(&builder, ml_drift::TensorStorageType::kBuffer,
+                            ml_drift::WeightsLayout::kOSpatialIOGroupO4I4, 64,
+                            64)
+                     .has_value());
+  }
+  // Rejects non-buffer storage.
+  {
+    ml_drift::GpuModelBuilder builder(gpu_info, ml_drift::ModelHints(),
+                                      ml_drift::CalculationsPrecision::kF16,
+                                      ml_drift::TensorStorageType::kBuffer);
+    EXPECT_FALSE(make_valid(&builder, ml_drift::TensorStorageType::kTexture2D,
+                            ml_drift::WeightsLayout::kOSpatialIOGroupI4O4, 64,
+                            64)
+                     .has_value());
+  }
+  // Rejects mismatched input channel count.
+  {
+    ml_drift::GpuModelBuilder builder(gpu_info, ml_drift::ModelHints(),
+                                      ml_drift::CalculationsPrecision::kF16,
+                                      ml_drift::TensorStorageType::kBuffer);
+    EXPECT_FALSE(make_valid(&builder, ml_drift::TensorStorageType::kBuffer,
+                            ml_drift::WeightsLayout::kOSpatialIOGroupI4O4, 128,
+                            64)
+                     .has_value());
   }
 }
 
