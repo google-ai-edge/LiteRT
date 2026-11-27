@@ -335,6 +335,24 @@ class QualcommOptions : public ConcreteOptionsBase {
     return val;
   }
 
+  /// @brief Linux/Android only. When enabled, the HTP backend imports the
+  /// context binary directly from the model's file descriptor via DMA-BUF
+  /// instead of copying the weights into its own buffer. Falls back to
+  /// default behavior otherwise. Defaults to `false`.
+  void SetEnableZeroCopyContextLoading(bool enable_zero_copy_context_loading) {
+    LrtQualcommOptionsSetEnableZeroCopyContextLoading(
+        options_, enable_zero_copy_context_loading);
+  }
+  bool GetEnableZeroCopyContextLoading() {
+    bool val;
+    auto status =
+        LrtQualcommOptionsGetEnableZeroCopyContextLoading(options_, &val);
+    if (status == kLiteRtStatusErrorNotFound) {
+      return false;
+    }
+    return val;
+  }
+
   /// @brief When using short conv hmx, one might have better performance, but
   /// convolutions with short depth and/or non-symmetric weights could exhibit
   /// inaccurate results.

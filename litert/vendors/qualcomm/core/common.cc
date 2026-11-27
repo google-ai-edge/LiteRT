@@ -515,6 +515,15 @@ void Options::SetEnableJustInTime(bool enable_just_in_time) {
 
 bool Options::GetEnableJustInTime() const { return enable_just_in_time_; }
 
+void Options::SetEnableZeroCopyContextLoading(
+    bool enable_zero_copy_context_loading) {
+  enable_zero_copy_context_loading_ = enable_zero_copy_context_loading;
+}
+
+bool Options::GetEnableZeroCopyContextLoading() const {
+  return enable_zero_copy_context_loading_;
+}
+
 void Options::SetUseConvHMX(bool use_conv_hmx) { use_conv_hmx_ = use_conv_hmx; }
 
 bool Options::GetUseConvHMX() const { return use_conv_hmx_; }
@@ -813,6 +822,7 @@ std::string Options::Dump() const {
   field(2, "OpNameFormat", op_name_format_);
   field(2, "EnableWeightSharing", enable_weight_sharing_);
   field(2, "EnableJustInTime", enable_just_in_time_);
+  field(2, "EnableZeroCopyContextLoading", enable_zero_copy_context_loading_);
   field(2, "GraphPriority", graph_priority_);
   field(2, "GraphIOTensorMemType", graph_io_tensor_mem_type_);
   field(2, "CustomOpPackage", absl::string_view());

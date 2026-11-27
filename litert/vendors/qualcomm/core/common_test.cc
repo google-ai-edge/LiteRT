@@ -227,6 +227,14 @@ TEST(QnnOptionTest, EnableWeightSharing) {
   EXPECT_EQ(options.GetEnableWeightSharing(), false);
 }
 
+TEST(QnnOptionTest, EnableZeroCopyContextLoading) {
+  Options options;
+  options.SetEnableZeroCopyContextLoading(true);
+  EXPECT_EQ(options.GetEnableZeroCopyContextLoading(), true);
+  options.SetEnableZeroCopyContextLoading(false);
+  EXPECT_EQ(options.GetEnableZeroCopyContextLoading(), false);
+}
+
 TEST(QnnOptionTest, UseConvHMX) {
   Options options;
   options.SetUseConvHMX(true);
@@ -436,6 +444,7 @@ TEST(QnnOptionTest, Default) {
   EXPECT_EQ(options.GetProfiling(), Profiling::kOff);
   EXPECT_TRUE(options.GetUseInt64BiasAsInt32());
   EXPECT_FALSE(options.GetEnableWeightSharing());
+  EXPECT_FALSE(options.GetEnableZeroCopyContextLoading());
   EXPECT_TRUE(options.GetUseConvHMX());
   EXPECT_TRUE(options.GetUseFoldReLU());
   EXPECT_EQ(options.GetOpNameFormat(), OpNameFormat::kBasic);

@@ -131,10 +131,13 @@ class QnnManager {
       ::qnn::Profiling profiling_level);
 
   // Create a context handle for inference, from a given bytecode.
+  // `bytecode_fd` and `bytecode_fd_offset` identify the bytecode's location
+  // within the model file, if it was loaded from one.
   Expected<ContextHandle> CreateContextHandle(
       ::qnn::QnnBackend& qnn_backend,
       absl::Span<const QnnContext_Config_t*> configs,
-      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle);
+      absl::Span<const uint8_t> bytecode, Qnn_ProfileHandle_t profile_handle,
+      int bytecode_fd = -1, size_t bytecode_fd_offset = 0);
 
   //
   // Context Binary
@@ -209,11 +212,13 @@ class QnnManager::ContextHandle {
  public:
   ContextHandle(Qnn_ContextHandle_t context_handle, Qnn_ProfileHandle_t profile,
                 QnnContext_FreeFn_t free_fn,
-                QnnProfile_FreeFn_t profile_free_fn)
+                QnnProfile_FreeFn_t profile_free_fn,
+                std::shared_ptr<void> owned_callback_context = nullptr)
       : context_handle_(context_handle),
         profile_(profile),
         free_fn_(free_fn),
-        profile_free_fn_(profile_free_fn) {}
+        profile_free_fn_(profile_free_fn),
+        owned_callback_context_(std::move(owned_callback_context)) {}
 
   ContextHandle() = default;
 
@@ -231,6 +236,8 @@ class QnnManager::ContextHandle {
       }
       context_handle_ = nullptr;
     }
+    // owned_callback_context_ (if any) is released after free_fn_ above,
+    // i.e. after QNN's DMA-BUF release callback has had a chance to run.
   }
 
   ContextHandle(ContextHandle&& other) { *this = std::move(other); }
@@ -242,6 +249,7 @@ class QnnManager::ContextHandle {
     std::swap(profile_, other.profile_);
     std::swap(free_fn_, other.free_fn_);
     std::swap(profile_free_fn_, other.profile_free_fn_);
+    std::swap(owned_callback_context_, other.owned_callback_context_);
     return *this;
   }
 
@@ -256,6 +264,7 @@ class QnnManager::ContextHandle {
   Qnn_ProfileHandle_t profile_ = nullptr;
   QnnContext_FreeFn_t free_fn_ = nullptr;
   QnnProfile_FreeFn_t profile_free_fn_ = nullptr;
+  std::shared_ptr<void> owned_callback_context_;
 };
 
 }  // namespace litert::qnn

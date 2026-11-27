@@ -172,6 +172,19 @@ LiteRtStatus LrtQualcommOptionsSetEnableJustInTime(LrtQualcommOptions options,
 LiteRtStatus LrtQualcommOptionsGetEnableJustInTime(LrtQualcommOptions options,
                                                    bool* enable_just_in_time);
 
+// enable_zero_copy_context_loading
+
+// Linux/Android only. When enabled, the HTP backend imports the context
+// binary directly from the model's file descriptor via DMA-BUF instead of
+// copying the weights into its own buffer. Falls back to the default
+// behavior otherwise. Defaults to false.
+
+LiteRtStatus LrtQualcommOptionsSetEnableZeroCopyContextLoading(
+    LrtQualcommOptions options, bool enable_zero_copy_context_loading);
+
+LiteRtStatus LrtQualcommOptionsGetEnableZeroCopyContextLoading(
+    LrtQualcommOptions options, bool* enable_zero_copy_context_loading);
+
 LiteRtStatus LrtQualcommOptionsSetDumpTensorIds(LrtQualcommOptions options,
                                                 const int32_t* ids,
                                                 size_t number_of_ids);

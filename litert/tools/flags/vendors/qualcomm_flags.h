@@ -68,6 +68,8 @@ ABSL_DECLARE_FLAG(bool, qualcomm_enable_weight_sharing);
 
 ABSL_DECLARE_FLAG(bool, qualcomm_enable_just_in_time);
 
+ABSL_DECLARE_FLAG(bool, qualcomm_enable_zero_copy_context_loading);
+
 // @deprecated This flag is deprecated and will be no-op.
 ABSL_DECLARE_FLAG(bool, qualcomm_use_htp_preference);
 

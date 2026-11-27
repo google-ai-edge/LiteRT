@@ -731,7 +731,11 @@ litert_bin(
     ],
     data = litert_gpu_accelerator_prebuilts(),
     ungrte = True,
-    deps = RUN_MODEL_DEPS + litert_gpu_accelerator_deps(),
+    deps = RUN_MODEL_DEPS + litert_gpu_accelerator_deps() + [
+        "//litert/core:build_stamp",
+        "//litert/core:dispatch_op_schema",
+        "//litert/core/model",
+    ],
 )
 
 [
