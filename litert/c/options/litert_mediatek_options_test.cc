@@ -347,6 +347,29 @@ TEST(LrtMediatekOptionsTest, OptionBundleOverrides) {
   const char* parsed_prefill;
   LrtGetMediatekOptionsOptionBundlePrefill(parsed, &parsed_prefill);
   EXPECT_STREQ(parsed_prefill, "prefill-bundle");
+  LrtDestroyMediatekOptions(parsed);
+  LrtDestroyMediatekOptions(options);
+}
+
+TEST(LrtMediatekOptionsTest, EnableWeightShare) {
+  LrtMediatekOptions* options;
+  LITERT_ASSERT_OK(LrtCreateMediatekOptions(&options));
+
+  bool enable_weight_share;
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsEnableWeightShare(options, &enable_weight_share));
+  EXPECT_FALSE(enable_weight_share);
+
+  LITERT_ASSERT_OK(LrtSetMediatekOptionsEnableWeightShare(options, true));
+  LITERT_ASSERT_OK(
+      LrtGetMediatekOptionsEnableWeightShare(options, &enable_weight_share));
+  EXPECT_TRUE(enable_weight_share);
+
+  LrtMediatekOptions* parsed;
+  SerializeAndParse(options, &parsed);
+  bool parsed_enable;
+  LrtGetMediatekOptionsEnableWeightShare(parsed, &parsed_enable);
+  EXPECT_TRUE(parsed_enable);
 
   LrtDestroyMediatekOptions(parsed);
   LrtDestroyMediatekOptions(options);

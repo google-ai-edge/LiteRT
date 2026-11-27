@@ -45,6 +45,22 @@ cc_test(
     ],
 )
 
+cc_library(
+    name = "shared_weight_cache",
+    hdrs = ["shared_weight_cache.h"],
+    deps = ["//litert/cc:litert_expected"],
+)
+
+cc_test(
+    name = "shared_weight_cache_test",
+    srcs = ["shared_weight_cache_test.cc"],
+    deps = [
+        ":shared_weight_cache",
+        "//litert/cc:litert_expected",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
 litert_dispatch_api(
     name = "dispatch_api",
     srcs = [
@@ -85,6 +101,7 @@ litert_dispatch_api(
     ],
     deps = [
         ":file_backed_pages",
+        ":shared_weight_cache",
         "//litert/c:litert_any",
         "//litert/c:litert_common",
         "//litert/c:litert_environment_header",
@@ -107,6 +124,7 @@ litert_dispatch_api(
         "//litert/cc/internal:litert_opaque_options_wrapper",
         "//litert/cc/internal:litert_options_wrapper",
         "//litert/vendors/c:litert_dispatch_c_api",
+        "//litert/runtime:dmabuf_buffer",
         "//litert/vendors/mediatek:neuron_adapter_api",
         "//litert/vendors/mediatek/schema:mediatek_litert_schema",
         "@com_google_absl//absl/container:flat_hash_set",

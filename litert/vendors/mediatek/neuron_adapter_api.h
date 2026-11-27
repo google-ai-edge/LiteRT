@@ -26,6 +26,9 @@
 #include "litert/cc/litert_expected.h"
 #include "neuron/api/NeuronAdapter.h"
 
+// Available since NeuronAdapter 10.0.4; absent from older headers.
+typedef struct NeuronExtractShared NeuronExtractShared;
+
 #if LITERT_HAS_AHWB_SUPPORT
 #include <android/hardware_buffer.h>
 #else
@@ -156,6 +159,9 @@ class NeuronAdapterApi {
 
   litert::Expected<int32_t> GetNeuroPilotMagicNumber();
 
+  // Returns true if the loaded library supports ExtractShared APIs.
+  bool SupportsExtractShared() const;
+
   // Get the cached Neuron SDK runtime version.
   // This is populated during Create() and remains constant.
   const NeuronRuntimeVersion& RuntimeVersion() const {
@@ -179,6 +185,24 @@ class NeuronAdapterApi {
 };
 
 // These functions may be absent from older NeuronAdapter headers.
+
+// NeuronExtractShared: host-side extraction of weights shared by several
+// compilations. Available since NeuronAdapter 10.0.4. Device-side adapters
+// export these symbols as stubs that always fail; there
+// NeuronExtractShared_getVersion() returns -1.
+inline constexpr int32_t kNeuronExtractSharedModeUnion = 1;
+int NeuronExtractShared_getVersion();
+int NeuronExtractShared_create(NeuronExtractShared** es, int32_t mode,
+                               const char* extra_options);
+void NeuronExtractShared_free(NeuronExtractShared* es);
+int NeuronExtractShared_addCompilation(NeuronExtractShared* es,
+                                       NeuronCompilation* compilation);
+int NeuronExtractShared_extract(NeuronExtractShared* es);
+int NeuronExtractShared_getExtractedSize(NeuronExtractShared* es,
+                                         size_t* size);
+int NeuronExtractShared_getExtractedData(NeuronExtractShared* es, void* buffer,
+                                         size_t size);
+
 int NeuronCompilation_createWithOptions(NeuronModel* model,
                                         NeuronCompilation** compilation,
                                         const char* options);
@@ -262,6 +286,16 @@ struct NeuronAdapterApi::Api {
       compilation_set_optimization_hint = nullptr;
   decltype(&NeuronCompilation_getSupportedOperations)
       compilation_get_supported_opertations = nullptr;
+  decltype(&NeuronExtractShared_getVersion) extract_shared_get_version = nullptr;
+  decltype(&NeuronExtractShared_create) extract_shared_create = nullptr;
+  decltype(&NeuronExtractShared_free) extract_shared_free = nullptr;
+  decltype(&NeuronExtractShared_addCompilation) extract_shared_add_compilation =
+      nullptr;
+  decltype(&NeuronExtractShared_extract) extract_shared_extract = nullptr;
+  decltype(&NeuronExtractShared_getExtractedSize)
+      extract_shared_get_extracted_size = nullptr;
+  decltype(&NeuronExtractShared_getExtractedData)
+      extract_shared_get_extracted_data = nullptr;
 };
 
 }  // namespace litert::mediatek

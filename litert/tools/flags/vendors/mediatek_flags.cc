@@ -83,6 +83,10 @@ ABSL_FLAG(
 ABSL_FLAG(std::string, mediatek_aot_compilation_options, "",
           "Aot compilation options for Mediatek Inference.");
 
+ABSL_FLAG(bool, mediatek_enable_weight_share, false,
+          "Whether to enable weight sharing for Mediatek compilation. "
+          "Extracts shared constant weights across partitions.");
+
 namespace litert::mediatek {
 
 bool AbslParseFlag(absl::string_view text,
@@ -220,6 +224,8 @@ Expected<void> UpdateMediatekOptionsFromFlags(MediatekOptions& options) {
   options.SetMediatekDlaDir(absl::GetFlag(FLAGS_mediatek_dla_dir));
   options.SetAotCompilationOptions(
       absl::GetFlag(FLAGS_mediatek_aot_compilation_options));
+  options.SetEnableWeightShare(
+      absl::GetFlag(FLAGS_mediatek_enable_weight_share));
   return {};
 }
 

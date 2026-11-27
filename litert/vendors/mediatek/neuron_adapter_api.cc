@@ -272,9 +272,34 @@ litert::Expected<void> NeuronAdapterApi::LoadSymbols(
             api_->compilation_set_optimization_hint);
   LOAD_SYMB(NeuronCompilation_getSupportedOperations,
             api_->compilation_get_supported_opertations);
+  LOAD_SYMB(NeuronExtractShared_getVersion,
+            api_->extract_shared_get_version);
+  LOAD_SYMB(NeuronExtractShared_create, api_->extract_shared_create);
+  LOAD_SYMB(NeuronExtractShared_free, api_->extract_shared_free);
+  LOAD_SYMB(NeuronExtractShared_addCompilation,
+            api_->extract_shared_add_compilation);
+  LOAD_SYMB(NeuronExtractShared_extract, api_->extract_shared_extract);
+  LOAD_SYMB(NeuronExtractShared_getExtractedSize,
+            api_->extract_shared_get_extracted_size);
+  LOAD_SYMB(NeuronExtractShared_getExtractedData,
+            api_->extract_shared_get_extracted_data);
 
   LITERT_LOG(LITERT_INFO, "NeuronAdapter symbols loaded");
   return {};
+}
+
+bool NeuronAdapterApi::SupportsExtractShared() const {
+  // Device-side adapters export the ExtractShared symbols as stubs that
+  // always fail; their getVersion() returns -1. Only a real implementation
+  // reports a version.
+  return api_->extract_shared_get_version != nullptr &&
+         api_->extract_shared_get_version() != -1 &&
+         api_->extract_shared_create != nullptr &&
+         api_->extract_shared_free != nullptr &&
+         api_->extract_shared_add_compilation != nullptr &&
+         api_->extract_shared_extract != nullptr &&
+         api_->extract_shared_get_extracted_size != nullptr &&
+         api_->extract_shared_get_extracted_data != nullptr;
 }
 
 Expected<NeuronModelPtr> NeuronAdapterApi::CreateModel() const {
