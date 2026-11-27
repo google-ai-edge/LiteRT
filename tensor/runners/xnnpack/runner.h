@@ -56,6 +56,13 @@ class XnnpackRunner : public NnpackRunner {
     return XnnpackRunner(std::move(graph));
   }
 
+  static absl::StatusOr<XnnpackRunner> CreateWithWarmCache(
+      std::vector<TensorHandle> outputs) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(
+        auto graph, BuildXnnpackGraphWithWarmFcCache(std::move(outputs)));
+    return XnnpackRunner(std::move(graph));
+  }
+
   explicit XnnpackRunner(std::unique_ptr<XnnpackGraph> graph)
       : NnpackRunner(std::move(graph)) {}
 

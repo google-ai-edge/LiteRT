@@ -944,6 +944,21 @@ TEST(ReadOutputTest, ReturnsTheOutputBytes) {
   EXPECT_EQ(bytes.size(), 4 * sizeof(float));
 }
 
+TEST(ReadOutputTest, ReturnsActiveSliceAfterShrinkingReshape) {
+  TestRunner runner = MakeTestRunner();
+  const std::vector<float> large = {1.f, 2.f, 3.f, 4.f};
+  ASSERT_THAT(runner.SetInput(runner.Input(), large), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  const std::vector<float> small = {7.f, 8.f};
+  ASSERT_THAT(runner.ReshapeInput(runner.Input(), {2}), IsOk());
+  ASSERT_THAT(runner.SetInput(runner.Input(), small), IsOk());
+  ASSERT_THAT(runner.Run(), IsOk());
+
+  EXPECT_THAT(runner.ReadOutputAs<float>(runner.Output()),
+              IsOkAndHolds(ElementsAre(7.f, 8.f)));
+}
+
 TEST(ReadOutputTest, RejectsAMissingBuffer) {
   TestRunner runner = MakeTestRunner();
 

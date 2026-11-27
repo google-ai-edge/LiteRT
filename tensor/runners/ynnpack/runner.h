@@ -16,16 +16,23 @@ limitations under the License.
 #ifndef THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_YNNPACK_RUNNER_H_
 #define THIRD_PARTY_ODML_LITERT_TENSOR_RUNNERS_YNNPACK_RUNNER_H_
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <deque>
 #include <memory>
+#include <thread>  // NOLINT(build/c++11)
 #include <utility>
 #include <vector>
 
 #include "ynnpack/include/ynnpack.h"  // from @XNNPACK
+#include "absl/base/thread_annotations.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/functional/function_ref.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
+#include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "tensor/backends/common_nnpack/graph.h"
 #include "tensor/backends/ynnpack/conversion.h"
@@ -34,21 +41,36 @@ limitations under the License.
 #include "tensor/runners/common_nnpack/runner.h"
 #include "tensor/tensor.h"
 #include "tensor/utils/macros.h"
-#include "slinky/base/thread_pool_impl.h"  // from @slinky
 
 namespace litert::tensor {
+
+// Runs `fn` on a worker thread with a custom stack size (`stack_bytes == 0`
+// selects 64 MB on 64-bit targets and 16 MB on 32-bit targets) so recursive
+// Slinky AST simplification inside `ynn_create_runtime` cannot overflow
+// constrained caller stacks.
+absl::Status RunWithLargeStack(absl::FunctionRef<absl::Status()> fn,
+                               size_t stack_bytes = 0);
 
 // Adapts a thread pool to the `ynn_scheduler` interface YNNPACK expects.
 //
 // YNNPACK doesn't own threads: it asks a scheduler to run tasks and joins the
 // work itself from the invoking thread. As a result the scheduler only needs to
 // provide `num_threads - 1` background threads.
+//
+// YNNPACK schedules one task per idle thread whenever it starts a parallel
+// loop, and small inferences such as LLM decoding run many short loops. Waking
+// a sleeping thread can take longer than such a loop, so idle threads poll for
+// new tasks for `spin_duration` before they sleep.
 class YnnpackScheduler {
  public:
-  explicit YnnpackScheduler(int num_background_threads)
-      : pool_(num_background_threads) {}
+  static constexpr absl::Duration kDefaultSpinDuration = absl::Milliseconds(1);
 
-  ~YnnpackScheduler() { pool_.work_until_idle(); }
+  explicit YnnpackScheduler(
+      int num_background_threads,
+      absl::Duration spin_duration = kDefaultSpinDuration);
+
+  // Runs the remaining tasks before joining the threads.
+  ~YnnpackScheduler();
 
   YnnpackScheduler(const YnnpackScheduler&) = delete;
   YnnpackScheduler& operator=(const YnnpackScheduler&) = delete;
@@ -58,10 +80,30 @@ class YnnpackScheduler {
   static const ynn_scheduler* Vtable();
 
  private:
+  struct Task {
+    void (*fn)(void* context);
+    void* context;
+  };
+
   static int NumThreads(void* self);
   static void Schedule(void* self, void* context, void (*task)(void* context));
 
-  slinky::thread_pool_impl pool_;
+  void RunThread();
+  // Returns when a task may be available, the scheduler is stopping, or after
+  // `spin_duration_`.
+  void SpinWhileIdle() const;
+
+  const absl::Duration spin_duration_;
+  absl::Mutex mutex_;
+  absl::CondVar task_available_;
+  std::deque<Task> tasks_ ABSL_GUARDED_BY(mutex_);
+  int sleeping_threads_ ABSL_GUARDED_BY(mutex_) = 0;
+  bool stop_ ABSL_GUARDED_BY(mutex_) = false;
+  // Mirror `tasks_.size()` and `stop_` so spinning threads can poll them
+  // without the lock.
+  std::atomic<size_t> num_tasks_{0};
+  std::atomic<bool> stopping_{false};
+  std::vector<std::thread> threads_;
 };
 
 // YnnpackRunner is a class that runs a YNNPACK graph.
@@ -86,9 +128,10 @@ class YnnpackRunner : public NnpackRunner {
   using ThreadpoolPtr = std::unique_ptr<::ynn_threadpool, ThreadpoolDeleter>;
 
   static absl::StatusOr<YnnpackRunner> Create(
-      std::vector<TensorHandle> outputs) {
+      std::vector<TensorHandle> outputs,
+      const YnnpackGraphOptions& options = {}) {
     LRT_TENSOR_ASSIGN_OR_RETURN(std::unique_ptr<YnnpackGraph> graph,
-                                BuildYnnpackGraph(std::move(outputs)));
+                                BuildYnnpackGraph(std::move(outputs), options));
     return YnnpackRunner(std::move(graph));
   }
 
@@ -101,7 +144,30 @@ class YnnpackRunner : public NnpackRunner {
   YnnpackRunner& operator=(YnnpackRunner&& other) noexcept = default;
 
   ynn_runtime_t runtime() const { return runtime_.get(); }
-  ynn_threadpool_t threadpool() const { return threadpool_.get(); }
+  ynn_threadpool_t threadpool() const {
+    return external_threadpool_ != nullptr ? external_threadpool_
+                                           : threadpool_.get();
+  }
+
+  absl::Status SetNumThreads(size_t num_threads) override {
+    LRT_TENSOR_RETURN_IF_ERROR(NnpackRunner::SetNumThreads(num_threads));
+    external_threadpool_ = nullptr;
+    return absl::OkStatus();
+  }
+
+  // Uses a caller-owned `ynn_threadpool_t` instead of creating a private
+  // scheduler and threadpool per runner. Must be called before the runtime is
+  // prepared, and `threadpool` must outlive this `YnnpackRunner`.
+  absl::Status SetThreadpool(ynn_threadpool_t threadpool) {
+    if (runtime_prepared_) {
+      return absl::FailedPreconditionError(
+          "SetThreadpool must be called before the runtime is prepared.");
+    }
+    external_threadpool_ = threadpool;
+    threadpool_.reset();
+    scheduler_.reset();
+    return absl::OkStatus();
+  }
 
  protected:
   uint32_t FlagExternalInput() const override {
@@ -127,6 +193,7 @@ class YnnpackRunner : public NnpackRunner {
  private:
   std::unique_ptr<YnnpackScheduler> scheduler_;
   ThreadpoolPtr threadpool_ = nullptr;
+  ynn_threadpool_t external_threadpool_ = nullptr;
   RuntimePtr runtime_ = nullptr;
 };
 
