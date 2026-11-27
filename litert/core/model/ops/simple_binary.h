@@ -16,7 +16,6 @@
 #define ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_BINARY_H_
 
 #include <algorithm>
-#include <cassert>
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
@@ -30,8 +29,8 @@
 #include "litert/core/model/model.h"
 #include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 #include "tflite/converter/schema/schema_generated.h"
-#include "tflite/kernels/internal/runtime_shape.h"
 
 namespace litert::internal {
 
@@ -105,187 +104,230 @@ DEFINE_SIMPLE_BINARY_INFER(Sub)
 
 #undef DEFINE_SIMPLE_BINARY_INFER
 
-inline void ComputeBroadcastStrides(const int32_t* dims, int input_rank,
-                                    int output_rank, size_t* strides) {
-  size_t current_stride = 1;
-  for (int i = output_rank - 1; i >= 0; --i) {
-    int idx = i - (output_rank - input_rank);
-    int32_t dim = (idx >= 0) ? dims[idx] : 1;
-    strides[i] = (dim == 1) ? 0 : current_stride;
-    current_stride *= dim;
-  }
-}
+namespace detail {
 
-template <typename InT, typename OutT, typename BinaryOp>
-void RunBinaryOp(const InT* a, const InT* b, OutT* output,
-                 const size_t* a_stride, const size_t* b_stride,
-                 const size_t* output_stride, const size_t* output_shape,
-                 int rank, BinaryOp op) {
-  if (rank <= 0) {
-    *output = op(*a, *b);
-  } else if (rank == 1) {
-    assert(output_stride[0] == 1);
-    if (a_stride[0] == 0) {
-      const InT a_val = *a;
-      for (size_t i = 0; i < output_shape[0]; ++i) {
-        output[i] = op(a_val, b[i * b_stride[0]]);
-      }
-    } else if (b_stride[0] == 0) {
-      const InT b_val = *b;
-      for (size_t i = 0; i < output_shape[0]; ++i) {
-        output[i] = op(a[i], b_val);
-      }
-    } else {
-      assert(a_stride[0] == 1 && b_stride[0] == 1);
-      for (size_t i = 0; i < output_shape[0]; ++i) {
-        output[i] = op(a[i], b[i]);
-      }
-    }
-  } else {
-    for (size_t i = 0; i < output_shape[0]; ++i) {
-      RunBinaryOp(a + i * a_stride[0], b + i * b_stride[0],
-                  output + i * output_stride[0], a_stride + 1, b_stride + 1,
-                  output_stride + 1, output_shape + 1, rank - 1, op);
+template <typename In1T, typename In2T, typename OutT, typename BinaryOp>
+inline void ExecuteBinaryWithPlan(const BroadcastPlan<2>& plan,
+                                  const In1T* a_data, const In2T* b_data,
+                                  OutT* output_data, BinaryOp&& op) {
+  for (const auto& span : plan.Spans()) {
+    const size_t a_base = span.input_offsets[0];
+    const size_t b_base = span.input_offsets[1];
+    const size_t a_step = span.input_steps[0];
+    const size_t b_step = span.input_steps[1];
+    OutT* out_ptr = output_data + span.output_offset;
+    for (size_t i = 0; i < span.count; ++i) {
+      out_ptr[i] = op(a_data[a_base + i * a_step], b_data[b_base + i * b_step]);
     }
   }
 }
 
+template <typename In1T, typename In2T, typename OutT, typename Fn>
+inline LiteRtStatus InvokeBinaryWithPlanFromRawPointers(
+    const In1T* a_data, const int32_t* a_dims, int a_rank, const In2T* b_data,
+    const int32_t* b_dims, int b_rank, OutT* output_data,
+    const int32_t* output_dims, int rank, Fn&& fn) {
+  auto a_span = MakeDimsSpan(a_dims, a_rank);
+  auto b_span = MakeDimsSpan(b_dims, b_rank);
+  auto out_span = MakeDimsSpan(output_dims, rank);
+  if (!a_span || !b_span || !out_span) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto plan = PrepareBroadcastPlan<2>(
+      {*a_span, *b_span}, {sizeof(In1T), sizeof(In2T)}, *out_span, sizeof(OutT),
+      BroadcastOutputMode::kInferredExact);
+  if (!plan) {
+    return plan.Error().Status();
+  }
+  if (plan->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (a_data == nullptr || b_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  return fn(*plan, a_data, b_data, output_data);
+}
+
+}  // namespace detail
+
+// Evaluates `op(a, b)` elementwise over two concrete tensors under
+// trailing-dimension NumPy broadcasting (`output.dims == broadcast(a.dims,
+// b.dims)`).
+//
+// Domain and preconditions:
+//   - Shapes must be concrete and nonnegative, and `output.dims` must equal the
+//     exact inferred broadcast shape of `a.dims` and `b.dims`.
+//   - Span capacities must cover the checked element counts for all tensors.
+//   - `output.data` must not alias `a.data` or `b.data` when broadcasting.
+//   - Valid empty outputs return `kLiteRtStatusOk` without invoking `op` or
+//     dereferencing any data pointer.
+template <typename In1T, typename In2T, typename OutT, typename BinaryOp>
+inline LiteRtStatus ReferenceBinaryGeneric(ConstTensorView<In1T> a,
+                                           ConstTensorView<In2T> b,
+                                           TensorView<OutT> output,
+                                           BinaryOp op) {
+  auto plan = PrepareBroadcastPlan<2>(
+      {a.dims, b.dims}, {sizeof(In1T), sizeof(In2T)}, output.dims, sizeof(OutT),
+      BroadcastOutputMode::kInferredExact);
+  if (!plan) {
+    return plan.Error().Status();
+  }
+  if (!ValidateBufferCapacity(a.data, plan->input_num_elements[0]) ||
+      !ValidateBufferCapacity(b.data, plan->input_num_elements[1]) ||
+      !ValidateBufferCapacity(output.data, plan->output_num_elements)) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  detail::ExecuteBinaryWithPlan(*plan, a.data.data(), b.data.data(),
+                                output.data.data(), op);
+  return kLiteRtStatusOk;
+}
+
 template <typename InT, typename OutT, typename BinaryOp>
-inline void ReferenceBinaryGeneric(const InT* input1_data,
-                                   const int32_t* input1_dims, int input1_rank,
-                                   const InT* input2_data,
-                                   const int32_t* input2_dims, int input2_rank,
+inline LiteRtStatus ReferenceBinaryGeneric(
+    const InT* input1_data, const int32_t* input1_dims, int input1_rank,
+    const InT* input2_data, const int32_t* input2_dims, int input2_rank,
+    OutT* output_data, const int32_t* output_dims, int rank, BinaryOp op) {
+  return detail::InvokeBinaryWithPlanFromRawPointers<InT, InT, OutT>(
+      input1_data, input1_dims, input1_rank, input2_data, input2_dims,
+      input2_rank, output_data, output_dims, rank,
+      [&](const BroadcastPlan<2>& plan, const InT* a, const InT* b, OutT* out) {
+        detail::ExecuteBinaryWithPlan(plan, a, b, out, op);
+        return kLiteRtStatusOk;
+      });
+}
+
+namespace detail {
+
+template <typename BinaryOp>
+inline LiteRtStatus ReferenceBinaryWithActivation(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank, BinaryOp op,
+    tflite::ActivationFunctionType faf) {
+  if (LiteRtStatus status =
+          ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                 output_data, output_dims, rank, op);
+      status != kLiteRtStatusOk) {
+    return status;
+  }
+  ApplyActivation(output_data, output_dims, rank, faf);
+  return kLiteRtStatusOk;
+}
+
+}  // namespace detail
+
+inline LiteRtStatus ReferenceAdd(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  return detail::ReferenceBinaryWithActivation(
+      a_data, a_dims, a_rank, b_data, b_dims, b_rank, output_data, output_dims,
+      rank, std::plus<float>(), faf);
+}
+
+inline LiteRtStatus ReferenceSub(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  return detail::ReferenceBinaryWithActivation(
+      a_data, a_dims, a_rank, b_data, b_dims, b_rank, output_data, output_dims,
+      rank, std::minus<float>(), faf);
+}
+
+inline LiteRtStatus ReferenceMul(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  return detail::ReferenceBinaryWithActivation(
+      a_data, a_dims, a_rank, b_data, b_dims, b_rank, output_data, output_dims,
+      rank, std::multiplies<float>(), faf);
+}
+
+inline LiteRtStatus ReferenceDiv(
+    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
+    const int32_t* b_dims, int b_rank, float* output_data,
+    const int32_t* output_dims, int rank,
+    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
+  return detail::ReferenceBinaryWithActivation(
+      a_data, a_dims, a_rank, b_data, b_dims, b_rank, output_data, output_dims,
+      rank, std::divides<float>(), faf);
+}
+
+inline LiteRtStatus ReferencePow(const float* a_data, const int32_t* a_dims,
+                                 int a_rank, const float* b_data,
+                                 const int32_t* b_dims, int b_rank,
+                                 float* output_data, const int32_t* output_dims,
+                                 int rank) {
+  return ReferenceBinaryGeneric(
+      a_data, a_dims, a_rank, b_data, b_dims, b_rank, output_data, output_dims,
+      rank, [](float a, float b) { return std::pow(a, b); });
+}
+
+template <typename T, typename OutT = bool>
+inline LiteRtStatus ReferenceEqual(const T* a_data, const int32_t* a_dims,
+                                   int a_rank, const T* b_data,
+                                   const int32_t* b_dims, int b_rank,
                                    OutT* output_data,
-                                   const int32_t* output_dims, int rank,
-                                   BinaryOp op) {
-  constexpr int kMaxRank = tflite::RuntimeShape::kMaxSmallSize;
-  assert(rank <= kMaxRank);
-  size_t a_stride[kMaxRank];
-  size_t b_stride[kMaxRank];
-  size_t o_stride[kMaxRank];
-  size_t o_shape[kMaxRank];
-
-  ComputeBroadcastStrides(input1_dims, input1_rank, rank, a_stride);
-  ComputeBroadcastStrides(input2_dims, input2_rank, rank, b_stride);
-
-  size_t current_stride = 1;
-  for (int i = rank - 1; i >= 0; --i) {
-    o_stride[i] = current_stride;
-    o_shape[i] = output_dims[i];
-    current_stride *= output_dims[i];
-  }
-
-  RunBinaryOp(input1_data, input2_data, output_data, a_stride, b_stride,
-              o_stride, o_shape, rank, op);
-}
-
-inline void ReferenceAdd(
-    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
-    const int32_t* b_dims, int b_rank, float* output_data,
-    const int32_t* output_dims, int rank,
-    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::plus<float>());
-  ApplyActivation(output_data, output_dims, rank, faf);
-}
-
-inline void ReferenceSub(
-    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
-    const int32_t* b_dims, int b_rank, float* output_data,
-    const int32_t* output_dims, int rank,
-    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::minus<float>());
-  ApplyActivation(output_data, output_dims, rank, faf);
-}
-
-inline void ReferenceMul(
-    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
-    const int32_t* b_dims, int b_rank, float* output_data,
-    const int32_t* output_dims, int rank,
-    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank,
-                         std::multiplies<float>());
-  ApplyActivation(output_data, output_dims, rank, faf);
-}
-
-inline void ReferenceDiv(
-    const float* a_data, const int32_t* a_dims, int a_rank, const float* b_data,
-    const int32_t* b_dims, int b_rank, float* output_data,
-    const int32_t* output_dims, int rank,
-    tflite::ActivationFunctionType faf = tflite::ActivationFunctionType_NONE) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::divides<float>());
-  ApplyActivation(output_data, output_dims, rank, faf);
-}
-
-inline void ReferencePow(const float* a_data, const int32_t* a_dims, int a_rank,
-                         const float* b_data, const int32_t* b_dims, int b_rank,
-                         float* output_data, const int32_t* output_dims,
-                         int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank,
-                         [](float a, float b) { return std::pow(a, b); });
+                                   const int32_t* output_dims, int rank) {
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank,
+                                std::equal_to<T>());
 }
 
 template <typename T, typename OutT = bool>
-inline void ReferenceEqual(const T* a_data, const int32_t* a_dims, int a_rank,
-                           const T* b_data, const int32_t* b_dims, int b_rank,
-                           OutT* output_data, const int32_t* output_dims,
-                           int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::equal_to<T>());
+inline LiteRtStatus ReferenceNotEqual(const T* a_data, const int32_t* a_dims,
+                                      int a_rank, const T* b_data,
+                                      const int32_t* b_dims, int b_rank,
+                                      OutT* output_data,
+                                      const int32_t* output_dims, int rank) {
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank,
+                                std::not_equal_to<T>());
 }
 
 template <typename T, typename OutT = bool>
-inline void ReferenceNotEqual(const T* a_data, const int32_t* a_dims,
-                              int a_rank, const T* b_data,
-                              const int32_t* b_dims, int b_rank,
-                              OutT* output_data, const int32_t* output_dims,
-                              int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank,
-                         std::not_equal_to<T>());
+inline LiteRtStatus ReferenceGreater(const T* a_data, const int32_t* a_dims,
+                                     int a_rank, const T* b_data,
+                                     const int32_t* b_dims, int b_rank,
+                                     OutT* output_data,
+                                     const int32_t* output_dims, int rank) {
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank,
+                                std::greater<T>());
 }
 
 template <typename T, typename OutT = bool>
-inline void ReferenceGreater(const T* a_data, const int32_t* a_dims, int a_rank,
-                             const T* b_data, const int32_t* b_dims, int b_rank,
-                             OutT* output_data, const int32_t* output_dims,
-                             int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::greater<T>());
+inline LiteRtStatus ReferenceGreaterEqual(
+    const T* a_data, const int32_t* a_dims, int a_rank, const T* b_data,
+    const int32_t* b_dims, int b_rank, OutT* output_data,
+    const int32_t* output_dims, int rank) {
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank,
+                                std::greater_equal<T>());
 }
 
 template <typename T, typename OutT = bool>
-inline void ReferenceGreaterEqual(const T* a_data, const int32_t* a_dims,
+inline LiteRtStatus ReferenceLess(const T* a_data, const int32_t* a_dims,
                                   int a_rank, const T* b_data,
                                   const int32_t* b_dims, int b_rank,
                                   OutT* output_data, const int32_t* output_dims,
                                   int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank,
-                         std::greater_equal<T>());
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank, std::less<T>());
 }
 
 template <typename T, typename OutT = bool>
-inline void ReferenceLess(const T* a_data, const int32_t* a_dims, int a_rank,
-                          const T* b_data, const int32_t* b_dims, int b_rank,
-                          OutT* output_data, const int32_t* output_dims,
-                          int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::less<T>());
-}
-
-template <typename T, typename OutT = bool>
-inline void ReferenceLessEqual(const T* a_data, const int32_t* a_dims,
-                               int a_rank, const T* b_data,
-                               const int32_t* b_dims, int b_rank,
-                               OutT* output_data, const int32_t* output_dims,
-                               int rank) {
-  ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
-                         output_data, output_dims, rank, std::less_equal<T>());
+inline LiteRtStatus ReferenceLessEqual(const T* a_data, const int32_t* a_dims,
+                                       int a_rank, const T* b_data,
+                                       const int32_t* b_dims, int b_rank,
+                                       OutT* output_data,
+                                       const int32_t* output_dims, int rank) {
+  return ReferenceBinaryGeneric(a_data, a_dims, a_rank, b_data, b_dims, b_rank,
+                                output_data, output_dims, rank,
+                                std::less_equal<T>());
 }
 
 }  // namespace litert::internal
