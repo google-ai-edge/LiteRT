@@ -215,6 +215,13 @@ class OpMixin<LeakyReluOperation, XnnpackMixinTag> : public XnnpackOperation {
 };
 
 template <>
+class OpMixin<ClampOperation, XnnpackMixinTag> : public XnnpackOperation {
+ public:
+  absl::Status ToXnnpack(const graph::Operation& op,
+                         XnnpackBuildContext& ctx) const override;
+};
+
+template <>
 class OpMixin<EluOperation, XnnpackMixinTag> : public XnnpackOperation {
  public:
   absl::Status ToXnnpack(const graph::Operation& op,
