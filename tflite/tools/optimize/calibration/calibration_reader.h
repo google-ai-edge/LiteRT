@@ -37,7 +37,7 @@ class CalibrationReader {
     float min;
     float max;
   };
-  explicit CalibrationReader(const Logger* logger) : logger_(logger) {}
+  explicit CalibrationReader(Logger* logger) : logger_(logger) {}
 
   // Gets a map from tensor index to recorded calibration values.
   virtual TfLiteStatus GetTensorStatsAsMap(
@@ -50,10 +50,18 @@ class CalibrationReader {
   // being overwritten.
   virtual TfLiteStatus AddCalibrationToModel(ModelT* model, bool update) const;
 
-  virtual ~CalibrationReader() {}
+  // Starts the optional second calibration pass. Call this after running the
+  // interpreter over the calibration data once, then run the same data again.
+  // After the second pass, the reported range for each tensor is clipped to
+  // the given percentiles of a `num_bins`-bin histogram of its values. See
+  // MinMax::InitializeHistogram() for how arguments are interpreted.
+  virtual void EnableHistogramPass(int num_bins, double lower_percentile,
+                                   double upper_percentile);
+
+  virtual ~CalibrationReader() = default;
 
  private:
-  const Logger* logger_;
+  Logger* logger_;
 };
 
 }  // namespace calibration
