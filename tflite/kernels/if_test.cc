@@ -28,6 +28,13 @@ limitations under the License.
 
 namespace tflite {
 
+namespace ops {
+namespace builtin {
+TfLiteRegistration* Register_IF();
+TfLiteRegistration* Register_LESS();
+}  // namespace builtin
+}  // namespace ops
+
 using subgraph_test_util::CheckIntTensor;
 using subgraph_test_util::CheckScalarStringTensor;
 using subgraph_test_util::CheckStringTensor;
@@ -837,6 +844,101 @@ TEST_F(IfTest, TestIfLoopWithDynamicTensor) {
   ASSERT_EQ(interpreter_->Invoke(), kTfLiteOk);
   ASSERT_EQ(interpreter_->Invoke(), kTfLiteOk);
   ASSERT_EQ(interpreter_->Invoke(), kTfLiteOk);
+}
+
+// Gives `subgraph` inputs {bool, int32} and output {int32}. When
+// `then_index` >= 0 it also adds an IF node with inputs {0, 0, 1}, so both
+// branches must have the same two inputs and one output.
+void BuildTwoInputSubgraph(Subgraph* subgraph, int then_index, int else_index) {
+  int first_new_tensor_index;
+  ASSERT_EQ(subgraph->AddTensors(3, &first_new_tensor_index), kTfLiteOk);
+  ASSERT_EQ(subgraph->SetInputs({0, 1}), kTfLiteOk);
+  ASSERT_EQ(subgraph->SetOutputs({2}), kTfLiteOk);
+  ASSERT_EQ(subgraph->SetTensorParametersReadWrite(0, kTfLiteBool, "", 0,
+                                                   nullptr, {}, false),
+            kTfLiteOk);
+  for (int i : {1, 2}) {
+    ASSERT_EQ(subgraph->SetTensorParametersReadWrite(i, kTfLiteInt32, "", 0,
+                                                     nullptr, {}, false),
+              kTfLiteOk);
+  }
+  if (then_index < 0) return;
+  auto* params =
+      reinterpret_cast<TfLiteIfParams*>(malloc(sizeof(TfLiteIfParams)));
+  params->then_subgraph_index = then_index;
+  params->else_subgraph_index = else_index;
+  auto* if_reg = ops::builtin::Register_IF();
+  if_reg->builtin_code = kTfLiteBuiltinIf;
+  int node_index;
+  ASSERT_EQ(subgraph->AddNodeWithParameters({0, 0, 1}, {2}, {}, nullptr, 0,
+                                            params, if_reg, &node_index),
+            kTfLiteOk);
+}
+
+TEST_F(IfTest, RejectsBranchOutputTypeMismatch) {
+  // Control: matching types prepare and run.
+  AddSubgraphs(2);
+  builder_->BuildAddSubgraph(interpreter_->subgraph(1));
+  builder_->BuildMulSubgraph(interpreter_->subgraph(2));
+  builder_->BuildIfSubgraph(&interpreter_->primary_subgraph());
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[0], {1});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[1], {2});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[2], {1, 2});
+  ASSERT_EQ(interpreter_->AllocateTensors(), kTfLiteOk);
+  interpreter_->typed_input_tensor<bool>(0)[0] = true;
+  FillIntTensor(interpreter_->tensor(interpreter_->inputs()[1]), {5, 7});
+  FillIntTensor(interpreter_->tensor(interpreter_->inputs()[2]), {1, 2});
+  ASSERT_EQ(interpreter_->Invoke(), kTfLiteOk);
+  CheckIntTensor(interpreter_->tensor(interpreter_->outputs()[0]), {1, 2},
+                 {6, 9});
+
+  // An int8 IF output with int32 branch outputs must be rejected: the static
+  // path would let a branch write int32 values into the int8-sized buffer.
+  interpreter_ = std::make_unique<Interpreter>();
+  AddSubgraphs(2);
+  builder_->BuildAddSubgraph(interpreter_->subgraph(1));
+  builder_->BuildMulSubgraph(interpreter_->subgraph(2));
+  builder_->BuildIfSubgraph(&interpreter_->primary_subgraph());
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[0], {1});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[1], {2});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[2], {1, 2});
+  interpreter_->tensor(interpreter_->outputs()[0])->type = kTfLiteInt8;
+  EXPECT_EQ(interpreter_->AllocateTensors(), kTfLiteError);
+
+  // The else branch alone may not differ either; here it produces bool values
+  // for an int32 output.
+  interpreter_ = std::make_unique<Interpreter>();
+  AddSubgraphs(2);
+  builder_->BuildAddSubgraph(interpreter_->subgraph(1));
+  builder_->BuildBinaryOpSubgraph(
+      interpreter_->subgraph(2), ops::builtin::Register_LESS,
+      kTfLiteBuiltinLess, nullptr, kTfLiteInt32, kTfLiteInt32, kTfLiteBool);
+  builder_->BuildIfSubgraph(&interpreter_->primary_subgraph());
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[0], {1});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[1], {2});
+  interpreter_->ResizeInputTensor(interpreter_->inputs()[2], {1, 2});
+  EXPECT_EQ(interpreter_->AllocateTensors(), kTfLiteError);
+}
+
+TEST_F(IfTest, RejectsBranchThatIsTheContainingSubgraph) {
+  AddSubgraphs(1);
+  BuildTwoInputSubgraph(&interpreter_->primary_subgraph(), 0, 1);
+  BuildTwoInputSubgraph(interpreter_->subgraph(1), -1, -1);
+  ASSERT_EQ(interpreter_->ResizeInputTensor(0, {1}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->ResizeInputTensor(1, {1}), kTfLiteOk);
+  EXPECT_EQ(interpreter_->AllocateTensors(), kTfLiteError);
+  EXPECT_EQ(interpreter_->inputs(), std::vector<int>({0, 1}));
+}
+
+TEST_F(IfTest, RejectsCyclicBranchSubgraphs) {
+  // Subgraph 0 branches to subgraph 1, which branches back to subgraph 0.
+  AddSubgraphs(2);
+  BuildTwoInputSubgraph(&interpreter_->primary_subgraph(), 1, 2);
+  BuildTwoInputSubgraph(interpreter_->subgraph(1), 0, 2);
+  BuildTwoInputSubgraph(interpreter_->subgraph(2), -1, -1);
+  ASSERT_EQ(interpreter_->ResizeInputTensor(0, {1}), kTfLiteOk);
+  ASSERT_EQ(interpreter_->ResizeInputTensor(1, {1}), kTfLiteOk);
+  EXPECT_EQ(interpreter_->AllocateTensors(), kTfLiteError);
 }
 
 }  // namespace
