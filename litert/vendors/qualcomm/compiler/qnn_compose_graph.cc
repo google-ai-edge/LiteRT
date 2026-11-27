@@ -18,10 +18,13 @@
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <sstream>
 #include <string>
@@ -115,6 +118,8 @@
 #include "litert/vendors/qualcomm/core/common.h"
 #include "litert/vendors/qualcomm/core/dump/dump_graph.h"
 #include "litert/vendors/qualcomm/core/transformation/graph_to_graph.h"
+#include "nlohmann/json.hpp"  // from @com_github_nlohmann_json
+#include "litert/vendors/qualcomm/compiler/quant_override_loader.h"
 #include "litert/vendors/qualcomm/core/utils/flexbuffer_helpers.h"
 #include "litert/vendors/qualcomm/core/utils/log.h"
 #include "litert/vendors/qualcomm/core/utils/miscs.h"
@@ -1892,6 +1897,192 @@ LiteRtStatus AddTensorToQnn(
   return kLiteRtStatusErrorRuntimeFailure;
 }
 
+// Quantizes floats to integer type T with a uniform scale and zero_point.
+//   out[i] = clamp(round(in[i] / scale + zero_point), T_min, T_max)
+template <typename T>
+std::vector<T> QuantizeFloats(absl::Span<const float> floats, float scale,
+                               std::int32_t zero_point = 0) {
+  const float lo = static_cast<float>(std::numeric_limits<T>::min());
+  const float hi = static_cast<float>(std::numeric_limits<T>::max());
+  std::vector<T> out(floats.size());
+  for (std::size_t i = 0; i < floats.size(); ++i) {
+    float v = floats[i] / scale + static_cast<float>(zero_point);
+    out[i] = static_cast<T>(std::clamp(std::round(v), lo, hi));
+  }
+  return out;
+}
+
+// Per-element-scale variant for per-channel bias (zero_point = 0 per element).
+//   out[i] = clamp(round(in[i] / scales[i]), INT32_MIN, INT32_MAX)
+std::vector<std::int32_t> QuantizeFloats(absl::Span<const float> floats,
+                                          absl::Span<const float> scales) {
+  const float lo =
+      static_cast<float>(std::numeric_limits<std::int32_t>::min());
+  const float hi =
+      static_cast<float>(std::numeric_limits<std::int32_t>::max());
+  std::vector<std::int32_t> out(floats.size());
+  for (std::size_t i = 0; i < floats.size(); ++i) {
+    out[i] = static_cast<std::int32_t>(
+        std::clamp(std::round(floats[i] / scales[i]), lo, hi));
+  }
+  return out;
+}
+
+// Applies the encoding from enc_map to wrapper if tensor_name is present.
+// Must be called before ConvertOp so builders see the correct data type.
+// For static float32 weight tensors, also quantizes the buffer in-place.
+bool ApplyQuantOverride(
+    const absl::flat_hash_map<std::string, QuantEncoding>& enc_map,
+    absl::string_view tensor_name, ::qnn::TensorWrapper* wrapper) {
+  if (wrapper == nullptr) return false;
+  auto it = enc_map.find(tensor_name);
+  if (it == enc_map.end()) return false;
+
+  const QuantEncoding& enc = it->second;
+  wrapper->GetQuantParams() =
+      ::qnn::ScaleOffsetQuantizeParamsWrapper(enc.scale, enc.zero_point);
+
+  // For static float32 weight tensors, quantize the buffer in-place before
+  // calling SetDataType so that clientBuf.dataSize stays consistent.
+  if (wrapper->IsTensorStatic() && wrapper->IsF32()) {
+    auto float_data = wrapper->GetTensorData<float>();
+    if (float_data.has_value()) {
+      if (enc.data_type == QNN_DATATYPE_SFIXED_POINT_8) {
+        auto q = QuantizeFloats<std::int8_t>(*float_data, enc.scale,
+                                             enc.zero_point);
+        wrapper->SetDataType(enc.data_type);
+        wrapper->SetTensorData<std::int8_t>(absl::MakeSpan(q));
+      } else if (enc.data_type == QNN_DATATYPE_SFIXED_POINT_16) {
+        auto q = QuantizeFloats<std::int16_t>(*float_data, enc.scale,
+                                              enc.zero_point);
+        wrapper->SetDataType(enc.data_type);
+        wrapper->SetTensorData<std::int16_t>(absl::MakeSpan(q));
+      } else if (enc.data_type == QNN_DATATYPE_UFIXED_POINT_8) {
+        auto q = QuantizeFloats<std::uint8_t>(*float_data, enc.scale,
+                                              enc.zero_point);
+        wrapper->SetDataType(enc.data_type);
+        wrapper->SetTensorData<std::uint8_t>(absl::MakeSpan(q));
+      } else if (enc.data_type == QNN_DATATYPE_UFIXED_POINT_16) {
+        auto q = QuantizeFloats<std::uint16_t>(*float_data, enc.scale,
+                                               enc.zero_point);
+        wrapper->SetDataType(enc.data_type);
+        wrapper->SetTensorData<std::uint16_t>(absl::MakeSpan(q));
+      } else if (enc.data_type == QNN_DATATYPE_SFIXED_POINT_32) {
+        auto q = QuantizeFloats<std::int32_t>(*float_data, enc.scale,
+                                              enc.zero_point);
+        wrapper->SetDataType(enc.data_type);
+        wrapper->SetTensorData<std::int32_t>(absl::MakeSpan(q));
+      }
+    }
+  } else {
+    // Non-static tensors (activations): just update dtype, no data to rewrite.
+    wrapper->SetDataType(enc.data_type);
+  }
+  // Flush the updated quantize_params_ into the underlying QNN tensor struct.
+  // GetQuantParams() returns a mutable reference but does not auto-sync.
+  wrapper->SyncQuantParams();
+  return true;
+}
+
+// Ops for which we derive bias quantization from act_scale * weight_scale when
+// no explicit bias override is present. Input index conventions:
+//   Conv2d / DepthwiseConv2d / FullyConnected: act=0, weight=1, bias=2
+//   TransposeConv:                              weight=1, act=2, bias=3
+struct BiasOpInfo {
+  LiteRtOpCode op_code;
+  size_t act_idx;
+  size_t weight_idx;
+  size_t bias_idx;
+};
+constexpr std::array<BiasOpInfo, 4> kBiasOps{{
+    {kLiteRtOpCodeTflConv2d, 0, 1, 2},
+    {kLiteRtOpCodeTflDepthwiseConv2d, 0, 1, 2},
+    {kLiteRtOpCodeTflFullyConnected, 0, 1, 2},
+    {kLiteRtOpCodeTflTransposeConv, 2, 1, 3},
+}};
+
+// Derives bias scale = act_scale * weight_scale and quantizes the bias buffer
+// to SFIXED_POINT_32 in-place. Only called when the bias tensor was NOT present
+// in the user's quantization override map.
+//
+// For per-channel weights, each bias element gets its own scale:
+//   bias_scale[i] = act_scale * weight_scale[i]
+// which mirrors IrQuantizer's StaticTensorQuantizer::computeBiasEncoding().
+void DeriveAndApplyBiasQuant(
+    const std::vector<::qnn::TensorWrapperRef>& input_tensors, size_t act_idx,
+    size_t weight_idx, size_t bias_idx) {
+  if (bias_idx >= input_tensors.size()) return;
+
+  ::qnn::TensorWrapper& act_tensor = input_tensors[act_idx].get();
+  ::qnn::TensorWrapper& weight_tensor = input_tensors[weight_idx].get();
+  ::qnn::TensorWrapper& bias_tensor = input_tensors[bias_idx].get();
+
+  // Bias must be static float32 and not yet quantized.
+  if (!bias_tensor.IsTensorStatic() || !bias_tensor.IsF32()) return;
+  // Activation must have a per-tensor quant encoding (scale known).
+  if (!act_tensor.IsPerTensorQuant()) {
+    LITERT_LOG(LITERT_INFO,
+               "DeriveAndApplyBiasQuant: skipping '%s' — act tensor '%s' "
+               "IsPerTensorQuant=%d IsQuant=%d dtype=%d",
+               bias_tensor.GetName().c_str(), act_tensor.GetName().c_str(),
+               (int)act_tensor.IsPerTensorQuant(), (int)act_tensor.IsQuant(),
+               (int)act_tensor.GetDataType());
+    return;
+  }
+  // Weight must be quantized (per-tensor or per-channel).
+  if (!weight_tensor.IsQuant()) return;
+
+  const float act_scale =
+      std::get<::qnn::ScaleOffsetQuantizeParamsWrapper>(
+          act_tensor.GetQuantParams())
+          .GetScale();
+
+  auto fd = bias_tensor.GetTensorData<float>();
+  if (!fd.has_value()) return;
+  const std::vector<float> float_vals(fd->begin(), fd->end());
+  const size_t n = float_vals.size();
+
+  std::vector<std::int32_t> q32(n);
+
+  if (weight_tensor.IsPerChannelQuant()) {
+    // Per-channel: bias_scale[i] = act_scale * weight_scale[i]
+    const std::vector<float> weight_scales =
+        std::get<::qnn::AxisScaleOffsetQuantizeParamsWrapper>(
+            weight_tensor.GetQuantParams())
+            .GetScales();
+    if (weight_scales.size() != n) {
+      LITERT_LOG(LITERT_WARNING,
+                 "DeriveAndApplyBiasQuant: weight per-channel count (%zu) != "
+                 "bias elements (%zu), skipping '%s'",
+                 weight_scales.size(), n, bias_tensor.GetName().c_str());
+      return;
+    }
+    std::vector<float> bias_scales(n);
+    std::vector<std::int32_t> bias_zero_points(n, 0);
+    for (size_t i = 0; i < n; ++i) bias_scales[i] = act_scale * weight_scales[i];
+    q32 = QuantizeFloats(absl::MakeSpan(float_vals), absl::MakeSpan(bias_scales));
+    bias_tensor.GetQuantParams() = ::qnn::AxisScaleOffsetQuantizeParamsWrapper(
+        0, absl::MakeSpan(bias_scales), absl::MakeSpan(bias_zero_points));
+  } else {
+    // Per-tensor: bias_scale = act_scale * weight_scale
+    const float weight_scale =
+        std::get<::qnn::ScaleOffsetQuantizeParamsWrapper>(
+            weight_tensor.GetQuantParams())
+            .GetScale();
+    const float bias_scale = act_scale * weight_scale;
+    q32 = QuantizeFloats<std::int32_t>(absl::MakeSpan(float_vals), bias_scale);
+    bias_tensor.GetQuantParams() =
+        ::qnn::ScaleOffsetQuantizeParamsWrapper(bias_scale, /*zero_point=*/0);
+  }
+
+  bias_tensor.SetDataType(QNN_DATATYPE_SFIXED_POINT_32);
+  bias_tensor.SetTensorData<std::int32_t>(absl::MakeSpan(q32));
+  bias_tensor.SyncQuantParams();
+  LITERT_LOG(LITERT_INFO,
+             "DeriveAndApplyBiasQuant: derived int32 bias encoding for '%s'",
+             bias_tensor.GetName().c_str());
+}
+
 LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
                       ::qnn::QnnBackend& qnn_backend,
                       Qnn_ContextHandle_t context_handle,
@@ -1915,6 +2106,13 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
   auto dump_ids = options.GetDumpTensorIds();
   absl::flat_hash_set<std::int32_t> ids_to_dump(dump_ids.begin(),
                                                 dump_ids.end());
+
+  // Load quant overrides once before the traversal so each ConvertTensor result
+  // has the correct dtype/quant before ConvertOp inspects it.
+  const auto quant_enc_map =
+      LoadQuantOverrides(options.GetQualcommQuantOverrides());
+  int quant_applied = 0;
+
   const auto subgraph_inputs = graph_mapper.Graph().Inputs();
   for (const auto& subgraph_input : subgraph_inputs) {
     ::qnn::TensorWrapper* tensor_wrapper{nullptr};
@@ -1926,6 +2124,10 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
         tensor_wrapper->SetMemHandle(nullptr);
       }
     }
+
+    if (ApplyQuantOverride(quant_enc_map, subgraph_input.Name(),
+                             tensor_wrapper))
+        ++quant_applied;
     litert_tensor_to_wrapper.emplace(subgraph_input.Get(), tensor_wrapper);
   }
 
@@ -1951,6 +2153,8 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
             ConvertTensor(input, tensor_pool, tensor_wrapper, ids_to_dump));
         // add into map to capture re-used static tensor
         litert_tensor_to_wrapper.emplace(input.Get(), tensor_wrapper);
+        if (ApplyQuantOverride(quant_enc_map, input.Name(), tensor_wrapper))
+          ++quant_applied;
         input_tensors.emplace_back(*tensor_wrapper);
       } else {
         input_tensors.emplace_back(*(it->second));
@@ -1968,10 +2172,26 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
         tensor_wrapper->SetMemHandle(nullptr);
       }
       litert_tensor_to_wrapper.emplace(output.Get(), tensor_wrapper);
+      if (ApplyQuantOverride(quant_enc_map, output.Name(), tensor_wrapper))
+        ++quant_applied;
       output_tensors.emplace_back(*tensor_wrapper);
     }
 
     std::vector<::qnn::OpWrapper> op_wrappers;
+
+    // For ops that have a bias, derive bias_scale = act_scale * weight_scale
+    // when the bias tensor was not in the user's quant override map. This
+    // matches the IrQuantizer float-fallback behavior.
+    if (!quant_enc_map.empty()) {
+      for (const auto& bop : kBiasOps) {
+        if (op.Code() == bop.op_code) {
+          DeriveAndApplyBiasQuant(input_tensors, bop.act_idx, bop.weight_idx,
+                                  bop.bias_idx);
+          break;
+        }
+      }
+    }
+
     LITERT_RETURN_IF_ERROR(ConvertOp(options, op, tensor_pool, input_tensors,
                                      output_tensors, op_wrappers, id,
                                      qnn.GetSdkVersion()));
@@ -1982,6 +2202,19 @@ LiteRtStatus MapGraph(const LiteRtCompilerContext* ctx, QnnManager& qnn,
     std::move(op_wrappers.begin(), op_wrappers.end(),
               std::back_inserter(graph_op_wrappers));
   }
+
+  if (!quant_enc_map.empty()) {
+    if (quant_applied == 0) {
+      LITERT_LOG(LITERT_WARNING,
+                 "quantization_overrides: no tensor names matched tensors in "
+                 "the graph");
+    } else {
+      LITERT_LOG(LITERT_INFO,
+                 "quantization_overrides: applied overrides to %d tensors",
+                 quant_applied);
+    }
+  }
+
   // TODO (jiunkaiy): Set this graph-to-graph transformation as a compile flag.
   const ::qnn::G2GConfig g2g_option = ::qnn::G2GConfig::kMHAOptPrefill;
   GraphToGraphTransform(g2g_option, graph_op_wrappers, tensor_pool,

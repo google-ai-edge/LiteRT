@@ -268,12 +268,52 @@ litert_device_exec(
 )
 
 litert_lib(
+    name = "quant_override_loader",
+    srcs = ["quant_override_loader.cc"],
+    hdrs = ["quant_override_loader.h"],
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_github_nlohmann_json//:json",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_test(
+    name = "quant_override_loader_test",
+    srcs = ["quant_override_loader_test.cc"],
+    linkstatic = True,
+    no_main = True,
+    tags = [
+        "noasan",
+        "nomsan",
+        "nosan",
+        "notsan",
+    ],
+    target_compatible_with = select({
+        "@platforms//os:android": [],
+        "@platforms//os:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    ungrte = True,
+    deps = [
+        ":quant_override_loader",
+        "@com_google_absl//absl/container:flat_hash_map",
+        "@com_google_googletest//:gtest_main",
+        "@com_github_nlohmann_json//:json",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_lib(
     name = "qnn_compose_graph",
     srcs = ["qnn_compose_graph.cc"],
     hdrs = ["qnn_compose_graph.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
     deps = [
         ":graph_mapper",
+        ":quant_override_loader",
         "//litert/c:litert_common",
         "//litert/c:litert_model_types",
         "//litert/c:litert_op_code",
@@ -368,6 +408,7 @@ litert_lib(
         "@com_google_absl//absl/types:span",
         "@flatbuffers",
         "@qairt//:qnn_lib_headers",
+        "@com_github_nlohmann_json//:json",
     ],
 )
 
