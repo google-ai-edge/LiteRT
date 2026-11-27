@@ -20,6 +20,7 @@ limitations under the License.
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <optional>
 #include <string>
@@ -27,6 +28,7 @@ limitations under the License.
 #include <utility>
 #include <vector>
 
+#include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/container/node_hash_map.h"  // from @com_google_absl
@@ -39,6 +41,7 @@ limitations under the License.
 #include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
+#include "absl/synchronization/mutex.h"  // from @com_google_absl
 #include "absl/time/clock.h"  // from @com_google_absl
 #include "absl/time/time.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
@@ -55,6 +58,7 @@ limitations under the License.
 #include "ml_drift/common/task/weights_conversion.h"  // from @ml_drift
 #include "ml_drift/common/task/weights_layout.h"  // from @ml_drift
 #include "ml_drift/common/tensor.h"  // from @ml_drift
+#include "ml_drift/common/types.h"  // from @ml_drift
 #include "ml_drift/common/util.h"  // from @ml_drift
 #include "tensor/backends/ml_drift/arithmetic_ml_drift.h"
 #include "tensor/backends/ml_drift/ml_drift_conversion.h"
@@ -97,6 +101,534 @@ struct RearrangedInt4Weights {
   std::optional<std::vector<int32_t>> sum_i;
 };
 
+// Cache-tiled, zero-copy rearrangement of packed INT4 OHWI weights into ML
+// Drift's UINT4 (+8 shifted, 0x88 padded) I4O4 layouts (`kOSpatialIOGroupI4O4`
+// and `k2DYIsSpatialIOAndXIsOGroupI4O4`) when `h == 1`, `w == 1`, `o % 4 == 0`,
+// and `i % 4 == 0`. Returns false otherwise so callers fall back to
+// `ml_drift::RearrangeWeightsUInt4Packed`.
+inline bool TryDirectRearrangePackedInt4AsUint4I4O4(
+    const uint8_t* src, size_t src_bytes, const ml_drift::OHWI& ohwi,
+    const ml_drift::WeightsDescription& desc, absl::Span<uint8_t> dst,
+    std::optional<std::vector<int32_t>>* sum_i_out, size_t max_threads = 16) {
+  if (ohwi.h != 1 || ohwi.w != 1 || ohwi.o <= 0 || ohwi.i <= 0 ||
+      ohwi.o % 4 != 0 || ohwi.i % 4 != 0) {
+    return false;
+  }
+  const bool is_linear_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  const bool is_2d_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+  if (!is_linear_i4o4 && !is_2d_i4o4) return false;
+
+  const size_t o_dim = static_cast<size_t>(ohwi.o);
+  const size_t i_dim = static_cast<size_t>(ohwi.i);
+  const size_t row_bytes = i_dim / 2;
+  if (src_bytes < o_dim * row_bytes) return false;
+
+  const int dst_group_size_int = desc.GetOutputGroupSize();
+  if (dst_group_size_int <= 0) return false;
+  const size_t dst_group_size = static_cast<size_t>(dst_group_size_int);
+  const size_t dst_slices = o_dim / 4;
+  const size_t src_slices = i_dim / 4;
+  const size_t dst_groups = (dst_slices + dst_group_size - 1) / dst_group_size;
+  if (dst.size() < dst_groups * src_slices * dst_group_size * 8) return false;
+
+  std::vector<int32_t> sum_i;
+  const bool want_sum_i = (sum_i_out != nullptr);
+  if (want_sum_i) sum_i.assign(o_dim, 0);
+
+  uint8_t* dst_ptr = dst.data();
+  const size_t slice_stride =
+      is_linear_i4o4 ? dst_group_size : dst_groups * dst_group_size;
+  constexpr size_t kDGroupTile = 16;
+  constexpr size_t kSTile = 32;  // 64 bytes per source row = 1 cache line.
+  const size_t num_dg_tiles =
+      (dst_group_size + kDGroupTile - 1) / kDGroupTile;
+  const size_t total_dg_tiles = dst_groups * num_dg_tiles;
+
+  auto process_tile_range = [&](size_t t_begin, size_t t_end) {
+    auto run = [&](auto want_sum_tag) {
+      constexpr bool kWantSum = decltype(want_sum_tag)::value;
+      const int64_t bias = 8LL * static_cast<int64_t>(i_dim);
+      for (size_t t = t_begin; t < t_end; ++t) {
+        const size_t d = t / num_dg_tiles;
+        const size_t dg0 = (t % num_dg_tiles) * kDGroupTile;
+        const size_t dg_end = std::min(dg0 + kDGroupTile, dst_group_size);
+        const size_t d_base_offset =
+            is_linear_i4o4 ? d * src_slices * dst_group_size
+                           : d * dst_group_size;
+        int64_t tile_sums[kDGroupTile][4] = {};
+        for (size_t s0 = 0; s0 < src_slices; s0 += kSTile) {
+          const size_t s_end = std::min(s0 + kSTile, src_slices);
+          alignas(64) uint8_t tile[kSTile][kDGroupTile * 8];
+          for (size_t dg = dg0; dg < dg_end; ++dg) {
+            const size_t dg_off = (dg - dg0) * 8;
+            const size_t d_ch = 4 * (d * dst_group_size + dg);
+            if (d_ch >= o_dim) {
+              for (size_t s = s0; s < s_end; ++s) {
+                std::fill_n(&tile[s - s0][dg_off], 8, uint8_t{0x88});
+              }
+              continue;
+            }
+            const uint8_t* r0 = src + (d_ch + 0) * row_bytes;
+            const uint8_t* r1 = src + (d_ch + 1) * row_bytes;
+            const uint8_t* r2 = src + (d_ch + 2) * row_bytes;
+            const uint8_t* r3 = src + (d_ch + 3) * row_bytes;
+            int64_t s_acc0 = 0;
+            int64_t s_acc1 = 0;
+            int64_t s_acc2 = 0;
+            int64_t s_acc3 = 0;
+            for (size_t s = s0; s < s_end; ++s) {
+              const size_t col = s * 2;
+              const uint8_t r0_b0 = r0[col];
+              const uint8_t r0_b1 = r0[col + 1];
+              const uint8_t r1_b0 = r1[col];
+              const uint8_t r1_b1 = r1[col + 1];
+              const uint8_t r2_b0 = r2[col];
+              const uint8_t r2_b1 = r2[col + 1];
+              const uint8_t r3_b0 = r3[col];
+              const uint8_t r3_b1 = r3[col + 1];
+              const uint8_t o0 = static_cast<uint8_t>(((r1_b0 & 0x0Fu) << 4) |
+                                                      (r0_b0 & 0x0Fu)) ^
+                                 0x88u;
+              const uint8_t o1 = static_cast<uint8_t>(((r3_b0 & 0x0Fu) << 4) |
+                                                      (r2_b0 & 0x0Fu)) ^
+                                 0x88u;
+              const uint8_t o2 =
+                  static_cast<uint8_t>((r1_b0 & 0xF0u) | (r0_b0 >> 4)) ^ 0x88u;
+              const uint8_t o3 =
+                  static_cast<uint8_t>((r3_b0 & 0xF0u) | (r2_b0 >> 4)) ^ 0x88u;
+              const uint8_t o4 = static_cast<uint8_t>(((r1_b1 & 0x0Fu) << 4) |
+                                                      (r0_b1 & 0x0Fu)) ^
+                                 0x88u;
+              const uint8_t o5 = static_cast<uint8_t>(((r3_b1 & 0x0Fu) << 4) |
+                                                      (r2_b1 & 0x0Fu)) ^
+                                 0x88u;
+              const uint8_t o6 =
+                  static_cast<uint8_t>((r1_b1 & 0xF0u) | (r0_b1 >> 4)) ^ 0x88u;
+              const uint8_t o7 =
+                  static_cast<uint8_t>((r3_b1 & 0xF0u) | (r2_b1 >> 4)) ^ 0x88u;
+              uint8_t* tile_out = &tile[s - s0][dg_off];
+              tile_out[0] = o0;
+              tile_out[1] = o1;
+              tile_out[2] = o2;
+              tile_out[3] = o3;
+              tile_out[4] = o4;
+              tile_out[5] = o5;
+              tile_out[6] = o6;
+              tile_out[7] = o7;
+              if constexpr (kWantSum) {
+                s_acc0 +=
+                    (o0 & 0x0Fu) + (o2 & 0x0Fu) + (o4 & 0x0Fu) + (o6 & 0x0Fu);
+                s_acc1 += (o0 >> 4) + (o2 >> 4) + (o4 >> 4) + (o6 >> 4);
+                s_acc2 +=
+                    (o1 & 0x0Fu) + (o3 & 0x0Fu) + (o5 & 0x0Fu) + (o7 & 0x0Fu);
+                s_acc3 += (o1 >> 4) + (o3 >> 4) + (o5 >> 4) + (o7 >> 4);
+              }
+            }
+            if constexpr (kWantSum) {
+              const size_t local = dg - dg0;
+              tile_sums[local][0] += s_acc0;
+              tile_sums[local][1] += s_acc1;
+              tile_sums[local][2] += s_acc2;
+              tile_sums[local][3] += s_acc3;
+            }
+          }
+          // Flush each slice row contiguously across `dg` to avoid strided
+          // cache-line write amplification.
+          const size_t row_out_bytes = (dg_end - dg0) * 8;
+          for (size_t s = s0; s < s_end; ++s) {
+            uint8_t* out =
+                dst_ptr + (d_base_offset + s * slice_stride + dg0) * 8;
+            std::memcpy(out, &tile[s - s0][0], row_out_bytes);
+          }
+        }
+        if constexpr (kWantSum) {
+          for (size_t dg = dg0; dg < dg_end; ++dg) {
+            const size_t d_ch = 4 * (d * dst_group_size + dg);
+            if (d_ch >= o_dim) continue;
+            const size_t local = dg - dg0;
+            sum_i[d_ch + 0] = static_cast<int32_t>(tile_sums[local][0] - bias);
+            sum_i[d_ch + 1] = static_cast<int32_t>(tile_sums[local][1] - bias);
+            sum_i[d_ch + 2] = static_cast<int32_t>(tile_sums[local][2] - bias);
+            sum_i[d_ch + 3] = static_cast<int32_t>(tile_sums[local][3] - bias);
+          }
+        }
+      }
+    };
+    if (want_sum_i) {
+      run(std::true_type{});
+    } else {
+      run(std::false_type{});
+    }
+  };
+
+  constexpr size_t kParallelMinElements = 512ULL << 10;
+  if (max_threads > 1 && total_dg_tiles > 1 &&
+      o_dim * i_dim >= kParallelMinElements &&
+      !internal::InOuterParallelPrepackWorker()) {
+    ParallelFor(total_dg_tiles, /*min_grain=*/1, process_tile_range,
+                max_threads);
+  } else {
+    process_tile_range(0, total_dg_tiles);
+  }
+  if (want_sum_i) *sum_i_out = std::move(sum_i);
+  return true;
+}
+
+// Cache-tiled, zero-copy rearrangement of packed INT2 OHWI weights into ML
+// Drift's UINT2 (+2 shifted, 0xAA padded) I4O4 layouts (`kOSpatialIOGroupI4O4`
+// and `k2DYIsSpatialIOAndXIsOGroupI4O4`) when `h == 1` and `w == 1`. Returns
+// false otherwise so callers fall back to `RearrangeWeightsInt8AsUint2`.
+inline bool TryDirectRearrangePackedInt2AsUint2I4O4(
+    const uint8_t* src, size_t src_bytes, const ml_drift::OHWI& ohwi,
+    const ml_drift::WeightsDescription& desc, absl::Span<uint8_t> dst,
+    std::optional<std::vector<int32_t>>* sum_i_out = nullptr,
+    size_t max_threads = 16) {
+  if (ohwi.h != 1 || ohwi.w != 1 || ohwi.o <= 0 || ohwi.i <= 0) {
+    return false;
+  }
+  const bool is_linear_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+  const bool is_tex_i4o4 =
+      desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+  if (!is_linear_i4o4 && !is_tex_i4o4) return false;
+
+  const size_t o_dim = static_cast<size_t>(ohwi.o);
+  const size_t i_dim = static_cast<size_t>(ohwi.i);
+  const size_t total_elems = o_dim * i_dim;
+  if (src_bytes < (total_elems + 3) / 4) return false;
+
+  const int dst_group_size_int = desc.GetOutputGroupSize();
+  if (dst_group_size_int <= 0) return false;
+  const size_t dst_group_size = static_cast<size_t>(dst_group_size_int);
+  const size_t dst_slices =
+      static_cast<size_t>(ml_drift::DivideRoundUp(ohwi.o, 4));
+  const size_t src_slices =
+      static_cast<size_t>(ml_drift::DivideRoundUp(ohwi.i, 4));
+  const size_t dst_groups =
+      (dst_slices + dst_group_size - 1) / dst_group_size;
+  if (dst.size() < dst_groups * dst_group_size * src_slices * 4) return false;
+
+  std::vector<int32_t> sum_i;
+  const bool want_sum_i = (sum_i_out != nullptr);
+  if (want_sum_i) sum_i.assign(o_dim, 0);
+
+  uint8_t* dst_ptr = dst.data();
+  const size_t slice_stride =
+      is_linear_i4o4 ? dst_group_size : dst_groups * dst_group_size;
+  const bool aligned_cols = (i_dim & 3u) == 0;
+  const size_t row_bytes = i_dim >> 2;
+  constexpr size_t kDGroupTile = 16;
+  constexpr size_t kSTile = 64;  // 64 bytes per source row on aligned inputs.
+  const size_t num_dg_tiles =
+      (dst_group_size + kDGroupTile - 1) / kDGroupTile;
+  const size_t total_dg_tiles = dst_groups * num_dg_tiles;
+
+  auto get_crumb = [&](size_t linear_idx) -> uint8_t {
+    const uint8_t b = src[linear_idx >> 2];
+    return (b >> ((linear_idx & 3u) * 2)) & 0x03u;
+  };
+  auto sum_byte = [](uint8_t b) -> int64_t {
+    const uint8_t u = b ^ 0xAAu;
+    const uint8_t pair_sum =
+        static_cast<uint8_t>((u & 0x33u) + ((u >> 2) & 0x33u));
+    return static_cast<int64_t>(pair_sum & 0x0Fu) +
+           static_cast<int64_t>(pair_sum >> 4);
+  };
+
+  auto process_tile_range = [&](size_t t_begin, size_t t_end) {
+    auto run = [&](auto want_sum_tag) {
+      constexpr bool kWantSum = decltype(want_sum_tag)::value;
+      const int64_t bias = 2LL * static_cast<int64_t>(src_slices) * 4;
+      for (size_t t = t_begin; t < t_end; ++t) {
+        const size_t d = t / num_dg_tiles;
+        const size_t dg0 = (t % num_dg_tiles) * kDGroupTile;
+        const size_t dg_end = std::min(dg0 + kDGroupTile, dst_group_size);
+        const size_t d_base_offset =
+            is_linear_i4o4 ? d * src_slices * dst_group_size
+                           : d * dst_group_size;
+        int64_t tile_sums[kDGroupTile][4] = {};
+        for (size_t s0 = 0; s0 < src_slices; s0 += kSTile) {
+          const size_t s_end = std::min(s0 + kSTile, src_slices);
+          alignas(64) uint8_t tile[kSTile][kDGroupTile * 4];
+          for (size_t dg = dg0; dg < dg_end; ++dg) {
+            const size_t dg_off = (dg - dg0) * 4;
+            const size_t d_ch = 4 * (d * dst_group_size + dg);
+            if (d_ch >= o_dim) {
+              for (size_t s = s0; s < s_end; ++s) {
+                std::fill_n(&tile[s - s0][dg_off], 4, uint8_t{0xAA});
+              }
+              continue;
+            }
+            int64_t s_acc0 = 0;
+            int64_t s_acc1 = 0;
+            int64_t s_acc2 = 0;
+            int64_t s_acc3 = 0;
+            if (aligned_cols && d_ch + 4 <= o_dim) {
+              const uint8_t* r0 = src + (d_ch + 0) * row_bytes;
+              const uint8_t* r1 = src + (d_ch + 1) * row_bytes;
+              const uint8_t* r2 = src + (d_ch + 2) * row_bytes;
+              const uint8_t* r3 = src + (d_ch + 3) * row_bytes;
+              for (size_t s = s0; s < s_end; ++s) {
+                const uint8_t b0 = r0[s];
+                const uint8_t b1 = r1[s];
+                const uint8_t b2 = r2[s];
+                const uint8_t b3 = r3[s];
+                uint8_t* tile_out = &tile[s - s0][dg_off];
+                tile_out[0] = static_cast<uint8_t>(
+                    (((b3 & 0x03u) << 6) | ((b2 & 0x03u) << 4) |
+                     ((b1 & 0x03u) << 2) | (b0 & 0x03u)) ^
+                    0xAAu);
+                tile_out[1] = static_cast<uint8_t>(
+                    (((b3 & 0x0Cu) << 4) | ((b2 & 0x0Cu) << 2) |
+                     (b1 & 0x0Cu) | ((b0 >> 2) & 0x03u)) ^
+                    0xAAu);
+                tile_out[2] = static_cast<uint8_t>(
+                    (((b3 & 0x30u) << 2) | (b2 & 0x30u) |
+                     ((b1 >> 2) & 0x0Cu) | ((b0 >> 4) & 0x03u)) ^
+                    0xAAu);
+                tile_out[3] = static_cast<uint8_t>(
+                    ((b3 & 0xC0u) | ((b2 >> 2) & 0x30u) |
+                     ((b1 >> 4) & 0x0Cu) | (b0 >> 6)) ^
+                    0xAAu);
+                if constexpr (kWantSum) {
+                  s_acc0 += sum_byte(b0);
+                  s_acc1 += sum_byte(b1);
+                  s_acc2 += sum_byte(b2);
+                  s_acc3 += sum_byte(b3);
+                }
+              }
+            } else {
+              for (size_t s = s0; s < s_end; ++s) {
+                const size_t s_base = s * 4;
+                uint8_t* tile_out = &tile[s - s0][dg_off];
+                for (size_t k = 0; k < 4; ++k) {
+                  const size_t s_ch = s_base + k;
+                  if (s_ch >= i_dim) {
+                    tile_out[k] = 0xAAu;
+                    if constexpr (kWantSum) {
+                      s_acc0 += 2;
+                      s_acc1 += 2;
+                      s_acc2 += 2;
+                      s_acc3 += 2;
+                    }
+                    continue;
+                  }
+                  const uint8_t v0 =
+                      (d_ch + 0 < o_dim) ? get_crumb((d_ch + 0) * i_dim + s_ch)
+                                         : 0u;
+                  const uint8_t v1 =
+                      (d_ch + 1 < o_dim) ? get_crumb((d_ch + 1) * i_dim + s_ch)
+                                         : 0u;
+                  const uint8_t v2 =
+                      (d_ch + 2 < o_dim) ? get_crumb((d_ch + 2) * i_dim + s_ch)
+                                         : 0u;
+                  const uint8_t v3 =
+                      (d_ch + 3 < o_dim) ? get_crumb((d_ch + 3) * i_dim + s_ch)
+                                         : 0u;
+                  tile_out[k] = static_cast<uint8_t>(
+                      ((v3 << 6) | (v2 << 4) | (v1 << 2) | v0) ^ 0xAAu);
+                  if constexpr (kWantSum) {
+                    s_acc0 += v0 ^ 0x02u;
+                    s_acc1 += v1 ^ 0x02u;
+                    s_acc2 += v2 ^ 0x02u;
+                    s_acc3 += v3 ^ 0x02u;
+                  }
+                }
+              }
+            }
+            if constexpr (kWantSum) {
+              const size_t local = dg - dg0;
+              tile_sums[local][0] += s_acc0;
+              tile_sums[local][1] += s_acc1;
+              tile_sums[local][2] += s_acc2;
+              tile_sums[local][3] += s_acc3;
+            }
+          }
+          const size_t row_out_bytes = (dg_end - dg0) * 4;
+          for (size_t s = s0; s < s_end; ++s) {
+            uint8_t* out =
+                dst_ptr + (d_base_offset + s * slice_stride + dg0) * 4;
+            std::memcpy(out, &tile[s - s0][0], row_out_bytes);
+          }
+        }
+        if constexpr (kWantSum) {
+          for (size_t dg = dg0; dg < dg_end; ++dg) {
+            const size_t d_ch = 4 * (d * dst_group_size + dg);
+            if (d_ch >= o_dim) continue;
+            const size_t local = dg - dg0;
+            if (d_ch + 0 < o_dim) {
+              sum_i[d_ch + 0] =
+                  static_cast<int32_t>(tile_sums[local][0] - bias);
+            }
+            if (d_ch + 1 < o_dim) {
+              sum_i[d_ch + 1] =
+                  static_cast<int32_t>(tile_sums[local][1] - bias);
+            }
+            if (d_ch + 2 < o_dim) {
+              sum_i[d_ch + 2] =
+                  static_cast<int32_t>(tile_sums[local][2] - bias);
+            }
+            if (d_ch + 3 < o_dim) {
+              sum_i[d_ch + 3] =
+                  static_cast<int32_t>(tile_sums[local][3] - bias);
+            }
+          }
+        }
+      }
+    };
+    if (want_sum_i) {
+      run(std::true_type{});
+    } else {
+      run(std::false_type{});
+    }
+  };
+
+  constexpr size_t kParallelMinElements = 512ULL << 10;
+  if (max_threads > 1 && total_dg_tiles > 1 &&
+      total_elems >= kParallelMinElements &&
+      !internal::InOuterParallelPrepackWorker()) {
+    ParallelFor(total_dg_tiles, /*min_grain=*/1, process_tile_range,
+                max_threads);
+  } else {
+    process_tile_range(0, total_dg_tiles);
+  }
+  if (want_sum_i) *sum_i_out = std::move(sum_i);
+  return true;
+}
+
+// Fast zero-copy equivalent of `ml_drift::ScaleOrZeroPointToTensorDesc` +
+// `UpdateToSupportedStorageType` for 2-D blockwise scales/zero-points
+// (`OHWI(O, 1, 1, num_blocks)` with `num_blocks > 1`). Avoids copying
+// `raw_values` and avoids materializing the intermediate `OHIToHOIO4` tensor.
+inline ml_drift::TensorDescriptor BuildBlockwiseScaleOrZpDescriptor(
+    const ml_drift::GpuInfo& gpu_info, absl::Span<const float> raw_values,
+    const ml_drift::OHWI& shape, ml_drift::DataType dst_data_type,
+    std::optional<ml_drift::TensorStorageType> default_2d_storage =
+        std::nullopt) {
+  if (shape.h != 1 || shape.w != 1 || shape.i <= 1 ||
+      (dst_data_type != ml_drift::DataType::kFloat16 &&
+       dst_data_type != ml_drift::DataType::kFloat32)) {
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> src;
+    src.shape = shape;
+    src.spanned_data = absl::MakeSpan(const_cast<float*>(raw_values.data()),
+                                      raw_values.size());
+    ml_drift::TensorDescriptor td =
+        ml_drift::ScaleOrZeroPointToTensorDesc(gpu_info, src, dst_data_type);
+    td.UpdateToSupportedStorageType(gpu_info, td.GetBHWDCShape()).IgnoreError();
+    return td;
+  }
+  const int o_ch = shape.o;
+  const int num_blocks = shape.i;
+  const int o_slices = ml_drift::DivideRoundUp(o_ch, 4);
+  const ml_drift::BHWC hwc_shape(1, 1, o_slices, 4 * num_blocks);
+  if (!default_2d_storage.has_value()) {
+    float probe_vals[8] = {};
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> probe;
+    probe.shape = ml_drift::OHWI(4, 1, 1, 2);
+    probe.spanned_data = absl::MakeSpan(probe_vals, 8);
+    default_2d_storage =
+        ml_drift::ScaleOrZeroPointToTensorDesc(gpu_info, probe, dst_data_type)
+            .GetStorageType();
+  }
+  const ml_drift::TensorStorageType storage_type =
+      ml_drift::TensorDescriptor(dst_data_type, *default_2d_storage,
+                                 ml_drift::Layout::kHWC)
+              .CanCreateTensorWithShape(gpu_info, hwc_shape)
+              .ok()
+          ? *default_2d_storage
+          : ml_drift::TensorStorageType::kBuffer;
+  ml_drift::TensorDescriptor td(dst_data_type, storage_type,
+                                ml_drift::Layout::kHWC);
+  td.SetBHWCShape(hwc_shape);
+  td.UpdateToSupportedStorageType(gpu_info, td.GetBHWDCShape()).IgnoreError();
+
+  // For `b == 1 && h == 1 && d == 1` and default physical layouts, both
+  // `DSHWBC4` (`kBuffer`/`kImageBuffer`/`kTextureArray`/`kTexture3D`) and
+  // `HSWBDC4` (`kTexture2D`) place `(o_slice, block, ch)` at
+  // `(block * o_slices + o_slice) * 4 + ch`.
+  const size_t total_elems =
+      static_cast<size_t>(num_blocks) * static_cast<size_t>(o_slices) * 4;
+  std::vector<uint8_t> packed(
+      total_elems * static_cast<size_t>(ml_drift::SizeOf(dst_data_type)));
+  constexpr int kOTile = 16;
+  constexpr int kBTile = 32;
+  auto pack_typed = [&](auto* dst) {
+    using DstT = std::remove_pointer_t<decltype(dst)>;
+    for (int os0 = 0; os0 < o_slices; os0 += kOTile) {
+      const int os_end = std::min(os0 + kOTile, o_slices);
+      for (int b0 = 0; b0 < num_blocks; b0 += kBTile) {
+        const int b_end = std::min(b0 + kBTile, num_blocks);
+        for (int os = os0; os < os_end; ++os) {
+          const int base_o = os * 4;
+          if (base_o + 3 < o_ch) {
+            const float* r0 =
+                raw_values.data() +
+                static_cast<size_t>(base_o + 0) * num_blocks;
+            const float* r1 =
+                raw_values.data() +
+                static_cast<size_t>(base_o + 1) * num_blocks;
+            const float* r2 =
+                raw_values.data() +
+                static_cast<size_t>(base_o + 2) * num_blocks;
+            const float* r3 =
+                raw_values.data() +
+                static_cast<size_t>(base_o + 3) * num_blocks;
+            for (int b = b0; b < b_end; ++b) {
+              DstT* out =
+                  dst + (static_cast<size_t>(b) * o_slices + os) * 4;
+              out[0] = DstT(r0[b]);
+              out[1] = DstT(r1[b]);
+              out[2] = DstT(r2[b]);
+              out[3] = DstT(r3[b]);
+            }
+          } else {
+            for (int b = b0; b < b_end; ++b) {
+              DstT* out =
+                  dst + (static_cast<size_t>(b) * o_slices + os) * 4;
+              for (int ch = 0; ch < 4; ++ch) {
+                const int o = base_o + ch;
+                out[ch] = DstT(
+                    o < o_ch
+                        ? raw_values[static_cast<size_t>(o) * num_blocks + b]
+                        : 0.0f);
+              }
+            }
+          }
+        }
+      }
+    }
+  };
+  if (dst_data_type == ml_drift::DataType::kFloat16) {
+    pack_typed(reinterpret_cast<ml_drift::half*>(packed.data()));
+  } else {
+    pack_typed(reinterpret_cast<float*>(packed.data()));
+  }
+  td.SetData(std::move(packed));
+  return td;
+}
+
+inline bool SupportsDirectI4O4Pack(const ml_drift::WeightsDescription& desc,
+                                   const ml_drift::OHWI& ohwi, bool is_int2) {
+  if (ohwi.h != 1 || ohwi.w != 1 || ohwi.o <= 0 || ohwi.i <= 0 ||
+      desc.GetOutputGroupSize() <= 0) {
+    return false;
+  }
+  if (desc.layout != ml_drift::WeightsLayout::kOSpatialIOGroupI4O4 &&
+      desc.layout !=
+          ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4) {
+    return false;
+  }
+  if (is_int2) {
+    return desc.type == ml_drift::DataType::kUint2 ||
+           desc.type == ml_drift::DataType::kInt2;
+  }
+  return (ohwi.o % 4 == 0) && (ohwi.i % 4 == 0) &&
+         (desc.type == ml_drift::DataType::kUint4 ||
+          desc.type == ml_drift::DataType::kInt4);
+}
+
 // Rearranges the dense signed INT4 weights `packed` (two per byte, OHWI
 // `ohwi`) into the kernel layout `desc`. The I4O4 layouts rearrange straight
 // from the packed values (and accumulate `sum_i` in the same pass), like
@@ -106,7 +638,7 @@ struct RearrangedInt4Weights {
 inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt4Weights(
     absl::Span<const int8_t> packed, const ml_drift::OHWI& ohwi,
     const ml_drift::WeightsDescription& desc, int elements_count,
-    bool want_sum_i) {
+    bool want_sum_i, size_t max_threads = 16) {
   if (desc.type != ml_drift::DataType::kUint4 &&
       desc.type != ml_drift::DataType::kInt4) {
     return absl::UnimplementedError(
@@ -127,11 +659,16 @@ inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt4Weights(
       8);
   if (desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4 ||
       desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4) {
+    const auto* raw_u8 = reinterpret_cast<const uint8_t*>(packed.data());
+    if (TryDirectRearrangePackedInt4AsUint4I4O4(
+            raw_u8, packed_bytes, ohwi, desc, absl::MakeSpan(out.data),
+            want_sum_i ? &out.sum_i : nullptr, max_threads)) {
+      return out;
+    }
     ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kUint8> bytes;
     bytes.shape = ohwi;
-    bytes.data.assign(
-        reinterpret_cast<const uint8_t*>(packed.data()),
-        reinterpret_cast<const uint8_t*>(packed.data()) + packed_bytes);
+    bytes.spanned_data =
+        absl::MakeSpan(const_cast<uint8_t*>(raw_u8), packed_bytes);
     // The converter always writes `sum_i`, 4 output channels at a time.
     std::vector<int32_t> sum_i((ohwi.o + 3) / 4 * 4, 0);
     LRT_TENSOR_RETURN_IF_ERROR(ml_drift::RearrangeWeightsUInt4Packed(
@@ -154,6 +691,58 @@ inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt4Weights(
   }
   ml_drift::RearrangeWeightsInt8AsUint4(unpacked, desc,
                                         absl::MakeSpan(out.data), 8, 8u);
+  return out;
+}
+
+// Rearranges dense signed INT2 weights `packed` (four per byte, OHWI `ohwi`)
+// into the kernel layout `desc`. I4O4 layouts rearrange directly from packed
+// bytes (and optionally accumulate `sum_i` in the same pass); other layouts
+// unpack to INT8 first.
+inline absl::StatusOr<RearrangedInt4Weights> RearrangeInt2Weights(
+    absl::Span<const uint8_t> packed, const ml_drift::OHWI& ohwi,
+    const ml_drift::WeightsDescription& desc, int elements_count,
+    bool want_sum_i, size_t max_threads = 16) {
+  if (desc.type != ml_drift::DataType::kUint2 &&
+      desc.type != ml_drift::DataType::kInt2) {
+    return absl::UnimplementedError(
+        "Only INT4 and INT2 weight rearrangement is supported in "
+        "pre-rearrange.");
+  }
+  const size_t num_elements = ohwi.DimensionsProduct();
+  const size_t packed_bytes = (num_elements + 3) / 4;
+  if (packed.size() < packed_bytes) {
+    return absl::InvalidArgumentError(absl::StrCat(
+        "INT2 weights buffer has ", packed.size(), " bytes, expected ",
+        packed_bytes, " for ", num_elements, " values."));
+  }
+  RearrangedInt4Weights out;
+  out.data.resize(
+      (static_cast<size_t>(elements_count) * ml_drift::SizeInBitsOf(desc.type) +
+       7) /
+      8);
+  if (TryDirectRearrangePackedInt2AsUint2I4O4(
+          packed.data(), packed.size(), ohwi, desc, absl::MakeSpan(out.data),
+          want_sum_i ? &out.sum_i : nullptr, max_threads)) {
+    return out;
+  }
+  if (want_sum_i) {
+    LRT_TENSOR_ASSIGN_OR_RETURN(out.sum_i,
+                                ComputePackedInt2WeightsSumI(packed, ohwi));
+  }
+  std::vector<int8_t> unpacked(num_elements + 64, 0);
+  for (size_t i = 0; i < num_elements; ++i) {
+    const size_t byte_idx = i >> 2;
+    if (byte_idx < packed.size()) {
+      int8_t q = (packed[byte_idx] >> ((i & 3u) * 2)) & 0x03;
+      if (q & 0x02) q |= 0xFC;
+      unpacked[i] = q;
+    }
+  }
+  ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8> weights;
+  weights.shape = ohwi;
+  weights.data = std::move(unpacked);
+  ml_drift::RearrangeWeightsInt8AsUint2(weights, desc,
+                                        absl::MakeSpan(out.data), 2, 2u);
   return out;
 }
 
@@ -181,6 +770,9 @@ class CompiledMlDriftModelRunner {
   // avoids re-packing weights on the CPU and avoids allocating duplicate
   // constant weight buffers/textures on the GPU.
   struct SharedWeightsCache {
+    // Guards concurrent `BuildModel()` lookups and uploads when a backend
+    // finalizes multiple passes in parallel (e.g. Metal `Warmup()`).
+    absl::Mutex mutex;
     absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> descriptors;
     // Optional: the packed bytes of `descriptors` without data, by weight
     // name, in host memory that `owner` keeps alive (e.g. memory-mapped from
@@ -194,6 +786,10 @@ class CompiledMlDriftModelRunner {
       // created from, so the last reference destroys that object (and so
       // unmaps the memory) whatever its type.
       std::shared_ptr<const void> owner;
+      // True when `owner` guarantees that the whole OS VM pages enclosing
+      // `data` belong to this mapping (e.g. a file `mmap`), allowing backends
+      // like Metal's `newBufferWithBytesNoCopy` to wrap page-aligned bounds.
+      bool owns_enclosing_pages = false;
     };
     absl::flat_hash_map<std::string, HostData> host_data;
     // Creates the GPU tensors of `host_data` over the host memory itself
@@ -226,6 +822,16 @@ class CompiledMlDriftModelRunner {
     absl::AnyInvocable<void(const std::string& name,
                             const ml_drift::TensorDescriptor& desc)>
         on_upload;
+    // Optional: called serially on the compiling thread with each packed
+    // constant weight descriptor (with data) as soon as `Prepare()` produces
+    // it. When it returns true, the caller persisted the bytes (e.g. to a
+    // weight cache that will be mapped into `host_data` before `BuildModel()`),
+    // so the runner drops the descriptor's heap bytes immediately and streams
+    // INT4 packing in bounded-memory batches instead of holding every packed
+    // weight in RAM at once.
+    absl::AnyInvocable<bool(const std::string& name,
+                            const ml_drift::TensorDescriptor& desc)>
+        on_pack;
   };
 
   // Host wall time of the compilation phases of `Prepare()` and
@@ -439,9 +1045,15 @@ class CompiledMlDriftModelRunner {
     ml_drift::ExternalTensorsInfo combined_external_tensors = external_tensors;
     LRT_TENSOR_RETURN_IF_ERROR(
         RunGpuWeightConversions(&combined_external_tensors));
+    // `GpuModelBuilder` is no longer needed once `gpu_model_` is finalized and
+    // GPU weight conversions have run; release it before uploading weights and
+    // initializing the inference context to reduce peak host memory.
+    conversion_ctx_.gpu_model_builder = nullptr;
+    model_builder_.reset();
 
     const absl::Time upload_start = absl::Now();
     if (shared_weights_ != nullptr) {
+      absl::MutexLock lock(shared_weights_->mutex);
       for (const auto& [weight_name, handle] :
            conversion_ctx_.weight_name_to_handle) {
         if (conversion_ctx_.external_weight_names.contains(weight_name)) {
@@ -521,9 +1133,9 @@ class CompiledMlDriftModelRunner {
         combined_external_tensors.immutable_tensors[handle.id] =
             tensor_it->second.get();
       }
+      ReleaseUploadedSharedDescriptorData();
     }
     compile_timing_.upload_shared_weights = absl::Now() - upload_start;
-    ReleaseUploadedSharedDescriptorData();
 
     const absl::Time init_start = absl::Now();
     LRT_TENSOR_RETURN_IF_ERROR(Backend::InitInferenceContext(
@@ -548,9 +1160,19 @@ class CompiledMlDriftModelRunner {
     if constexpr (ml_drift_runner_internal::HasCreateConstTensorFromHostData<
                       Backend>::value) {
       std::shared_ptr<const void> gpu_owner;
-      LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
-          env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
-          tensor, &gpu_owner));
+      if constexpr (std::is_invocable_v<
+                        decltype(&Backend::CreateConstTensorFromHostData),
+                        Environment*, const ml_drift::TensorDescriptor&,
+                        absl::Span<const uint8_t>, bool, BackendTensor*,
+                        std::shared_ptr<const void>*, bool>) {
+        LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
+            env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
+            tensor, &gpu_owner, host.owns_enclosing_pages));
+      } else {
+        LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
+            env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
+            tensor, &gpu_owner));
+      }
       if (gpu_owner != nullptr) {
         // Keeps both alive in `zero_copy_owners`. Members are destroyed in
         // reverse declaration order, so the last reference releases the
@@ -576,6 +1198,25 @@ class CompiledMlDriftModelRunner {
       with_data.SetData(
           std::vector<uint8_t>(host.data.begin(), host.data.end()));
       return Backend::CreateConstTensor(env_ptr_, with_data, tensor);
+    }
+  }
+
+  // Releases graph/conversion metadata held solely for compilation and initial
+  // tensor pointer resolution (`GetBackendTensor` / `GetTensorValueId`). When
+  // `keep_io_lookup` is false (callers that already cached `BackendTensor*`
+  // pointers), drops `flat_inputs_`, `flat_outputs_`, and lookup maps too.
+  void ReleaseCompileTemporaries(bool keep_io_lookup = false) {
+    conversion_ctx_.gpu_model_builder = nullptr;
+    model_builder_.reset();
+    gpu_model_ = ml_drift::GpuModel{};
+    released_weight_tensors_.clear();
+    conversion_ctx_.weight_name_to_handle.clear();
+    conversion_ctx_.weight_sum_i.clear();
+    if (!keep_io_lookup) {
+      name_to_tensor_map_.clear();
+      conversion_ctx_.graph_tensor_to_handle.clear();
+      flat_inputs_.clear();
+      flat_outputs_.clear();
     }
   }
   const CompileTiming& compile_timing() const { return compile_timing_; }
@@ -615,6 +1256,11 @@ class CompiledMlDriftModelRunner {
                       ",n=", stat.count, ")");
     }
     return s;
+  }
+
+  InferenceContext& inference_context() { return inference_context_; }
+  const InferenceContext& inference_context() const {
+    return inference_context_;
   }
 
   absl::StatusOr<ml_drift::ProfilingInfo> Profile() {
@@ -845,14 +1491,38 @@ class CompiledMlDriftModelRunner {
   }
 
   // Registers `sum_i` (per output channel, the sum of the signed quantized
-  // values over the input channels) of per-channel quantized INT4
-  // FullyConnected weights `values` (OHWI), with which ML Drift runs long
-  // prefill FullyConnected layers as INT8 convolutions on dynamically
-  // INT8-quantized activations. Only when 8-bit convolutions are allowed.
+  // values over the input channels) of per-channel quantized (or 1-block-per-
+  // row `BlockwiseQuantization`) FullyConnected weights, with which ML Drift
+  // runs long prefill FullyConnected layers as INT8 convolutions on
+  // dynamically INT8-quantized activations. Only when 8-bit convolutions are
+  // allowed.
   bool WantsWeightsSumI(const graph::TensorInformation& info) const {
-    return allow_8bit_convs_ && info.quantization != nullptr &&
-           info.quantization->As<const graph::PerChannelAffineQuantization>()
-               .ok();
+    if (!allow_8bit_convs_ || info.quantization == nullptr) return false;
+    if (info.quantization->As<const graph::PerChannelAffineQuantization>()
+            .ok()) {
+      return true;
+    }
+    if (auto bq = info.quantization->As<const graph::BlockwiseQuantization>();
+        bq.ok() && info.shape.size() == 2 && bq->quantized_dimension == 0 &&
+        bq->block_size == info.shape[1] && bq->zero_points.IsSymmetric()) {
+      return true;
+    }
+    return false;
+  }
+
+  // Inserts `desc` into `shared_weight_descriptors` under `name`, letting
+  // `shared_weights_->on_pack` persist and drop its heap bytes immediately
+  // when streaming to a weight cache. Returns a dataless copy for the model
+  // builder.
+  ml_drift::TensorDescriptor StoreSharedWeightDescriptor(
+      const std::string& name, ml_drift::TensorDescriptor desc) {
+    ml_drift::TensorDescriptor dataless = CopyDescriptorWithoutData(desc);
+    if (shared_weights_ != nullptr && shared_weights_->on_pack &&
+        !desc.GetData().empty() && shared_weights_->on_pack(name, desc)) {
+      desc = CopyDescriptorWithoutData(desc);
+    }
+    conversion_ctx_.shared_weight_descriptors->emplace(name, std::move(desc));
+    return dataless;
   }
 
   absl::Status AddWeightsSumI(const graph::Tensor& weights_tensor,
@@ -867,10 +1537,8 @@ class CompiledMlDriftModelRunner {
     ml_drift::GpuModelBuilder::TensorHandle handle;
     if (!info.name.empty() &&
         conversion_ctx_.shared_weight_descriptors != nullptr) {
-      auto [it, _] = conversion_ctx_.shared_weight_descriptors->emplace(
-          WeightsSumIName(info.name), std::move(desc));
-      handle = model_builder_->AddConstantTensor(
-          CopyDescriptorWithoutData(it->second));
+      handle = model_builder_->AddConstantTensor(StoreSharedWeightDescriptor(
+          WeightsSumIName(info.name), std::move(desc)));
     } else {
       handle = model_builder_->AddConstantTensor(std::move(desc));
     }
@@ -895,10 +1563,11 @@ class CompiledMlDriftModelRunner {
     conversion_ctx_.weight_name_to_handle.insert({name, handle});
   }
 
-  // Host-side INT4 weight preparation (unpacking, rearranging into the
-  // kernel's packed layout, `sum_i`), computed in parallel ahead of the
-  // (serial) GPU tensor registration.
+  // Host-side INT4/INT2 weight preparation (rearranging into the kernel's
+  // packed layout and optional `sum_i`), computed in parallel ahead of GPU
+  // tensor registration.
   struct PreparedInt4Weights {
+    bool is_int2 = false;
     ml_drift::WeightsDescription desc;
     ml_drift::OHWI ohwi;
     int elements_count = 0;
@@ -907,29 +1576,81 @@ class CompiledMlDriftModelRunner {
     absl::Status status;
   };
 
-  absl::node_hash_map<graph::Tensor, PreparedInt4Weights> PrepareInt4Weights(
+  struct PackedWeightJob {
+    graph::Tensor tensor;
+    bool is_int2 = false;
+    bool has_fc = false;
+    bool fc = false;
+    bool is_embedding = false;
+    ml_drift::WeightsDescription desc;
+    ml_drift::OHWI ohwi;
+    int elements_count = 0;
+  };
+
+  static size_t GetWeightPrepThreads() {
+    size_t max_threads = 16;
+    if (const char* e = std::getenv("LRT_WEIGHT_PREP_THREADS"); e != nullptr) {
+      int parsed = 0;
+      if (absl::SimpleAtoi(e, &parsed)) {
+        max_threads = static_cast<size_t>(std::max(1, parsed));
+      }
+    }
+    return max_threads;
+  }
+
+  static void RearrangePackedWeightJob(const PackedWeightJob& job,
+                                       absl::Span<const int8_t> raw,
+                                       size_t max_threads,
+                                       PreparedInt4Weights* out) {
+    absl::StatusOr<ml_drift_runner_internal::RearrangedInt4Weights> rearranged =
+        job.is_int2
+            ? ml_drift_runner_internal::RearrangeInt2Weights(
+                  absl::MakeConstSpan(
+                      reinterpret_cast<const uint8_t*>(raw.data()), raw.size()),
+                  job.ohwi, job.desc, job.elements_count, job.fc, max_threads)
+            : ml_drift_runner_internal::RearrangeInt4Weights(
+                  raw, job.ohwi, job.desc, job.elements_count, job.fc,
+                  max_threads);
+    if (!rearranged.ok()) {
+      out->status = rearranged.status();
+      return;
+    }
+    out->rearranged = std::move(rearranged->data);
+    out->sum_i = std::move(rearranged->sum_i);
+  }
+
+  static bool ShouldPackSoloParallel(const PackedWeightJob& job) {
+    constexpr size_t kSoloParallelMinElements = 1ULL << 20;
+    return job.ohwi.DimensionsProduct() >= kSoloParallelMinElements &&
+           ml_drift_runner_internal::SupportsDirectI4O4Pack(job.desc, job.ohwi,
+                                                            job.is_int2);
+  }
+
+  std::vector<PackedWeightJob> CollectPackedWeightJobs(
       absl::Span<const graph::Operation* const> execution_plan) {
-    // `node_hash_map`: the jobs keep pointers to the entries.
-    struct Job {
-      graph::Tensor tensor;
-      bool fc = false;
-      LockedBufferSpan<const int8_t> raw;
-      PreparedInt4Weights* out = nullptr;
-    };
-    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared;
-    std::vector<Job> jobs;
-    // The index in `jobs` of each prepared tensor, or -1 if it is skipped.
+    std::vector<PackedWeightJob> jobs;
     absl::flat_hash_map<graph::Tensor, int> job_index;
+    auto compute_want_sum_i = [&](const graph::TensorInformation& info,
+                                  const PackedWeightJob& job) -> bool {
+      if (!job.has_fc || !WantsWeightsSumI(info)) return false;
+      if (!job.is_int2) return true;
+      const bool is_supported_texture =
+          job.desc.layout ==
+          ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+      return job.desc.IsLinearLayout() || !job.is_embedding ||
+             is_supported_texture;
+    };
     for (const graph::Operation* op : execution_plan) {
       const bool fc = op->GetName() == "FullyConnected";
       if (!fc && op->GetName() != "EmbeddingLookup") continue;
       graph::Tensor weights_tensor = op->inputs[1];
       if (auto it = job_index.find(weights_tensor); it != job_index.end()) {
-        // Weights tied between an EmbeddingLookup and a FullyConnected (e.g.
-        // an LM head) need `sum_i` if any FullyConnected consumer does.
-        if (fc && it->second >= 0 && !jobs[it->second].fc) {
+        if (it->second >= 0) {
+          PackedWeightJob& existing = jobs[it->second];
+          if (!fc) existing.is_embedding = true;
+          if (fc) existing.has_fc = true;
           const auto info = graph::GetInfo(weights_tensor);
-          jobs[it->second].fc = info.ok() && WantsWeightsSumI(*info);
+          existing.fc = info.ok() && compute_want_sum_i(*info, existing);
         }
         continue;
       }
@@ -939,7 +1660,8 @@ class CompiledMlDriftModelRunner {
       }
       const auto info = graph::GetInfo(weights_tensor);
       if (!info.ok()) continue;
-      if (info->type != Type::kI4 || info->buffer == nullptr ||
+      if ((info->type != Type::kI4 && info->type != Type::kI2) ||
+          info->buffer == nullptr ||
           conversion_ctx_.external_weight_names.contains(info->name)) {
         continue;
       }
@@ -950,54 +1672,321 @@ class CompiledMlDriftModelRunner {
       }
       auto bhwc = ShapeToBHWC(info->shape);
       if (!bhwc.ok()) continue;
-      PreparedInt4Weights& p = prepared[weights_tensor];
-      p.ohwi = ml_drift::OHWI(bhwc->b, bhwc->h, bhwc->w, bhwc->c);
-      p.desc = model_builder_->GetFullyConnectedInt4WeightsDesc(p.ohwi);
-      p.elements_count =
-          ml_drift::GetTotalElementsCountForLayout(p.desc, p.ohwi);
+      PackedWeightJob job;
+      job.tensor = weights_tensor;
+      job.is_int2 = (info->type == Type::kI2);
+      job.has_fc = fc;
+      job.is_embedding = !fc || info->name == "model.embed_tokens.weight" ||
+                         info->name == "token_embd.weight";
+      if (!job.is_embedding) {
+        for (const std::weak_ptr<graph::Operation>& weak_op : info->consumers) {
+          if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+              consumer != nullptr && consumer->GetName() == "EmbeddingLookup") {
+            job.is_embedding = true;
+            break;
+          }
+        }
+      }
+      job.ohwi = ml_drift::OHWI(bhwc->b, bhwc->h, bhwc->w, bhwc->c);
+      job.desc =
+          job.is_int2
+              ? model_builder_->GetFullyConnectedInt2WeightsDesc(job.ohwi)
+              : model_builder_->GetFullyConnectedInt4WeightsDesc(job.ohwi);
+      job.elements_count =
+          ml_drift::GetTotalElementsCountForLayout(job.desc, job.ohwi);
+      job.fc = compute_want_sum_i(*info, job);
       job_index[weights_tensor] = static_cast<int>(jobs.size());
-      jobs.push_back(Job{.tensor = weights_tensor,
-                         .fc = fc && WantsWeightsSumI(*info),
-                         .raw = info->buffer->Lock().As<const int8_t>(),
-                         .out = &p});
+      jobs.push_back(std::move(job));
     }
     // Largest first, so the big tensors (e.g. the tied head) start early.
-    std::sort(jobs.begin(), jobs.end(), [](const Job& a, const Job& b) {
-      return a.out->ohwi.DimensionsProduct() > b.out->ohwi.DimensionsProduct();
+    absl::c_sort(jobs, [](const PackedWeightJob& a, const PackedWeightJob& b) {
+      return a.ohwi.DimensionsProduct() > b.ohwi.DimensionsProduct();
     });
-    size_t max_threads = 4;
-    if (const char* e = std::getenv("LRT_WEIGHT_PREP_THREADS"); e != nullptr) {
-      int parsed = 0;
-      if (absl::SimpleAtoi(e, &parsed)) {
-        max_threads = static_cast<size_t>(std::max(1, parsed));
+    return jobs;
+  }
+
+  absl::node_hash_map<graph::Tensor, PreparedInt4Weights> PrepareInt4Weights(
+      absl::Span<const graph::Operation* const> execution_plan) {
+    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared;
+    std::vector<PackedWeightJob> jobs = CollectPackedWeightJobs(execution_plan);
+    if (jobs.empty()) return prepared;
+    const size_t max_threads = GetWeightPrepThreads();
+    std::vector<const PackedWeightJob*> small_jobs;
+    for (const PackedWeightJob& job : jobs) {
+      PreparedInt4Weights& p = prepared[job.tensor];
+      p.is_int2 = job.is_int2;
+      p.desc = job.desc;
+      p.ohwi = job.ohwi;
+      p.elements_count = job.elements_count;
+      if (ShouldPackSoloParallel(job) && max_threads > 1) {
+        const auto info = graph::GetInfo(job.tensor);
+        if (!info.ok() || (*info).buffer == nullptr) {
+          p.status = absl::InternalError("Missing buffer during weight prep.");
+          continue;
+        }
+        const graph::TensorInformation& info_ref = *info;
+        const LockedBufferSpan<const int8_t> raw =
+            info_ref.buffer->Lock().As<const int8_t>();
+        RearrangePackedWeightJob(
+            job, absl::MakeConstSpan(raw.data(), raw.size()), max_threads, &p);
+      } else {
+        small_jobs.push_back(&job);
       }
     }
-    // Dispatch strided workers over the largest-first sorted job list so the
-    // biggest tensors (e.g. tied LM head) overlap across threads even when
-    // `max_threads < pool_threads`.
-    const size_t num_workers = std::min(max_threads, jobs.size());
-    ParallelFor(
-        num_workers, /*min_grain=*/1,
-        [&](size_t w_begin, size_t w_end) {
-          for (size_t w = w_begin; w < w_end; ++w) {
-            for (size_t j = w; j < jobs.size(); j += num_workers) {
-              Job& job = jobs[j];
-              PreparedInt4Weights& p = *job.out;
-              absl::StatusOr<ml_drift_runner_internal::RearrangedInt4Weights>
-                  rearranged = ml_drift_runner_internal::RearrangeInt4Weights(
-                      absl::MakeConstSpan(job.raw.data(), job.raw.size()),
-                      p.ohwi, p.desc, p.elements_count, /*want_sum_i=*/job.fc);
-              if (!rearranged.ok()) {
-                p.status = rearranged.status();
-                continue;
+    if (!small_jobs.empty()) {
+      std::vector<const PackedWeightJob*> valid_small_jobs;
+      std::vector<LockedBufferSpan<const int8_t>> raw_spans;
+      std::vector<PreparedInt4Weights*> out_ptrs;
+      valid_small_jobs.reserve(small_jobs.size());
+      raw_spans.reserve(small_jobs.size());
+      out_ptrs.reserve(small_jobs.size());
+      for (const PackedWeightJob* job : small_jobs) {
+        const auto info = graph::GetInfo(job->tensor);
+        PreparedInt4Weights& out = prepared[job->tensor];
+        if (!info.ok() || (*info).buffer == nullptr) {
+          out.status =
+              absl::InternalError("Missing buffer during weight prep.");
+          continue;
+        }
+        const graph::TensorInformation& info_ref = *info;
+        valid_small_jobs.push_back(job);
+        raw_spans.push_back(info_ref.buffer->Lock().As<const int8_t>());
+        out_ptrs.push_back(&out);
+      }
+      const size_t num_workers = std::min(max_threads, out_ptrs.size());
+      ParallelFor(
+          num_workers, /*min_grain=*/1,
+          [&](size_t w_begin, size_t w_end) {
+            internal::ScopedOuterParallelPrepackWorker outer_guard;
+            for (size_t w = w_begin; w < w_end; ++w) {
+              for (size_t j = w; j < out_ptrs.size(); j += num_workers) {
+                RearrangePackedWeightJob(
+                    *valid_small_jobs[j],
+                    absl::MakeConstSpan(raw_spans[j].data(),
+                                        raw_spans[j].size()),
+                    /*max_threads=*/1, out_ptrs[j]);
               }
-              p.rearranged = std::move(rearranged->data);
-              p.sum_i = std::move(rearranged->sum_i);
+            }
+          },
+          num_workers);
+    }
+    return prepared;
+  }
+
+  // Streams INT4 and INT2 weight preparation so `shared_weights_->on_pack`
+  // persists and releases each packed descriptor immediately, keeping transient
+  // heap bounded on Apple / iOS devices.
+  absl::Status StreamPrepareInt4Weights(
+      absl::Span<const graph::Operation* const> execution_plan) {
+    std::vector<PackedWeightJob> jobs = CollectPackedWeightJobs(execution_plan);
+    if (jobs.empty()) return absl::OkStatus();
+    const size_t max_threads = GetWeightPrepThreads();
+    const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
+    const ml_drift::DataType float_type = conversion_ctx_.default_float_type;
+    const ml_drift::TensorStorageType default_2d_storage =
+        DefaultBlockwiseScaleStorageType(gpu_info, float_type);
+
+    absl::Duration int4_time = absl::ZeroDuration();
+    absl::Duration int2_time = absl::ZeroDuration();
+    size_t int4_bytes = 0;
+    size_t int2_bytes = 0;
+    int int4_count = 0;
+    int int2_count = 0;
+
+    auto register_prepared = [&](PackedWeightJob& job,
+                                 PreparedInt4Weights& p) -> absl::Status {
+      LRT_TENSOR_RETURN_IF_ERROR(p.status);
+      LRT_TENSOR_ASSIGN_OR_RETURN(graph::TensorInformation& info,
+                                  graph::GetInfo(job.tensor));
+      size_t packed_bytes = p.rearranged.size();
+      if (p.sum_i.has_value()) {
+        packed_bytes += p.sum_i->size() * sizeof(int32_t);
+        LRT_TENSOR_RETURN_IF_ERROR(
+            AddWeightsSumI(job.tensor, info, std::move(*p.sum_i)));
+      }
+      if (job.is_int2) {
+        int2_bytes += packed_bytes;
+        ++int2_count;
+      } else {
+        int4_bytes += packed_bytes;
+        ++int4_count;
+      }
+      ml_drift::TensorDescriptor weights_td =
+          CreatePackedWeightsTensorDescriptor(
+              job.desc, job.ohwi, static_cast<size_t>(job.elements_count),
+              job.is_embedding);
+      if (p.rearranged.size() == weights_td.GetMemorySizeInBytes()) {
+        weights_td.SetData(std::move(p.rearranged));
+      } else {
+        weights_td.UploadDataRaw(absl::MakeConstSpan(p.rearranged));
+        std::vector<uint8_t>().swap(p.rearranged);
+      }
+      ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
+      if (!info.name.empty() &&
+          conversion_ctx_.shared_weight_descriptors != nullptr) {
+        gpu_handle = model_builder_->AddConstantTensor(
+            StoreSharedWeightDescriptor(info.name, std::move(weights_td)));
+      } else {
+        gpu_handle = model_builder_->AddConstantTensor(std::move(weights_td));
+      }
+      conversion_ctx_.graph_tensor_to_handle[job.tensor] = gpu_handle;
+      name_to_tensor_map_[info.name] = job.tensor;
+      if (!info.name.empty()) {
+        conversion_ctx_.weight_name_to_handle.insert({info.name, gpu_handle});
+      }
+      // Stream blockwise scales and zero-points in the same unpack pass as the
+      // weights so lazy weights only unpack once and release before the next
+      // batch.
+      if (conversion_ctx_.shared_weight_descriptors != nullptr &&
+          !info.name.empty() && info.quantization != nullptr) {
+        auto bwq = info.quantization->As<const BlockwiseQuantization>();
+        if (bwq.ok() && bwq->quantized_dimension == 0 && bwq->block_size > 0 &&
+            job.ohwi.o > 1 && job.ohwi.i % bwq->block_size == 0) {
+          const int num_blocks = job.ohwi.i / bwq->block_size;
+          if (num_blocks > 1 && bwq->block_size % 4 == 0) {
+            const ml_drift::OHWI scale_shape(job.ohwi.o, 1, 1, num_blocks);
+            if (bwq->NumBlocks() ==
+                static_cast<size_t>(scale_shape.DimensionsProduct())) {
+              const std::string scale_key = absl::StrCat(
+                  info.name, ":scale:", static_cast<int>(float_type));
+              const std::string zp_key = absl::StrCat(
+                  info.name, ":zp:", static_cast<int>(float_type));
+              bwq->EnsureMaterialized();
+              const bool need_scale =
+                  !conversion_ctx_.shared_weight_descriptors->contains(
+                      scale_key);
+              const bool need_zp =
+                  !bwq->zero_points.IsSymmetric() &&
+                  !conversion_ctx_.shared_weight_descriptors->contains(zp_key);
+              if (need_scale || need_zp) {
+                PreparedBlockwiseScale prepared_scale =
+                    BuildPreparedBlockwiseScale(gpu_info, *bwq, scale_shape,
+                                                float_type, default_2d_storage);
+                LRT_TENSOR_RETURN_IF_ERROR(StorePreparedBlockwiseScale(
+                    scale_key, zp_key, prepared_scale));
+              }
             }
           }
-        },
-        num_workers);
-    return prepared;
+        }
+      }
+      bool only_fc_consumers = !job.is_embedding;
+      if (only_fc_consumers) {
+        for (const std::weak_ptr<graph::Operation>& weak_op : info.consumers) {
+          if (std::shared_ptr<graph::Operation> consumer = weak_op.lock();
+              consumer != nullptr && consumer->GetName() != "FullyConnected") {
+            only_fc_consumers = false;
+            break;
+          }
+        }
+      }
+      // Evict lazy payloads (and recursively any fused part buffers) before
+      // `MaybeReleaseFusedHostBuffer` clears `info.buffer`.
+      if (only_fc_consumers && info.buffer != nullptr && !info.name.empty() &&
+          conversion_ctx_.shared_weight_descriptors != nullptr &&
+          conversion_ctx_.shared_weight_descriptors->contains(info.name)) {
+        info.buffer->ReleaseMaterializedData();
+      }
+      MaybeReleaseFusedHostBuffer(job.tensor, info);
+      return absl::OkStatus();
+    };
+
+    std::vector<PackedWeightJob*> small_int4_jobs;
+    std::vector<PackedWeightJob*> small_int2_jobs;
+    for (PackedWeightJob& job : jobs) {
+      if (ShouldPackSoloParallel(job)) {
+        const absl::Time t0 = absl::Now();
+        PreparedInt4Weights p;
+        {
+          LRT_TENSOR_ASSIGN_OR_RETURN(const graph::TensorInformation& info,
+                                      graph::GetInfo(job.tensor));
+          const LockedBufferSpan<const int8_t> raw =
+              info.buffer->Lock().As<const int8_t>();
+          RearrangePackedWeightJob(
+              job, absl::MakeConstSpan(raw.data(), raw.size()), max_threads,
+              &p);
+        }
+        const absl::Duration elapsed = absl::Now() - t0;
+        if (job.is_int2) {
+          int2_time += elapsed;
+        } else {
+          int4_time += elapsed;
+        }
+        LRT_TENSOR_RETURN_IF_ERROR(register_prepared(job, p));
+      } else if (job.is_int2) {
+        small_int2_jobs.push_back(&job);
+      } else {
+        small_int4_jobs.push_back(&job);
+      }
+    }
+
+    auto run_small_batches =
+        [&](absl::Span<PackedWeightJob* const> batch_jobs,
+            absl::Duration& type_time) -> absl::Status {
+      constexpr size_t kMaxBatchJobs = 16;
+      constexpr size_t kMaxBatchBytes = 64ULL << 20;
+      size_t start = 0;
+      while (start < batch_jobs.size()) {
+        size_t end = start;
+        size_t batch_bytes = 0;
+        while (end < batch_jobs.size() && (end - start) < kMaxBatchJobs) {
+          const PackedWeightJob* job = batch_jobs[end];
+          const size_t est =
+              job->is_int2 ? (static_cast<size_t>(job->elements_count) + 3) / 4
+                           : (static_cast<size_t>(job->elements_count) + 1) / 2;
+          if (end > start && batch_bytes + est > kMaxBatchBytes) break;
+          batch_bytes += est;
+          ++end;
+        }
+        const size_t batch_len = end - start;
+        const absl::Time t0 = absl::Now();
+        std::vector<PreparedInt4Weights> batch_out(batch_len);
+        {
+          std::vector<LockedBufferSpan<const int8_t>> raw_spans;
+          raw_spans.reserve(batch_len);
+          for (size_t i = 0; i < batch_len; ++i) {
+            LRT_TENSOR_ASSIGN_OR_RETURN(
+                const graph::TensorInformation& info,
+                graph::GetInfo(batch_jobs[start + i]->tensor));
+            raw_spans.push_back(info.buffer->Lock().As<const int8_t>());
+          }
+          const size_t num_workers = std::min(max_threads, batch_len);
+          ParallelFor(
+              num_workers, /*min_grain=*/1,
+              [&](size_t w_begin, size_t w_end) {
+                internal::ScopedOuterParallelPrepackWorker outer_guard;
+                for (size_t w = w_begin; w < w_end; ++w) {
+                  for (size_t i = w; i < batch_len; i += num_workers) {
+                    RearrangePackedWeightJob(
+                        *batch_jobs[start + i],
+                        absl::MakeConstSpan(raw_spans[i].data(),
+                                            raw_spans[i].size()),
+                        /*max_threads=*/1, &batch_out[i]);
+                  }
+                }
+              },
+              num_workers);
+        }
+        type_time += absl::Now() - t0;
+        for (size_t i = 0; i < batch_len; ++i) {
+          LRT_TENSOR_RETURN_IF_ERROR(
+              register_prepared(*batch_jobs[start + i], batch_out[i]));
+        }
+        start = end;
+      }
+      return absl::OkStatus();
+    };
+
+    LRT_TENSOR_RETURN_IF_ERROR(run_small_batches(small_int4_jobs, int4_time));
+    LRT_TENSOR_RETURN_IF_ERROR(run_small_batches(small_int2_jobs, int2_time));
+    if (int4_count > 0) {
+      conversion_ctx_.AddWeightPackStat("int4", int4_time, int4_bytes,
+                                        int4_count);
+    }
+    if (int2_count > 0) {
+      conversion_ctx_.AddWeightPackStat("int2", int2_time, int2_bytes,
+                                        int2_count);
+    }
+    return absl::OkStatus();
   }
 
   // Registers the `sum_i` of FullyConnected weights that are already mapped to
@@ -1021,10 +2010,206 @@ class CompiledMlDriftModelRunner {
     return absl::OkStatus();
   }
 
+  struct PreparedBlockwiseScale {
+    ml_drift::TensorDescriptor scale_td;
+    std::optional<ml_drift::TensorDescriptor> zp_td;
+    absl::Status status;
+  };
+
+  static ml_drift::TensorStorageType DefaultBlockwiseScaleStorageType(
+      const ml_drift::GpuInfo& gpu_info, ml_drift::DataType float_type) {
+    float probe_vals[8] = {};
+    ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kFloat32> probe;
+    probe.shape = ml_drift::OHWI(4, 1, 1, 2);
+    probe.spanned_data = absl::MakeSpan(probe_vals, 8);
+    return ml_drift::ScaleOrZeroPointToTensorDesc(gpu_info, probe, float_type)
+        .GetStorageType();
+  }
+
+  static PreparedBlockwiseScale BuildPreparedBlockwiseScale(
+      const ml_drift::GpuInfo& gpu_info, const BlockwiseQuantization& bwq,
+      const ml_drift::OHWI& scale_shape, ml_drift::DataType float_type,
+      ml_drift::TensorStorageType default_2d_storage) {
+    PreparedBlockwiseScale result;
+    const size_t expected_blocks =
+        static_cast<size_t>(scale_shape.DimensionsProduct());
+    if (bwq.scales.size() != expected_blocks) {
+      result.status = absl::InternalError(absl::StrCat(
+          "Expected ", expected_blocks, " blockwise scales, got ",
+          bwq.scales.size()));
+      return result;
+    }
+    result.scale_td =
+        ml_drift_runner_internal::BuildBlockwiseScaleOrZpDescriptor(
+            gpu_info, bwq.scales, scale_shape, float_type, default_2d_storage);
+    if (!bwq.zero_points.IsSymmetric()) {
+      absl::StatusOr<std::vector<float>> zp_floats =
+          bwq.zero_points.template CopyAs<float>(bwq.scales.size());
+      if (!zp_floats.ok()) {
+        result.status = zp_floats.status();
+        return result;
+      }
+      result.zp_td =
+          ml_drift_runner_internal::BuildBlockwiseScaleOrZpDescriptor(
+              gpu_info, *zp_floats, scale_shape, float_type,
+              default_2d_storage);
+    }
+    return result;
+  }
+
+  absl::Status StorePreparedBlockwiseScale(const std::string& scale_key,
+                                           const std::string& zp_key,
+                                           PreparedBlockwiseScale& prepared,
+                                           size_t* scale_bytes = nullptr) {
+    LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
+    if (!conversion_ctx_.shared_weight_descriptors->contains(scale_key)) {
+      if (scale_bytes != nullptr) {
+        *scale_bytes += prepared.scale_td.GetData().size();
+      }
+      StoreSharedWeightDescriptor(scale_key, std::move(prepared.scale_td));
+    }
+    if (prepared.zp_td.has_value() && !zp_key.empty() &&
+        !conversion_ctx_.shared_weight_descriptors->contains(zp_key)) {
+      if (scale_bytes != nullptr) {
+        *scale_bytes += prepared.zp_td->GetData().size();
+      }
+      StoreSharedWeightDescriptor(zp_key, std::move(*prepared.zp_td));
+    }
+    return absl::OkStatus();
+  }
+
+  // Pre-packs blockwise quantization scale and zero-point descriptors in
+  // parallel into `shared_weight_descriptors` (streaming straight to `.mdwc`
+  // when `shared_weights_->on_pack` is active) so `AppendGpuModelBuilder`
+  // hits the shared cache in O(1) instead of packing hundreds of MB serially.
+  absl::Status PrepareBlockwiseScalesAndZps(
+      absl::Span<const graph::Operation* const> execution_plan) {
+    if (conversion_ctx_.shared_weight_descriptors == nullptr) {
+      return absl::OkStatus();
+    }
+    const ml_drift::DataType float_type = conversion_ctx_.default_float_type;
+    const bool streaming =
+        shared_weights_ != nullptr && shared_weights_->on_pack;
+    // When streaming INT4/INT2 packing without GPU weight conversion, defer
+    // those tensors' scales to `StreamPrepareInt4Weights` so lazy GGUF buffers
+    // unpack once per batch and release immediately.
+    const bool defer_packed_weights =
+        streaming && !GpuWeightConversionEnabled();
+    struct ScaleJob {
+      std::string scale_key;
+      std::string zp_key;
+      ml_drift::OHWI shape;
+      const BlockwiseQuantization* bwq = nullptr;
+    };
+    std::vector<ScaleJob> jobs;
+    absl::flat_hash_set<std::string> seen_keys;
+    for (const graph::Operation* op : execution_plan) {
+      if (op->GetName() != "FullyConnected" &&
+          op->GetName() != "EmbeddingLookup") {
+        continue;
+      }
+      const auto info = graph::GetInfo(op->inputs[1]);
+      if (!info.ok() || info->name.empty() || info->quantization == nullptr) {
+        continue;
+      }
+      auto bwq = info->quantization->As<const BlockwiseQuantization>();
+      if (!bwq.ok() || bwq->quantized_dimension != 0 || bwq->block_size <= 0) {
+        continue;
+      }
+      auto bhwc = ShapeToBHWC(info->shape);
+      if (!bhwc.ok()) continue;
+      const ml_drift::OHWI ohwi(bhwc->b, bhwc->h, bhwc->w, bhwc->c);
+      if (ohwi.o <= 1 || ohwi.i % bwq->block_size != 0) continue;
+      const int num_blocks = ohwi.i / bwq->block_size;
+      if (num_blocks <= 1 || bwq->block_size % 4 != 0) continue;
+      const ml_drift::OHWI scale_shape(ohwi.o, 1, 1, num_blocks);
+      const size_t expected_blocks =
+          static_cast<size_t>(scale_shape.DimensionsProduct());
+      if (bwq->NumBlocks() != expected_blocks) {
+        continue;
+      }
+      if (bwq->scales.empty() &&
+          (bwq->IsMaterialized() || info->buffer == nullptr)) {
+        continue;
+      }
+      if (defer_packed_weights &&
+          (info->type == Type::kI4 || info->type == Type::kI2) &&
+          info->buffer != nullptr &&
+          !conversion_ctx_.external_weight_names.contains(info->name) &&
+          !conversion_ctx_.shared_weight_descriptors->contains(info->name)) {
+        continue;
+      }
+      std::string scale_key =
+          absl::StrCat(info->name, ":scale:", static_cast<int>(float_type));
+      if (!seen_keys.insert(scale_key).second) continue;
+      const bool may_have_zp =
+          !bwq->zero_points.IsSymmetric() || bwq->MayHaveFloatZeroPoints();
+      std::string zp_key =
+          absl::StrCat(info->name, ":zp:", static_cast<int>(float_type));
+      const bool scale_cached =
+          conversion_ctx_.shared_weight_descriptors->contains(scale_key);
+      const bool zp_cached =
+          !may_have_zp ||
+          conversion_ctx_.shared_weight_descriptors->contains(zp_key);
+      if (scale_cached && zp_cached) continue;
+      jobs.push_back(ScaleJob{.scale_key = std::move(scale_key),
+                              .zp_key = std::move(zp_key),
+                              .shape = scale_shape,
+                              .bwq = &(*bwq)});
+    }
+    if (jobs.empty()) return absl::OkStatus();
+
+    const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
+    const ml_drift::TensorStorageType default_2d_storage =
+        DefaultBlockwiseScaleStorageType(gpu_info, float_type);
+
+    size_t max_threads = 16;
+    if (const char* e = std::getenv("LRT_WEIGHT_PREP_THREADS"); e != nullptr) {
+      int parsed = 0;
+      if (absl::SimpleAtoi(e, &parsed)) {
+        max_threads = static_cast<size_t>(std::max(1, parsed));
+      }
+    }
+    const size_t batch_cap = streaming ? 32 : jobs.size();
+    const absl::Time scale_start = absl::Now();
+    size_t scale_bytes = 0;
+    for (size_t begin = 0; begin < jobs.size();) {
+      const size_t end = std::min(begin + batch_cap, jobs.size());
+      const size_t batch_len = end - begin;
+      std::vector<PreparedBlockwiseScale> out(batch_len);
+      const size_t num_workers = std::min(max_threads, batch_len);
+      ParallelFor(
+          num_workers, /*min_grain=*/1,
+          [&](size_t w_begin, size_t w_end) {
+            for (size_t w = w_begin; w < w_end; ++w) {
+              for (size_t i = w; i < batch_len; i += num_workers) {
+                const ScaleJob& job = jobs[begin + i];
+                job.bwq->EnsureMaterialized();
+                out[i] = BuildPreparedBlockwiseScale(
+                    gpu_info, *job.bwq, job.shape, float_type,
+                    default_2d_storage);
+              }
+            }
+          },
+          num_workers);
+      for (size_t i = 0; i < batch_len; ++i) {
+        const ScaleJob& job = jobs[begin + i];
+        LRT_TENSOR_RETURN_IF_ERROR(StorePreparedBlockwiseScale(
+            job.scale_key, job.zp_key, out[i], &scale_bytes));
+      }
+      begin = end;
+    }
+    conversion_ctx_.AddWeightPackStat("scales", absl::Now() - scale_start,
+                                      scale_bytes,
+                                      static_cast<int>(jobs.size()));
+    return absl::OkStatus();
+  }
+
   absl::Status RearrangeAndMapConstantWeights() {
     LRT_TENSOR_ASSIGN_OR_RETURN(
         std::vector<const graph::Operation*> execution_plan,
         GetExecutionPlan(flat_outputs_));
+    LRT_TENSOR_RETURN_IF_ERROR(PrepareBlockwiseScalesAndZps(execution_plan));
     if (GpuWeightConversionEnabled()) {
       const absl::Time register_start = absl::Now();
       LRT_TENSOR_RETURN_IF_ERROR(RegisterGpuWeightConversions(execution_plan));
@@ -1040,20 +2225,38 @@ class CompiledMlDriftModelRunner {
             static_cast<int>(gpu_weight_conversions_.size()));
       }
     }
-    const absl::Time int4_start = absl::Now();
-    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared_int4 =
-        PrepareInt4Weights(execution_plan);
-    const absl::Duration int4_time = absl::Now() - int4_start;
-    if (!prepared_int4.empty()) {
+    absl::node_hash_map<graph::Tensor, PreparedInt4Weights> prepared_int4;
+    if (shared_weights_ != nullptr && shared_weights_->on_pack) {
+      LRT_TENSOR_RETURN_IF_ERROR(StreamPrepareInt4Weights(execution_plan));
+    } else {
+      const absl::Time pack_start = absl::Now();
+      prepared_int4 = PrepareInt4Weights(execution_plan);
+      const absl::Duration pack_time = absl::Now() - pack_start;
       size_t int4_bytes = 0;
+      size_t int2_bytes = 0;
+      int int4_count = 0;
+      int int2_count = 0;
       for (const auto& [tensor, p] : prepared_int4) {
-        int4_bytes += p.rearranged.size();
+        size_t bytes = p.rearranged.size();
         if (p.sum_i.has_value()) {
-          int4_bytes += p.sum_i->size() * sizeof(int32_t);
+          bytes += p.sum_i->size() * sizeof(int32_t);
+        }
+        if (p.is_int2) {
+          int2_bytes += bytes;
+          ++int2_count;
+        } else {
+          int4_bytes += bytes;
+          ++int4_count;
         }
       }
-      conversion_ctx_.AddWeightPackStat("int4", int4_time, int4_bytes,
-                                        static_cast<int>(prepared_int4.size()));
+      if (int4_count > 0) {
+        conversion_ctx_.AddWeightPackStat("int4", pack_time, int4_bytes,
+                                          int4_count);
+      }
+      if (int2_count > 0) {
+        conversion_ctx_.AddWeightPackStat("int2", pack_time, int2_bytes,
+                                          int2_count);
+      }
     }
 
     for (const graph::Operation* op : execution_plan) {
@@ -1075,14 +2278,17 @@ class CompiledMlDriftModelRunner {
         if (conversion_ctx_.external_weight_names.contains(info.name)) {
           continue;
         }
-        // Fused weights are always constants; their host buffer may have been
-        // released by an earlier compilation of this graph (see
-        // `SharedWeightsCache::release_fused_host_buffers`).
+        // Constant weights (including fused weights or bufferless weight stubs
+        // for passes reusing `SharedWeightsCache`) may have no host buffer when
+        // an earlier compilation already uploaded their packed GPU copy.
         const bool is_fused_weight = absl::StrContains(info.name, '+');
+        const bool is_leaf_weight =
+            weights_tensor.group != nullptr &&
+            weights_tensor.group->producer == nullptr;
         // Reuse a packed descriptor of the shared cache before looking at the
-        // host buffer, so that recompiling a graph whose fused weights were
-        // released still finds them.
-        if ((info.buffer != nullptr || is_fused_weight) && !info.name.empty() &&
+        // host buffer, so that recompiling a graph whose host weights were
+        // released or replaced by bufferless stubs still finds them.
+        if (is_leaf_weight && !info.name.empty() &&
             conversion_ctx_.shared_weight_descriptors != nullptr) {
           auto shared_it =
               conversion_ctx_.shared_weight_descriptors->find(info.name);
@@ -1114,13 +2320,13 @@ class CompiledMlDriftModelRunner {
         auto lock = buffer->Lock();
         auto raw_span = std::move(lock).As<const int8_t>();
 
-        if (info.type != Type::kI4) {
+        if (info.type != Type::kI4 && info.type != Type::kI2) {
           // Constant weights consumed by FullyConnected / EmbeddingLookup
           // kernels must be stored in the kernel's packed weights layout.
           // The generic constant path in `GetTensorHandle` creates a plain
           // linear tensor instead, which silently produces wrong results, so
           // pack them here the same way the ML Drift numerical test bridge
-          // does. INT4 keeps its dedicated path below.
+          // does. INT4 and INT2 keep their dedicated fast path below.
           MlDriftDummyWeightCreator weight_creator(model_builder_.get());
           Tensor<MlDriftMixinTag> weights_wrapper(weights_tensor);
           ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
@@ -1130,6 +2336,7 @@ class CompiledMlDriftModelRunner {
               conversion_ctx_.shared_weight_descriptors != nullptr) {
             shared_desc_out = &local_shared_desc;
           }
+          std::optional<std::vector<int32_t>> sum_i;
           const absl::Time pack_start = absl::Now();
           if (info.type == Type::kFP32) {
             absl::Span<const float> data(
@@ -1140,14 +2347,13 @@ class CompiledMlDriftModelRunner {
                 weight_creator.CreateFcWeights<float>(
                     weights_wrapper, data, conversion_ctx_.default_float_type,
                     shared_desc_out));
-          } else if (info.type == Type::kI8 || info.type == Type::kI2) {
-            // `CreateFcWeights<int8_t>` takes the raw bytes (packed for INT2),
-            // unpacks INT2 to one int8 per value and rearranges it like INT8.
-            // INT4 has its own path (`PrepareInt4Weights`) because INT4
-            // weights include the largest tensors (e.g. a tied embedding / LM
-            // head): it rearranges straight from the packed bytes, in
-            // parallel, without full-size INT8 copies. INT2 could do the same
-            // with ML Drift's `RearrangeWeightsUInt2Packed`.
+          } else if (info.type == Type::kI8) {
+            if (op->GetName() == "FullyConnected" && WantsWeightsSumI(info)) {
+              LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_s, ShapeToBHWC(info.shape));
+              const ml_drift::OHWI ohwi(bhwc_s.b, bhwc_s.h, bhwc_s.w, bhwc_s.c);
+              LRT_TENSOR_ASSIGN_OR_RETURN(
+                  sum_i, ComputeInt8WeightsSumI(raw_span, ohwi));
+            }
             LRT_TENSOR_ASSIGN_OR_RETURN(
                 gpu_handle,
                 weight_creator.CreateFcWeights<int8_t>(
@@ -1159,14 +2365,16 @@ class CompiledMlDriftModelRunner {
                 info.type, " (tensor '", info.name, "')"));
           }
           conversion_ctx_.AddWeightPackStat(
-              info.type == Type::kFP32 ? "fp"
-              : info.type == Type::kI8 ? "int8"
-                                       : "int2",
+              info.type == Type::kFP32 ? "fp" : "int8",
               absl::Now() - pack_start,
               gpu_handle.tensor_desc.GetMemorySizeInBytes());
           if (shared_desc_out != nullptr) {
-            conversion_ctx_.shared_weight_descriptors->emplace(
-                info.name, std::move(local_shared_desc));
+            StoreSharedWeightDescriptor(info.name,
+                                        std::move(local_shared_desc));
+          }
+          if (sum_i.has_value()) {
+            LRT_TENSOR_RETURN_IF_ERROR(
+                AddWeightsSumI(weights_tensor, info, std::move(*sum_i)));
           }
           conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
           name_to_tensor_map_[info.name] = weights_tensor;
@@ -1178,22 +2386,11 @@ class CompiledMlDriftModelRunner {
           continue;
         }
 
-        auto prepared_it = prepared_int4.find(weights_tensor);
-        if (prepared_it == prepared_int4.end()) {
-          return absl::InternalError(absl::StrCat("INT4 weights '", info.name,
-                                                  "' were not prepared."));
-        }
-        PreparedInt4Weights& prepared = prepared_it->second;
-        LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
-        const ml_drift::OHWI weights_ohwi = prepared.ohwi;
-        const ml_drift::WeightsDescription desc = prepared.desc;
-        const int elements_count = prepared.elements_count;
-        std::vector<uint8_t> rearranged_data = std::move(prepared.rearranged);
-        if (op->GetName() == "FullyConnected" && prepared.sum_i.has_value()) {
-          LRT_TENSOR_RETURN_IF_ERROR(
-              AddWeightsSumI(weights_tensor, info, std::move(*prepared.sum_i)));
-        }
-
+        const bool is_int2 = (info.type == Type::kI2);
+        ml_drift::OHWI weights_ohwi;
+        ml_drift::WeightsDescription desc;
+        size_t elements_count = 0;
+        std::vector<uint8_t> rearranged_data;
         bool is_embedding = (op->GetName() == "EmbeddingLookup" ||
                              info.name == "model.embed_tokens.weight" ||
                              info.name == "token_embd.weight");
@@ -1208,21 +2405,80 @@ class CompiledMlDriftModelRunner {
             }
           }
         }
+        bool is_supported_texture = false;
+        std::optional<std::vector<int32_t>> sum_i;
+
+        if (auto prepared_it = prepared_int4.find(weights_tensor);
+            prepared_it != prepared_int4.end()) {
+          PreparedInt4Weights& prepared = prepared_it->second;
+          LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
+          weights_ohwi = prepared.ohwi;
+          desc = prepared.desc;
+          if (is_int2 && desc.type != ml_drift::DataType::kUint2 &&
+              desc.type != ml_drift::DataType::kInt2) {
+            return absl::UnimplementedError(
+                "Only INT4 and INT2 weight rearrangement is supported in "
+                "pre-rearrange.");
+          }
+          elements_count = static_cast<size_t>(prepared.elements_count);
+          rearranged_data = std::move(prepared.rearranged);
+          is_supported_texture =
+              desc.layout ==
+              ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+          if (op->GetName() == "FullyConnected" && prepared.sum_i.has_value()) {
+            sum_i = std::move(prepared.sum_i);
+          }
+        } else if (!is_int2) {
+          return absl::InternalError(absl::StrCat("INT4 weights '", info.name,
+                                                  "' were not prepared."));
+        } else {
+          const absl::Time int2_start = absl::Now();
+          LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_shape, ShapeToBHWC(info.shape));
+          weights_ohwi = ml_drift::OHWI(bhwc_shape.b, bhwc_shape.h,
+                                        bhwc_shape.w, bhwc_shape.c);
+          desc = model_builder_->GetFullyConnectedInt2WeightsDesc(weights_ohwi);
+          is_supported_texture =
+              desc.layout ==
+              ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+          const bool want_sum_i =
+              op->GetName() == "FullyConnected" && WantsWeightsSumI(info) &&
+              (desc.IsLinearLayout() || !is_embedding || is_supported_texture);
+          elements_count = static_cast<size_t>(
+              ml_drift::GetTotalElementsCountForLayout(desc, weights_ohwi));
+          LRT_TENSOR_ASSIGN_OR_RETURN(
+              ml_drift_runner_internal::RearrangedInt4Weights rearranged,
+              ml_drift_runner_internal::RearrangeInt2Weights(
+                  absl::MakeConstSpan(
+                      reinterpret_cast<const uint8_t*>(raw_span.data()),
+                      raw_span.size()),
+                  weights_ohwi, desc, static_cast<int>(elements_count),
+                  want_sum_i));
+          rearranged_data = std::move(rearranged.data);
+          sum_i = std::move(rearranged.sum_i);
+          conversion_ctx_.AddWeightPackStat(
+              "int2", absl::Now() - int2_start, rearranged_data.size());
+        }
+        if (sum_i.has_value()) {
+          LRT_TENSOR_RETURN_IF_ERROR(
+              AddWeightsSumI(weights_tensor, info, std::move(*sum_i)));
+        }
+
         ml_drift::TensorDescriptor weights_td =
             CreatePackedWeightsTensorDescriptor(
                 desc, weights_ohwi, static_cast<size_t>(elements_count),
                 is_embedding);
 
-        weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));
+        if (rearranged_data.size() == weights_td.GetMemorySizeInBytes()) {
+          weights_td.SetData(std::move(rearranged_data));
+        } else {
+          weights_td.UploadDataRaw(absl::MakeConstSpan(rearranged_data));
+        }
 
         ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
         if (!info.name.empty() &&
             conversion_ctx_.shared_weight_descriptors != nullptr) {
-          auto [shared_it, _] =
-              conversion_ctx_.shared_weight_descriptors->emplace(
-                  info.name, std::move(weights_td));
           gpu_handle = model_builder_->AddConstantTensor(
-              CopyDescriptorWithoutData(shared_it->second));
+              StoreSharedWeightDescriptor(info.name, std::move(weights_td)));
         } else {
           gpu_handle = model_builder_->AddConstantTensor(std::move(weights_td));
         }
@@ -1344,9 +2600,35 @@ class CompiledMlDriftModelRunner {
     gpu_weight_conversions_.clear();
 
     const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
-    // The converted tensors, by main model value id.
+    // The converted tensors of the current batch, by main model value id.
     absl::flat_hash_map<ml_drift::ValueId, std::unique_ptr<BackendTensor>>
         dst_tensors;
+    // Binds the converted (or cached) tensors to the model and drops the host
+    // weights immediately so fused host buffers are freed batch-by-batch as
+    // GPU tensors are allocated instead of overlapping across the entire model.
+    const auto bind = [&](GpuWeightConversion& c,
+                          bool converted) -> absl::Status {
+      const auto take = [&](const ml_drift::GpuModelBuilder::TensorHandle& h)
+          -> std::unique_ptr<BackendTensor> {
+        if (!converted) return nullptr;
+        return std::move(dst_tensors.at(h.id));
+      };
+      LRT_TENSOR_RETURN_IF_ERROR(BindConvertedWeights(
+          c.name, c.handle, take(c.handle), external_tensors));
+      if (c.sum_i.has_value()) {
+        LRT_TENSOR_RETURN_IF_ERROR(
+            BindConvertedWeights(WeightsSumIName(c.name), *c.sum_i,
+                                 take(*c.sum_i), external_tensors));
+      }
+      c.raw = LockedBufferSpan<const int8_t>::Empty();
+      c.buffer.reset();
+      if (absl::StatusOr<graph::TensorInformation&> info =
+              graph::GetInfo(c.weights_tensor);
+          info.ok()) {
+        MaybeReleaseFusedHostBuffer(c.weights_tensor, *info);
+      }
+      return absl::OkStatus();
+    };
     size_t converted_bytes = 0;
     // Every batch is non-empty: `GpuWeightConversionBatchEnd` > `begin`.
     for (size_t begin = 0; begin < to_convert.size();) {
@@ -1397,36 +2679,11 @@ class CompiledMlDriftModelRunner {
       LRT_TENSOR_RETURN_IF_ERROR(
           Backend::AddToQueue(&conversion_context, env_ptr_));
       LRT_TENSOR_RETURN_IF_ERROR(Backend::WaitForCompletion(env_ptr_));
+      for (size_t i = begin; i < end; ++i) {
+        LRT_TENSOR_RETURN_IF_ERROR(bind(to_convert[i], /*converted=*/true));
+      }
+      dst_tensors.clear();
       begin = end;
-    }
-    // Bind the converted (or cached) tensors to the model and drop the host
-    // weights. Only the `to_convert` weights have tensors in `dst_tensors`;
-    // the `in_cache` ones bind the tensors of the `SharedWeightsCache`.
-    const auto bind = [&](GpuWeightConversion& c,
-                          bool converted) -> absl::Status {
-      const auto take = [&](const ml_drift::GpuModelBuilder::TensorHandle& h)
-          -> std::unique_ptr<BackendTensor> {
-        if (!converted) return nullptr;
-        return std::move(dst_tensors.at(h.id));
-      };
-      LRT_TENSOR_RETURN_IF_ERROR(BindConvertedWeights(
-          c.name, c.handle, take(c.handle), external_tensors));
-      if (c.sum_i.has_value()) {
-        LRT_TENSOR_RETURN_IF_ERROR(
-            BindConvertedWeights(WeightsSumIName(c.name), *c.sum_i,
-                                 take(*c.sum_i), external_tensors));
-      }
-      c.raw = LockedBufferSpan<const int8_t>::Empty();
-      c.buffer.reset();
-      if (absl::StatusOr<graph::TensorInformation&> info =
-              graph::GetInfo(c.weights_tensor);
-          info.ok()) {
-        MaybeReleaseFusedHostBuffer(c.weights_tensor, *info);
-      }
-      return absl::OkStatus();
-    };
-    for (GpuWeightConversion& c : to_convert) {
-      LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/true));
     }
     for (GpuWeightConversion& c : in_cache) {
       LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/false));
