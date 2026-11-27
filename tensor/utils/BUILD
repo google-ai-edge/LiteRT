@@ -20,6 +20,32 @@ cc_library(
 )
 
 cc_library(
+    name = "mapped_file",
+    srcs = ["mapped_file.cc"],
+    hdrs = ["mapped_file.h"],
+    deps = [
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_absl//absl/types:span",
+    ],
+)
+
+cc_test(
+    name = "mapped_file_test",
+    srcs = ["mapped_file_test.cc"],
+    deps = [
+        ":mapped_file",
+        "@com_google_absl//absl/status",
+        "@com_google_absl//absl/status:status_matchers",
+        "@com_google_absl//absl/status:statusor",
+        "@com_google_absl//absl/strings:string_view",
+        "@com_google_googletest//:gtest_main",
+    ],
+)
+
+cc_library(
     name = "parallel",
     srcs = ["parallel.cc"],
     hdrs = ["parallel.h"],
