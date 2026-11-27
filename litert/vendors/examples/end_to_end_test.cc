@@ -13,6 +13,7 @@
 // limitations under the License.
 
 #include <cstdint>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -39,6 +40,7 @@ namespace {
 using ::litert::testing::GetLiteRtPath;
 using ::litert::testing::GetTestFilePath;
 using ::testing::ElementsAre;
+using ::testing::ElementsAreArray;
 
 static constexpr absl::string_view kLibsPath = "vendors/examples";
 static constexpr absl::string_view kModel = "one_mul.tflite";
@@ -104,6 +106,48 @@ TEST(ExampleEndToEndTest, JitHandleExecution) {
   std::vector<float> output(4);
   LITERT_ASSERT_OK(output_buffers[0].Read(absl::MakeSpan(output)));
   EXPECT_THAT(output, ElementsAre(2.0f, 4.0f, 6.0f, 8.0f));
+}
+
+// The models return x * y and the input y, or x * y twice.
+TEST(ExampleEndToEndTest, JitTensorListedMoreThanOnce) {
+  const auto libs_path = GetLiteRtPath(kLibsPath);
+  const std::vector<litert::EnvironmentOptions::Option> environment_options = {
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kCompilerPluginLibraryDir,
+          libs_path,
+      },
+      litert::EnvironmentOptions::Option{
+          litert::EnvironmentOptions::Tag::kDispatchLibraryDir,
+          libs_path,
+      },
+  };
+  LITERT_ASSERT_OK_AND_ASSIGN(
+      auto env, litert::Environment::Create(litert::EnvironmentOptions(
+                    absl::MakeConstSpan(environment_options))));
+
+  const std::pair<absl::string_view, std::vector<float>> kModels[] = {
+      {"passthrough_output_tensor.tflite", {10.0f, 20.0f}},
+      {"duplicate_output_tensor.tflite", {10.0f, 40.0f}},
+  };
+  for (const auto& [model, second_output] : kModels) {
+    SCOPED_TRACE(model);
+    LITERT_ASSERT_OK_AND_ASSIGN(
+        auto cm, CompiledModel::Create(env, GetTestFilePath(model),
+                                       HwAccelerators::kNpu));
+    LITERT_ASSERT_OK_AND_ASSIGN(auto input_buffers, cm.CreateInputBuffers());
+    LITERT_ASSERT_OK_AND_ASSIGN(auto output_buffers, cm.CreateOutputBuffers());
+    LITERT_ASSERT_OK(input_buffers[0].Write<float>({1.0f, 2.0f}));
+    LITERT_ASSERT_OK(input_buffers[1].Write<float>({10.0f, 20.0f}));
+    for (auto& output_buffer : output_buffers) {
+      LITERT_ASSERT_OK(output_buffer.Write<float>({-1.0f, -1.0f}));
+    }
+    LITERT_ASSERT_OK(cm.Run(input_buffers, output_buffers));
+    std::vector<float> output(2);
+    LITERT_ASSERT_OK(output_buffers[0].Read(absl::MakeSpan(output)));
+    EXPECT_THAT(output, ElementsAre(10.0f, 40.0f));
+    LITERT_ASSERT_OK(output_buffers[1].Read(absl::MakeSpan(output)));
+    EXPECT_THAT(output, ElementsAreArray(second_output));
+  }
 }
 
 TEST(ExampleEndToEndTest, SelectedSignaturesWithMultiSubgraphModel) {
