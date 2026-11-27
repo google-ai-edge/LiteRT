@@ -42,6 +42,16 @@ ml_drift::TensorDescriptor CreatePackedWeightsTensorDescriptor(
     const ml_drift::OHWI& weights_shape, size_t elements_count,
     bool is_embedding);
 
+// Parallel, zero-intermediate-copy rearrangement of dense INT8 OHWI weights
+// into ML Drift's UINT8 (+128 shifted, 0x80 padded) I4O4 layouts
+// (`kOSpatialIOGroupI4O4` and `k2DYIsSpatialIOAndXIsOGroupI4O4` for `h == 1`,
+// `w == 1`). Returns false if `desc` or `weights_shape` is outside the fast
+// path so callers can fall back to `ml_drift::RearrangeWeightsInt8AsUint8`.
+bool TryRearrangeInt8AsUint8Direct(absl::Span<const int8_t> src,
+                                   const ml_drift::OHWI& weights_shape,
+                                   const ml_drift::WeightsDescription& desc,
+                                   absl::Span<uint8_t> dst);
+
 class MlDriftDummyWeightCreator {
  public:
   explicit MlDriftDummyWeightCreator(ml_drift::GpuModelBuilder* model_builder);
