@@ -87,6 +87,13 @@ class OpMixin<LeakyReluOperation, MlDriftMixinTag> : public MlDriftOperation {
 };
 
 template <>
+class OpMixin<ClampOperation, MlDriftMixinTag> : public MlDriftOperation {
+ public:
+  absl::Status ToMlDrift(const graph::Operation& op,
+                         MlDriftBuildContext& ctx) const override;
+};
+
+template <>
 class OpMixin<EluOperation, MlDriftMixinTag> : public MlDriftOperation {
  public:
   absl::Status ToMlDrift(const graph::Operation& op,
