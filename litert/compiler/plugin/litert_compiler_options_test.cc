@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <gtest/gtest.h>
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/c/options/litert_compiler_options.h"
 
@@ -42,6 +43,33 @@ TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptions) {
             kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected);
   EXPECT_TRUE(options.dummy_option);
   EXPECT_EQ(options.max_partitions, 3);
+}
+
+TEST(LiteRtCompilerOptionsTest, ParseAcyclicPartitionStrategy) {
+  constexpr absl::string_view kToml = R"(
+    partition_strategy = 2
+  )";
+
+  LiteRtCompilerOptionsT options;
+  ASSERT_EQ(ParseLiteRtCompilerOptions(kToml.data(), kToml.size(), &options),
+            kLiteRtStatusOk);
+
+  EXPECT_EQ(options.partition_strategy,
+            kLiteRtCompilerOptionsPartitionStrategyAcyclic);
+}
+
+TEST(LiteRtCompilerOptionsTest, ParseRejectsUnknownPartitionStrategy) {
+  for (absl::string_view toml : {
+           absl::string_view(R"(partition_strategy = -1)"),
+           absl::string_view(R"(partition_strategy = 3)"),
+           absl::string_view(R"(partition_strategy = 99)"),
+           absl::string_view(R"(partition_strategy = "acyclic")"),
+       }) {
+    LiteRtCompilerOptionsT options;
+    EXPECT_EQ(ParseLiteRtCompilerOptions(toml.data(), toml.size(), &options),
+              kLiteRtStatusErrorInvalidArgument)
+        << "toml: " << toml;
+  }
 }
 
 TEST(LiteRtCompilerOptionsTest, ParseLiteRtCompilerOptionsDefaults) {

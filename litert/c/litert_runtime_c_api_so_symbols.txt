@@ -388,6 +388,7 @@ LiteRtGetTensorBufferWebGpuBuffer
 LiteRtGetTensorDefiningOp
 LiteRtGetTensorIndex
 LiteRtGetTensorName
+LiteRtGetTensorSubgraph
 LiteRtGetTensorTypeId
 LiteRtGetTensorUse
 LiteRtGetTensorWeights

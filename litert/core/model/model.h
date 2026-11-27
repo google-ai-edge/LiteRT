@@ -357,6 +357,13 @@ class LiteRtTensorT {
     defining_op_out_ind_ = 0;
   }
 
+  // Get the subgraph that owns this tensor, null if unattached or uncommitted
+  // inside LiteRtBuilderT.
+  LiteRtSubgraph Subgraph() const { return subgraph_; }
+
+  // Update the subgraph that owns this tensor.
+  void SetSubgraph(LiteRtSubgraph subgraph) { subgraph_ = subgraph; }
+
   // Any constant data associated with this tensor.
   const LiteRtWeightsT& Weights() const { return weights_; }
   LiteRtWeightsT& Weights() { return weights_; }
@@ -452,6 +459,7 @@ class LiteRtTensorT {
 
   LiteRtOp defining_op_ = nullptr;
   LiteRtParamIndex defining_op_out_ind_ = 0;
+  LiteRtSubgraph subgraph_ = nullptr;
 
   LiteRtWeightsT weights_;
   Quantization quantization_;
@@ -675,12 +683,13 @@ class LiteRtSubgraphT {
   // reference to it.
   template <class... Args>
   LiteRtTensorT& EmplaceTensor(Args&&... args) {
-    if (buffer_manager_ == nullptr) {
-      return tensors_.EmplaceBack(std::forward<Args>(args)...);
-    } else {
-      // std::cerr << "Emplacing tensor with buffer manager \n";
-      return tensors_.EmplaceBack(buffer_manager_, std::forward<Args>(args)...);
-    }
+    LiteRtTensorT& tensor =
+        (buffer_manager_ == nullptr)
+            ? tensors_.EmplaceBack(std::forward<Args>(args)...)
+            : tensors_.EmplaceBack(buffer_manager_,
+                                   std::forward<Args>(args)...);
+    tensor.SetSubgraph(this);
+    return tensor;
   }
 
   // Construct a new op which will be owned by this subgraph and get a
@@ -717,6 +726,9 @@ class LiteRtSubgraphT {
   // subgraph. Tensors are appended in order.
   void TransferTensorsFrom(LiteRtTensorT::Alloc& other) {
     tensors_.TransferFrom(other);
+    for (LiteRtTensor tensor : Tensors()) {
+      tensor->SetSubgraph(this);
+    }
   }
 
   // Reorders the ops in this subgraph to match the given order.
@@ -732,9 +744,40 @@ class LiteRtSubgraphT {
   explicit LiteRtSubgraphT(::litert::internal::BufferManager* buffer_manager)
       : buffer_manager_(buffer_manager) {};
   LiteRtSubgraphT(const LiteRtSubgraphT&) = delete;
-  LiteRtSubgraphT(LiteRtSubgraphT&&) = default;
+  LiteRtSubgraphT(LiteRtSubgraphT&& other) noexcept
+      : buffer_manager_(other.buffer_manager_),
+        tensors_(std::move(other.tensors_)),
+        ops_(std::move(other.ops_)),
+        inputs_(std::move(other.inputs_)),
+        outputs_(std::move(other.outputs_)),
+        name_(std::move(other.name_)) {
+    if (tensors_.Size() > 0) {
+      for (LiteRtTensor tensor : tensors_.Elements()) {
+        if (tensor->Subgraph() == &other) {
+          tensor->SetSubgraph(this);
+        }
+      }
+    }
+  }
   LiteRtSubgraphT& operator=(const LiteRtSubgraphT&) = delete;
-  LiteRtSubgraphT& operator=(LiteRtSubgraphT&&) = default;
+  LiteRtSubgraphT& operator=(LiteRtSubgraphT&& other) noexcept {
+    if (this != &other) {
+      buffer_manager_ = other.buffer_manager_;
+      tensors_ = std::move(other.tensors_);
+      ops_ = std::move(other.ops_);
+      inputs_ = std::move(other.inputs_);
+      outputs_ = std::move(other.outputs_);
+      name_ = std::move(other.name_);
+      if (tensors_.Size() > 0) {
+        for (LiteRtTensor tensor : tensors_.Elements()) {
+          if (tensor->Subgraph() == &other) {
+            tensor->SetSubgraph(this);
+          }
+        }
+      }
+    }
+    return *this;
+  }
 
   // Get the buffer manager for this subgraph.
   ::litert::internal::BufferManager* GetBufferManager() const {
@@ -1394,6 +1437,9 @@ bool IsConstant(const LiteRtTensorT& tensor);
 
 // Is this tensor a subgraph input tensor?
 bool IsSubgraphInput(const LiteRtTensorT& tensor);
+
+// Is this tensor a subgraph output tensor?
+bool IsSubgraphOutput(const LiteRtTensorT& tensor);
 
 // MUTATORS
 
