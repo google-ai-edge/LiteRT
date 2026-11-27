@@ -26,6 +26,8 @@ package(
     # "//platforms/darwinn/compiler:__subpackages__",
     # "//third_party/odml/litert:__subpackages__",
     # "@org_tensorflow//tensorflow:__subpackages__",
+    # "//waymo/accelerator/alpine/compiler/compute/transforms:__pkg__",
+    # "//waymo/accelerator/alpine/compiler/conversion:__pkg__",
     # ],
     # copybara:uncomment_end_and_comment_begin
     default_visibility = [
@@ -89,7 +91,6 @@ cc_library(
         "@llvm-project//mlir:Support",
         "@org_tensorflow//tensorflow/compiler/mlir/quantization/common/ir:QuantOps",
         "@org_tensorflow//tensorflow/compiler/mlir/tools/optimize:quantization_utils",
-        "@org_tensorflow//tensorflow/core:lib_proto_parsing",
         "@org_tensorflow//tensorflow/core:protos_all_cc",
     ],
 )
