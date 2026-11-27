@@ -93,6 +93,11 @@ TEST(TestGoogleTensorPlugin, GetConfigInfo) {
                            // "Tensor_G7"
                            // copybara:uncomment_end
                            ));
+
+  const char* sdk_version = nullptr;
+  LITERT_ASSERT_OK(plugin.Api()->get_compiler_plugin_sdk_version(plugin.Get(),
+                                                                 &sdk_version));
+  EXPECT_STREQ(sdk_version, "1.0.0");
 }
 
 TEST(TestCallGoogleTensorPlugin, PartitionSimpleMultiAdd) {
