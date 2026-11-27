@@ -13,6 +13,7 @@
 # limitations under the License.
 # ==============================================================================
 
+load("@org_tensorflow//tensorflow:tensorflow.bzl", "tf_cc_test")
 load("@org_tensorflow//tensorflow:tensorflow.default.bzl", "get_compatible_with_portable")
 load("@rules_cc//cc:cc_library.bzl", "cc_library")
 load(
@@ -50,5 +51,24 @@ cc_library(
     deps = [
         "//tflite/converter/schema:schema_fbs",
         "//tflite/converter/schema:schema_utils",
+    ],
+)
+
+# Fork of //third_party/tensorflow/compiler/mlir/tools/optimize:quantization_utils
+# for the TFLite converter.
+cc_library(
+    name = "quantization_utils",
+    srcs = ["quantization_utils.cc"],
+    hdrs = ["quantization_utils.h"],
+    compatible_with = get_compatible_with_portable(),
+    deps = ["@com_google_absl//absl/log:check"],
+)
+
+tf_cc_test(
+    name = "quantization_utils_test",
+    srcs = ["quantization_utils_test.cc"],
+    deps = [
+        ":quantization_utils",
+        "@com_google_googletest//:gtest_main",
     ],
 )
