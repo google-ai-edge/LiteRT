@@ -896,5 +896,111 @@ TEST(ComparisonsTest, QuantizedInt8LessEqualWithBroadcast) {
         << "With shape number " << i;
   }
 }
+
+// Regression tests for int16 comparison bugs (issue #11363).
+
+// Bug 1: Quantized EQUAL with int16 used left_shift=8 (the 8-bit value),
+// causing adjacent quantized values to collapse to the same rescaled value.
+TEST(QuantizedComparisonsTest, EqualInt16QuantizedAdjacentValues) {
+  // With scale = 1/32768, adjacent quantized values (0 and 1) represent
+  // different real values and must not compare as equal.
+  const float kMin = -1.0f;
+  const float kMax = 1.0f;
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 4}, kMin, kMax},
+                          {TensorType_INT16, {1, 1, 1, 4}, kMin, kMax},
+                          TensorType_INT16, BuiltinOperator_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(),
+                                     {0.0f, 0.1f, -0.5f, 0.9f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(),
+                                     {0.0f, 0.2f, -0.5f, 0.8f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, false, true, false));
+}
+
+// Bug 1 (NOT_EQUAL variant): adjacent values must compare as not-equal.
+TEST(QuantizedComparisonsTest, NotEqualInt16QuantizedAdjacentValues) {
+  const float kMin = -1.0f;
+  const float kMax = 1.0f;
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 4}, kMin, kMax},
+                          {TensorType_INT16, {1, 1, 1, 4}, kMin, kMax},
+                          TensorType_INT16, BuiltinOperator_NOT_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(),
+                                     {0.0f, 0.1f, -0.5f, 0.9f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(),
+                                     {0.0f, 0.2f, -0.5f, 0.8f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, true, false, true));
+}
+
+// Bug 2: LESS with quantized int16 ignored quantization parameters, comparing
+// raw integer values instead of dequantized values.
+TEST(QuantizedComparisonsTest, LessInt16QuantizedDifferentScales) {
+  // input1: scale=1.0 -> value 10 represents 10.0
+  // input2: scale=0.01 -> value 100 represents 1.0
+  // 10.0 < 1.0 is false, but raw comparison (10 < 100) would wrongly be true.
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 2}, -327.68f, 327.67f},
+                          {TensorType_INT16, {1, 1, 1, 2}, -3.2768f, 3.2767f},
+                          TensorType_INT16, BuiltinOperator_LESS);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10.0f, -5.0f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {1.0f, -1.0f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  // 10.0 < 1.0 = false; -5.0 < -1.0 = true
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, true));
+}
+
+// Bug 2 (LESS_EQUAL variant).
+TEST(QuantizedComparisonsTest, LessEqualInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 2}, -327.68f, 327.67f},
+                          {TensorType_INT16, {1, 1, 1, 2}, -3.2768f, 3.2767f},
+                          TensorType_INT16, BuiltinOperator_LESS_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10.0f, -5.0f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {1.0f, -1.0f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  // 10.0 <= 1.0 = false; -5.0 <= -1.0 = true
+  EXPECT_THAT(model.GetOutput(), ElementsAre(false, true));
+}
+
+// Bug 2 (GREATER variant — uses LessEval with swapped inputs).
+TEST(QuantizedComparisonsTest, GreaterInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 2}, -327.68f, 327.67f},
+                          {TensorType_INT16, {1, 1, 1, 2}, -3.2768f, 3.2767f},
+                          TensorType_INT16, BuiltinOperator_GREATER);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10.0f, -5.0f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {1.0f, -1.0f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  // 10.0 > 1.0 = true; -5.0 > -1.0 = false
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, false));
+}
+
+// Bug 2 (GREATER_EQUAL variant).
+TEST(QuantizedComparisonsTest, GreaterEqualInt16QuantizedDifferentScales) {
+  ComparisonOpModel model({TensorType_INT16, {1, 1, 1, 2}, -327.68f, 327.67f},
+                          {TensorType_INT16, {1, 1, 1, 2}, -3.2768f, 3.2767f},
+                          TensorType_INT16, BuiltinOperator_GREATER_EQUAL);
+  model.QuantizeAndPopulate<int16_t>(model.input1(), {10.0f, -5.0f});
+  model.QuantizeAndPopulate<int16_t>(model.input2(), {1.0f, -1.0f});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  // 10.0 >= 1.0 = true; -5.0 >= -1.0 = false
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, false));
+}
+
+// Bug 3: Unquantized int16 NOT_EQUAL wrote no output (fell through without
+// calling Comparison).
+TEST(ComparisonsTest, NotEqualInt16) {
+  ComparisonOpModel model({1, 1, 1, 4}, {1, 1, 1, 4}, TensorType_INT16,
+                          BuiltinOperator_NOT_EQUAL);
+  model.PopulateTensor<int16_t>(model.input1(), {-1, 9, 7, 3});
+  model.PopulateTensor<int16_t>(model.input2(), {1, 2, 7, 5});
+  ASSERT_EQ(model.Invoke(), kTfLiteOk);
+
+  EXPECT_THAT(model.GetOutput(), ElementsAre(true, true, false, true));
+}
+
 }  // namespace
 }  // namespace tflite
