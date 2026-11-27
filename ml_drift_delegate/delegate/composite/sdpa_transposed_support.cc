@@ -56,6 +56,23 @@ FlashDecodeTuning GetFlashDecodeTuning(const ::ml_drift::GpuInfo& gpu_info) {
     // 256-work-item kernel. With at most 2 keys per work item a split takes
     // more chunks instead.
     tuning.max_keys_per_thread = 2;
+    const auto& adreno = gpu_info.adreno_info;
+    // `AdrenoInfo` defaults to `compute_units = 1` when `adreno_gpu` is
+    // `kUnknown`, so require a recognized GPU before treating it as low-end.
+    if (adreno.adreno_gpu != ::ml_drift::AdrenoGpu::kUnknown &&
+        (adreno.IsLowEnd() || adreno.IsAdreno3xx() || adreno.IsAdreno4xx() ||
+         adreno.IsAdreno5xx())) {
+      // Low-end (1-CU, e.g. Adreno 610/612/702 with half the register file of
+      // standard Adreno 6xx) and older Adreno GPUs compile the 2-head,
+      // 2-key/thread Flash-Decode kernel with a CL_KERNEL_WORK_GROUP_SIZE below
+      // 256 (160 on Adreno 610 for Qwen3-0.6B, b/578633071). Use a 128-thread
+      // work group with 1 query head and 1 key per work item per chunk so the
+      // kernel stays within the per-kernel limit while still supporting head
+      // dims up to 512 (128 slices).
+      tuning.threads = std::min(tuning.threads, 128);
+      tuning.max_heads_per_work_group = 1;
+      tuning.max_keys_per_thread = 1;
+    }
   }
   if (gpu_info.IsApiWebGpu() &&
       gpu_info.webgpu_info.max_compute_workgroup_storage_size > 0) {
