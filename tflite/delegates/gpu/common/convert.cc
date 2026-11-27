@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "fp16.h"  // from @FP16
+#include "absl/status/status_macros.h"
 #include "absl/strings/str_cat.h"
 #include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/data_type.h"
