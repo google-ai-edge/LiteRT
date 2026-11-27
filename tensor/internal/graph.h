@@ -782,6 +782,24 @@ struct Scope : public std::enable_shared_from_this<Scope> {
 // Returns the currently active Scope on the calling thread, or nullptr.
 std::shared_ptr<Scope> CurrentScope();
 
+// RAII guard controlling whether `Scope::BindTensor` retains strong references
+// to bound leaf tensors (`producer == nullptr`). Runtime backends that never
+// inspect scope boundary metadata disable strong retention while tracing
+// forward graphs so unfused per-layer weights replaced by fused projections
+// can be freed layer-by-layer instead of staying pinned for the whole pass.
+class ScopeBoundaryRetentionGuard {
+ public:
+  explicit ScopeBoundaryRetentionGuard(bool retain_leaf_tensors);
+  ~ScopeBoundaryRetentionGuard();
+
+  ScopeBoundaryRetentionGuard(const ScopeBoundaryRetentionGuard&) = delete;
+  ScopeBoundaryRetentionGuard& operator=(const ScopeBoundaryRetentionGuard&) =
+      delete;
+
+ private:
+  bool prev_retain_ = true;
+};
+
 // RAII guard that pushes a new hierarchical `Scope` onto the thread-local
 // scope stack. All `Operation`s constructed while the guard is active
 // automatically capture `op->scope = CurrentScope()`.
