@@ -1846,6 +1846,7 @@ cc_test(
     deps = [
         ":test_main",
         ":test_util",
+        "//tflite/kernels/internal:kernel_utils",
         "//tflite/schema:schema_fbs",
         "@com_google_googletest//:gtest",
         "@flatbuffers",
