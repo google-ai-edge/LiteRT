@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/runners/xnnpack/runner.h"
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -27,6 +28,7 @@ limitations under the License.
 #include "xnnpack.h"  // from @XNNPACK
 #include "absl/algorithm/container.h"  // from @com_google_absl
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/strings/str_format.h"  // from @com_google_absl
@@ -116,6 +118,13 @@ void PrintXnnProfileSummary(xnn_runtime_t rt) {
 
 absl::Status XnnpackRunner::CreateRuntime() {
   auto& xnn_graph = static_cast<XnnpackGraph&>(*graph_);
+  if (weights_cache_ != nullptr && weights_cache_->alias_data != nullptr) {
+    for (const auto& [alias, original] : xnn_graph.weight_aliases()) {
+      weights_cache_->alias_data(weights_cache_->context,
+                                 const_cast<void*>(alias),
+                                 const_cast<void*>(original));
+    }
+  }
   xnn_subgraph_t sg = xnn_graph.GetSubgraph();
   if (weights_cache_ != nullptr && !xnn_graph.constant_fingerprints().empty()) {
     NotifyXnnWeightsCacheConstantFingerprints(
@@ -128,10 +137,14 @@ absl::Status XnnpackRunner::CreateRuntime() {
                             &raw_runtime),
       "xnn_create_runtime_v4"));
   runtime_.reset(raw_runtime);
+  setup_dirty_ = true;
+  last_externals_.clear();
   // `xnn_create_runtime_v4` copies `subgraph->values` into `runtime->values`,
-  // and blockwise FP16/BF16 scale buffers are only consumed when packing
-  // weights during `xnn_create_runtime_v4`; release them now so multi-signature
-  // runtimes do not retain subgraph descriptors or temporary scale copies.
+  // packs static `FullyConnected` weights into the runtime / weights cache, and
+  // only consumes blockwise FP16/BF16 scale buffers while packing. Release the
+  // subgraph, temporary scale copies, packed-only weight buffers, and internal
+  // `tensor_index_` references so compiled passes do not pin multi-GB unpacked
+  // host weights.
   xnn_graph.DeleteSubgraph();
   xnn_graph.constant_fingerprints().clear();
   xnn_graph.constant_fingerprints().shrink_to_fit();
@@ -141,6 +154,47 @@ absl::Status XnnpackRunner::CreateRuntime() {
   xnn_graph.bf16_scale_refs().shrink_to_fit();
   xnn_graph.cpu_fallback_refs().clear();
   xnn_graph.cpu_fallback_refs().shrink_to_fit();
+  xnn_graph.weight_aliases().clear();
+  xnn_graph.weight_aliases().shrink_to_fit();
+  absl::flat_hash_set<const Buffer*> retained_buffers;
+  absl::flat_hash_set<uint32_t> packed_only_ids;
+  for (NnpackValue& val : xnn_graph.mutable_values()) {
+    if (val.packed_only) {
+      packed_only_ids.insert(val.id);
+      val.data = LockedBufferSpan<const std::byte>::Empty();
+      val.info.buffer.reset();
+      val.info.quantization.reset();
+    } else if (val.info.buffer != nullptr) {
+      retained_buffers.insert(val.info.buffer.get());
+    }
+  }
+  auto& biased_bufs = xnn_graph.biased_qb4w_buffers();
+  biased_bufs.erase(
+      std::remove_if(biased_bufs.begin(), biased_bufs.end(),
+                     [&](const XnnpackGraph::BiasedQb4wBuffer& b) {
+                       return packed_only_ids.contains(b.value_id);
+                     }),
+      biased_bufs.end());
+  biased_bufs.shrink_to_fit();
+  auto& keep_alive = xnn_graph.keep_alive_buffers();
+  keep_alive.erase(
+      std::remove_if(keep_alive.begin(), keep_alive.end(),
+                     [&](const std::shared_ptr<Buffer>& buf) {
+                       return buf == nullptr ||
+                              !retained_buffers.contains(buf.get());
+                     }),
+      keep_alive.end());
+  keep_alive.shrink_to_fit();
+  const auto& values = xnn_graph.values();
+  auto& tensor_index = xnn_graph.mutable_tensor_index();
+  for (auto it = tensor_index.begin(); it != tensor_index.end();) {
+    if (it->second >= values.size() || values[it->second].flags == 0) {
+      tensor_index.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+  xnn_graph.mutable_external_outputs().clear();
   return absl::OkStatus();
 }
 
@@ -153,6 +207,7 @@ absl::Status XnnpackRunner::SetExternalValueShape(
 }
 
 absl::Status XnnpackRunner::ReshapeRuntime() {
+  setup_dirty_ = true;
   return XnnStatusToAbsl(xnn_reshape_runtime(runtime_.get()),
                          "xnn_reshape_runtime");
 }
@@ -174,8 +229,8 @@ absl::Status XnnpackRunner::SetupExternalValues(
     const absl::flat_hash_map<uint32_t, std::shared_ptr<Buffer>>&
         external_buffers,
     std::vector<LockedBufferSpan<const std::byte>>& locks) {
-  std::vector<xnn_external_value> externals;
-  externals.reserve(values.size());
+  scratch_externals_.clear();
+  scratch_externals_.reserve(values.size());
   locks.reserve(values.size());
   for (NnpackValue& value : values) {
     if (value.flags == 0) {
@@ -191,13 +246,28 @@ absl::Status XnnpackRunner::SetupExternalValues(
       return absl::FailedPreconditionError(
           absl::StrFormat("External value %u could not be locked", value.id));
     }
-    externals.push_back(
+    scratch_externals_.push_back(
         {.id = value.id, .data = const_cast<std::byte*>(lock.data())});
     locks.push_back(std::move(lock));
   }
-  return XnnStatusToAbsl(
-      xnn_setup_runtime_v2(runtime_.get(), externals.size(), externals.data()),
-      "xnn_setup_runtime_v2");
+  const bool same_externals =
+      !setup_dirty_ && scratch_externals_.size() == last_externals_.size() &&
+      std::equal(scratch_externals_.begin(), scratch_externals_.end(),
+                 last_externals_.begin(),
+                 [](const xnn_external_value& a, const xnn_external_value& b) {
+                   return a.id == b.id && a.data == b.data;
+                 });
+  if (same_externals) {
+    return absl::OkStatus();
+  }
+  LRT_TENSOR_RETURN_IF_ERROR(XnnStatusToAbsl(
+      xnn_setup_runtime_v2(runtime_.get(), scratch_externals_.size(),
+                           scratch_externals_.data()),
+      "xnn_setup_runtime_v2"));
+  last_externals_ = scratch_externals_;
+  setup_dirty_ = false;
+  ++setup_count_;
+  return absl::OkStatus();
 }
 
 absl::Status XnnpackRunner::InvokeRuntime() {

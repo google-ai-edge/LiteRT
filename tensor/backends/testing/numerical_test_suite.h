@@ -498,6 +498,59 @@ TYPED_TEST_P(NumericalTestSuite, LeakyReluOp) {
   }
 }
 
+TYPED_TEST_P(NumericalTestSuite, ClampOp) {
+  using Tag = typename TypeParam::Tag;
+  struct TestCase {
+    std::vector<int> shape;
+    float min;
+    float max;
+    std::vector<float> data;
+    std::vector<float> expected;
+  };
+  std::vector<TestCase> test_cases = {
+      // Asymmetric QAT-style static range [-128 * s, 127 * s], s = 0.5.
+      {.shape = {1, 2, 4},
+       .min = -64.0f,
+       .max = 63.5f,
+       .data = {1.0f, -1.0f, 70.0f, -100.0f, 63.5f, -64.0f, 0.0f, 200.0f},
+       .expected = {1.0f, -1.0f, 63.5f, -64.0f, 63.5f, -64.0f, 0.0f, 63.5f}},
+      {.shape = {1, 4},
+       .min = -1.5f,
+       .max = 2.25f,
+       .data = {-3.0f, -1.5f, 2.0f, 3.0f},
+       .expected = {-1.5f, -1.5f, 2.0f, 2.25f}},
+      // Strictly positive range.
+      {.shape = {4},
+       .min = 0.5f,
+       .max = 1.0f,
+       .data = {0.0f, 0.75f, 2.0f, -2.0f},
+       .expected = {0.5f, 0.75f, 1.0f, 0.5f}},
+  };
+
+  for (const auto& tc : test_cases) {
+    auto bridge = TypeParam::CreateBridge();
+    ASSERT_OK(bridge->Initialize());
+
+    Tensor<Tag> input({.type = Type::kFP32, .shape = tc.shape});
+    Tensor<Tag> output = Clamp(input, tc.min, tc.max);
+
+    auto status = bridge->BuildGraph({input}, {output});
+    if (status.code() == absl::StatusCode::kUnimplemented) {
+      GTEST_SKIP() << "Clamp op is unimplemented on this backend.";
+    }
+    ASSERT_OK(status);
+
+    ASSERT_OK(bridge->SetInput(input, AsBytes(tc.data)));
+
+    ASSERT_OK(bridge->Execute());
+
+    std::vector<float> actual_output(tc.expected.size());
+    ASSERT_OK(bridge->GetOutput(output, AsBytes(actual_output)));
+
+    EXPECT_THAT(actual_output, Pointwise(FloatNear(1e-5), tc.expected));
+  }
+}
+
 TYPED_TEST_P(NumericalTestSuite, EluOp) {
   using Tag = typename TypeParam::Tag;
   struct TestCase {
@@ -4572,9 +4625,9 @@ TYPED_TEST_P(NumericalTestSuite, BatchMatMulRank2Op) {
 
 REGISTER_TYPED_TEST_SUITE_P(
     NumericalTestSuite, AddOp, SubOp, MulOp, DivOp, GeluOp, ReluOp, Relu6Op,
-    LeakyReluOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp, RsqrtOp,
-    SoftmaxOp, TransposeOp, ReshapeOp, ExpandDimsOp, SqueezeOp, SliceOp,
-    ConcatenationOp, FullyConnectedOp, FullyConnectedQuantizedOp,
+    LeakyReluOp, ClampOp, EluOp, HardSwishOp, LogisticOp, TanhOp, SqrtOp,
+    RsqrtOp, SoftmaxOp, TransposeOp, ReshapeOp, ExpandDimsOp, SqueezeOp,
+    SliceOp, ConcatenationOp, FullyConnectedOp, FullyConnectedQuantizedOp,
     ResizeBilinearOp, DepthwiseConv2DOp, DepthwiseConv2DPaddingSameOp, PowOp,
     SinOp, CosOp, CeilOp, FloorOp, SignOp, RoundOp, SquareOp, NegOp, AbsOp,
     ExpOp, LogOp, SelectOp, SelectV2Op, EqualOp, GreaterEqualOp, NotEqualOp,
