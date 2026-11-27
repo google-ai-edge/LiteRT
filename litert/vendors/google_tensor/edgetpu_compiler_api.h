@@ -23,6 +23,13 @@ extern "C" {
 
 typedef struct EdgeTpuCompilerContext EdgeTpuCompilerContext;
 
+// Queries the EdgeTPU ODC compiler API version.
+// major, minor, and patch must be non-null output pointers.
+// Callers loading libedgetpu_litert.so dynamically should look up this symbol
+// with dlsym and treat a missing symbol as pre-versioning (1.0.0).
+// Returns 0 on success, absl status code on failure.
+int EdgeTpuCompilerGetVersion(int* major, int* minor, int* patch);
+
 // Creates a EdgeTPU ODC compiler context.
 // context is the output parameter for the compiler context. The caller should
 // free the memory using EdgeTpuCompilerDestroy.
