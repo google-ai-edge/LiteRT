@@ -1122,7 +1122,7 @@ filegroup(
         ["litert_*.h"],
         exclude = ["litert_common.h"],
     ),
-    visibility = ["//litert/cc:__pkg__"],
+    visibility = ["//visibility:private"],
 )
 
 # This is cc_library target based on `libLiteRt.so`.
