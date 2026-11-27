@@ -25,7 +25,9 @@
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
+#include "litert/core/model/ops/reference_numeric_utils.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 
 namespace litert::internal {
 
@@ -171,39 +173,44 @@ template <typename InT>
 inline void ReferenceDequantize(const InT* input_data, size_t num_elements,
                                 float* output_data, float scale,
                                 int64_t zero_point) {
-  const float zp = static_cast<float>(zero_point);
   for (size_t i = 0; i < num_elements; ++i) {
-    output_data[i] = (static_cast<float>(input_data[i]) - zp) * scale;
+    output_data[i] = DequantizeValue(input_data[i], scale, zero_point);
   }
 }
 
 template <typename InT>
-inline void ReferenceDequantizePerChannel(
-    const InT* input_data, const int32_t* dims, int rank,
-    int32_t quantized_dimension, const float* scales,
-    const int64_t* zero_points, float* output_data) {
-  if (quantized_dimension < 0) quantized_dimension += rank;
-  size_t outer_size = 1;
-  for (int i = 0; i < quantized_dimension; ++i) {
-    outer_size *= static_cast<size_t>(dims[i]);
+inline LiteRtStatus ReferenceDequantizePerChannel(const InT* input_data,
+                                                  const int32_t* dims, int rank,
+                                                  int32_t quantized_dimension,
+                                                  const float* scales,
+                                                  const int64_t* zero_points,
+                                                  float* output_data) {
+  if (rank <= 0 || dims == nullptr || scales == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  const size_t num_channels = static_cast<size_t>(dims[quantized_dimension]);
-  size_t inner_size = 1;
-  for (int i = quantized_dimension + 1; i < rank; ++i) {
-    inner_size *= static_cast<size_t>(dims[i]);
+  auto layout = PrepareAxisLayout(absl::MakeConstSpan(dims, rank),
+                                  quantized_dimension, sizeof(InT));
+  if (!layout || !CheckedByteCount(layout->num_elements, sizeof(float))) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
-  for (size_t o = 0; o < outer_size; ++o) {
-    for (size_t c = 0; c < num_channels; ++c) {
+  if (layout->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (input_data == nullptr || output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  for (size_t o = 0; o < layout->outer_size; ++o) {
+    for (size_t c = 0; c < layout->axis_size; ++c) {
       const float scale = scales[c];
-      const float zp =
-          zero_points != nullptr ? static_cast<float>(zero_points[c]) : 0.0f;
-      const size_t base = (o * num_channels + c) * inner_size;
-      for (size_t i = 0; i < inner_size; ++i) {
+      const int64_t zp = zero_points != nullptr ? zero_points[c] : 0;
+      const size_t base = (o * layout->axis_size + c) * layout->inner_size;
+      for (size_t i = 0; i < layout->inner_size; ++i) {
         output_data[base + i] =
-            (static_cast<float>(input_data[base + i]) - zp) * scale;
+            DequantizeValue(input_data[base + i], scale, zp);
       }
     }
   }
+  return kLiteRtStatusOk;
 }
 
 inline void ReferenceGelu(const float* input_data, size_t num_elements,
@@ -225,6 +232,7 @@ inline void ReferenceGelu(const float* input_data, size_t num_elements,
     });
   }
 }
+
 }  // namespace litert::internal
 
 #endif  // ODML_LITERT_LITERT_CORE_MODEL_OPS_SIMPLE_UNARY_H_

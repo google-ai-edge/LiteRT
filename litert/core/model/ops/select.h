@@ -24,8 +24,8 @@
 #include "absl/types/span.h"  // from @com_google_absl
 #include "litert/c/litert_common.h"
 #include "litert/core/model/model.h"
-#include "litert/core/model/ops/simple_binary.h"
 #include "litert/core/model/shape_inference_types.h"
+#include "litert/core/util/tensor_layout_util.h"
 
 namespace litert::internal {
 
@@ -78,61 +78,88 @@ inline LiteRtStatus InferSelect(const LiteRtOpT& op,
   return kLiteRtStatusOk;
 }
 
+namespace detail {
+
 template <typename T>
-inline void RunSelectOp(const bool* cond, const T* a, const T* b, T* output,
-                        const size_t* cond_stride, const size_t* a_stride,
-                        const size_t* b_stride, const size_t* output_stride,
-                        const size_t* output_shape, int rank) {
-  if (rank <= 0) {
-    *output = *cond ? *a : *b;
-  } else if (rank == 1) {
-    for (size_t i = 0; i < output_shape[0]; ++i) {
-      output[i * output_stride[0]] =
-          cond[i * cond_stride[0]] ? a[i * a_stride[0]] : b[i * b_stride[0]];
-    }
-  } else {
-    for (size_t i = 0; i < output_shape[0]; ++i) {
-      RunSelectOp(cond + i * cond_stride[0], a + i * a_stride[0],
-                  b + i * b_stride[0], output + i * output_stride[0],
-                  cond_stride + 1, a_stride + 1, b_stride + 1,
-                  output_stride + 1, output_shape + 1, rank - 1);
+inline void ExecuteSelectWithPlan(const BroadcastPlan<3>& plan,
+                                  const bool* cond_data, const T* a_data,
+                                  const T* b_data, T* output_data) {
+  for (const auto& span : plan.Spans()) {
+    const size_t c_base = span.input_offsets[0];
+    const size_t a_base = span.input_offsets[1];
+    const size_t b_base = span.input_offsets[2];
+    const size_t c_step = span.input_steps[0];
+    const size_t a_step = span.input_steps[1];
+    const size_t b_step = span.input_steps[2];
+    T* out_ptr = output_data + span.output_offset;
+    for (size_t i = 0; i < span.count; ++i) {
+      out_ptr[i] = cond_data[c_base + i * c_step] ? a_data[a_base + i * a_step]
+                                                  : b_data[b_base + i * b_step];
     }
   }
 }
 
+}  // namespace detail
+
+// Evaluates SelectV2 (`cond ? a : b`) in one pass over three concrete tensors
+// under trailing-dimension NumPy broadcasting (`output.dims ==
+// broadcast(cond.dims, a.dims, b.dims)`).
+//
+// Validates concrete shapes, checked element/byte counts, and span capacities
+// before accessing elements; valid empty outputs return `kLiteRtStatusOk`
+// without dereferencing any data pointer. `output.data` must not alias `a.data`
+// or `b.data` when broadcasting.
 template <typename T>
-inline void ReferenceSelect(const bool* cond_data, const int32_t* cond_dims,
-                            int cond_rank, const T* a_data,
-                            const int32_t* a_dims, int a_rank,
-                            const T* b_data, const int32_t* b_dims, int b_rank,
-                            T* output_data, const int32_t* output_dims,
-                            int rank) {
-  if (rank <= 0) {
-    if (rank == 0) {
-      *output_data = *cond_data ? *a_data : *b_data;
-    }
-    return;
+inline LiteRtStatus ReferenceSelect(ConstTensorView<bool> cond,
+                                    ConstTensorView<T> a, ConstTensorView<T> b,
+                                    TensorView<T> output) {
+  auto plan = PrepareBroadcastPlan<3>(
+      {cond.dims, a.dims, b.dims}, {sizeof(bool), sizeof(T), sizeof(T)},
+      output.dims, sizeof(T), BroadcastOutputMode::kInferredExact);
+  if (!plan) {
+    return plan.Error().Status();
   }
-  constexpr int kMaxRank = 8;
-  size_t cond_stride[kMaxRank];
-  size_t a_stride[kMaxRank];
-  size_t b_stride[kMaxRank];
-  size_t o_stride[kMaxRank];
-  size_t o_shape[kMaxRank];
-
-  ComputeBroadcastStrides(cond_dims, cond_rank, rank, cond_stride);
-  ComputeBroadcastStrides(a_dims, a_rank, rank, a_stride);
-  ComputeBroadcastStrides(b_dims, b_rank, rank, b_stride);
-
-  size_t current_stride = 1;
-  for (int i = rank - 1; i >= 0; --i) {
-    o_stride[i] = current_stride;
-    o_shape[i] = output_dims[i];
-    current_stride *= output_dims[i];
+  if (!ValidateBufferCapacity(cond.data, plan->input_num_elements[0]) ||
+      !ValidateBufferCapacity(a.data, plan->input_num_elements[1]) ||
+      !ValidateBufferCapacity(b.data, plan->input_num_elements[2]) ||
+      !ValidateBufferCapacity(output.data, plan->output_num_elements)) {
+    return kLiteRtStatusErrorInvalidArgument;
   }
+  detail::ExecuteSelectWithPlan(*plan, cond.data.data(), a.data.data(),
+                                b.data.data(), output.data.data());
+  return kLiteRtStatusOk;
+}
 
-  RunSelectOp(cond_data, a_data, b_data, output_data, cond_stride, a_stride,
-              b_stride, o_stride, o_shape, rank);
+template <typename T>
+inline LiteRtStatus ReferenceSelect(const bool* cond_data,
+                                    const int32_t* cond_dims, int cond_rank,
+                                    const T* a_data, const int32_t* a_dims,
+                                    int a_rank, const T* b_data,
+                                    const int32_t* b_dims, int b_rank,
+                                    T* output_data, const int32_t* output_dims,
+                                    int rank) {
+  auto cond_span = MakeDimsSpan(cond_dims, cond_rank);
+  auto a_span = MakeDimsSpan(a_dims, a_rank);
+  auto b_span = MakeDimsSpan(b_dims, b_rank);
+  auto out_span = MakeDimsSpan(output_dims, rank);
+  if (!cond_span || !a_span || !b_span || !out_span) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  auto plan = PrepareBroadcastPlan<3>(
+      {*cond_span, *a_span, *b_span}, {sizeof(bool), sizeof(T), sizeof(T)},
+      *out_span, sizeof(T), BroadcastOutputMode::kInferredExact);
+  if (!plan) {
+    return plan.Error().Status();
+  }
+  if (plan->IsEmpty()) {
+    return kLiteRtStatusOk;
+  }
+  if (cond_data == nullptr || a_data == nullptr || b_data == nullptr ||
+      output_data == nullptr) {
+    return kLiteRtStatusErrorInvalidArgument;
+  }
+  detail::ExecuteSelectWithPlan(*plan, cond_data, a_data, b_data, output_data);
+  return kLiteRtStatusOk;
 }
 
 }  // namespace litert::internal
