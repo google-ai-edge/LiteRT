@@ -87,7 +87,7 @@ class NativeInterpreterWrapper implements AutoCloseable {
             errorHandle,
             options.getNumThreads(),
             options.getUseXNNPACK(),
-            /*compressQuantizationZeroPoints=*/false,
+            options.getCompressQuantizationZeroPoints(),
             delegateHandles);
     this.originalGraphHasUnresolvedFlexOp = hasUnresolvedFlexOp(interpreterHandle);
 
