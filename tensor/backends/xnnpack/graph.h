@@ -76,9 +76,35 @@ class XnnpackGraph : public NnpackGraph {
     return constant_fingerprints_;
   }
 
+  struct BiasedQb4wBuffer {
+    uint32_t value_id = UINT32_MAX;
+    std::vector<uint8_t> data;
+  };
+  // Temporary unsigned-biased (`^ 0x88`, `zero_point = 8`) copies of signed
+  // `kI4` blockwise weights so XNNPACK unlocks Arm64 KleidiAI `qp8_f32_qb4w`
+  // kernels. Released after `xnn_create_runtime_v4` packs `packed_only` values.
+  std::vector<BiasedQb4wBuffer>& biased_qb4w_buffers() {
+    return biased_qb4w_buffers_;
+  }
+  const std::vector<BiasedQb4wBuffer>& biased_qb4w_buffers() const {
+    return biased_qb4w_buffers_;
+  }
+
+  // Maps temporary biased weight pointers back to their original constant
+  // buffer pointers for `xnn_weights_cache_provider::alias_data`.
+  std::vector<std::pair<const void*, const void*>>& weight_aliases() {
+    return weight_aliases_;
+  }
+  const std::vector<std::pair<const void*, const void*>>& weight_aliases()
+      const {
+    return weight_aliases_;
+  }
+
  private:
   UniquePtr subgraph_;
   std::vector<XnnConstantFingerprint> constant_fingerprints_;
+  std::vector<BiasedQb4wBuffer> biased_qb4w_buffers_;
+  std::vector<std::pair<const void*, const void*>> weight_aliases_;
 };
 
 }  // namespace litert::tensor
