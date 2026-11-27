@@ -393,6 +393,106 @@ TEST(PersistentWeightCacheTest, RebuildsForInvalidDescriptors) {
   }
 }
 
+TEST(PersistentWeightCacheTest,
+     AppendIncrementalPreservesOffsetsAlignmentAndMergesMultipleDeltas) {
+  const std::string path = CachePath("append_incremental.bin");
+  BuildCache(path, 17);
+  const std::vector<char> initial_bytes = ReadFile(path);
+  const size_t offset_a_before =
+      FindData(initial_bytes, MakeDescriptor(1000, 1));
+  const size_t offset_b_before =
+      FindData(initial_bytes, MakeDescriptor(37, 2), offset_a_before + 1000);
+  ASSERT_NE(offset_a_before, std::string::npos);
+  ASSERT_NE(offset_b_before, std::string::npos);
+
+  // Delta generation 1 (with duplicate existing & duplicate extra names).
+  std::vector<std::pair<std::string, ::ml_drift::TensorDescriptor>> delta1;
+  delta1.emplace_back("w.a", MakeDescriptor(12, 9));
+  delta1.emplace_back("w.c", MakeDescriptor(4096 + 17, 5));
+  delta1.emplace_back("w.c", MakeDescriptor(7, 8));
+  ASSERT_OK(
+      PersistentWeightCache::AppendIncrementalForTesting(path, 17, delta1));
+  // Repeating the same delta is a no-op.
+  ASSERT_OK(
+      PersistentWeightCache::AppendIncrementalForTesting(path, 17, delta1));
+
+  // Delta generation 2.
+  std::vector<std::pair<std::string, ::ml_drift::TensorDescriptor>> delta2;
+  delta2.emplace_back("w.d", MakeDescriptor(19, 6));
+  delta2.emplace_back("w.e", MakeDescriptor(513, 11));
+  ASSERT_OK(
+      PersistentWeightCache::AppendIncrementalForTesting(path, 17, delta2));
+
+  // Existing weight payloads stayed at their exact original file offsets.
+  const std::vector<char> after_bytes = ReadFile(path);
+  EXPECT_EQ(FindData(after_bytes, MakeDescriptor(1000, 1)), offset_a_before);
+  EXPECT_EQ(
+      FindData(after_bytes, MakeDescriptor(37, 2), offset_a_before + 1000),
+      offset_b_before);
+
+  const std::vector<std::tuple<std::string, int, int>> expected_entries = {
+      {"w.a", 1000, 1}, {"w.b+w.c", 37, 2}, {"w.c", 4096 + 17, 5},
+      {"w.d", 19, 6},   {"w.e", 513, 11},
+  };
+  for (const PersistentWeightCache::Options& options :
+       {PersistentWeightCache::Options(), kMapOptions}) {
+    ASSERT_OK_AND_ASSIGN(auto cache,
+                         PersistentWeightCache::Open(path, 17, options));
+    ASSERT_TRUE(cache->loaded());
+    EXPECT_EQ(cache->num_entries(), expected_entries.size());
+    if (options.map_data) {
+      auto mapped = cache->ReleaseMappedWeights();
+      for (const auto& [name, size, seed] : expected_entries) {
+        ASSERT_TRUE(mapped.contains(name)) << name;
+        const ::ml_drift::TensorDescriptor expected =
+            MakeDescriptor(size, seed);
+        EXPECT_THAT(mapped[name].data, ElementsAreArray(expected.GetData()));
+        EXPECT_EQ(reinterpret_cast<uintptr_t>(mapped[name].data.data()) %
+                      PersistentWeightCache::kEntryAlignment,
+                  0)
+            << name;
+      }
+    } else {
+      auto descs = cache->ReleaseDescriptors();
+      for (const auto& [name, size, seed] : expected_entries) {
+        ASSERT_TRUE(descs.contains(name)) << name;
+        EXPECT_THAT(descs[name].GetData(),
+                    ElementsAreArray(MakeDescriptor(size, seed).GetData()));
+      }
+    }
+  }
+
+  // Wrong identifier fails without modifying the cache.
+  EXPECT_FALSE(
+      PersistentWeightCache::AppendIncrementalForTesting(path, 99, delta2)
+          .ok());
+
+  // Full-rewrite Append compacts all delta generations cleanly.
+  std::vector<std::pair<std::string, ::ml_drift::TensorDescriptor>> extra3;
+  extra3.emplace_back("w.f", MakeDescriptor(25, 13));
+  ASSERT_OK(PersistentWeightCache::Append(path, 17, extra3,
+                                          /*verify_all_bytes=*/true));
+  ASSERT_OK_AND_ASSIGN(auto compacted,
+                       PersistentWeightCache::Open(path, 17, kMapOptions));
+  ASSERT_TRUE(compacted->loaded());
+  EXPECT_EQ(compacted->num_entries(), expected_entries.size() + 1);
+  auto compacted_mapped = compacted->ReleaseMappedWeights();
+  ASSERT_TRUE(compacted_mapped.contains("w.f"));
+  EXPECT_THAT(compacted_mapped["w.f"].data,
+              ElementsAreArray(MakeDescriptor(25, 13).GetData()));
+
+  // Corrupting an appended weight triggers rebuild on reload.
+  std::vector<char> corrupt_bytes = after_bytes;
+  const size_t c_pos = FindData(corrupt_bytes, MakeDescriptor(4096 + 17, 5));
+  ASSERT_NE(c_pos, std::string::npos);
+  corrupt_bytes[c_pos] ^= 0x5A;
+  WriteFile(path, corrupt_bytes);
+  ASSERT_OK_AND_ASSIGN(auto rebuilt,
+                       PersistentWeightCache::Open(path, 17, kMapOptions));
+  EXPECT_FALSE(rebuilt->loaded());
+  EXPECT_TRUE(rebuilt->building());
+}
+
 TEST(PersistentWeightCacheTest, IdentifierKeysCannotRunTogether) {
   EXPECT_NE(WeightCacheIdentifier("a|b", "c", "d"),
             WeightCacheIdentifier("a", "b|c", "d"));

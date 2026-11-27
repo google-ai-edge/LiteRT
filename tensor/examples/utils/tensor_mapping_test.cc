@@ -15,6 +15,7 @@ limitations under the License.
 
 #include "tensor/examples/utils/tensor_mapping.h"
 
+#include <memory>
 #include <string>
 #include <utility>
 #include <vector>
@@ -319,6 +320,61 @@ TEST(LazyTensorMappingTest, ReleaseTensorsNotPinnedReloadsHookTensors) {
   LRT_TENSOR_ASSERT_OK_AND_ASSIGN(Buffer & buffer, alias.GetBuffer());
   EXPECT_THAT(buffer.Lock().As<const float>(),
               ElementsAre(FloatEq(1), FloatEq(2)));
+}
+
+TEST(LazyTensorMappingTest, EvictReloadableCacheDropsCheckpointTensorsOnly) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping mapping,
+                                  CreateMappingTestMapping(file));
+  std::vector<std::string> log;
+  mapping.Register<RecordingHooks>(log, "hooks");
+
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle loaded, mapping.Get("model.a"));
+  std::weak_ptr<Buffer> weak_loaded = loaded.GetBufferPtr();
+  loaded = TensorHandle::Invalid();
+  EXPECT_FALSE(weak_loaded.expired());
+
+  // Override a tensor via `Set` and ensure eviction preserves it.
+  TensorHandle pinned = MappingTestTensor();
+  std::weak_ptr<Buffer> weak_pinned = pinned.GetBufferPtr();
+  ASSERT_THAT(mapping.Set("model.pinned", std::move(pinned)), IsOk());
+
+  mapping.EvictReloadableCache();
+  EXPECT_TRUE(weak_loaded.expired());
+  EXPECT_FALSE(weak_pinned.expired());
+
+  // Subsequent `Get` transparently reloads the evicted checkpoint tensor.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle reloaded,
+                                  mapping.Get("model.a"));
+  EXPECT_EQ(reloaded.GetName(), "model.a");
+  EXPECT_THAT(
+      log, ElementsAre("hooks.OnLoaded(model.a)", "hooks.OnLoaded(model.a)"));
+}
+
+TEST(LazyTensorMappingTest, SetCacheLoadedTensorsFalseStreamsCheckpointLoads) {
+  SafetensorFileGuard file = CreateMappingTestSafetensor();
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(LazyTensorMapping mapping,
+                                  CreateMappingTestMapping(file));
+  TensorHandle pinned = MappingTestTensor();
+  std::weak_ptr<Buffer> weak_pinned = pinned.GetBufferPtr();
+  ASSERT_THAT(mapping.Set("model.pinned", std::move(pinned)), IsOk());
+
+  mapping.SetCacheLoadedTensors(false);
+  EXPECT_FALSE(mapping.cache_loaded_tensors());
+  std::weak_ptr<Buffer> weak_streamed;
+  {
+    LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle streamed,
+                                    mapping.Get("model.a"));
+    weak_streamed = streamed.GetBufferPtr();
+    EXPECT_FALSE(weak_streamed.expired());
+  }
+  EXPECT_TRUE(weak_streamed.expired());
+
+  // `Set()` overrides remain cached and accessible even in streaming mode.
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(TensorHandle got_pinned,
+                                  mapping.Get("model.pinned"));
+  EXPECT_FALSE(weak_pinned.expired());
+  EXPECT_EQ(got_pinned.GetBufferPtr(), weak_pinned.lock());
 }
 
 }  // namespace

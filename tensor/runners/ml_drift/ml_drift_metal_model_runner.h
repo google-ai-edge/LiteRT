@@ -36,12 +36,14 @@ limitations under the License.
 #import <Metal/Metal.h>
 
 #include <cstddef>
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
 
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/common/data_type.h"  // from @ml_drift
 #include "ml_drift/common/gpu_info.h"  // from @ml_drift
 #include "ml_drift/common/gpu_model.h"  // from @ml_drift
@@ -205,6 +207,21 @@ struct MlDriftMetalBackend {
   static absl::Status CreateConstTensor(Environment* env,
                                         const ml_drift::TensorDescriptor& desc,
                                         Tensor* tensor);
+
+  // Creates a constant tensor with the layout of `desc` (without data) holding
+  // the packed bytes `data`. With `zero_copy`, first tries to create the
+  // buffer tensor over `data` itself (`newBufferWithBytesNoCopy`) when `data`
+  // satisfies Metal's 256-byte offset alignment and either spans exact VM
+  // pages or `owns_enclosing_pages` guarantees the caller owns the enclosing
+  // VM pages (e.g. a file `mmap`), returning the buffer owner in `*keep_alive`;
+  // then `data` must outlive `tensor` and `*keep_alive`. Otherwise (texture
+  // storage, misaligned address, or memory Metal can't wrap) copies `data`
+  // into a new tensor and leaves `*keep_alive` empty.
+  static absl::Status CreateConstTensorFromHostData(
+      Environment* env, const ml_drift::TensorDescriptor& desc,
+      absl::Span<const uint8_t> data, bool zero_copy, Tensor* tensor,
+      std::shared_ptr<const void>* keep_alive,
+      bool owns_enclosing_pages = false);
 
   static absl::Status UploadTensorDescriptorData(
       Tensor* tensor, Environment* env, const ml_drift::TensorDescriptor& desc);
