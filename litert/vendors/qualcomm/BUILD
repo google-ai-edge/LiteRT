@@ -45,6 +45,32 @@ cc_library(
 )
 
 cc_library(
+    name = "dma_buf_context_callback",
+    srcs = ["dma_buf_context_callback.cc"],
+    hdrs = ["dma_buf_context_callback.h"],
+    features = ["-layering_check"],  # buildifier: disable=no-layering-check
+    deps = [
+        "//litert/c/internal:litert_logging",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+litert_test(
+    name = "dma_buf_context_callback_test",
+    srcs = ["dma_buf_context_callback_test.cc"],
+    # This test can be run only on Android and Linux.
+    target_compatible_with = select({
+        "//litert:android": [],
+        "//litert:linux": [],
+        "//conditions:default": ["@platforms//:incompatible"],
+    }),
+    deps = [
+        ":dma_buf_context_callback",
+        "@qairt//:qnn_lib_headers",
+    ],
+)
+
+cc_library(
     name = "qnn_manager_hdr",
     hdrs = ["qnn_manager.h"],
     features = ["-layering_check"],  # buildifier: disable=no-layering-check
@@ -76,6 +102,7 @@ litert_cc_lib_with_qnn(
     deps = [
         ":common",
         ":qnn_saver_utils",
+        ":dma_buf_context_callback",
         "//litert/c:litert_common",
         "//litert/c/internal:litert_logging",
         "//litert/cc:litert_expected",

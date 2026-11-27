@@ -95,6 +95,11 @@ ABSL_FLAG(bool, qualcomm_enable_weight_sharing, false,
 ABSL_FLAG(bool, qualcomm_enable_just_in_time, false,
           "Whether to enable Just-In-Time in QNN, bypassing serialization.");
 
+ABSL_FLAG(bool, qualcomm_enable_zero_copy_context_loading, false,
+          "Linux/Android only. Whether to have the HTP backend import the "
+          "context binary directly from the model's fd via DMA-BUF instead "
+          "of copying the weights.");
+
 ABSL_RETIRED_FLAG(
     bool, qualcomm_use_htp_preference, false,
     "DEPRECATED: Whether to transform a litert op into the HTP prefered "
@@ -1012,6 +1017,10 @@ Expected<void> UpdateQualcommOptionsFromFlags(QualcommOptions& opts) {
 
   const auto just_in_time = absl::GetFlag(FLAGS_qualcomm_enable_just_in_time);
   opts.SetEnableJustInTime(just_in_time);
+
+  const auto enable_zero_copy_context_loading =
+      absl::GetFlag(FLAGS_qualcomm_enable_zero_copy_context_loading);
+  opts.SetEnableZeroCopyContextLoading(enable_zero_copy_context_loading);
 
   const auto log_level = absl::GetFlag(FLAGS_qualcomm_log_level);
   opts.SetLogLevel(log_level);

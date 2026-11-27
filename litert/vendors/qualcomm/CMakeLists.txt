@@ -68,6 +68,7 @@ target_link_libraries(qnn_manager
         qnn_wrappers
     PRIVATE
         qnn_saver_utils
+        dma_buf_context_callback
 )
 
 # Context Binary Info library
@@ -104,6 +105,17 @@ target_link_libraries(qnn_saver_utils
         absl::span
         litert_runtime_c_api_shared_lib
         litert_cc_api
+)
+
+# DMA-BUF context binary callback
+add_library(dma_buf_context_callback STATIC
+    dma_buf_context_callback.cc
+)
+
+target_include_directories(dma_buf_context_callback
+    PUBLIC
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
+        $<$<BOOL:${QAIRT_HEADERS_DIR}>:${QAIRT_HEADERS_DIR}>
 )
 
 # Add subdirectories for modular build
