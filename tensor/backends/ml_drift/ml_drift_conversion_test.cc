@@ -673,6 +673,53 @@ TEST_F(MlDriftConversionTest, MulOp) {
               })));
 }
 
+TEST_F(MlDriftConversionTest, MulConstantScalarFusesWithProducer) {
+  TensorMLD input1({.type = Type::kFP32, .shape = {1, 2, 2, 4}});
+  TensorMLD input2({.type = Type::kFP32, .shape = {1, 2, 2, 4}});
+  auto scalar_buf = OwningCpuBuffer::Copy<Type::kFP32>({0.5f});
+  TensorMLD scalar(
+      {.type = Type::kFP32, .shape = {1}, .buffer = std::move(scalar_buf)});
+  TensorMLD output = Mul(Add(input1, input2), scalar);
+  auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
+  ASSERT_OK(tensor_to_handle_or);
+
+  ml_drift::GpuModel model;
+  std::vector<ml_drift::ValueId> input_ids = {
+      tensor_to_handle_or->at(input1.GetRaw()).id,
+      tensor_to_handle_or->at(input2.GetRaw()).id};
+  std::vector<ml_drift::ValueId> output_ids = {
+      tensor_to_handle_or->at(output.GetRaw()).id};
+
+  ASSERT_OK(
+      context_.gpu_model_builder->GetGpuModel(input_ids, output_ids, &model));
+
+  // Scalar constant Mul lowers as a linkable elementwise op and fuses into Add.
+  EXPECT_EQ(model.nodes.size(), 1);
+  EXPECT_THAT(model.nodes[0].name, testing::HasSubstr("mul"));
+}
+
+TEST_F(MlDriftConversionTest, PowConstantLhsScalarUsesTwoInputPath) {
+  TensorMLD input({.type = Type::kFP32, .shape = {1, 2, 2, 4}});
+  auto base_buf = OwningCpuBuffer::Copy<Type::kFP32>({2.0f});
+  TensorMLD base(
+      {.type = Type::kFP32, .shape = {1}, .buffer = std::move(base_buf)});
+  TensorMLD output = Pow(base, input);
+  auto tensor_to_handle_or = AppendGpuModelBuilder(context_, {output});
+  ASSERT_OK(tensor_to_handle_or);
+
+  ml_drift::GpuModel model;
+  std::vector<ml_drift::ValueId> input_ids = {
+      tensor_to_handle_or->at(input.GetRaw()).id};
+  std::vector<ml_drift::ValueId> output_ids = {
+      tensor_to_handle_or->at(output.GetRaw()).id};
+
+  ASSERT_OK(
+      context_.gpu_model_builder->GetGpuModel(input_ids, output_ids, &model));
+  ASSERT_EQ(model.nodes.size(), 1);
+  // Two-input path keeps both constant LHS base and runtime RHS inputs.
+  EXPECT_EQ(model.nodes[0].inputs.size(), 2);
+}
+
 TEST_F(MlDriftConversionTest, DivOp) {
   TensorMLD input1({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
   TensorMLD input2({.type = Type::kFP32, .shape = {1, 2, 2, 1}});
