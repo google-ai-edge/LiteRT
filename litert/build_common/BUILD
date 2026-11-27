@@ -34,6 +34,7 @@ string_flag(
     # LINT.IfChange(string_flag_default)
     build_setting_default = "gpu,npu",
     # LINT.ThenChange(./BUILD:build_config_header_default)
+    # copybara:uncomment scope = "project",
     values = [
         "gpu",
         "npu",
