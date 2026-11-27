@@ -63,9 +63,17 @@ class LockedBufferSpan {
   LockedBufferSpan(std::unique_ptr<Y, Deleter> data, size_t count)
       : data_(data.release(), data.get_deleter()), bytes_(count * sizeof(T)) {}
 
-  static LockedBufferSpan Empty() {
-    return LockedBufferSpan(nullptr, [](T*) {}, 0);
+  static LockedBufferSpan Unowned(T* data, size_t count) noexcept {
+    return LockedBufferSpan(std::shared_ptr<T>(), data, count);
   }
+
+  template <class U>
+  static LockedBufferSpan Aliasing(const std::shared_ptr<U>& owner, T* data,
+                                   size_t count) noexcept {
+    return LockedBufferSpan(owner, data, count);
+  }
+
+  static LockedBufferSpan Empty() noexcept { return Unowned(nullptr, 0); }
 
   // Casts the span to a specific type.
   template <class U>
@@ -293,7 +301,12 @@ class SpanCpuBuffer : public Buffer {
   //
   // Note: For CPU buffers, (un)locking is a no-op.
   LockedBufferSpan<const std::byte> Lock() override {
-    return {data_, [](const std::byte*) {}, bytes_};
+    return LockedBufferSpan<const std::byte>::Unowned(data_, bytes_);
+  }
+
+  void ResetSpan(const std::byte* data, size_t bytes) noexcept {
+    data_ = const_cast<std::byte*>(data);
+    bytes_ = bytes;
   }
 
   // Because we know that a CPU buffer is always accessible, we can provide
@@ -353,7 +366,12 @@ class MutableSpanCpuBuffer : public SpanCpuBuffer {
   //
   // Note: For CPU buffers, (un)locking is a no-op.
   LockedBufferSpan<std::byte> LockMutable() override {
-    return {data_, [](std::byte*) {}, bytes_};
+    return LockedBufferSpan<std::byte>::Unowned(data_, bytes_);
+  }
+
+  void ResetMutableSpan(std::byte* data, size_t bytes) noexcept {
+    data_ = data;
+    bytes_ = bytes;
   }
 
   // Because we know that a CPU buffer is always accessible, we can provide
@@ -440,14 +458,13 @@ class OwningCpuBuffer : public Buffer {
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
   LockedBufferSpan<const std::byte> Lock() override {
-    return {data(), [d = data_](const std::byte*) mutable { d.reset(); },
-            size()};
+    return LockedBufferSpan<const std::byte>::Aliasing(data_, data(), size());
   }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading and writing the data.
   LockedBufferSpan<std::byte> LockMutable() override {
-    return {data(), [d = data_](std::byte*) mutable { d.reset(); }, size()};
+    return LockedBufferSpan<std::byte>::Aliasing(data_, data(), size());
   }
 
   // Owning buffers hold dedicated, stable storage whose lifetime is tied to
