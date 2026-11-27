@@ -4,6 +4,23 @@
 # Qualcomm Dispatch API Shared Library
 cmake_minimum_required(VERSION 3.20)
 
+add_library(qnn_context_graph_registry INTERFACE)
+
+target_sources(qnn_context_graph_registry
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/context_graph_registry.h>
+)
+
+target_link_libraries(qnn_context_graph_registry
+    INTERFACE
+        absl::flat_hash_map
+        absl::flat_hash_set
+        absl::span
+        absl::string_view
+        absl::strings
+        litert_cc_api_headers
+)
+
 add_library(dispatch_api_qualcomm_so SHARED)
 
 target_sources(dispatch_api_qualcomm_so
@@ -26,6 +43,7 @@ target_link_libraries(dispatch_api_qualcomm_so
         qnn_manager
         qnn_backends
         qnn_context_binary_info
+        qnn_context_graph_registry
         litert_runtime_c_api_static
 )
 

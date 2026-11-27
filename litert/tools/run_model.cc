@@ -13,12 +13,14 @@
 // limitations under the License.
 
 #include <algorithm>
+#include <array>
 #include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
 #include <filesystem>  // NOLINT
 #include <numeric>
+#include <optional>
 #include <string>
 #include <system_error>  // NOLINT
 #include <utility>
@@ -57,6 +59,7 @@
 #include "litert/cc/litert_environment_options.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
+#include "litert/cc/litert_model.h"
 #include "litert/cc/litert_options.h"
 #include "litert/cc/litert_tensor_buffer.h"
 #include "litert/cc/options/litert_gpu_options.h"
@@ -78,6 +81,9 @@ ABSL_FLAG(std::string, accelerator, "cpu",
 ABSL_FLAG(std::string, gpu_precision, "auto",
           "GPU precision option [auto|fp16|fp32].");
 ABSL_FLAG(size_t, signature_index, 0, "Index of the signature to run.");
+ABSL_FLAG(bool, load_selected_signature_only, false,
+          "Only load the signature selected by --signature_index. When false, "
+          "all signatures are loaded, but only the selected signature is run.");
 ABSL_FLAG(bool, print_tensors, false, "Print tensor values after execution.");
 ABSL_FLAG(bool, compare_numerical, false,
           "Decide if random value should be filled into tensor buffer to "
@@ -396,10 +402,18 @@ Expected<void> ConfigureScopedWeightSource(Options& options) {
   return {};
 }
 
-Expected<Options> GetOptions() {
+Expected<Options> GetOptions(
+    const std::optional<std::string>& selected_signature) {
   LITERT_ASSIGN_OR_RETURN(auto options, Options::Create());
   auto accelerators = GetAccelerator();
   options.SetHardwareAccelerators(accelerators);
+
+  if (selected_signature.has_value()) {
+    LITERT_ASSIGN_OR_RETURN(auto& runtime_options, options.GetRuntimeOptions());
+    const std::array<StringView, 1> selected_signatures = {*selected_signature};
+    LITERT_RETURN_IF_ERROR(
+        runtime_options.SetSelectedSignatures(selected_signatures));
+  }
 
   if (accelerators & litert::HwAccelerators::kGpu) {
     LITERT_ASSIGN_OR_RETURN(auto& gpu_opts, options.GetGpuOptions());
@@ -688,15 +702,37 @@ Expected<void> RunModel() {
   }
 
   LITERT_ASSIGN_OR_RETURN(auto env, GetEnvironment());
-  LITERT_ASSIGN_OR_RETURN(auto options, GetOptions());
+  const std::string model_path = absl::GetFlag(FLAGS_graph);
+  ABSL_LOG(INFO) << "Model: " << model_path;
 
-  ABSL_LOG(INFO) << "Model: " << absl::GetFlag(FLAGS_graph);
-  LITERT_ASSIGN_OR_RETURN(
-      auto compiled_model,
-      CompiledModel::Create(env, absl::GetFlag(FLAGS_graph), options));
+  const size_t requested_signature_index = absl::GetFlag(FLAGS_signature_index);
+  std::optional<std::string> selected_signature_key;
+  if (absl::GetFlag(FLAGS_load_selected_signature_only)) {
+    LITERT_ASSIGN_OR_RETURN(auto model, Model::CreateFromFile(env, model_path));
+    if (requested_signature_index >= model.GetNumSignatures()) {
+      return Error(
+          kLiteRtStatusErrorIndexOOB,
+          absl::StrFormat("Signature index %zu is out of range for %zu "
+                          "signatures.",
+                          requested_signature_index, model.GetNumSignatures()));
+    }
+    LITERT_ASSIGN_OR_RETURN(auto signature,
+                            model.GetSignature(requested_signature_index));
+    selected_signature_key = std::string(signature.Key());
+    ABSL_LOG(INFO) << "Selected signature: " << *selected_signature_key
+                   << " (index " << requested_signature_index << ")";
+  }
 
-  size_t signature_index = absl::GetFlag(FLAGS_signature_index);
-  ABSL_LOG(INFO) << "Signature index: " << signature_index;
+  LITERT_ASSIGN_OR_RETURN(auto options, GetOptions(selected_signature_key));
+  LITERT_ASSIGN_OR_RETURN(auto compiled_model,
+                          CompiledModel::Create(env, model_path, options));
+
+  size_t signature_index = requested_signature_index;
+  if (selected_signature_key.has_value()) {
+    LITERT_ASSIGN_OR_RETURN(
+        signature_index,
+        compiled_model.GetSignatureIndex(*selected_signature_key));
+  }
 
   ABSL_LOG(INFO) << "Prepare input buffers";
 

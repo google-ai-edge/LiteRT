@@ -40,6 +40,7 @@
 #include "QnnProfile.h"  // from @qairt
 #include "QnnTypes.h"  // from @qairt
 #include "absl/base/no_destructor.h"  // from @com_google_absl
+#include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/strings/string_view.h"  // from @com_google_absl
 #include "litert/c/internal/litert_logging.h"
 #include "litert/c/internal/litert_runtime_context.h"
@@ -279,10 +280,16 @@ LiteRtDispatchInvocationContextT::Create(
     }
   }
 
+  absl::flat_hash_set<std::string> graph_names;
+  graph_names.reserve(graphs.size());
+  for (const auto& graph : graphs) {
+    graph_names.emplace(graph.Name());
+  }
   LITERT_ASSIGN_OR_RETURN(
       const auto& context_handle,
       device_context.GetOrCreateContext(
-          exec_bytecode_ptr, exec_bytecode_buffer->size, profile_handle));
+          exec_bytecode_ptr, exec_bytecode_buffer->size, std::move(graph_names),
+          function_name, profile_handle));
 
   Qnn_GraphHandle_t graph_handle;
   if (auto status = qnn.Api()->graphRetrieve(context_handle.Get(),
