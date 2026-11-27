@@ -35,6 +35,10 @@ struct NnpackValue {
   graph::TensorInformation info;
   uint32_t id = UINT32_MAX;
   uint32_t flags = 0;
+  // True when this static constant is consumed exclusively as a packed weight
+  // (e.g., a static `FullyConnected` filter) and its raw host buffer is no
+  // longer read after runtime creation.
+  bool packed_only = false;
   LockedBufferSpan<const std::byte> data =
       LockedBufferSpan<const std::byte>::Empty();
 };
