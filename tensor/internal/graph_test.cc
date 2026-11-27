@@ -878,5 +878,21 @@ TEST(QuantizationTest, CpuSymmetricFallbackLargeTensorInt8AndInt4) {
   }
 }
 
+TEST(ScopeTest, ScopeBoundaryRetentionGuardUsesWeakRefForLeaves) {
+  std::shared_ptr<Scope> captured_scope;
+  std::weak_ptr<TensorGroup> weak_leaf;
+  {
+    ScopeBoundaryRetentionGuard guard(/*retain_leaf_tensors=*/false);
+    ScopeGuard scope("test_scope");
+    Tensor leaf = NewTensor(absl::SourceLocation::current());
+    weak_leaf = leaf.group;
+    scope.Bind("weight", leaf);
+    captured_scope = scope.scope();
+    EXPECT_TRUE(captured_scope->GetBoundaryTensor("weight").has_value());
+  }
+  EXPECT_TRUE(weak_leaf.expired());
+  EXPECT_FALSE(captured_scope->GetBoundaryTensor("weight").has_value());
+}
+
 }  // namespace
 }  // namespace litert::tensor::graph
