@@ -33,6 +33,8 @@
 #include "litert/c/internal/litert_runtime_context.h"
 #include "litert/c/litert_common.h"
 #include "litert/c/litert_event_type.h"
+#include "litert/c/options/litert_google_tensor_options.h"
+#include "litert/c/options/litert_google_tensor_options_type.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/vendors/c/litert_dispatch.h"
 #include "litert/vendors/google_tensor/dispatch/dispatch_api_config.h"
@@ -146,6 +148,41 @@ LiteRtStatus CreateCustomEventFromFd(
   LITERT_RETURN_IF_ERROR(runtime_context->create_managed_event(
       /*env=*/nullptr, LiteRtEventTypeCustom, out_event));
   return runtime_context->set_custom_event(*out_event, custom_event);
+}
+
+LiteRtStatus ParseRunPerformanceMode(
+    const LiteRtRuntimeContext* absl_nonnull runtime_context,
+    absl_nullable LiteRtOptions options,
+    std::optional<LiteRtGoogleTensorOptionsPerformanceMode>& out_mode) {
+  out_mode = std::nullopt;
+  if (options == nullptr) {
+    return kLiteRtStatusOk;
+  }
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  if (runtime_context->get_opaque_options(options, &opaque_opts) !=
+          kLiteRtStatusOk ||
+      opaque_opts == nullptr) {
+    return kLiteRtStatusOk;
+  }
+  void* payload = nullptr;
+  if (runtime_context->find_opaque_options_data(
+          opaque_opts, LrtGoogleTensorOptionsGetIdentifier(), &payload) !=
+          kLiteRtStatusOk ||
+      payload == nullptr) {
+    return kLiteRtStatusOk;
+  }
+  LrtGoogleTensorOptions gt_options = nullptr;
+  LITERT_RETURN_IF_ERROR(LrtCreateGoogleTensorOptionsFromToml(
+      static_cast<const char*>(payload), &gt_options));
+  absl::Cleanup deleter = [gt_options] {
+    LrtDestroyGoogleTensorOptions(gt_options);
+  };
+  LiteRtGoogleTensorOptionsPerformanceMode mode;
+  if (LrtGoogleTensorOptionsGetPerformanceMode(gt_options, &mode) ==
+      kLiteRtStatusOk) {
+    out_mode = mode;
+  }
+  return kLiteRtStatusOk;
 }
 
 }  // namespace
@@ -339,7 +376,23 @@ LiteRtStatus LiteRtDispatchInvocationContextT::DetachOutput(
   return kLiteRtStatusOk;
 }
 
+LiteRtStatus LiteRtDispatchInvocationContextT::SetRunOptions(
+    LiteRtOptions options) {
+  std::optional<LiteRtGoogleTensorOptionsPerformanceMode> performance_mode;
+  LITERT_RETURN_IF_ERROR(ParseRunPerformanceMode(
+      device_context_->runtime_context(), options, performance_mode));
+  LITERT_RETURN_IF_ERROR(graph_->ApplyRunPerformanceMode(performance_mode));
+  run_performance_mode_ = performance_mode;
+  return kLiteRtStatusOk;
+}
+
+LiteRtStatus LiteRtDispatchInvocationContextT::ApplyRunOptionsToGraph() {
+  return graph_->ApplyRunPerformanceMode(run_performance_mode_);
+}
+
 LiteRtStatus LiteRtDispatchInvocationContextT::Invoke() {
+  LITERT_RETURN_IF_ERROR(ApplyRunOptionsToGraph());
+
   GT_LOG_RETURN_IF_SB_ERROR(
       thrInvocationContextPrepareForInvoke(thr_invocation_context_,
                                            /*create_output_sync_fence=*/false),
@@ -428,11 +481,14 @@ LiteRtStatus LiteRtDispatchInvocationContextT::InvokeAsync(
     return kLiteRtStatusErrorInvalidArgument;
   }
 
+  LITERT_RETURN_IF_ERROR(ApplyRunOptionsToGraph());
+
   bool use_vendor_preferred_fence = false;
 #if LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
   if (const auto& options = device_context_->GetGoogleTensorPrivilegedOptions();
       options.has_value()) {
-    use_vendor_preferred_fence = options->use_vendor_preferred_fence;
+    use_vendor_preferred_fence =
+        options->use_vendor_preferred_fence.value_or(false);
   }
 #endif  // LITERT_HAS_GOOGLE_TENSOR_PRIVILEGED_OPTIONS_SUPPORT
   if (use_vendor_preferred_fence) {
