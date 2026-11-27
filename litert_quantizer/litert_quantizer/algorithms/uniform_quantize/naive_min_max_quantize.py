@@ -18,7 +18,7 @@
 from collections.abc import Mapping, MutableMapping, Sequence
 import dataclasses
 import enum
-from typing import Any, Optional
+from typing import Any
 from absl import logging
 import numpy as np
 from litert_quantizer import qtyping
@@ -166,8 +166,8 @@ def _get_histogram_range(
 def get_tensor_quant_params(
     op_info: qtyping.OpInfo,
     tensor_quant_config: qtyping.TensorQuantizationConfig,
-    tensor_content: Optional[np.ndarray] = None,
-    tensor_qsv: Optional[dict[str, Any]] = None,
+    tensor_content: np.ndarray | None = None,
+    tensor_qsv: dict[str, Any] | None = None,
 ) -> qtyping.UniformQuantParams:
   """Get the quantization parameters for a tensor.
 
@@ -337,10 +337,12 @@ def min_max_calibrate(
       with `padv2` where a bfloat16 -inf padding constant can cause problems.
       Values exceeding this range can lead to quantization issues and are
       therefore excluded from min/max calibration.
+    **kwargs: Optional algorithm-specific keyword parameters.
 
   Returns:
     A dictionary with key as tensor name and value as the collected QSV.
   """
+  del kwargs
   op_qsvs = {}
   min_val, max_val = valid_range
 
