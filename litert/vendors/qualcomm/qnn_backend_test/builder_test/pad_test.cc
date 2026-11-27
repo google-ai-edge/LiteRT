@@ -46,11 +46,12 @@ std::vector<::qnn::OpWrapper> BuildFloatPadOp(::qnn::TensorPool& tensor_pool) {
       QNN_DATATYPE_UINT_32, {}, pad_dims,
       pad_data.size() * sizeof(std::uint32_t), pad_data.data());
 
-  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output});
+  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output},
+                                   ::qnn::BackendType::kHtpBackend);
 }
 
 std::vector<::qnn::OpWrapper> BuildQuantizedPadDefaultOp(
-    ::qnn::TensorPool& tensor_pool) {
+    ::qnn::TensorPool& tensor_pool, ::qnn::BackendType backend_type) {
   const std::vector<std::uint32_t> input_dims{1, kInputHeight, kInputWidth, 1};
   const std::vector<std::uint32_t> output_dims{1, kOutputHeight, kOutputWidth,
                                                1};
@@ -68,7 +69,8 @@ std::vector<::qnn::OpWrapper> BuildQuantizedPadDefaultOp(
       QNN_DATATYPE_UINT_32, {}, pad_dims,
       pad_data.size() * sizeof(std::uint32_t), pad_data.data());
 
-  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output});
+  return ::qnn::BuildConstantPadOp(tensor_pool, {input, pad_tensor}, {output},
+                                   backend_type);
 }
 
 template <typename T>
@@ -94,7 +96,8 @@ std::vector<::qnn::OpWrapper> BuildQuantizedPadV2Op(
       data_type, quant_params, {1}, sizeof(T), &const_value);
 
   return ::qnn::BuildConstantPadOp(tensor_pool,
-                                   {input, pad_tensor, const_tensor}, {output});
+                                   {input, pad_tensor, const_tensor}, {output},
+                                   ::qnn::BackendType::kHtpBackend);
 }
 
 std::vector<::qnn::OpWrapper> BuildQuantizedPadV2MismatchedInt32ConstOp(
@@ -119,7 +122,8 @@ std::vector<::qnn::OpWrapper> BuildQuantizedPadV2MismatchedInt32ConstOp(
       QNN_DATATYPE_INT_32, {}, {1}, sizeof(std::int32_t), &const_value);
 
   return ::qnn::BuildConstantPadOp(tensor_pool,
-                                   {input, pad_tensor, const_tensor}, {output});
+                                   {input, pad_tensor, const_tensor}, {output},
+                                   ::qnn::BackendType::kHtpBackend);
 }
 
 ::testing::AssertionResult ValidateQnnPadModel(
@@ -179,8 +183,9 @@ TEST_P(PadOpBuilderQnnModelTest, FloatPadValidatesWithQnn) {
 
 TEST_P(PadOpBuilderQnnModelTest,
        QuantizedPadDefaultConstValueValidatesWithQnn) {
-  EXPECT_TRUE(ValidateQnnPadModel(qnn_model_,
-                                  BuildQuantizedPadDefaultOp(tensor_pool_)));
+  EXPECT_TRUE(ValidateQnnPadModel(
+      qnn_model_, BuildQuantizedPadDefaultOp(tensor_pool_,
+                                             ::qnn::BackendType::kHtpBackend)));
 }
 
 TEST_P(PadOpBuilderQnnModelTest, QuantizedPadV2Int8ConstValueValidatesWithQnn) {
@@ -203,9 +208,25 @@ TEST(PadOpBuilderTest, QuantizedPadV2ReadsPadConstTensorDataType) {
                                                  13);
 }
 
-TEST(PadOpBuilderTest, QuantizedPadWithNoConstTensorOmitsPadConstantValue) {
+TEST(PadOpBuilderTest,
+     QuantizedPadWithNoConstTensorUsesZeroPointForNonLpaiBackend) {
+  for (const auto backend_type :
+       {::qnn::BackendType::kHtpBackend, ::qnn::BackendType::kGpuBackend}) {
+    ::qnn::TensorPool tensor_pool;
+    auto ops = BuildQuantizedPadDefaultOp(tensor_pool, backend_type);
+
+    ASSERT_EQ(ops.size(), 1);
+    const auto pad_constant_value = GetPadConstantValue(ops.front());
+    ASSERT_TRUE(pad_constant_value.has_value());
+    EXPECT_EQ(*pad_constant_value, 10);
+  }
+}
+
+TEST(PadOpBuilderTest,
+     QuantizedPadWithNoConstTensorOmitsPadConstantValueForLpaiBackend) {
   ::qnn::TensorPool tensor_pool;
-  auto ops = BuildQuantizedPadDefaultOp(tensor_pool);
+  auto ops =
+      BuildQuantizedPadDefaultOp(tensor_pool, ::qnn::BackendType::kLpaiBackend);
 
   ASSERT_EQ(ops.size(), 1);
   const auto pad_constant_value = GetPadConstantValue(ops.front());

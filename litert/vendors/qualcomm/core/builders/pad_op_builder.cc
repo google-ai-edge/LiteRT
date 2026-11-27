@@ -66,7 +66,8 @@ std::optional<std::int32_t> GetQuantizedPadConstValue(
 std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
                                   const std::vector<TensorWrapperRef>& inputs,
                                   const std::vector<TensorWrapperRef>& outputs,
-                                  const std::uint32_t scheme_value) {
+                                  const std::uint32_t scheme_value,
+                                  BackendType backend_type) {
   std::vector<OpWrapper> res;
   // TFLite Pad has input and padding tensors; PadV2 adds a third scalar
   // constant-value tensor.
@@ -106,6 +107,17 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
       const std::int32_t pad_const_value = pad_const_data.value();
       pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
                                           pad_const_value);
+    } else if (backend_type != BackendType::kLpaiBackend) {
+      const auto* quant_params =
+          std::get_if<ScaleOffsetQuantizeParamsWrapper>(
+              &input_tensor.GetQuantParams());
+      if (quant_params == nullptr) {
+        QNN_LOG_ERROR("Unsupported quantization parameters for Pad op.");
+        return {};
+      }
+      // Quantized encoding of real zero is the input tensor's zero point.
+      pad_op.AddScalarParam<std::int32_t>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
+                                          quant_params->GetZeroPoint());
     }
   } else if (input_tensor.IsF16() || input_tensor.IsF32()) {
     if (inputs.size() >= kPadConstValueIndex + 1) {
@@ -121,6 +133,8 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
           std::max(pad_const_data.value()[0], -65472.f);
       pad_op.AddScalarParam<float>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE,
                                    pad_const_value);
+    } else if (backend_type != BackendType::kLpaiBackend) {
+      pad_op.AddScalarParam<float>(QNN_OP_PAD_PARAM_PAD_CONSTANT_VALUE, 0.0f);
     }
   } else {
     QNN_LOG_ERROR("Unsupported input tensor type.")
@@ -132,13 +146,15 @@ std::vector<OpWrapper> BuildPadOp(TensorPool& tensor_pool,
 
 std::vector<OpWrapper> BuildConstantPadOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs) {
-  return BuildPadOp(tensor_pool, inputs, outputs, QNN_OP_PAD_SCHEME_CONSTANT);
+    const std::vector<TensorWrapperRef>& outputs, BackendType backend_type) {
+  return BuildPadOp(tensor_pool, inputs, outputs, QNN_OP_PAD_SCHEME_CONSTANT,
+                    backend_type);
 }
 
 std::vector<OpWrapper> BuildMirrorPadOp(
     TensorPool& tensor_pool, const std::vector<TensorWrapperRef>& inputs,
-    const std::vector<TensorWrapperRef>& outputs, const std::uint32_t mode) {
+    const std::vector<TensorWrapperRef>& outputs, const std::uint32_t mode,
+    BackendType backend_type) {
   std::uint32_t scheme_value = QNN_OP_PAD_SCHEME_CONSTANT;
   // get scheme if mirror pad
   switch (static_cast<MirrorPadMode>(mode)) {
@@ -153,7 +169,7 @@ std::vector<OpWrapper> BuildMirrorPadOp(
           "QNN only support reflect and symmetric mode for mirror pad op.")
       return {};
   }
-  return BuildPadOp(tensor_pool, inputs, outputs, scheme_value);
+  return BuildPadOp(tensor_pool, inputs, outputs, scheme_value, backend_type);
 }
 
 }  // namespace qnn
