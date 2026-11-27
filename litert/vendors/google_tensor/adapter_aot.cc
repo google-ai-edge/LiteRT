@@ -138,7 +138,7 @@ litert::Expected<void> AdapterAot::LoadSymbols(
   return {};
 }
 
-Expected<void> AdapterAot::Compile(
+LITERT_NO_CFI_CHECK Expected<void> AdapterAot::Compile(
     const char* tfl_buffer_data, size_t tfl_buffer_size,
     const char* options_data, size_t options_size, char*** compiled_code_data,
     size_t** compiled_code_sizes, size_t* num_bytecodes) {
@@ -162,9 +162,9 @@ Expected<void> AdapterAot::Compile(
   return {};
 }
 
-void AdapterAot::FreeCompiledCode(char** compiled_code_data,
-                                  size_t* compiled_code_sizes,
-                                  size_t num_bytecodes) {
+LITERT_NO_CFI_CHECK void AdapterAot::FreeCompiledCode(
+    char** compiled_code_data, size_t* compiled_code_sizes,
+    size_t num_bytecodes) {
   api_->free_compiled_code(compiled_code_data, compiled_code_sizes,
                            num_bytecodes);
 }
