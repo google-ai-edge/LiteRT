@@ -344,7 +344,9 @@ package_group(
     includes = [
         ":litert_internal_users",
     ],
-    packages = [],
+    packages = [
+        "//third_party/py/litert_cli/...",
+    ],
 )
 
 exports_files(
