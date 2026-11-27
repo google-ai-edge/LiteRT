@@ -34,6 +34,7 @@ cc_library(
         "//tflite/tools:logging",
         "//tflite/tools:tool_params",
         "//tflite/tools/delegates:delegate_provider_hdr",
+        "@com_google_absl//absl/synchronization",
     ] + select({
         # Stable delegate does not support Windows because the shared library loader hasn't been
         # extended to support Windows.
