@@ -626,6 +626,97 @@ class TensorUtilsTest(parameterized.TestCase):
     with self.subTest(name="CheckScaleValue"):
       self.assertEqual(scale[0], expected_scale)
 
+  def test_tensor_zp_scale_from_min_max_full_range_int4(self):
+    # Channel 0's extreme is negative, channel 1's is positive.
+    min_val = np.array([[-4.0], [-1.0]])
+    max_val = np.array([[2.0], [3.5]])
+
+    zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+        min_val,
+        max_val,
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        full_range=True,
+    )
+
+    np.testing.assert_array_equal(zp, np.zeros((2, 1)))
+    # -4.0 maps exactly onto -8; the positive extreme keeps bound / 7.
+    np.testing.assert_allclose(scale, [[4.0 / 8], [3.5 / 7]])
+
+  def test_tensor_zp_scale_from_min_max_full_range_default_off(self):
+    min_val = np.array([[-4.0], [-1.0]])
+    max_val = np.array([[2.0], [3.5]])
+
+    _, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+        min_val,
+        max_val,
+        num_bits=4,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+    )
+
+    np.testing.assert_allclose(scale, [[4.0 / 7], [3.5 / 7]])
+
+  def test_tensor_zp_scale_from_min_max_full_range_ignored_for_int8(self):
+    # 8-bit symmetric quantization keeps the narrow range [-127, 127].
+    min_val = np.array([[-4.0]])
+    max_val = np.array([[2.0]])
+
+    _, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+        min_val,
+        max_val,
+        num_bits=8,
+        symmetric=True,
+        granularity=qtyping.QuantGranularity.CHANNELWISE,
+        full_range=True,
+    )
+
+    np.testing.assert_allclose(scale, [[4.0 / 127]])
+
+  def test_full_range_int4_blockwise_reduces_quantization_error(self):
+    rng = np.random.default_rng(0)
+    tensor_data = rng.standard_normal((64, 256)).astype(np.float32)
+    blocks = tensor_data.reshape(64, 8, 32)
+    min_val = blocks.min(axis=-1)
+    max_val = blocks.max(axis=-1)
+
+    def dequantized(full_range):
+      zp, scale = uniform_quantize_tensor.tensor_zp_scale_from_min_max(
+          min_val,
+          max_val,
+          num_bits=4,
+          symmetric=True,
+          granularity=qtyping.QuantGranularity.BLOCKWISE_32,
+          full_range=full_range,
+      )
+      quant_params = qtyping.UniformQuantParams(
+          num_bits=4,
+          quantized_dimension=1,
+          scale=scale,
+          zero_point=zp,
+          symmetric=True,
+          block_size=32,
+      )
+      quantized = uniform_quantize_tensor.uniform_quantize(
+          tensor_data, quant_params, is_blockwise_quant=True
+      )
+      expanded_scale = np.repeat(scale, 32, axis=1)
+      return quantized, quantized * expanded_scale
+
+    q_default, deq_default = dequantized(full_range=False)
+    q_full, deq_full = dequantized(full_range=True)
+    mse_default = np.mean((deq_default - tensor_data) ** 2)
+    mse_full = np.mean((deq_full - tensor_data) ** 2)
+
+    with self.subTest(name="DefaultNeverUsesMostNegativeLevel"):
+      self.assertGreaterEqual(q_default.min(), -7)
+    with self.subTest(name="FullRangeUsesMostNegativeLevel"):
+      self.assertEqual(q_full.min(), -8)
+      self.assertLessEqual(q_full.max(), 7)
+    with self.subTest(name="FullRangeReducesError"):
+      self.assertLess(mse_full, mse_default)
+
 
 if __name__ == "__main__":
   absltest.main()
