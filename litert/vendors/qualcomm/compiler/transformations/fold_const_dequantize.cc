@@ -109,10 +109,9 @@ LiteRtStatus FoldConstDequantizeTransformation(
       return kLiteRtStatusPatternNoMatch;
     }
     auto in_num_elements = in_ranked_type->Layout().NumElements();
-    auto out_num_elements = out_ranked_type->Layout().NumElements();
     const size_t num_elements = raw_bytes.size() / sizeof(uint16_t);
-    if (!in_num_elements || !out_num_elements || *in_num_elements == 0 ||
-        *in_num_elements != num_elements || *out_num_elements != num_elements) {
+    if (!in_num_elements || *in_num_elements == 0 ||
+        *in_num_elements != num_elements) {
       return kLiteRtStatusPatternNoMatch;
     }
     fp32_data.reserve(num_elements);
@@ -128,11 +127,27 @@ LiteRtStatus FoldConstDequantizeTransformation(
     if (!input.HasQuantization()) {
       return kLiteRtStatusPatternNoMatch;
     }
+    // Layout::NumElements() is overflow-checked, unlike the multiplication in
+    // DequantizeWeights(), so validate the shape first.
+    auto in_ranked_type = input.RankedTensorType();
+    if (!in_ranked_type) {
+      return kLiteRtStatusPatternNoMatch;
+    }
+    auto in_num_elements = in_ranked_type->Layout().NumElements();
+    if (!in_num_elements || *in_num_elements == 0) {
+      return kLiteRtStatusPatternNoMatch;
+    }
     auto dequantized = DequantizeWeights(input);
     if (!dequantized) {
       return kLiteRtStatusPatternNoMatch;
     }
     fp32_data = std::move(*dequantized);
+  }
+
+  auto out_num_elements = out_ranked_type->Layout().NumElements();
+  if (!out_num_elements || *out_num_elements == 0 ||
+      *out_num_elements != fp32_data.size()) {
+    return kLiteRtStatusPatternNoMatch;
   }
 
   // Build a new float32 tensor with the folded constant weights.

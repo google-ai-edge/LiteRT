@@ -258,6 +258,81 @@ TEST(FoldConstDequantizeTest, RejectsQuantizedInputWithoutQuantizationParams) {
             kLiteRtStatusPatternNoMatch);
 }
 
+TEST(FoldConstDequantizeTest, CaseB_RejectsUnrankedInput) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
+
+  // int8 quantized input with an unranked tensor type — RankedTensorType()
+  // returns an error, so the shape/element-count check must reject before
+  // calling DequantizeWeights().
+  auto& in = subgraph.EmplaceTensor();
+  TensorTypeDetail detail;
+  detail.unranked_tensor_type = {kLiteRtElementTypeInt8};
+  in.SetType(TensorType{kLiteRtUnrankedTensorType, detail});
+  in.SetQarams(MakePerTensorQuantization(/*scale=*/1.0f, /*zp=*/0));
+  std::vector<int8_t> int8_data = {1, 2, 3, 4};
+  SetWeightsFromOwnedBuffer(
+      in.Weights(),
+      OwningBufferRef<uint8_t>(
+          reinterpret_cast<const uint8_t*>(int8_data.data()),
+          int8_data.size() * sizeof(int8_t)));
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {4}));
+
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&in, op);
+  AttachOutput(&out, op);
+
+  auto& consumer_out = subgraph.EmplaceTensor();
+  auto& consumer = subgraph.EmplaceOp();
+  consumer.SetOpCode(kLiteRtOpCodeTflRelu);
+  AttachInput(&out, consumer);
+  AttachOutput(&consumer_out, consumer);
+
+  EXPECT_EQ(FoldConstDequantizeTransformation(ctx, &builder_impl, &op),
+            kLiteRtStatusPatternNoMatch);
+}
+
+TEST(FoldConstDequantizeTest, CaseB_RejectsZeroElementInput) {
+  const LiteRtCompilerContext* ctx = LrtGetCompilerContext();
+  LiteRtSubgraphT subgraph;
+  LiteRtBuilderT builder_impl;
+  builder_impl.SetTargetSubgraph(&subgraph);
+
+  // int8 quantized input with a zero-dimension shape; NumElements() returns 0
+  // so DequantizeWeights() must not be called. A sentinel byte keeps
+  // IsConstant() true while the shape reports 0 elements.
+  auto& in = subgraph.EmplaceTensor();
+  in.SetType(MakeRankedTensorType(kLiteRtElementTypeInt8, {0}));
+  in.SetQarams(MakePerTensorQuantization(/*scale=*/1.0f, /*zp=*/0));
+  std::vector<uint8_t> sentinel = {0};
+  SetWeightsFromOwnedBuffer(
+      in.Weights(),
+      OwningBufferRef<uint8_t>(static_cast<const uint8_t*>(sentinel.data()),
+                               sentinel.size()));
+
+  auto& out = subgraph.EmplaceTensor();
+  out.SetType(MakeRankedTensorType(kLiteRtElementTypeFloat32, {0}));
+
+  auto& op = subgraph.EmplaceOp();
+  op.SetOpCode(kLiteRtOpCodeTflDequantize);
+  AttachInput(&in, op);
+  AttachOutput(&out, op);
+
+  auto& consumer_out = subgraph.EmplaceTensor();
+  auto& consumer = subgraph.EmplaceOp();
+  consumer.SetOpCode(kLiteRtOpCodeTflRelu);
+  AttachInput(&out, consumer);
+  AttachOutput(&consumer_out, consumer);
+
+  EXPECT_EQ(FoldConstDequantizeTransformation(ctx, &builder_impl, &op),
+            kLiteRtStatusPatternNoMatch);
+}
+
 //===----------------------------------------------------------------------===//
 // Case A — float16 constant folding
 //===----------------------------------------------------------------------===//
