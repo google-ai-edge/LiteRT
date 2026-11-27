@@ -64,5 +64,47 @@ TEST(YnnpackRunnerTest, RejectsConstantWithTooSmallBuffer) {
             absl::StatusCode::kInvalidArgument);
 }
 
+TEST(YnnpackRunnerTest, SharesNonOwningThreadpoolAcrossRunners) {
+  YnnpackScheduler scheduler(/*num_background_threads=*/2);
+  ynn_threadpool_t raw_pool = nullptr;
+  ASSERT_EQ(ynn_create_threadpool(YnnpackScheduler::Vtable(), &scheduler,
+                                  /*flags=*/0, &raw_pool),
+            ynn_status_success);
+  YnnpackRunner::ThreadpoolPtr pool(raw_pool);
+
+  const std::vector<float> weights = {1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f};
+  YnnTensor w(
+      {.name = "w", .type = Type::kFP32, .shape = {2, 3}, .buffer = weights});
+  YnnTensor x({.name = "x", .type = Type::kFP32, .shape = {1, 3}});
+  YnnTensor y = FullyConnected(x, w);
+
+  auto r1 = YnnpackRunner::Create({y});
+  ASSERT_TRUE(r1.ok());
+  ASSERT_TRUE(r1->SetThreadpool(pool.get()).ok());
+  EXPECT_EQ(r1->threadpool(), pool.get());
+
+  auto r2 = YnnpackRunner::Create({y});
+  ASSERT_TRUE(r2.ok());
+  ASSERT_TRUE(r2->SetThreadpool(pool.get()).ok());
+  EXPECT_EQ(r2->threadpool(), pool.get());
+
+  const std::vector<float> in1 = {1.0f, 0.0f, 2.0f};
+  ASSERT_TRUE(r1->SetInput(x, in1).ok());
+  ASSERT_TRUE(r1->Run().ok());
+  auto out1 = r1->ReadOutputAs<float>(y);
+  ASSERT_TRUE(out1.ok());
+  EXPECT_FLOAT_EQ(out1->data()[0], 7.0f);
+  EXPECT_FLOAT_EQ(out1->data()[1], 16.0f);
+
+  const std::vector<float> in2 = {0.5f, 1.0f, -1.0f};
+  ASSERT_TRUE(r2->SetInput(x, in2).ok());
+  ASSERT_TRUE(r2->Run().ok());
+  auto out2 = r2->ReadOutputAs<float>(y);
+  ASSERT_TRUE(out2.ok());
+  EXPECT_FLOAT_EQ(out2->data()[0], -0.5f);
+  EXPECT_FLOAT_EQ(out2->data()[1], 1.0f);
+  EXPECT_FALSE(r2->SetThreadpool(pool.get()).ok());
+}
+
 }  // namespace
 }  // namespace litert::tensor

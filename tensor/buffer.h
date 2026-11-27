@@ -63,9 +63,17 @@ class LockedBufferSpan {
   LockedBufferSpan(std::unique_ptr<Y, Deleter> data, size_t count)
       : data_(data.release(), data.get_deleter()), bytes_(count * sizeof(T)) {}
 
-  static LockedBufferSpan Empty() {
-    return LockedBufferSpan(nullptr, [](T*) {}, 0);
+  static LockedBufferSpan Unowned(T* data, size_t count) noexcept {
+    return LockedBufferSpan(std::shared_ptr<T>(), data, count);
   }
+
+  template <class U>
+  static LockedBufferSpan Aliasing(const std::shared_ptr<U>& owner, T* data,
+                                   size_t count) noexcept {
+    return LockedBufferSpan(owner, data, count);
+  }
+
+  static LockedBufferSpan Empty() noexcept { return Unowned(nullptr, 0); }
 
   // Casts the span to a specific type.
   template <class U>
@@ -293,7 +301,12 @@ class SpanCpuBuffer : public Buffer {
   //
   // Note: For CPU buffers, (un)locking is a no-op.
   LockedBufferSpan<const std::byte> Lock() override {
-    return {data_, [](const std::byte*) {}, bytes_};
+    return LockedBufferSpan<const std::byte>::Unowned(data_, bytes_);
+  }
+
+  void ResetSpan(const std::byte* data, size_t bytes) noexcept {
+    data_ = const_cast<std::byte*>(data);
+    bytes_ = bytes;
   }
 
   // Because we know that a CPU buffer is always accessible, we can provide
@@ -353,7 +366,12 @@ class MutableSpanCpuBuffer : public SpanCpuBuffer {
   //
   // Note: For CPU buffers, (un)locking is a no-op.
   LockedBufferSpan<std::byte> LockMutable() override {
-    return {data_, [](std::byte*) {}, bytes_};
+    return LockedBufferSpan<std::byte>::Unowned(data_, bytes_);
+  }
+
+  void ResetMutableSpan(std::byte* data, size_t bytes) noexcept {
+    data_ = data;
+    bytes_ = bytes;
   }
 
   // Because we know that a CPU buffer is always accessible, we can provide
@@ -440,14 +458,13 @@ class OwningCpuBuffer : public Buffer {
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading the data.
   LockedBufferSpan<const std::byte> Lock() override {
-    return {data(), [d = data_](const std::byte*) mutable { d.reset(); },
-            size()};
+    return LockedBufferSpan<const std::byte>::Aliasing(data_, data(), size());
   }
 
   // Locks the buffer so that it's accessible from the CPU and returns an RAII
   // object that allows reading and writing the data.
   LockedBufferSpan<std::byte> LockMutable() override {
-    return {data(), [d = data_](std::byte*) mutable { d.reset(); }, size()};
+    return LockedBufferSpan<std::byte>::Aliasing(data_, data(), size());
   }
 
   // Owning buffers hold dedicated, stable storage whose lifetime is tied to
@@ -624,19 +641,18 @@ class OwningCpuBuffer : public Buffer {
                                       std::forward<F>(transform));
   }
 
-  // Allocates an array with an alignment of `kBufferAlignment`.
+  // Allocations at or above this size use anonymous OS virtual memory (`mmap`
+  // on POSIX, `VirtualAlloc` on Windows) so freeing large transient weight or
+  // staging buffers returns physical pages to the OS immediately instead of
+  // sitting in delayed allocator purge caches.
+  static constexpr size_t kMmapAllocationThresholdBytes = 256 * 1024;
+
+  // Allocates an array with an alignment of `kCpuBufferAlignment`.
   //
   // Note: This is different from `std::aligned_alloc` because it doesn't
-  // require the array size to be a multiple of the alignment.
-  //
-  // To do so we allocate a bigger buffer than requested, get the first
-  // aligned address in it and prepend the offset to the real allocation.
-  //
-  // ```
-  // [data    ][off][aligned_data... ]
-  //                ↑
-  //      This pointer is returned.
-  // ```
+  // require the array size to be a multiple of the alignment. Buffers of at
+  // least `kMmapAllocationThresholdBytes` use anonymous virtual memory so
+  // `AlignedFree` returns their pages immediately to the OS.
   static CustomAllocPtr AlignedAlloc(size_t bytes);
 
   // Frees an array allocated with `AlignedAlloc`.
