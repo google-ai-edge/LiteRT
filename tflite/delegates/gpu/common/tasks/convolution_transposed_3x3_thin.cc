@@ -21,6 +21,7 @@ limitations under the License.
 #include <vector>
 
 #include "absl/strings/substitute.h"
+#include "absl/types/span.h"
 #include "tflite/delegates/gpu/common/precision.h"
 #include "tflite/delegates/gpu/common/task/buffer_desc.h"
 #include "tflite/delegates/gpu/common/task/weights_conversion.h"
