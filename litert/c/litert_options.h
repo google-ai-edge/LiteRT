@@ -57,6 +57,8 @@ LiteRtStatus LiteRtGetOpaqueOptions(LiteRtOptions options,
 // Sets operator resolver callbacks for the given options.
 //
 // Either `find_builtin_op` or `find_custom_op` may be null if not needed.
+// Unresolved builtin operators (when `find_builtin_op` is null or returns null)
+// fall back to the runtime's default builtin operators when available.
 // `user_data` (if non-null) and any `TfLiteOperator` objects returned by the
 // callbacks are owned by the caller and must outlive the CompiledModel(s)
 // created with these options. Returns `kLiteRtStatusErrorUnsupported` in

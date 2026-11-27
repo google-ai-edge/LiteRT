@@ -40,10 +40,11 @@ const TfLiteOperator* FindBuiltinOpCallback(void* user_data, int op,
     return nullptr;
   }
   if (reg->registration_external == nullptr) {
-    LITERT_LOG(LITERT_ERROR,
+    LITERT_LOG(LITERT_WARNING,
                "OpResolver returned TfLiteRegistration without "
                "registration_external for builtin op %d (version %d); "
-               "ignoring non-ABI-stable registration.",
+               "ignoring non-ABI-stable registration and falling back to "
+               "runtime builtin op if available.",
                op, version);
     return nullptr;
   }
