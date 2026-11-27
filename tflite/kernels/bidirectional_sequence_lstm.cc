@@ -321,6 +321,7 @@ TfLiteStatus CheckLstmTensorDimensionsAndTypes(
   if (use_cifg) {
     TF_LITE_ENSURE(context, input_gate_bias == nullptr);
   } else {
+    TF_LITE_ENSURE(context, input_gate_bias != nullptr);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->size, 1);
     TF_LITE_ENSURE_EQ(context, input_gate_bias->dims->data[0], n_cell);
     TF_LITE_ENSURE_TYPES_EQ(context, input_gate_bias->type, kTfLiteFloat32);
