@@ -136,5 +136,23 @@ TEST_F(ConvertDequantizeTest, Float16OutputInsertsCast) {
             ::ml_drift::DataType::kFloat16);
 }
 
+TEST_F(ConvertDequantizeTest, RuntimeFloat16ToFloat32UsesCast) {
+  SingleOpInterpreterBuilder model(kTfLiteBuiltinDequantize);
+  model.AddInput(kTfLiteFloat16, {1, 2, 3, 4});
+  model.AddOutput(kTfLiteFloat32, {1, 2, 3, 4});
+
+  auto interpreter = model.Build();
+  ASSERT_TRUE(interpreter);
+  ASSERT_EQ(interpreter->ModifyGraphWithDelegate(delegate_.get()), kTfLiteOk);
+
+  const ::ml_drift::ir::IrModel* ir_model = GetIrModel(delegate_.get());
+  ASSERT_TRUE(ir_model);
+
+  ASSERT_EQ(ir_model->ops().size(), 1);
+  const ::ml_drift::ir::IrOp* op = ir_model->op(0);
+  EXPECT_EQ(op->name, "cast");
+  ASSERT_EQ(op->inputs.size(), 1);
+  ASSERT_EQ(op->outputs.size(), 1);
+}
 }  // namespace
 }  // namespace litert::ml_drift::ir

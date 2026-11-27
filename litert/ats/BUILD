@@ -128,6 +128,8 @@ XNNPACK_DONT_REGISTER = [
     "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
     "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
     "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
+    "Dequantize.*(i4|f16)",  # XNNPACK delegate does not support INT4 or FP16 Dequantize
+    "DequantizePerChannel",  # XNNPACK delegate does not support per-channel Dequantize
 ]
 
 YNNPACK_MODELS_DONT_REGISTER = [
@@ -194,6 +196,7 @@ YNNPACK_DONT_REGISTER = [
     "TflMoe",  # YNNPACK does not support ML Drift GPU custom "moe" op
     "FullyConnected.*(i4|u8)",  # YNNPACK delegate requires even output dims for INT4 weights and does not support UINT8 FullyConnected
     "Transpose.*[(][1-8]d_(i1|i16|u16|u32|i64|u64)<",  # YNNPACK Transpose supports FP32, FP16, INT4, INT8, UINT8, and INT32 types
+    "DequantizePerChannel",  # YNNPACK delegate does not support per-channel Dequantize
 ]
 
 BUILTIN_MODELS_DONT_REGISTER = [
@@ -332,6 +335,7 @@ WEBGPU_BASE_DONT_REGISTER = [
     "RuntimeBmm.*(i4|i8)",  # WebGPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
     "MoeExperts",  # ML Drift WebGPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
     "scaled_dot_product_attention",
+    "Dequantize.*(i8|u8|i4)",  # ML Drift WebGPU does not support per-channel Dequantize, lacks INT4 Buffer2TensorConverter, and does not apply affine dequantization on quantized graph inputs
 ]
 
 WEBGPU_MACOS_OVERRIDES = [
@@ -479,6 +483,7 @@ QUALCOMM_DONT_REGISTER = [
     "FullyConnected.*u8",  # Qualcomm QNN does not support quantized UINT8 GEMM
     "FullyConnected.*,2d_f32[^c]",  # Qualcomm QNN does not support dynamic weights for FP32 FC
     "FullyConnected.*_cst.*,1d_f32[^c]",  # Qualcomm QNN does not support dynamic bias for FP32 FC
+    "DequantizePerChannel",  # Qualcomm QNN does not support per-channel Dequantize
 ]
 
 QUALCOMM_RUN_DONT_REGISTER = [
@@ -486,6 +491,7 @@ QUALCOMM_RUN_DONT_REGISTER = [
     "Comparison.*f32",  # Qualcomm QNN executes f32 comparisons in FP16 precision, rounding close f32 inputs under kExact
     "SelectV2.*f32",  # Qualcomm QNN executes f32 SelectV2 in FP16 precision, failing kExact byte comparison
     "Slice.*f32",  # Qualcomm QNN executes f32 Slice in FP16 precision, failing kExact byte comparison
+    "Dequantize.*i4",  # Qualcomm QNN MemHandle registration does not support int4 graph I/O buffers
 ]
 
 QUALCOMM_SOC_MODELS = {
@@ -635,6 +641,8 @@ litert_define_ats(
 #     "Pad.*f16",  # Google Tensor compiler does not support FP16 Pad
 #     "average_pool_2d.*fa=RELU",  # Google Tensor compiler does not support fused RELU on AveragePool2d
 #     "Transpose.*[(][1-8]d_(i1|i4|i64|u64)<",  # Google Tensor Transpose does not support i1, i4, i64, or u64 types
+#     "Dequantize.*i4",  # Google Tensor compiler does not support INT4 Dequantize
+#     "DequantizePerChannel",  # Google Tensor compiler does not support per-channel Dequantize
 # ]
 #
 # GOOGLE_TENSOR_RUN_DONT_REGISTER = [
@@ -838,6 +846,7 @@ MEDIATEK_DONT_REGISTER = [
     "Transpose.*[(][1-8]d_(i1|i4|i32|u32|i64|u64)",  # MediaTek NeuroPilot Transpose does not support i1, i4, 32-bit, or 64-bit integer tensors
     "Pooling.*(filter_width=(10|14)|filter_height=(12|14)|stride_h=3,filter_width=2)",  # MediaTek NeuroPilot pooling kernel size/stride hardware limits
     "average_pool_2d.*(filter_width=12|fa=RELU,padding=SAME,stride_w=3,stride_h=2)",  # MediaTek NeuroPilot AveragePool2d kernel size/fused activation limits
+    "Dequantize.*i4",  # MediaTek NeuroPilot does not support INT4 Dequantize
     "whisper_tiny_decoder",
     "whisper_tiny_encoder",
     "hf_all_minilm_l6_v2",
@@ -848,6 +857,7 @@ MEDIATEK_RUN_DONT_REGISTER = [
     "Transpose.*f32",  # MediaTek NeuroPilot relaxes FP32 to FP16 on device, failing kExact byte comparison
     "Slice.*f32",  # MediaTek NeuroPilot relaxes FP32 to FP16 on device, failing kExact byte comparison
     "Softmax.*[234]d_f16",  # MediaTek APU FP16 Softmax numerical precision divergence
+    "DequantizePerChannel",  # MediaTek APU per-channel Dequantize produces numerical mismatches at runtime
 ]
 
 MEDIATEK_SOC_MODELS = {
@@ -1059,6 +1069,7 @@ litert_define_ats(
         "Slice",  # OpenCL Slice uses kExact byte comparison on FP16-rounded f32 buffers
         "RuntimeBmm.*(i4|i8)",  # GPU odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift GPU delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
+        "Dequantize.*(i8|u8|i4)",  # ML Drift OpenCL does not support per-channel Dequantize, lacks INT4 Buffer2TensorConverter, and does not apply affine dequantization on quantized graph inputs
         # TODO(b/576190160): Investigate GroupNorm numerical mismatch and SIGKILL on Qualcomm S26 (Adreno 840).
         "GroupNorm",
         "hf_all_minilm_l6_v2",
@@ -1087,6 +1098,7 @@ INTEL_OPENVINO_DONT_REGISTER = [
     "tfl[.](ceil|elu|floor|neg|relu6|relu_n1_to_1|round|zeros_like)[{]",  # Unsupported Unary ops in OpenVINO plugin
     "FullyConnected.*SHUFFLED",  # OpenVINO TFLite frontend does not support SHUFFLED4x16INT8 weights
     "Transpose.*[(][1-8]d_(i1|i4|i8|u8|i16|u16|i32|u32|i64|u64)",  # OpenVINO NPU VCL compiler rejects integral Transpose with per-channel affine quantization
+    "DequantizePerChannel.*i4",  # OpenVINO NPU5010 (PTL) VCL compiler fails ConvertVPUASM2NPUReg50XX (Unsupported DMA data conversion) on non-innermost per-channel INT4 Dequantize
     "average_pool_2d.*filter_width=10",  # Intel NPU pooling kernel width hardware limit
     "hf_all_minilm_l6_v2",
     "whisper_tiny_decoder",
@@ -1244,6 +1256,8 @@ litert_define_ats(
         "FullyConnected.*,2d_f32<[^>]+>(?!_cst)",
         "FullyConnected.*,1d_f32<[^>]+>(?!_cst)",
         "Transpose.*([(][78]d|[(][1-8]d_(i1|i4|i16|u16|i32|u32|i64|u64)<)",  # XNNPACK Transpose supports FP32, FP16, INT8, and UINT8 types up to rank 6
+        "Dequantize.*(i4|f16)",  # XNNPACK delegate does not support INT4 or FP16 Dequantize
+        "DequantizePerChannel",  # XNNPACK delegate does not support per-channel Dequantize
         # Explicit ExtraModel exclusions (unsupported by XNNPACK):
         "hf_all_minilm_l6_v2",
         "u2net_lite",
@@ -1328,6 +1342,7 @@ litert_define_ats(
         "RuntimeBmm.*(i4|i8)",  # Metal odml.runtime_bmm quantized external_weights expects RHS pre-swizzled by odml.cache_update
         "MoeExperts",  # ML Drift Metal delegate expects tfl.custom "moe" with 4D OHWI weights rather than shlo.composite "odml.moe_experts"
         "scaled_dot_product_attention",
+        "Dequantize.*(i8|u8|i4)",  # ML Drift Metal does not support per-channel Dequantize, lacks INT4 Buffer2TensorConverter, and does not apply affine dequantization on quantized graph inputs
     ],
     extra_flags = [
         "--data_seed=42",
@@ -1640,6 +1655,7 @@ cc_library(
         ":register_concatenation",
         ":register_conv_2d",
         ":register_depthwise_conv_2d",
+        ":register_dequantize",
         ":register_fully_connected",
         ":register_mean",
         ":register_one_hot",
@@ -1869,6 +1885,25 @@ cc_library(
         "//litert/cc/internal:litert_detail",
         "//litert/test/generators:common",
         "//litert/test/generators:one_hot",
+    ],
+)
+
+cc_library(
+    name = "register_dequantize",
+    testonly = True,
+    srcs = ["register_dequantize.cc"],
+    hdrs = ["register_dequantize.h"],
+    copts = commandline_flag_copts(),
+    deps = [
+        ":compile_fixture",
+        ":configure",
+        ":inference_fixture",
+        ":register",
+        "//litert/cc/internal:litert_detail",
+        "//litert/test/generators:common",
+        "//litert/test/generators:dequantize",
+        "//tensor:datatypes",
+        "//tflite/types:half",
     ],
 )
 

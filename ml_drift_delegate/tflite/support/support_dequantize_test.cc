@@ -344,6 +344,47 @@ TEST_P(DimsTest, Supports4dOutput) {
   EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
 }
 
+TEST_P(DimsTest, RejectsRuntime5dInput) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, {1, 1, 2, 3, 4});
+  const int b = context_builder.AddTensor(kDefaultDtype, {1, 1, 2, 3, 4});
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(DimsTest, RejectsRuntimeNullDims) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  TfLiteIntArray* saved_dims = context->tensors[a].dims;
+  context->tensors[a].dims = nullptr;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  context->tensors[a].dims = saved_dims;
+}
+
+TEST_P(DimsTest, RejectsRuntimeFloat165dInput) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat16, {1, 1, 2, 3, 4});
+  const int b = context_builder.AddTensor(kDefaultDtype, {1, 1, 2, 3, 4});
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
 INSTANTIATE_TEST_SUITE_P(
     DequantizeOps, DimsTest,
     ValuesIn<TfLiteBuiltinOperator>({
@@ -611,6 +652,66 @@ TEST_P(QuantizationParamsTest, ValidatesPerChannelConstQuantizationParams) {
     q->zero_point = saved_zp;
     TfLiteIntArrayFree(bad_zp);
   }
+}
+
+TEST_P(QuantizationParamsTest,
+       SupportsRuntimeFloat16ToFloat32WithoutQuantizationParams) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat16, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kTfLiteFloat32, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), ElementsAre(0));
+}
+
+TEST_P(QuantizationParamsTest,
+       RejectsRuntimeFloat16ToFloat16WithoutQuantizationParams) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat16, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kTfLiteFloat16, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(QuantizationParamsTest, RejectsRuntimeFloat32WithoutQuantizationParams) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a = context_builder.AddTensor(kTfLiteFloat32, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kTfLiteFloat32, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/1, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+}
+
+TEST_P(QuantizationParamsTest, RejectsRuntimeInputWithMultipleZeroPoints) {
+  const TfLiteBuiltinOperator op = GetParam();
+  StubContextBuilder context_builder;
+  const int a =
+      context_builder.AddQuantizedTensor(kTfLiteInt8, kDefaultInputDims);
+  const int b = context_builder.AddTensor(kDefaultDtype, kDefaultOutputDims);
+  context_builder.SetOp(op, /*version=*/6, /*params=*/nullptr,
+                        /*inputs=*/{a}, /*outputs=*/{b});
+  TfLiteContext* context = context_builder.Build();
+  ASSERT_TRUE(context != nullptr);
+  auto* q = static_cast<TfLiteAffineQuantization*>(
+      context->tensors[a].quantization.params);
+  TfLiteIntArray* saved_zp = q->zero_point;
+  TfLiteIntArray* multi_zp = TfLiteIntArrayCreate(2);
+  multi_zp->data[0] = 0;
+  multi_zp->data[1] = 0;
+  q->zero_point = multi_zp;
+  EXPECT_THAT(GetSupportedNodes(context, kDefaultOptions), IsEmpty());
+  q->zero_point = saved_zp;
+  TfLiteIntArrayFree(multi_zp);
 }
 
 INSTANTIATE_TEST_SUITE_P(
