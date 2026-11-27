@@ -46,11 +46,11 @@ limitations under the License.
 #include "mlir/Support/LLVM.h"  // from @llvm-project
 #include "mlir/Support/LogicalResult.h"  // from @llvm-project
 #include "tflite/converter/quantization/common/quantization_lib/quantization_traits.h"
+#include "tflite/converter/quantization/ir/FakeQuantSupport.h"
 #include "tflite/converter/quantization/ir/QuantOps.h"
 #include "tflite/converter/quantization/ir/QuantizeUtils.h"
+#include "tflite/converter/quantization/ir/UniformSupport.h"
 #include "tflite/converter/quantization/lite/toco_legacy/portable_tensor_utils.h"
-#include "tensorflow/compiler/mlir/quantization/common/ir/FakeQuantSupport.h"
-#include "tensorflow/compiler/mlir/quantization/common/ir/UniformSupport.h"
 #include "tensorflow/compiler/mlir/tools/optimize/quantization_utils.h"
 
 namespace mlir {
@@ -278,8 +278,7 @@ Type GetQuantizedType(Builder builder, const Type input_type,
                       const bool narrow_range, const bool is_signed,
                       const bool legacy_float_scale,
                       const bool use_fake_quant_num_bits) {
-  auto converter =
-      mlir::quant::ir::ExpressedToQuantizedConverter::forInputType(input_type);
+  auto converter = TFL::ExpressedToQuantizedConverter::forInputType(input_type);
 
   // Expand the range to prevent extremely small scales and large quantized
   // integers which can cause overflow. This leads to scale
@@ -289,7 +288,7 @@ Type GetQuantizedType(Builder builder, const Type input_type,
 
   quant::QuantizedType quantized_element_type;
   if (min.size() == 1 && max.size() == 1 && quant_dim == -1) {
-    quantized_element_type = quantfork::fakeQuantAttrsToType(
+    quantized_element_type = TFL::fakeQuantAttrsToType(
         builder.getUnknownLoc(), storage_type_width, effective_mins[0],
         effective_maxs[0], narrow_range, converter.expressed_type, is_signed);
     if (legacy_float_scale) {
@@ -304,7 +303,7 @@ Type GetQuantizedType(Builder builder, const Type input_type,
       return {};
     }
     // The quantization dim is set to the last dimension.
-    quantized_element_type = quantfork::fakeQuantAttrsToType(
+    quantized_element_type = TFL::fakeQuantAttrsToType(
         builder.getUnknownLoc(), storage_type_width, quant_dim, effective_mins,
         effective_maxs, narrow_range, converter.expressed_type, is_signed);
     if (legacy_float_scale) {
@@ -754,7 +753,7 @@ quant::QuantizedType DownCastScale(QuantizedType type,
   SmallVector<double, 4> scales(mins.size());
   SmallVector<int64_t, 4> zero_points(mins.size());
   if (auto q_type = dyn_cast<UniformQuantizedType>(type)) {
-    zero_points.push_back(q_type.getZeroPoint());
+    zero_points.assign(mins.size(), q_type.getZeroPoint());
   } else if (auto q_type = dyn_cast<quant::UniformQuantizedPerAxisType>(type)) {
     zero_points = {q_type.getZeroPoints().begin(),
                    q_type.getZeroPoints().end()};
