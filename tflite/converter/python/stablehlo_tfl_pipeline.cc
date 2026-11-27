@@ -51,7 +51,7 @@ limitations under the License.
 #include "tflite/converter/converter_flags.pb.h"
 #include "tflite/converter/core/macros.h"
 #include "tflite/converter/debug/debug.h"
-#include "tflite/converter/flatbuffer_export.h"
+#include "tflite/converter/export/export.h"
 #include "tflite/converter/ir/tfl_ops.h"
 #include "tflite/converter/metrics/error_collector_inst.h"
 #include "tflite/converter/python/conversion_failure_reporter.h"
@@ -166,8 +166,8 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // legalization
   pass_manager.addPass(mlir::odml::CreateLegalizeVhloQuantCustomCallsPass());
 
-  // VHLO -> StableHLO
-  pass_manager.addPass(mlir::stablehlo::createVhloLegalizeToStablehloPass());
+  // VHLO -> StableHLO, upgrading VHLO to the current version first.
+  mlir::stablehlo::createStablehloDeserializePipeline(pass_manager);
 
   // Decompose newer StableHLO ops into equivalent older ops for baseline
   // compatibility with the TFLite legalization backend.
@@ -203,6 +203,10 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // High-level StableHLO optimizations
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::odml::createStablehloUnfuseBatchNormPass());
+  // Unfusing training batch norms emits TF ops (mean and variance), which the
+  // flatbuffer exporter doesn't support.
+  pass_manager.addNestedPass<mlir::func::FuncOp>(
+      mlir::TFL::CreateLegalizeTFPass(/*run_tfl_runtime_verification=*/false));
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::odml::createStablehloFuseConvolutionPass());
 
@@ -233,6 +237,14 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   // HLO -> TFLite legalization
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::odml::CreateUniformQuantizedStableHloToTflPass());
+  // TODO(markoristic): Temporary. PrepareHlo and the HLO->TFL legalization
+  // consume StableHLO while the preceding passes still produce MHLO. Remove
+  // once the whole pipeline runs on StableHLO.
+  pass_manager.addPass(mlir::mhlo::createHloLegalizeToStablehloPass());
+  // Fold and simplify StableHLO into the canonical form the legalization
+  // expects (MHLO did this through its folders and canonicalizations).
+  pass_manager.addNestedPass<mlir::func::FuncOp>(
+      mlir::odml::CreateSimplifyHloPass());
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::odml::CreatePrepareHloPass());
   // This pass must be added right before the legalization because pattern
@@ -304,6 +316,11 @@ void AddPipelinePasses(mlir::OpPassManager& pass_manager,
   pass_manager.addPass(CreatePruneDeadResourcesPass());
   pass_manager.addNestedPass<mlir::func::FuncOp>(
       mlir::TFL::CreateFuseA4W2DRQFullyConnectedPass());
+  // Blockwise dequantizes of constants that no fusion above claimed (e.g.
+  // weight-only blockwise quantization) move their parameters onto the tensor
+  // type so that they can be exported.
+  pass_manager.addNestedPass<mlir::func::FuncOp>(
+      mlir::TFL::CreateLowerBlockwiseDequantizePass());
   if (pass_config.fold_fp16_casts_into_fully_connected) {
     pass_manager.addNestedPass<mlir::func::FuncOp>(
         mlir::TFL::CreateFoldFp16CastsIntoFullyConnectedPass());
@@ -461,16 +478,10 @@ absl::Status ConvertStableHloToTFLite(
     return failure_coordinator.ReportFailure(module, pass_status);
   }
 
-  tflite::FlatbufferExportOptions options;
-  options.converter_flags.set_allow_custom_ops(true);
-  options.converter_flags.set_use_buffer_offset(true);
-  options.serialize_stablehlo_ops = true;
-
   std::string diag_errors;
   SerializationDiagHandler diag_handler(module.getContext(), &diag_errors);
 
-  auto status =
-      tflite::MlirToFlatBufferTranslateFunction(module, options, export_stream);
+  auto status = mlir::TFL::ExportFlatbuffer(module, export_stream);
 
   if (!status.ok()) {
     return failure_coordinator.ReportSerializationFailure(module, status,
