@@ -19,15 +19,20 @@ limitations under the License.
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <memory>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "absl/base/attributes.h"  // from @com_google_absl
 #include "absl/log/absl_log.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
 #include "absl/status/statusor.h"  // from @com_google_absl
+#include "absl/strings/numbers.h"  // from @com_google_absl
 #include "absl/strings/str_cat.h"  // from @com_google_absl
+#include "absl/strings/string_view.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "ml_drift/cl/environment.h"  // from @ml_drift
 #include "ml_drift/cl/inference_context.h"  // from @ml_drift
@@ -47,6 +52,7 @@ limitations under the License.
 #include "tensor/runners/litert/litert_buffer.h"
 #include "tensor/runners/ml_drift/ml_drift_model_runner_base.h"
 #include "tensor/utils/macros.h"
+#include "tensor/utils/parallel.h"
 #include <CL/cl.h>
 
 namespace litert::tensor {
@@ -116,9 +122,285 @@ struct MlDriftClBackend {
     return ctx->GetTensor(id);
   }
 
-  static absl::Status CreateConstTensor(Environment* env,
-                                        const ml_drift::TensorDescriptor& desc,
-                                        Tensor* tensor) {
+  static bool UseStagingUploadForConstTensor(
+      Environment* env, const ml_drift::TensorDescriptor& desc,
+      size_t data_size) {
+    constexpr size_t kMinStagingBytes = 64 * 1024;
+    if (data_size < kMinStagingBytes) return false;
+    const ml_drift::TensorStorageType storage = desc.GetStorageType();
+    if (storage != ml_drift::TensorStorageType::kBuffer &&
+        storage != ml_drift::TensorStorageType::kImageBuffer) {
+      return false;
+    }
+    if (env->device().GetInfo().IsMali()) {
+      // Mali OpenCL returns incorrect results when uploading via a staging
+      // buffer (matches LiteRT's `GpuInferenceContextOpenCl`).
+      return false;
+    }
+    if (const char* env_flag = std::getenv("LRT_CL_STAGING_UPLOAD");
+        env_flag != nullptr) {
+      const absl::string_view flag_sv(env_flag);
+      if (flag_sv == "0") return false;
+      if (flag_sv == "1") return true;
+    }
+    if (env->device().GetInfo().IsNvidia()) {
+      // On discrete NVIDIA GPUs, device buffers live in VRAM so staging copies
+      // do not save host RSS and add per-tensor synchronization overhead.
+      return false;
+    }
+    return true;
+  }
+
+  // Batches constant-weight uploads across a single model compilation:
+  // - Reuses one bounded `CL_MEM_ALLOC_HOST_PTR` staging buffer on GPUs using
+  //   staged uploads (Adreno, ...), coalescing small tensors and chunking large
+  //   tensors to avoid per-tensor `clCreateBuffer`/`clFinish` stalls and
+  //   multi-hundred-MB staging peaks.
+  // - Enqueues non-staging `HostData` uploads with `async=true` (NVIDIA, Mali,
+  //   textures, and `< 64 KiB` buffers), keeping host owners alive until
+  //   completion (single sync at `Finish()` on discrete NVIDIA VRAM; capped at
+  //   `kMaxPinnedHostBytes` on mobile unified memory).
+  class ConstTensorUploadBatch {
+   public:
+    static constexpr size_t kDefaultStagingCapacityBytes = 16 * 1024 * 1024;
+    static constexpr size_t kMaxPinnedHostBytes = 32 * 1024 * 1024;
+    static constexpr size_t kParallelCopyThresholdBytes = 2 * 1024 * 1024;
+    static constexpr size_t kParallelCopyGrainBytes = 1024 * 1024;
+
+    static size_t DefaultStagingCapacityBytes() {
+      if (const char* env_mb = std::getenv("LRT_CL_STAGING_CHUNK_MB");
+          env_mb != nullptr && env_mb[0] != '\0') {
+        int mb = 0;
+        if (absl::SimpleAtoi(env_mb, &mb) && mb > 0) {
+          return static_cast<size_t>(std::clamp(mb, 1, 64)) * 1024 * 1024;
+        }
+      }
+      return kDefaultStagingCapacityBytes;
+    }
+
+    explicit ConstTensorUploadBatch(
+        Environment* env,
+        size_t staging_capacity_bytes = DefaultStagingCapacityBytes())
+        : env_(env),
+          staging_capacity_bytes_(
+              std::max<size_t>(64 * 1024, staging_capacity_bytes)) {}
+
+    ConstTensorUploadBatch(const ConstTensorUploadBatch&) = delete;
+    ConstTensorUploadBatch& operator=(const ConstTensorUploadBatch&) = delete;
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI ~ConstTensorUploadBatch() {
+      CleanupBestEffort();
+    }
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::Status StageBufferCopy(
+        cl_mem dst_mem, const uint8_t* src, size_t data_size) {
+      if (data_size == 0) return absl::OkStatus();
+      size_t dst_offset = 0;
+      while (dst_offset < data_size) {
+        if (stage_used_ == staging_capacity_bytes_) {
+          LRT_TENSOR_RETURN_IF_ERROR(FlushStaging());
+        }
+        LRT_TENSOR_RETURN_IF_ERROR(EnsureMapped());
+        const size_t avail = staging_capacity_bytes_ - stage_used_;
+        const size_t chunk = std::min(avail, data_size - dst_offset);
+        uint8_t* dst_ptr = static_cast<uint8_t*>(mapped_ptr_) + stage_used_;
+        const uint8_t* src_ptr = src + dst_offset;
+        if (chunk >= kParallelCopyThresholdBytes) {
+          ParallelFor(
+              chunk, kParallelCopyGrainBytes,
+              [dst_ptr, src_ptr](size_t begin, size_t end) {
+                std::memcpy(dst_ptr + begin, src_ptr + begin, end - begin);
+              },
+              /*max_threads=*/4);
+        } else {
+          std::memcpy(dst_ptr, src_ptr, chunk);
+        }
+        pending_copies_.push_back(PendingCopy{
+            .dst = dst_mem,
+            .src_offset = stage_used_,
+            .dst_offset = dst_offset,
+            .size = chunk,
+        });
+        const size_t aligned_end = (stage_used_ + chunk + 63u) & ~size_t{63u};
+        stage_used_ = std::min(staging_capacity_bytes_, aligned_end);
+        dst_offset += chunk;
+      }
+      return absl::OkStatus();
+    }
+
+    absl::Status WriteAsyncHostData(Tensor* tensor, const uint8_t* src,
+                                    size_t data_size,
+                                    std::shared_ptr<const void> host_owner) {
+      if (host_owner == nullptr) {
+        return tensor->WriteData(src, env_->queue(), /*async=*/false);
+      }
+      LRT_TENSOR_RETURN_IF_ERROR(
+          tensor->WriteData(src, env_->queue(), /*async=*/true));
+      has_pending_gpu_work_ = true;
+      if (pinned_hosts_.empty() || pinned_hosts_.back() != host_owner) {
+        pinned_hosts_.push_back(std::move(host_owner));
+      }
+      pinned_bytes_ += data_size;
+      if (!env_->device().GetInfo().IsNvidia() &&
+          pinned_bytes_ >= kMaxPinnedHostBytes) {
+        LRT_TENSOR_RETURN_IF_ERROR(env_->queue()->WaitForCompletion());
+        pinned_hosts_.clear();
+        pinned_bytes_ = 0;
+        has_pending_gpu_work_ = false;
+      }
+      return absl::OkStatus();
+    }
+
+    // Flushes any staged copies to the in-order OpenCL command queue without
+    // releasing the reusable staging buffer. Used before enqueuing GPU work
+    // (e.g. `RunGpuWeightConversions`) that consumes the uploaded buffers.
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::Status Flush() {
+      return FlushStaging();
+    }
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::Status Finish() {
+      absl::Status status = FlushStaging();
+      if (has_pending_gpu_work_) {
+        const absl::Status wait_status = env_->queue()->WaitForCompletion();
+        if (status.ok()) status = wait_status;
+        has_pending_gpu_work_ = false;
+      }
+      pinned_hosts_.clear();
+      pinned_bytes_ = 0;
+      if (stage_mem_ != nullptr) {
+        ml_drift::cl::clReleaseMemObject(stage_mem_);
+        stage_mem_ = nullptr;
+      }
+      return status;
+    }
+
+   private:
+    struct PendingCopy {
+      cl_mem dst;
+      size_t src_offset;
+      size_t dst_offset;
+      size_t size;
+    };
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::Status EnsureMapped() {
+      if (stage_mem_ == nullptr) {
+        cl_int err = CL_SUCCESS;
+        stage_mem_ = ml_drift::cl::clCreateBuffer(
+            env_->context().context(),
+            CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, staging_capacity_bytes_,
+            nullptr, &err);
+        if (err != CL_SUCCESS || stage_mem_ == nullptr) {
+          stage_mem_ = nullptr;
+          return absl::ResourceExhaustedError(absl::StrCat(
+              "Failed to create staging buffer (", staging_capacity_bytes_,
+              " bytes): ", ml_drift::cl::CLErrorCodeToString(err)));
+        }
+      }
+      if (mapped_ptr_ == nullptr) {
+        cl_int err = CL_SUCCESS;
+        mapped_ptr_ = ml_drift::cl::clEnqueueMapBuffer(
+            env_->queue()->queue(), stage_mem_, CL_TRUE, CL_MAP_WRITE, 0,
+            staging_capacity_bytes_, 0, nullptr, nullptr, &err);
+        if (mapped_ptr_ == nullptr || err != CL_SUCCESS) {
+          mapped_ptr_ = nullptr;
+          return absl::ResourceExhaustedError(absl::StrCat(
+              "Failed to map staging buffer: ",
+              ml_drift::cl::CLErrorCodeToString(err)));
+        }
+        // `CL_TRUE` map on the in-order queue waited for all prior enqueued
+        // writes and copies, so previously pinned host buffers are safe to
+        // release.
+        pinned_hosts_.clear();
+        pinned_bytes_ = 0;
+      }
+      return absl::OkStatus();
+    }
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI absl::Status FlushStaging() {
+      if (mapped_ptr_ != nullptr) {
+        const cl_int err = ml_drift::cl::clEnqueueUnmapMemObject(
+            env_->queue()->queue(), stage_mem_, mapped_ptr_, 0, nullptr,
+            nullptr);
+        mapped_ptr_ = nullptr;
+        if (err != CL_SUCCESS) {
+          pending_copies_.clear();
+          stage_used_ = 0;
+          return absl::UnknownError(absl::StrCat(
+              "Failed to unmap staging buffer: ",
+              ml_drift::cl::CLErrorCodeToString(err)));
+        }
+      }
+      for (const PendingCopy& copy : pending_copies_) {
+        const cl_int err = ml_drift::cl::clEnqueueCopyBuffer(
+            env_->queue()->queue(), stage_mem_, copy.dst, copy.src_offset,
+            copy.dst_offset, copy.size, 0, nullptr, nullptr);
+        if (err != CL_SUCCESS) {
+          pending_copies_.clear();
+          stage_used_ = 0;
+          return absl::UnknownError(absl::StrCat(
+              "Failed to enqueue staged buffer copy: ",
+              ml_drift::cl::CLErrorCodeToString(err)));
+        }
+        has_pending_gpu_work_ = true;
+      }
+      if (!pending_copies_.empty()) {
+        ml_drift::cl::clFlush(env_->queue()->queue());
+      }
+      pending_copies_.clear();
+      stage_used_ = 0;
+      return absl::OkStatus();
+    }
+
+    ABSL_ATTRIBUTE_NO_SANITIZE_CFI void CleanupBestEffort() {
+      if (env_ == nullptr) return;
+      if (mapped_ptr_ != nullptr && stage_mem_ != nullptr) {
+        ml_drift::cl::clEnqueueUnmapMemObject(env_->queue()->queue(),
+                                              stage_mem_, mapped_ptr_, 0,
+                                              nullptr, nullptr);
+        mapped_ptr_ = nullptr;
+      }
+      if (has_pending_gpu_work_ || !pinned_hosts_.empty()) {
+        ml_drift::cl::clFinish(env_->queue()->queue());
+        has_pending_gpu_work_ = false;
+      }
+      pending_copies_.clear();
+      pinned_hosts_.clear();
+      pinned_bytes_ = 0;
+      if (stage_mem_ != nullptr) {
+        ml_drift::cl::clReleaseMemObject(stage_mem_);
+        stage_mem_ = nullptr;
+      }
+    }
+
+    Environment* env_ = nullptr;
+    size_t staging_capacity_bytes_ = kDefaultStagingCapacityBytes;
+    cl_mem stage_mem_ = nullptr;
+    void* mapped_ptr_ = nullptr;
+    size_t stage_used_ = 0;
+    std::vector<PendingCopy> pending_copies_;
+    std::vector<std::shared_ptr<const void>> pinned_hosts_;
+    size_t pinned_bytes_ = 0;
+    bool has_pending_gpu_work_ = false;
+  };
+
+  static absl::Status CreateConstTensor(
+      Environment* env, const ml_drift::TensorDescriptor& desc, Tensor* tensor,
+      ConstTensorUploadBatch* upload_batch = nullptr) {
+    const auto& data = desc.GetData();
+    const size_t data_size = desc.GetMemorySizeInBytes();
+    if (!data.empty() && data.size() >= data_size &&
+        UseStagingUploadForConstTensor(env, desc, data_size)) {
+      ml_drift::TensorDescriptor desc_without_data;
+      desc.CopyWithoutData(&desc_without_data);
+      LRT_TENSOR_RETURN_IF_ERROR(
+          tensor->CreateFromDescriptor(desc_without_data, env->context()));
+      if (upload_batch != nullptr) {
+        return upload_batch->StageBufferCopy(tensor->GetMemoryPtrForWriting(),
+                                             data.data(), data_size);
+      }
+      return tensor->WriteDataViaStaging(data.data(), env->queue(),
+                                         &env->context());
+    }
     return tensor->CreateFromDescriptor(desc, env->context());
   }
 
@@ -132,12 +414,15 @@ struct MlDriftClBackend {
   static absl::Status CreateConstTensorFromHostData(
       Environment* env, const ml_drift::TensorDescriptor& desc,
       absl::Span<const uint8_t> data, bool zero_copy, Tensor* tensor,
-      std::shared_ptr<const void>* keep_alive) {
+      std::shared_ptr<const void>* keep_alive,
+      std::shared_ptr<const void> host_owner = nullptr,
+      ConstTensorUploadBatch* upload_batch = nullptr) {
     keep_alive->reset();
-    if (data.size() < desc.GetMemorySizeInBytes()) {
+    const size_t data_size = desc.GetMemorySizeInBytes();
+    if (data.size() < data_size) {
       return absl::InvalidArgumentError(
           absl::StrCat("Constant tensor data has ", data.size(),
-                       " bytes, expected ", desc.GetMemorySizeInBytes()));
+                       " bytes, expected ", data_size));
     }
     if (zero_copy) {
       absl::StatusOr<std::shared_ptr<const void>> wrapped =
@@ -157,6 +442,22 @@ struct MlDriftClBackend {
     desc.CopyWithoutData(&desc_without_data);
     LRT_TENSOR_RETURN_IF_ERROR(
         tensor->CreateFromDescriptor(desc_without_data, env->context()));
+    if (UseStagingUploadForConstTensor(env, desc_without_data, data_size)) {
+      // On Adreno OpenCL, uploading large `kBuffer`/`kImageBuffer` weights via
+      // a short-lived staging buffer (`clEnqueueCopyBuffer`) avoids permanently
+      // CPU-mapping the destination `cl_mem` into the process's `RssFile`/
+      // `RssShmem`, cutting warm GPU Peak RSS by ~1-2 GB.
+      if (upload_batch != nullptr) {
+        return upload_batch->StageBufferCopy(tensor->GetMemoryPtrForWriting(),
+                                             data.data(), data_size);
+      }
+      return tensor->WriteDataViaStaging(data.data(), env->queue(),
+                                         &env->context());
+    }
+    if (upload_batch != nullptr && host_owner != nullptr) {
+      return upload_batch->WriteAsyncHostData(tensor, data.data(), data_size,
+                                              std::move(host_owner));
+    }
     return tensor->WriteData(data.data(), env->queue(), /*async=*/false);
   }
 
