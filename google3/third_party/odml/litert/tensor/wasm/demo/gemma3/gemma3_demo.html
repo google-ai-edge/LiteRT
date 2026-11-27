@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>LiteRT Gemma 3 270M Demo</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; background: #f0f2f5; }
+    .container { max-width: 800px; margin: 0 auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+    textarea { width: 100%; height: 100px; margin-bottom: 10px; border-radius: 4px; border: 1px solid #ccc; padding: 10px; }
+    button { padding: 10px 20px; background: #007acc; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    #output { margin-top: 20px; padding: 15px; background: #f9f9f9; border-radius: 4px; min-height: 100px; white-space: pre-wrap; }
+    select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; background: white; cursor: pointer; font-size: 14px; }
+    label { font-weight: bold; margin-right: 5px; font-size: 14px; color: #333; }
+  </style>
+</head>
+
+<body>
+  <div class="container">
+    <h1>LiteRT Gemma 3 270M Web Demo</h1>
+    <textarea id="prompt" placeholder="Enter your prompt here...">Write a function that implements bubble sort.</textarea>
+    <div style="margin-bottom: 15px;">
+      <label for="backendSelect">Backend Accelerator:</label>
+      <select id="backendSelect">
+        <option value="cpu">CPU fallback (XNNPack Parity Math)</option>
+        <option value="gpu" selected>GPU Delegate (WebGPU Accelerated)</option>
+      </select>
+
+    </div>
+    <button id="generateBtn">Generate</button>
+
+    <div id="info">Initializing...</div>
+    <div id="output"></div>
+  </div>
+
+  <!-- Load Emscripten WebAssembly sandbox -->
+  <script src="../../tensor_wasm_internal.js"></script>
+  <script src="../../gemma3_tokenizer_internal.js"></script>
+  <script type="module">
+    import { createLiteRT } from '../../tensor_wasm.js';
+    import { Gemma3GraphBuilder } from './gemma3_graph.js';
+    import { SafetensorsLoader } from './safetensors.js';
+    import { embeddingLookupCpuFP32, embeddingLookupCpuINT4, computeRopeCosSinForPosition, loadTokenizer, loadWeights } from './gemma3_utils.js';
+    import { Gemma3Runner } from './gemma3_runner.js';
+
+    async function init() {
+      const infoDiv = document.getElementById('info');
+      const outputDiv = document.getElementById('output');
+      infoDiv.textContent = "Loading LiteRT and Tokenizer WASM...";
+
+      try {
+        if (!navigator.gpu) {
+          throw new Error("WebGPU is not supported in this browser.");
+        }
+        const adapter = await navigator.gpu.requestAdapter();
+        const device = await adapter.requestDevice({
+          requiredLimits: {
+            maxBufferSize: 671088640,
+            maxStorageBufferBindingSize: 671088640
+          }
+        });
+        window.gpuDevice = device;
+
+        const litert = await createLiteRT({
+            preinitializedWebGPUDevice: device
+        });
+        window.litert = litert;
+        infoDiv.textContent = "Loading tokenizer model...";
+        const tokenizer = await loadTokenizer(createTokenizerModule, './tokenizer.model?v=1000');
+        
+        infoDiv.textContent = "Downloading weights: 0%";
+        const modelUrl = 'https://huggingface.co/pyu10055/gemma3_270m_qpc/resolve/main/model_litert_qpc.safetensors';
+        const weights = await loadWeights(
+          litert, device, modelUrl,
+          (loaded, total) => {
+            infoDiv.textContent = `Downloading weights: ${(loaded / total * 100).toFixed(1)}%`;
+          },
+          (weightName) => {
+            infoDiv.textContent = `Loading weight: ${weightName}`;
+          }
+        );
+        
+        const config = {
+          vocab_size: 262144,
+          emb_dim: 640,
+          hidden_dim: 2048,
+          head_dim: 256,
+          n_heads: 4,
+          n_layers: 18,
+          n_kv_groups: 1,
+          sliding_window: 512,
+          sliding_window_pattern: 6,
+          rms_norm_eps: 1e-5,
+          query_pre_attn_scalar: 256.0,
+          rope_global_base: 1000000.0,
+          rope_local_base: 10000.0
+        };
+
+        const builder = new Gemma3GraphBuilder(litert, config);
+
+        infoDiv.textContent = "Setting up persistent Gemma 3 model runner (WebGPU accelerated)...";
+        const backend = "gpu"; 
+        const useGpu = true; 
+        const runner = new Gemma3Runner(litert, window.gpuDevice, tokenizer, weights, config, useGpu);
+        
+        console.log("Persistent setup: Calling runner.setup()...");
+        await runner.setup();
+        console.log("Persistent setup: runner.setup() completed successfully!");
+        window.runner = runner;
+        infoDiv.textContent = "Ready.";
+        
+        document.getElementById('generateBtn').addEventListener('click', async () => {
+            const prompt = document.getElementById('prompt').value;
+            const wrappedPrompt = `<start_of_turn>user\n${prompt}<end_of_turn>\n<start_of_turn>model\n`;
+            outputDiv.textContent = "Tokenizing...\n";
+            
+            const tokens = tokenizer.Encode(wrappedPrompt, true);
+            const tokenIds = [];
+            for (let i = 0; i < tokens.size(); ++i) {
+              tokenIds.push(tokens.get(i));
+            }
+            console.log("WASM Token IDs:", tokenIds.join(" "));
+            
+            outputDiv.textContent += `Prompt tokens: ${tokens.size()}\n`;
+            
+            outputDiv.textContent += `Selected Backend: WebGPU (Persistent execution context unblocked)\n`;
+            
+            // Fast-reset the KV cache variables state from prior clicks passes loops!
+            await window.runner.resetKVCache();
+            
+            console.log("Calling inferences prefill passes...");
+            
+            outputDiv.textContent += "Processing prompt...\n";
+            const prefillStart = performance.now();
+            const nextToken = await window.runner.prefill(tokens);
+            const prefillEnd = performance.now();
+            const prefillMs = prefillEnd - prefillStart;
+            
+            outputDiv.textContent += `Predicted first token: ${nextToken} (${tokenizer.DecodeToken(nextToken)})\n`;
+            outputDiv.textContent += "Starting decode loop...\n";
+            
+            let decodeTokensCount = 0;
+            const decodeStart = performance.now();
+            const maxDecodeTokens = 512 - tokens.size();
+            await window.runner.decode(nextToken, maxDecodeTokens, (tokenStr) => {
+              outputDiv.textContent += tokenStr;
+              decodeTokensCount++;
+            });
+            const decodeEnd = performance.now();
+            const decodeMs = decodeEnd - decodeStart;
+            
+            outputDiv.textContent += "\nGeneration complete.\n";
+            
+            outputDiv.textContent += `\n--- Performance ---`;
+            outputDiv.textContent += `\nPrefill: processed ${tokens.size()} tokens in ${prefillMs.toFixed(1)} ms (${(prefillMs / tokens.size()).toFixed(1)} ms/tok)`;
+            if (decodeTokensCount > 0) {
+              outputDiv.textContent += `\nDecode: generated ${decodeTokensCount} tokens in ${decodeMs.toFixed(1)} ms (${(decodeMs / decodeTokensCount).toFixed(1)} ms/tok)\n`;
+            }
+
+        });
+
+      } catch (err) {
+        console.error(err);
+        infoDiv.textContent = `Error: ${err.message}`;
+      }
+    }
+
+    init();
+  </script>
+</body>
+</html>
