@@ -29,6 +29,7 @@
 #include "ml_drift/common/ir_model.h"  // from @ml_drift
 #include "ml_drift/common/kernels/special/experts_remap.h"  // from @ml_drift
 #include "ml_drift/common/model.h"  // from @ml_drift
+#include "ml_drift/common/operations.h"  // from @ml_drift
 #include "ml_drift/common/shape.h"  // from @ml_drift
 #include "ml_drift/common/task/gpu_operation.h"  // from @ml_drift
 #include "ml_drift/common/task/tensor_desc.h"  // from @ml_drift
@@ -235,7 +236,8 @@ absl::Status BuildMoeExpertsGpuGraph(
     const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale,
     int model_dim, int hidden_dim, int num_experts, int num_active_experts,
     MoeExpertsAttributes::WeightType weight_type,
-    MoeExpertsAttributes::Activation activation, ::ml_drift::ValueId output_id,
+    MoeExpertsAttributes::Activation activation, float gate_softcap,
+    float up_softcap, ::ml_drift::ValueId output_id,
     const ::ml_drift::BHWC& output_shape) {
   const ::ml_drift::BHWC src_shape = src.tensor_desc.GetBHWCShape();
   const int sequence_size = src_shape.w;
@@ -296,7 +298,19 @@ absl::Status BuildMoeExpertsGpuGraph(
       run_expert_projection(expert_src, gate_weight, gate_scale_ptr,
                             gate_shared_scale, model_dim, hidden_dim));
   if (activation == MoeExpertsAttributes::Activation::kSilu) {
-    gate = model_builder->SiLU(gate);
+    if (gate_softcap > 0.0f) {
+      auto gate_sig =
+          model_builder->Elementwise(gate, ::ml_drift::OperationType::kSigmoid);
+      auto gate_scaled =
+          model_builder->Multiplication(gate, 1.0f / gate_softcap);
+      auto gate_capped = model_builder->Multiplication(
+          model_builder->Elementwise(gate_scaled,
+                                     ::ml_drift::OperationType::kTanh),
+          gate_softcap);
+      gate = model_builder->Multiplication(gate_capped, gate_sig);
+    } else {
+      gate = model_builder->SiLU(gate);
+    }
   } else {
     gate = model_builder->MakeGeluTanh(gate);
   }
@@ -304,6 +318,13 @@ absl::Status BuildMoeExpertsGpuGraph(
   ABSL_ASSIGN_OR_RETURN(
       auto ff1, run_expert_projection(expert_src, ff1_weight, ff1_scale_ptr,
                                       ff1_shared_scale, model_dim, hidden_dim));
+  if (up_softcap > 0.0f) {
+    auto ff1_scaled = model_builder->Multiplication(ff1, 1.0f / up_softcap);
+    ff1 = model_builder->Multiplication(
+        model_builder->Elementwise(ff1_scaled,
+                                   ::ml_drift::OperationType::kTanh),
+        up_softcap);
+  }
   auto hidden = model_builder->Multiplication(ff1, gate);
 
   ABSL_ASSIGN_OR_RETURN(
@@ -441,7 +462,8 @@ absl::Status CreateMoeExpertsFromNode(
       linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
       linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
       attr.num_experts, attr.num_active_experts, attr.weight_type,
-      attr.activation, outputs[0]->id, outputs[0]->tensor.shape);
+      attr.activation, attr.gate_softcap, attr.up_softcap, outputs[0]->id,
+      outputs[0]->tensor.shape);
 }
 
 absl::Status CreateMoeExpertsFromIrOp(
@@ -452,7 +474,8 @@ absl::Status CreateMoeExpertsFromIrOp(
     ::ml_drift::GpuModelBuilder* model_builder) {
   const ir::MoeExpertsAttributes& attr =
       std::any_cast<const ir::MoeExpertsAttributes&>(node.attr);
-  if (inputs.size() != 7 || outputs.size() != 1) {
+  const bool has_shared_scales = inputs.size() == 10;
+  if ((inputs.size() != 7 && !has_shared_scales) || outputs.size() != 1) {
     return absl::InvalidArgumentError(
         "MoE experts operation received an unexpected input/output count.");
   }
@@ -470,12 +493,31 @@ absl::Status CreateMoeExpertsFromIrOp(
   const MoeScaleTensor* gate_scale_ptr = nullptr;
   const MoeScaleTensor* ff1_scale_ptr = nullptr;
   const MoeScaleTensor* linear_scale_ptr = nullptr;
+  ::ml_drift::GpuModelBuilder::TensorHandle gate_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle ff1_shared_scale;
+  ::ml_drift::GpuModelBuilder::TensorHandle linear_shared_scale;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* gate_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* ff1_shared_scale_ptr =
+      nullptr;
+  const ::ml_drift::GpuModelBuilder::TensorHandle* linear_shared_scale_ptr =
+      nullptr;
 
-  ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
-  ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
-  ABSL_ASSIGN_OR_RETURN(linear_weight, model_builder->GetTensor(inputs[5]->id));
-  ABSL_ASSIGN_OR_RETURN(per_expert_scale,
-                        model_builder->GetTensor(inputs[6]->id));
+  if (has_shared_scales) {
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[7]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[9]->id));
+  } else {
+    ABSL_ASSIGN_OR_RETURN(gate_weight, model_builder->GetTensor(inputs[3]->id));
+    ABSL_ASSIGN_OR_RETURN(ff1_weight, model_builder->GetTensor(inputs[4]->id));
+    ABSL_ASSIGN_OR_RETURN(linear_weight,
+                          model_builder->GetTensor(inputs[5]->id));
+    ABSL_ASSIGN_OR_RETURN(per_expert_scale,
+                          model_builder->GetTensor(inputs[6]->id));
+  }
 
   if (attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt8 ||
       attr.weight_type == ir::MoeExpertsAttributes::WeightType::kInt4) {
@@ -487,6 +529,23 @@ absl::Status CreateMoeExpertsFromIrOp(
     gate_scale_ptr = &attr.ff_gate_scale.value();
     ff1_scale_ptr = &attr.ff1_scale.value();
     linear_scale_ptr = &attr.linear_scale.value();
+    if (has_shared_scales) {
+      if (gate_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(gate_shared_scale,
+                              model_builder->GetTensor(inputs[4]->id));
+        gate_shared_scale_ptr = &gate_shared_scale;
+      }
+      if (ff1_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(ff1_shared_scale,
+                              model_builder->GetTensor(inputs[6]->id));
+        ff1_shared_scale_ptr = &ff1_shared_scale;
+      }
+      if (linear_scale_ptr->empty()) {
+        ABSL_ASSIGN_OR_RETURN(linear_shared_scale,
+                              model_builder->GetTensor(inputs[8]->id));
+        linear_shared_scale_ptr = &linear_shared_scale;
+      }
+    }
   }
 
   auto legacy_weight_type =
@@ -503,11 +562,11 @@ absl::Status CreateMoeExpertsFromIrOp(
   return BuildMoeExpertsGpuGraph(
       model_builder, src, top_weights, top_indices, gate_weight, ff1_weight,
       linear_weight, per_expert_scale, gate_scale_ptr, ff1_scale_ptr,
-      linear_scale_ptr, /*gate_shared_scale=*/nullptr,
-      /*ff1_shared_scale=*/nullptr, /*linear_shared_scale=*/nullptr,
-      attr.model_dim, attr.hidden_dim, attr.num_experts,
-      attr.num_active_experts, legacy_weight_type, legacy_activation,
-      outputs[0]->id, outputs[0]->desc.GetBHWCShape());
+      linear_scale_ptr, gate_shared_scale_ptr, ff1_shared_scale_ptr,
+      linear_shared_scale_ptr, attr.model_dim, attr.hidden_dim,
+      attr.num_experts, attr.num_active_experts, legacy_weight_type,
+      legacy_activation, attr.gate_softcap, attr.up_softcap, outputs[0]->id,
+      outputs[0]->desc.GetBHWCShape());
 }
 
 }  // namespace litert::ml_drift

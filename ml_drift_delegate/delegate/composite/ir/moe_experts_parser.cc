@@ -294,6 +294,12 @@ absl::StatusOr<MoeExpertsAttributes> ReadAttributes(
   attr.num_active_experts = map["num_active_experts"].AsInt32();
   attr.model_dim = map["model_dim"].AsInt32();
   attr.hidden_dim = map["hidden_dim"].AsInt32();
+  if (!IsMissing(map, "gate_softcap")) {
+    attr.gate_softcap = map["gate_softcap"].AsFloat();
+  }
+  if (!IsMissing(map, "up_softcap")) {
+    attr.up_softcap = map["up_softcap"].AsFloat();
+  }
   const std::string weight_type = map["weight_type"].AsString().str();
   if (weight_type == "fp32") {
     attr.weight_type = MoeExpertsAttributes::WeightType::kFp32;
