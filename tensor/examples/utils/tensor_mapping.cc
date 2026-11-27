@@ -77,6 +77,7 @@ absl::Status LazyTensorMapping::Set(absl::string_view model_name,
                                     TensorHandle tensor) {
   pinned_names_.insert(std::string(model_name));
   tensors_.insert_or_assign(model_name, std::move(tensor));
+  set_override_names_.insert(std::string(model_name));
   return absl::OkStatus();
 }
 
@@ -90,6 +91,16 @@ size_t LazyTensorMapping::ReleaseTensorsNotPinned() {
   });
 }
 
+void LazyTensorMapping::EvictReloadableCache() {
+  for (auto it = tensors_.begin(); it != tensors_.end();) {
+    if (name_mapping_.contains(it->first) &&
+        !set_override_names_.contains(it->first)) {
+      tensors_.erase(it++);
+    } else {
+      ++it;
+    }
+  }
+}
 absl::StatusOr<TensorHandle> LazyTensorMapping::Load(
     absl::string_view model_name) {
   auto checkpoint_name_it = name_mapping_.find(model_name);
