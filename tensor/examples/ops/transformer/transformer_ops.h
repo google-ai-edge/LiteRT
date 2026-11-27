@@ -399,6 +399,228 @@ Tensor<Mixins...> ScaledDotProductAttention(
   return out;
 }
 
+// Computes scaled dot-product attention over a split `[key_cache; k_cur]` and
+// `[value_cache; v_cur]` KV sequence without concatenating the full KV cache
+// tensors (`O(cache_len * head_dim)` copy avoided on every decode step):
+//   scores = [q @ key_cache^T, q @ k_cur^T]
+//   probs  = softmax(soft_cap(scores * scale) + attention_mask)
+//   out    = probs[..., :-Sq] @ value_cache + probs[..., -Sq:] @ v_cur
+//
+// Uses relative end/begin slice indices (`-1 - Sq` and `-Sq`) so dynamic KV
+// cache reshaping (`active_len <= cache_capacity`) works without recompilation.
+template <class... Mixins>
+Tensor<Mixins...> ScaledDotProductAttentionWithKvCache(
+    const Tensor<Mixins...>& q, const Tensor<Mixins...>& key_cache,
+    const Tensor<Mixins...>& k_cur, const Tensor<Mixins...>& value_cache,
+    const Tensor<Mixins...>& v_cur,
+    const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
+    std::optional<float> scale = std::nullopt,
+    std::optional<float> soft_cap = std::nullopt,
+    Type datatype = Type::kUnknown) {
+  LRT_TENSOR_RETURN_IF_ERROR(
+      CheckTensors(q, key_cache, k_cur, value_cache, v_cur));
+  const Shape& q_shape = q.GetShape();
+  const Shape& k_cur_shape = k_cur.GetShape();
+  const Shape& k_cache_shape = key_cache.GetShape();
+  const size_t rank = q_shape.size();
+  if (rank < 3 || k_cur_shape.size() != rank || k_cache_shape.size() != rank ||
+      k_cache_shape[rank - 2] <= 0 || k_cur_shape[rank - 2] <= 0) {
+    Tensor<Mixins...> k_all =
+        Concatenation({key_cache, k_cur}, static_cast<int>(rank - 2));
+    Tensor<Mixins...> v_all =
+        Concatenation({value_cache, v_cur}, static_cast<int>(rank - 2));
+    return ScaledDotProductAttention(q, k_all, v_all, attention_mask, scale,
+                                     soft_cap, datatype);
+  }
+
+  graph::ScopeGuard scope("sdpa_kv_cache");
+  const size_t head_axis = rank - 3;
+  const int num_heads = q_shape[head_axis];
+  const int num_kv_heads = k_cur_shape[head_axis];
+  const int seq_len_q = q_shape[head_axis + 1];
+  const int seq_len_cur = k_cur_shape[head_axis + 1];
+  const int head_dim = q_shape[head_axis + 2];
+  const bool is_grouped =
+      num_kv_heads > 0 && num_heads != num_kv_heads &&
+      num_heads % num_kv_heads == 0 &&
+      std::equal(q_shape.begin(), q_shape.begin() + head_axis,
+                 k_cur_shape.begin());
+  const int num_groups = is_grouped ? (num_heads / num_kv_heads) : 1;
+  const int q_rows_dim = num_groups * seq_len_q;
+
+  auto BatchDimsShape = [&](int heads, int rows, int cols) {
+    std::vector<int> shape(q_shape.begin(), q_shape.begin() + head_axis);
+    shape.insert(shape.end(), {heads, rows, cols});
+    return shape;
+  };
+
+  Tensor<Mixins...> q_rows =
+      is_grouped
+          ? Reshape(q, BatchDimsShape(num_kv_heads, q_rows_dim, head_dim))
+          : q;
+  Tensor<Mixins...> scores_cache =
+      BatchMatMul(q_rows, key_cache, /*adj_x=*/false, /*adj_y=*/true);
+  Tensor<Mixins...> scores_cur =
+      BatchMatMul(q_rows, k_cur, /*adj_x=*/false, /*adj_y=*/true);
+  Tensor<Mixins...> scores = Concatenation({scores_cache, scores_cur},
+                                           /*axis=*/static_cast<int>(rank - 1));
+
+  const bool need_unfold_for_mask =
+      is_grouped &&
+      (seq_len_q != 1 || (attention_mask != TensorHandle::Invalid() &&
+                          attention_mask.GetShape().size() == rank &&
+                          (attention_mask.GetShape()[head_axis] > 1 ||
+                           attention_mask.GetShape()[head_axis + 1] > 1)));
+  if (need_unfold_for_mask) {
+    scores =
+        Reshape(scores, BatchDimsShape(num_heads, seq_len_q, kInferredDim));
+  }
+
+  const bool scale_constant_needed = scale.has_value() && *scale != 1.0f;
+  if (datatype == Type::kUnknown) {
+    datatype = q.GetType();
+  }
+  if (datatype == Type::kUnknown &&
+      (scale_constant_needed || soft_cap.has_value())) {
+    return TensorHandle(absl::InvalidArgumentError(
+        "ScaledDotProductAttentionWithKvCache cannot deduce constant type."));
+  }
+  if (scale_constant_needed) {
+    Tensor<Mixins...> scale_tensor(
+        {.type = datatype, .shape = {1}, .buffer = *scale});
+    scores = Mul(scores, scale_tensor);
+  }
+  if (soft_cap.has_value()) {
+    const float cap = *soft_cap;
+    if (cap == 0.0f) {
+      return TensorHandle(absl::InvalidArgumentError(
+          "ScaledDotProductAttentionWithKvCache `soft_cap` must not be zero."));
+    }
+    Tensor<Mixins...> cap_tensor(
+        {.type = datatype, .shape = {1}, .buffer = cap});
+    Tensor<Mixins...> inv_cap_tensor(
+        {.type = datatype, .shape = {1}, .buffer = 1.0f / cap});
+    scores = Mul(Tanh(Mul(scores, inv_cap_tensor)), cap_tensor);
+  }
+  if (attention_mask != TensorHandle::Invalid()) {
+    LRT_TENSOR_RETURN_IF_ERROR(attention_mask);
+    scores = Add(scores, attention_mask);
+  }
+
+  Tensor<Mixins...> probs = Softmax(scores);
+  if (need_unfold_for_mask) {
+    probs =
+        Reshape(probs, BatchDimsShape(num_kv_heads, q_rows_dim, kInferredDim));
+  }
+
+  const int probs_heads = is_grouped ? num_kv_heads : num_heads;
+  std::vector<int> cache_begin(rank, 0);
+  std::vector<int> cache_size =
+      BatchDimsShape(probs_heads, q_rows_dim, -1 - seq_len_cur);
+  std::vector<int> cur_begin(rank, 0);
+  cur_begin.back() = -seq_len_cur;
+  std::vector<int> cur_size =
+      BatchDimsShape(probs_heads, q_rows_dim, seq_len_cur);
+
+  Tensor<Mixins...> probs_cache = Slice(probs, cache_begin, cache_size);
+  Tensor<Mixins...> probs_cur = Slice(probs, cur_begin, cur_size);
+  Tensor<Mixins...> out_cache =
+      BatchMatMul(probs_cache, value_cache, /*adj_x=*/false, /*adj_y=*/false);
+  Tensor<Mixins...> out_cur =
+      BatchMatMul(probs_cur, v_cur, /*adj_x=*/false, /*adj_y=*/false);
+  Tensor<Mixins...> out = Add(out_cache, out_cur);
+  if (is_grouped) {
+    out = Reshape(out, BatchDimsShape(num_heads, seq_len_q, head_dim));
+  }
+  scope.Bind("output", out.GetRaw());
+  return out;
+}
+
+// Causal & sliding-window KV-tiled SDPA for uncached prefill (`Sq == Skv`):
+// partitions queries into blocks `[q0, q1)` of `tile_q` tokens and slices `K`,
+// `V`, and `attention_mask` to `[kv_begin, q1)`, where
+// `kv_begin = sliding_window > 0 ? max(0, q0 - sliding_window + 1) : 0`
+// (aligned down to 16), eliminating masked upper-triangular and out-of-window
+// lower-triangular FLOPs and keeping score tiles inside CPU L2/L3 cache.
+template <class... Mixins>
+Tensor<Mixins...> TiledCausalScaledDotProductAttention(
+    const Tensor<Mixins...>& q, const Tensor<Mixins...>& k,
+    const Tensor<Mixins...>& v,
+    const Tensor<Mixins...>& attention_mask = TensorHandle::Invalid(),
+    std::optional<float> scale = std::nullopt,
+    std::optional<float> soft_cap = std::nullopt, int sliding_window = 0,
+    int tile_q = 128) {
+  LRT_TENSOR_RETURN_IF_ERROR(CheckTensors(q, k, v));
+  const Shape& q_shape = q.GetShape();
+  const Shape& k_shape = k.GetShape();
+  const Shape& v_shape = v.GetShape();
+  if (q_shape.size() != 4 || k_shape.size() != 4 || v_shape.size() != 4 ||
+      tile_q <= 0 || q_shape[2] != k_shape[2] || k_shape[2] != v_shape[2] ||
+      q_shape[2] <= tile_q || attention_mask == TensorHandle::Invalid() ||
+      attention_mask.GetShape().size() != 4) {
+    return ScaledDotProductAttention(q, k, v, attention_mask, scale, soft_cap);
+  }
+  const int batch = q_shape[0];
+  const int num_heads = q_shape[1];
+  const int num_kv_heads = k_shape[1];
+  const int seq_len = q_shape[2];
+  const int head_dim = q_shape[3];
+  const Shape& mask_shape = attention_mask.GetShape();
+  if (mask_shape[3] != seq_len ||
+      (mask_shape[2] != seq_len && mask_shape[2] != 1)) {
+    return ScaledDotProductAttention(q, k, v, attention_mask, scale, soft_cap);
+  }
+
+  std::vector<Tensor<Mixins...>> out_tiles;
+  out_tiles.reserve((seq_len + tile_q - 1) / tile_q);
+  for (int q0 = 0; q0 < seq_len; q0 += tile_q) {
+    const int q1 = std::min(seq_len, q0 + tile_q);
+    const int q_len = q1 - q0;
+    int kv_begin =
+        sliding_window > 0 ? std::max(0, q0 - sliding_window + 1) : 0;
+    kv_begin = (kv_begin / 16) * 16;
+    const int kv_len = q1 - kv_begin;
+
+    Tensor<Mixins...> q_tile =
+        Slice(q, {0, 0, q0, 0}, {batch, num_heads, q_len, head_dim});
+    Tensor<Mixins...> k_tile =
+        (kv_begin == 0 && q1 == seq_len)
+            ? k
+            : Slice(k, {0, 0, kv_begin, 0},
+                    {batch, num_kv_heads, kv_len, head_dim});
+    Tensor<Mixins...> v_tile =
+        (kv_begin == 0 && q1 == seq_len)
+            ? v
+            : Slice(v, {0, 0, kv_begin, 0},
+                    {batch, num_kv_heads, kv_len, head_dim});
+    const int mask_q0 = mask_shape[2] == 1 ? 0 : q0;
+    const int mask_q_len = mask_shape[2] == 1 ? 1 : q_len;
+    Tensor<Mixins...> mask_tile =
+        Slice(attention_mask, {0, 0, mask_q0, kv_begin},
+              {mask_shape[0], mask_shape[1], mask_q_len, kv_len});
+
+    out_tiles.push_back(ScaledDotProductAttention(q_tile, k_tile, v_tile,
+                                                  mask_tile, scale, soft_cap));
+  }
+  // XNNPACK's `concatenate` node accepts at most 5 inputs per node; reduce in
+  // 4-way fan-in stages so arbitrarily many query tiles work cleanly.
+  while (out_tiles.size() > 1) {
+    std::vector<Tensor<Mixins...>> next_tiles;
+    next_tiles.reserve((out_tiles.size() + 3) / 4);
+    for (size_t i = 0; i < out_tiles.size(); i += 4) {
+      const size_t count = std::min<size_t>(4, out_tiles.size() - i);
+      if (count == 1) {
+        next_tiles.push_back(out_tiles[i]);
+      } else {
+        next_tiles.push_back(
+            Concatenation(absl::MakeSpan(&out_tiles[i], count), /*axis=*/2));
+      }
+    }
+    out_tiles = std::move(next_tiles);
+  }
+  return out_tiles.front();
+}
+
 template <class... Mixins>
 Tensor<Mixins...> RmsNorm(const Tensor<Mixins...>& input,
                           const Tensor<Mixins...>& scale,
