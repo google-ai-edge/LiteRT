@@ -42,7 +42,8 @@ ABSL_FLAG(::litert::tools::IntList, subgraphs, ::litert::tools::IntList{},
 
 ABSL_FLAG(LiteRtCompilerOptionsPartitionStrategy, partition_strategy,
           kLiteRtCompilerOptionsPartitionStrategyDefault,
-          "Partition strategy for the compiler.");
+          "Partition strategy for the compiler "
+          "(default, weakly_connected, acyclic).");
 
 ABSL_FLAG(size_t, compiler_options_max_partitions, 0,
           "Maximum number of partitions allowed. 0 means unlimited.");
@@ -77,7 +78,13 @@ bool AbslParseFlag(absl::string_view text,
         kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected;
     return true;
   }
-  *error = "Unknown partition strategy";
+  if (text == "acyclic") {
+    *partition_strategy = kLiteRtCompilerOptionsPartitionStrategyAcyclic;
+    return true;
+  }
+  *error =
+      "Unknown partition strategy (expected default, weakly_connected, or "
+      "acyclic)";
   return false;
 }
 
@@ -88,7 +95,10 @@ std::string AbslUnparseFlag(
       return "default";
     case kLiteRtCompilerOptionsPartitionStrategyWeaklyConnected:
       return "weakly_connected";
+    case kLiteRtCompilerOptionsPartitionStrategyAcyclic:
+      return "acyclic";
   }
+  return absl::StrCat("unknown(", static_cast<int>(partition_strategy), ")");
 }
 // NOLINTEND(*alien-types*)
 

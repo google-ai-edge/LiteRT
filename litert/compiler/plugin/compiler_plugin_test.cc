@@ -610,6 +610,90 @@ TEST(PartitionModelTest, MaxPartitionsSuccessLimit2) {
   EXPECT_EQ(new_model.NumSubgraphs(), 2);
 }
 
+Expected<PartitionResult> PartitionModelWithOptions(LiteRtModelT& model,
+                                                    const Options& options) {
+  LITERT_ASSIGN_OR_RETURN(auto env, litert::Environment::Create({}));
+  LITERT_ASSIGN_OR_RETURN(auto built_options,
+                          litert::internal::LiteRtOptionsPtrBuilder::Build(
+                              options, env.GetHolder()));
+  LITERT_ASSIGN_OR_RETURN(
+      auto plugin,
+      CompilerPlugin::FindPlugin(kTestManufacturer,
+                                 {GetLiteRtPath(kTestPluginSearchPath)},
+                                 /*env=*/nullptr, built_options.get()));
+  return PartitionModel(plugin, model);
+}
+
+TEST(PartitionModelTest, AcyclicStrategySplitsSkipConnectionCycleTrap) {
+  // `mul1(selected) -> add(CPU) -> mul2(selected)` with skip edge `mul1 ->
+  // mul2` must split into 2 acyclic partitions rather than merging across
+  // `add`.
+  LiteRtModelT model;
+  auto& subgraph = model.EmplaceSubgraph();
+  const auto type = MakeRankedTensorType(kLiteRtElementTypeFloat32, {1});
+  auto make_tensor = [&]() -> LiteRtTensorT* {
+    auto& t = subgraph.EmplaceTensor();
+    t.SetType(type);
+    return &t;
+  };
+  auto* t_in = make_tensor();
+  auto* t_m1 = make_tensor();
+  auto* t_add = make_tensor();
+  auto* t_out = make_tensor();
+  subgraph.Inputs().push_back(t_in);
+  subgraph.Outputs().push_back(t_out);
+
+  auto add_op = [&](LiteRtOpCode code, LiteRtTensorT* lhs, LiteRtTensorT* rhs,
+                    LiteRtTensorT* out) {
+    auto& op = subgraph.EmplaceOp();
+    op.SetOpCode(code);
+    AttachInput(lhs, op);
+    AttachInput(rhs, op);
+    AttachOutput(out, op);
+  };
+  add_op(kLiteRtOpCodeTflMul, t_in, t_in, t_m1);
+  add_op(kLiteRtOpCodeTflAdd, t_m1, t_m1, t_add);
+  add_op(kLiteRtOpCodeTflMul, t_m1, t_add, t_out);
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_options, Options::Create());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto& compiler_options,
+                              litert_options.GetCompilerOptions());
+  LITERT_ASSERT_OK(compiler_options.SetPartitionStrategy(
+      kLiteRtCompilerOptionsPartitionStrategyAcyclic));
+
+  LITERT_ASSERT_OK_AND_ASSIGN(auto partition_result,
+                              PartitionModelWithOptions(model, litert_options));
+  const auto& [dispatch_ops, sliced_model] = partition_result;
+  EXPECT_EQ(dispatch_ops.size(), 2);
+  EXPECT_EQ(sliced_model.NumSubgraphs(), 2);
+
+  const auto& main_ops = model.MainSubgraph()->Ops();
+  ASSERT_EQ(main_ops.size(), 3);
+  EXPECT_EQ(main_ops[0]->OpCode(), kLiteRtOpCodeTflCustom);
+  EXPECT_EQ(main_ops[1]->OpCode(), kLiteRtOpCodeTflAdd);
+  EXPECT_EQ(main_ops[2]->OpCode(), kLiteRtOpCodeTflCustom);
+}
+
+TEST(PartitionModelTest, InvalidPartitionStrategyInOpaqueOptionsFails) {
+  auto model_wrap = testing::LoadTestFileModel("mul_simple.tflite");
+  LITERT_ASSERT_OK_AND_ASSIGN(auto litert_options, Options::Create());
+
+  static constexpr char kBadToml[] = "partition_strategy = 99\n";
+  LiteRtOpaqueOptions opaque_opts = nullptr;
+  LITERT_ASSERT_OK(LiteRtCreateOpaqueOptions(
+      LrtGetCompilerOptionsIdentifier(), const_cast<char*>(kBadToml),
+      +[](void*) {}, &opaque_opts));
+  LITERT_ASSERT_OK(
+      litert_options.AddOpaqueOptions(litert::OpaqueOptions::WrapCObject(
+          opaque_opts, litert::OwnHandle::kYes)));
+
+  auto partition_result =
+      PartitionModelWithOptions(*model_wrap.Get(), litert_options);
+  EXPECT_FALSE(partition_result);
+  EXPECT_EQ(partition_result.Error().Status(),
+            kLiteRtStatusErrorInvalidArgument);
+}
+
 TEST(PartitionModelTest, CstMultiSubgraph) {
   auto model_wrap = testing::LoadTestFileModel("multi_use_cst.tflite");
   auto& model = *model_wrap.Get();
