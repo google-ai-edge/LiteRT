@@ -23,6 +23,7 @@ limitations under the License.
 #include <memory>
 #include <optional>
 #include <string>
+#include <thread>  // NOLINT(build/c++11)
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -166,6 +167,27 @@ struct HasCreateConstTensorFromHostData<
     Backend, std::void_t<decltype(&Backend::CreateConstTensorFromHostData)>>
     : std::true_type {};
 
+// Whether `Backend` has `ConstTensorUploadBatch` (see `MlDriftClBackend`).
+template <typename Backend, typename = void>
+struct HasConstTensorUploadBatch : std::false_type {};
+template <typename Backend>
+struct HasConstTensorUploadBatch<
+    Backend, std::void_t<typename Backend::ConstTensorUploadBatch>>
+    : std::true_type {};
+
+template <typename Backend, typename = void>
+struct ConstTensorUploadBatchOrNoOp {
+  struct Type {
+    explicit Type(typename Backend::Environment*) {}
+    absl::Status Flush() { return absl::OkStatus(); }
+    absl::Status Finish() { return absl::OkStatus(); }
+  };
+};
+template <typename Backend>
+struct ConstTensorUploadBatchOrNoOp<
+    Backend, std::void_t<typename Backend::ConstTensorUploadBatch>> {
+  using Type = typename Backend::ConstTensorUploadBatch;
+};
 }  // namespace ml_drift_runner_internal
 
 template <typename Backend>
@@ -439,9 +461,17 @@ class CompiledMlDriftModelRunner {
     ml_drift::ExternalTensorsInfo combined_external_tensors = external_tensors;
     LRT_TENSOR_RETURN_IF_ERROR(
         RunGpuWeightConversions(&combined_external_tensors));
+    // `GpuModelBuilder` is no longer needed once `gpu_model_` is finalized and
+    // GPU weight conversions have run; release it before uploading weights and
+    // initializing the inference context to reduce peak host memory.
+    conversion_ctx_.gpu_model_builder = nullptr;
+    model_builder_.reset();
 
     const absl::Time upload_start = absl::Now();
     if (shared_weights_ != nullptr) {
+      using UploadBatch = typename ml_drift_runner_internal::
+          ConstTensorUploadBatchOrNoOp<Backend>::Type;
+      UploadBatch upload_batch(env_ptr_);
       for (const auto& [weight_name, handle] :
            conversion_ctx_.weight_name_to_handle) {
         if (conversion_ctx_.external_weight_names.contains(weight_name)) {
@@ -481,7 +511,8 @@ class CompiledMlDriftModelRunner {
           auto gpu_tensor = std::make_unique<BackendTensor>();
           if (host_it != shared_weights_->host_data.end()) {
             LRT_TENSOR_RETURN_IF_ERROR(CreateConstTensorFromHostData(
-                *upload_desc, host_it->second, gpu_tensor.get()));
+                *upload_desc, host_it->second, gpu_tensor.get(),
+                &upload_batch));
             compile_timing_.upload_shared_weights_bytes +=
                 host_it->second.data.size();
             shared_weights_->host_data.erase(host_it);
@@ -493,8 +524,14 @@ class CompiledMlDriftModelRunner {
                   upload_desc->GetData().size(), " bytes, expected ",
                   upload_desc->GetMemorySizeInBytes()));
             }
-            LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
-                env_ptr_, *upload_desc, gpu_tensor.get()));
+            if constexpr (ml_drift_runner_internal::HasConstTensorUploadBatch<
+                              Backend>::value) {
+              LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+                  env_ptr_, *upload_desc, gpu_tensor.get(), &upload_batch));
+            } else {
+              LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+                  env_ptr_, *upload_desc, gpu_tensor.get()));
+            }
             compile_timing_.upload_shared_weights_bytes +=
                 upload_desc->GetData().size();
             if (shared_weights_->on_upload) {
@@ -521,6 +558,7 @@ class CompiledMlDriftModelRunner {
         combined_external_tensors.immutable_tensors[handle.id] =
             tensor_it->second.get();
       }
+      LRT_TENSOR_RETURN_IF_ERROR(upload_batch.Finish());
     }
     compile_timing_.upload_shared_weights = absl::Now() - upload_start;
     ReleaseUploadedSharedDescriptorData();
@@ -541,16 +579,24 @@ class CompiledMlDriftModelRunner {
   // Creates the GPU tensor of shared weights from their `host_data`: over the
   // host memory when `zero_copy_host_data` and the backend allow it, else by
   // copying it.
+  template <typename UploadBatch>
   absl::Status CreateConstTensorFromHostData(
       const ml_drift::TensorDescriptor& desc,
-      const typename SharedWeightsCache::HostData& host,
-      BackendTensor* tensor) {
+      const typename SharedWeightsCache::HostData& host, BackendTensor* tensor,
+      UploadBatch* upload_batch) {
     if constexpr (ml_drift_runner_internal::HasCreateConstTensorFromHostData<
                       Backend>::value) {
       std::shared_ptr<const void> gpu_owner;
-      LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
-          env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
-          tensor, &gpu_owner));
+      if constexpr (ml_drift_runner_internal::HasConstTensorUploadBatch<
+                        Backend>::value) {
+        LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
+            env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
+            tensor, &gpu_owner, host.owner, upload_batch));
+      } else {
+        LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensorFromHostData(
+            env_ptr_, desc, host.data, shared_weights_->zero_copy_host_data,
+            tensor, &gpu_owner));
+      }
       if (gpu_owner != nullptr) {
         // Keeps both alive in `zero_copy_owners`. Members are destroyed in
         // reverse declaration order, so the last reference releases the
@@ -576,6 +622,25 @@ class CompiledMlDriftModelRunner {
       with_data.SetData(
           std::vector<uint8_t>(host.data.begin(), host.data.end()));
       return Backend::CreateConstTensor(env_ptr_, with_data, tensor);
+    }
+  }
+
+  // Releases graph/conversion metadata held solely for compilation and initial
+  // tensor pointer resolution (`GetBackendTensor` / `GetTensorValueId`). When
+  // `keep_io_lookup` is false (callers that already cached `BackendTensor*`
+  // pointers), drops `flat_inputs_`, `flat_outputs_`, and lookup maps too.
+  void ReleaseCompileTemporaries(bool keep_io_lookup = false) {
+    conversion_ctx_.gpu_model_builder = nullptr;
+    model_builder_.reset();
+    gpu_model_ = ml_drift::GpuModel{};
+    released_weight_tensors_.clear();
+    conversion_ctx_.weight_name_to_handle.clear();
+    conversion_ctx_.weight_sum_i.clear();
+    if (!keep_io_lookup) {
+      name_to_tensor_map_.clear();
+      conversion_ctx_.graph_tensor_to_handle.clear();
+      flat_inputs_.clear();
+      flat_outputs_.clear();
     }
   }
   const CompileTiming& compile_timing() const { return compile_timing_; }
@@ -845,14 +910,155 @@ class CompiledMlDriftModelRunner {
   }
 
   // Registers `sum_i` (per output channel, the sum of the signed quantized
-  // values over the input channels) of per-channel quantized INT4
-  // FullyConnected weights `values` (OHWI), with which ML Drift runs long
-  // prefill FullyConnected layers as INT8 convolutions on dynamically
-  // INT8-quantized activations. Only when 8-bit convolutions are allowed.
+  // values over the input channels) of per-channel quantized (or 1-block-per-
+  // row `BlockwiseQuantization`) FullyConnected weights, with which ML Drift
+  // runs long prefill FullyConnected layers as INT8 convolutions on
+  // dynamically INT8-quantized activations. Only when 8-bit convolutions are
+  // allowed.
   bool WantsWeightsSumI(const graph::TensorInformation& info) const {
-    return allow_8bit_convs_ && info.quantization != nullptr &&
-           info.quantization->As<const graph::PerChannelAffineQuantization>()
-               .ok();
+    if (!allow_8bit_convs_ || info.quantization == nullptr) return false;
+    if (info.quantization->As<const graph::PerChannelAffineQuantization>()
+            .ok()) {
+      return true;
+    }
+    if (auto bq = info.quantization->As<const graph::BlockwiseQuantization>();
+        bq.ok() && info.shape.size() == 2 && bq->quantized_dimension == 0 &&
+        bq->block_size == info.shape[1] && bq->zero_points.IsSymmetric()) {
+      return true;
+    }
+    return false;
+  }
+
+  static bool TryDirectRearrangePackedInt2AsUint2I4O4(
+      const uint8_t* src, size_t src_bytes, const ml_drift::OHWI& shape,
+      const ml_drift::WeightsDescription& desc, absl::Span<uint8_t> dst) {
+    if (shape.h != 1 || shape.w != 1 || shape.o <= 0 || shape.i <= 0) {
+      return false;
+    }
+    const bool is_linear_i4o4 =
+        desc.layout == ml_drift::WeightsLayout::kOSpatialIOGroupI4O4;
+    const bool is_tex_i4o4 =
+        desc.layout == ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+    if (!is_linear_i4o4 && !is_tex_i4o4) {
+      return false;
+    }
+    const size_t O = static_cast<size_t>(shape.o);
+    const size_t I = static_cast<size_t>(shape.i);
+    const size_t total_elems = O * I;
+    if (src_bytes < (total_elems + 3) / 4) {
+      return false;
+    }
+    const int dst_group_size = desc.GetOutputGroupSize();
+    if (dst_group_size <= 0) return false;
+    const int dst_slices = ml_drift::DivideRoundUp(shape.o, 4);
+    const int src_slices = ml_drift::DivideRoundUp(shape.i, 4);
+    const int dst_groups = ml_drift::DivideRoundUp(dst_slices, dst_group_size);
+    const size_t expected_bytes =
+        static_cast<size_t>(dst_groups) * dst_group_size * src_slices * 4;
+    if (dst.size() < expected_bytes) return false;
+
+    auto get_crumb = [&](size_t linear_idx) -> uint8_t {
+      const uint8_t b = src[linear_idx >> 2];
+      return (b >> ((linear_idx & 3u) * 2)) & 0x03u;
+    };
+
+    const bool aligned_cols = (I & 3u) == 0;
+    const size_t row_bytes = I >> 2;
+    auto pack_tile = [&](int d, int s, uint8_t* out_tile) {
+      for (int d_group = 0; d_group < dst_group_size; ++d_group) {
+        const size_t d_ch =
+            static_cast<size_t>(4 * (d * dst_group_size + d_group));
+        const size_t s_base = static_cast<size_t>(4 * s);
+        if (aligned_cols && d_ch + 4 <= O && s_base + 4 <= I) {
+          const size_t byte_col = s_base >> 2;
+          const uint8_t b0 = src[(d_ch + 0) * row_bytes + byte_col];
+          const uint8_t b1 = src[(d_ch + 1) * row_bytes + byte_col];
+          const uint8_t b2 = src[(d_ch + 2) * row_bytes + byte_col];
+          const uint8_t b3 = src[(d_ch + 3) * row_bytes + byte_col];
+          out_tile[0] =
+              static_cast<uint8_t>((((b3 & 0x03u) << 6) | ((b2 & 0x03u) << 4) |
+                                    ((b1 & 0x03u) << 2) | (b0 & 0x03u)) ^
+                                   0xAAu);
+          out_tile[1] =
+              static_cast<uint8_t>((((b3 & 0x0Cu) << 4) | ((b2 & 0x0Cu) << 2) |
+                                    (b1 & 0x0Cu) | ((b0 >> 2) & 0x03u)) ^
+                                   0xAAu);
+          out_tile[2] =
+              static_cast<uint8_t>((((b3 & 0x30u) << 2) | (b2 & 0x30u) |
+                                    ((b1 >> 2) & 0x0Cu) | ((b0 >> 4) & 0x03u)) ^
+                                   0xAAu);
+          out_tile[3] =
+              static_cast<uint8_t>(((b3 & 0xC0u) | ((b2 >> 2) & 0x30u) |
+                                    ((b1 >> 4) & 0x0Cu) | (b0 >> 6)) ^
+                                   0xAAu);
+        } else {
+          for (int k = 0; k < 4; ++k) {
+            const size_t s_ch = s_base + static_cast<size_t>(k);
+            if (s_ch >= I) {
+              out_tile[k] = 0xAAu;
+              continue;
+            }
+            const uint8_t v0 =
+                (d_ch + 0 < O) ? get_crumb((d_ch + 0) * I + s_ch) : 0u;
+            const uint8_t v1 =
+                (d_ch + 1 < O) ? get_crumb((d_ch + 1) * I + s_ch) : 0u;
+            const uint8_t v2 =
+                (d_ch + 2 < O) ? get_crumb((d_ch + 2) * I + s_ch) : 0u;
+            const uint8_t v3 =
+                (d_ch + 3 < O) ? get_crumb((d_ch + 3) * I + s_ch) : 0u;
+            out_tile[k] = static_cast<uint8_t>(
+                ((v3 << 6) | (v2 << 4) | (v1 << 2) | v0) ^ 0xAAu);
+          }
+        }
+        out_tile += 4;
+      }
+    };
+
+    const size_t outer_units =
+        static_cast<size_t>(is_linear_i4o4 ? dst_groups : src_slices);
+    const size_t hw = std::max<size_t>(1, std::thread::hardware_concurrency());
+    const size_t workers =
+        (total_elems >= (512ULL << 10)) ? std::min<size_t>({8, hw, outer_units})
+                                        : 1;
+    auto run_range = [&](size_t begin, size_t end) {
+      for (size_t u = begin; u < end; ++u) {
+        if (is_linear_i4o4) {
+          const int d = static_cast<int>(u);
+          const size_t d_stride =
+              static_cast<size_t>(src_slices) * dst_group_size * 4;
+          uint8_t* ptr = dst.data() + static_cast<size_t>(d) * d_stride;
+          for (int s = 0; s < src_slices; ++s) {
+            pack_tile(d, s, ptr);
+            ptr += static_cast<size_t>(dst_group_size) * 4;
+          }
+        } else {
+          const int s = static_cast<int>(u);
+          const size_t s_stride =
+              static_cast<size_t>(dst_groups) * dst_group_size * 4;
+          uint8_t* ptr = dst.data() + static_cast<size_t>(s) * s_stride;
+          for (int d = 0; d < dst_groups; ++d) {
+            pack_tile(d, s, ptr);
+            ptr += static_cast<size_t>(dst_group_size) * 4;
+          }
+        }
+      }
+    };
+    if (workers <= 1) {
+      run_range(0, outer_units);
+    } else {
+      const size_t chunk = (outer_units + workers - 1) / workers;
+      std::vector<std::thread> threads;
+      threads.reserve(workers - 1);
+      for (size_t t = 1; t < workers; ++t) {
+        const size_t begin = t * chunk;
+        if (begin >= outer_units) break;
+        const size_t end = std::min(outer_units, begin + chunk);
+        threads.emplace_back([&, begin, end]() { run_range(begin, end); });
+      }
+      run_range(0, std::min(outer_units, chunk));
+      for (std::thread& t : threads) t.join();
+    }
+    return true;
   }
 
   absl::Status AddWeightsSumI(const graph::Tensor& weights_tensor,
@@ -1075,14 +1281,17 @@ class CompiledMlDriftModelRunner {
         if (conversion_ctx_.external_weight_names.contains(info.name)) {
           continue;
         }
-        // Fused weights are always constants; their host buffer may have been
-        // released by an earlier compilation of this graph (see
-        // `SharedWeightsCache::release_fused_host_buffers`).
+        // Constant weights (including fused weights or bufferless weight stubs
+        // for passes reusing `SharedWeightsCache`) may have no host buffer when
+        // an earlier compilation already uploaded their packed GPU copy.
         const bool is_fused_weight = absl::StrContains(info.name, '+');
+        const bool is_leaf_weight =
+            weights_tensor.group != nullptr &&
+            weights_tensor.group->producer == nullptr;
         // Reuse a packed descriptor of the shared cache before looking at the
-        // host buffer, so that recompiling a graph whose fused weights were
-        // released still finds them.
-        if ((info.buffer != nullptr || is_fused_weight) && !info.name.empty() &&
+        // host buffer, so that recompiling a graph whose host weights were
+        // released or replaced by bufferless stubs still finds them.
+        if (is_leaf_weight && !info.name.empty() &&
             conversion_ctx_.shared_weight_descriptors != nullptr) {
           auto shared_it =
               conversion_ctx_.shared_weight_descriptors->find(info.name);
@@ -1114,13 +1323,13 @@ class CompiledMlDriftModelRunner {
         auto lock = buffer->Lock();
         auto raw_span = std::move(lock).As<const int8_t>();
 
-        if (info.type != Type::kI4) {
+        if (info.type != Type::kI4 && info.type != Type::kI2) {
           // Constant weights consumed by FullyConnected / EmbeddingLookup
           // kernels must be stored in the kernel's packed weights layout.
           // The generic constant path in `GetTensorHandle` creates a plain
           // linear tensor instead, which silently produces wrong results, so
           // pack them here the same way the ML Drift numerical test bridge
-          // does. INT4 keeps its dedicated path below.
+          // does. INT4 and INT2 keep their dedicated fast path below.
           MlDriftDummyWeightCreator weight_creator(model_builder_.get());
           Tensor<MlDriftMixinTag> weights_wrapper(weights_tensor);
           ml_drift::GpuModelBuilder::TensorHandle gpu_handle;
@@ -1130,6 +1339,7 @@ class CompiledMlDriftModelRunner {
               conversion_ctx_.shared_weight_descriptors != nullptr) {
             shared_desc_out = &local_shared_desc;
           }
+          std::optional<std::vector<int32_t>> sum_i;
           const absl::Time pack_start = absl::Now();
           if (info.type == Type::kFP32) {
             absl::Span<const float> data(
@@ -1140,14 +1350,13 @@ class CompiledMlDriftModelRunner {
                 weight_creator.CreateFcWeights<float>(
                     weights_wrapper, data, conversion_ctx_.default_float_type,
                     shared_desc_out));
-          } else if (info.type == Type::kI8 || info.type == Type::kI2) {
-            // `CreateFcWeights<int8_t>` takes the raw bytes (packed for INT2),
-            // unpacks INT2 to one int8 per value and rearranges it like INT8.
-            // INT4 has its own path (`PrepareInt4Weights`) because INT4
-            // weights include the largest tensors (e.g. a tied embedding / LM
-            // head): it rearranges straight from the packed bytes, in
-            // parallel, without full-size INT8 copies. INT2 could do the same
-            // with ML Drift's `RearrangeWeightsUInt2Packed`.
+          } else if (info.type == Type::kI8) {
+            if (op->GetName() == "FullyConnected" && WantsWeightsSumI(info)) {
+              LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_s, ShapeToBHWC(info.shape));
+              const ml_drift::OHWI ohwi(bhwc_s.b, bhwc_s.h, bhwc_s.w, bhwc_s.c);
+              LRT_TENSOR_ASSIGN_OR_RETURN(
+                  sum_i, ComputeInt8WeightsSumI(raw_span, ohwi));
+            }
             LRT_TENSOR_ASSIGN_OR_RETURN(
                 gpu_handle,
                 weight_creator.CreateFcWeights<int8_t>(
@@ -1159,14 +1368,16 @@ class CompiledMlDriftModelRunner {
                 info.type, " (tensor '", info.name, "')"));
           }
           conversion_ctx_.AddWeightPackStat(
-              info.type == Type::kFP32 ? "fp"
-              : info.type == Type::kI8 ? "int8"
-                                       : "int2",
+              info.type == Type::kFP32 ? "fp" : "int8",
               absl::Now() - pack_start,
               gpu_handle.tensor_desc.GetMemorySizeInBytes());
           if (shared_desc_out != nullptr) {
             conversion_ctx_.shared_weight_descriptors->emplace(
                 info.name, std::move(local_shared_desc));
+          }
+          if (sum_i.has_value()) {
+            LRT_TENSOR_RETURN_IF_ERROR(
+                AddWeightsSumI(weights_tensor, info, std::move(*sum_i)));
           }
           conversion_ctx_.graph_tensor_to_handle[weights_tensor] = gpu_handle;
           name_to_tensor_map_[info.name] = weights_tensor;
@@ -1178,22 +1389,11 @@ class CompiledMlDriftModelRunner {
           continue;
         }
 
-        auto prepared_it = prepared_int4.find(weights_tensor);
-        if (prepared_it == prepared_int4.end()) {
-          return absl::InternalError(absl::StrCat("INT4 weights '", info.name,
-                                                  "' were not prepared."));
-        }
-        PreparedInt4Weights& prepared = prepared_it->second;
-        LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
-        const ml_drift::OHWI weights_ohwi = prepared.ohwi;
-        const ml_drift::WeightsDescription desc = prepared.desc;
-        const int elements_count = prepared.elements_count;
-        std::vector<uint8_t> rearranged_data = std::move(prepared.rearranged);
-        if (op->GetName() == "FullyConnected" && prepared.sum_i.has_value()) {
-          LRT_TENSOR_RETURN_IF_ERROR(
-              AddWeightsSumI(weights_tensor, info, std::move(*prepared.sum_i)));
-        }
-
+        const bool is_int2 = (info.type == Type::kI2);
+        ml_drift::OHWI weights_ohwi;
+        ml_drift::WeightsDescription desc;
+        size_t elements_count = 0;
+        std::vector<uint8_t> rearranged_data;
         bool is_embedding = (op->GetName() == "EmbeddingLookup" ||
                              info.name == "model.embed_tokens.weight" ||
                              info.name == "token_embd.weight");
@@ -1208,6 +1408,90 @@ class CompiledMlDriftModelRunner {
             }
           }
         }
+        bool is_supported_texture = false;
+        std::optional<std::vector<int32_t>> sum_i;
+
+        if (!is_int2) {
+          auto prepared_it = prepared_int4.find(weights_tensor);
+          if (prepared_it == prepared_int4.end()) {
+            return absl::InternalError(absl::StrCat("INT4 weights '", info.name,
+                                                    "' were not prepared."));
+          }
+          PreparedInt4Weights& prepared = prepared_it->second;
+          LRT_TENSOR_RETURN_IF_ERROR(prepared.status);
+          weights_ohwi = prepared.ohwi;
+          desc = prepared.desc;
+          elements_count = static_cast<size_t>(prepared.elements_count);
+          rearranged_data = std::move(prepared.rearranged);
+          is_supported_texture =
+              desc.layout ==
+              ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+          if (op->GetName() == "FullyConnected" && prepared.sum_i.has_value()) {
+            sum_i = std::move(prepared.sum_i);
+          }
+        } else {
+          const absl::Time int2_start = absl::Now();
+          LRT_TENSOR_ASSIGN_OR_RETURN(auto bhwc_shape, ShapeToBHWC(info.shape));
+          weights_ohwi = ml_drift::OHWI(bhwc_shape.b, bhwc_shape.h,
+                                        bhwc_shape.w, bhwc_shape.c);
+          desc = model_builder_->GetFullyConnectedInt2WeightsDesc(weights_ohwi);
+          if (desc.type != ml_drift::DataType::kUint2 &&
+              desc.type != ml_drift::DataType::kInt2) {
+            return absl::UnimplementedError(
+                "Only INT4 and INT2 weight rearrangement is supported in "
+                "pre-rearrange.");
+          }
+          is_supported_texture =
+              desc.layout ==
+              ml_drift::WeightsLayout::k2DYIsSpatialIOAndXIsOGroupI4O4;
+          const bool want_sum_i =
+              op->GetName() == "FullyConnected" && WantsWeightsSumI(info) &&
+              (desc.IsLinearLayout() || !is_embedding || is_supported_texture);
+          elements_count = static_cast<size_t>(
+              ml_drift::GetTotalElementsCountForLayout(desc, weights_ohwi));
+          const size_t rearranged_bytes =
+              (elements_count *
+                   static_cast<size_t>(ml_drift::SizeInBitsOf(desc.type)) +
+               7) /
+              8;
+          rearranged_data.resize(rearranged_bytes);
+          const auto* raw_u8 =
+              reinterpret_cast<const uint8_t*>(raw_span.data());
+          if (want_sum_i) {
+            LRT_TENSOR_ASSIGN_OR_RETURN(
+                sum_i, ComputePackedInt2WeightsSumI(
+                           absl::MakeConstSpan(raw_u8, raw_span.size()),
+                           weights_ohwi));
+          }
+          if (!TryDirectRearrangePackedInt2AsUint2I4O4(
+                  raw_u8, raw_span.size(), weights_ohwi, desc,
+                  absl::MakeSpan(rearranged_data))) {
+            const size_t num_elements = weights_ohwi.DimensionsProduct();
+            std::vector<int8_t> unpacked_data(num_elements + 64, 0);
+            for (size_t i = 0; i < num_elements; ++i) {
+              const size_t byte_idx = i >> 2;
+              if (byte_idx < raw_span.size()) {
+                int8_t q = (raw_u8[byte_idx] >> ((i & 3u) * 2)) & 0x03;
+                if (q & 0x02) q |= 0xFC;
+                unpacked_data[i] = q;
+              }
+            }
+            ml_drift::Tensor<ml_drift::OHWI, ml_drift::DataType::kInt8>
+                weights_tensor_mld;
+            weights_tensor_mld.shape = weights_ohwi;
+            weights_tensor_mld.data = std::move(unpacked_data);
+            ml_drift::RearrangeWeightsInt8AsUint2(
+                weights_tensor_mld, desc, absl::MakeSpan(rearranged_data), 2,
+                2u);
+          }
+          conversion_ctx_.AddWeightPackStat(
+              "int2", absl::Now() - int2_start, rearranged_data.size());
+        }
+        if (sum_i.has_value()) {
+          LRT_TENSOR_RETURN_IF_ERROR(
+              AddWeightsSumI(weights_tensor, info, std::move(*sum_i)));
+        }
+
         ml_drift::TensorDescriptor weights_td =
             CreatePackedWeightsTensorDescriptor(
                 desc, weights_ohwi, static_cast<size_t>(elements_count),
@@ -1344,10 +1628,39 @@ class CompiledMlDriftModelRunner {
     gpu_weight_conversions_.clear();
 
     const ml_drift::GpuInfo& gpu_info = model_builder_->gpu_info();
-    // The converted tensors, by main model value id.
+    // The converted tensors of the current batch, by main model value id.
     absl::flat_hash_map<ml_drift::ValueId, std::unique_ptr<BackendTensor>>
         dst_tensors;
+    // Binds the converted (or cached) tensors to the model and drops the host
+    // weights immediately so fused host buffers are freed batch-by-batch as
+    // GPU tensors are allocated instead of overlapping across the entire model.
+    const auto bind = [&](GpuWeightConversion& c,
+                          bool converted) -> absl::Status {
+      const auto take = [&](const ml_drift::GpuModelBuilder::TensorHandle& h)
+          -> std::unique_ptr<BackendTensor> {
+        if (!converted) return nullptr;
+        return std::move(dst_tensors.at(h.id));
+      };
+      LRT_TENSOR_RETURN_IF_ERROR(BindConvertedWeights(
+          c.name, c.handle, take(c.handle), external_tensors));
+      if (c.sum_i.has_value()) {
+        LRT_TENSOR_RETURN_IF_ERROR(
+            BindConvertedWeights(WeightsSumIName(c.name), *c.sum_i,
+                                 take(*c.sum_i), external_tensors));
+      }
+      c.raw = LockedBufferSpan<const int8_t>::Empty();
+      c.buffer.reset();
+      if (absl::StatusOr<graph::TensorInformation&> info =
+              graph::GetInfo(c.weights_tensor);
+          info.ok()) {
+        MaybeReleaseFusedHostBuffer(c.weights_tensor, *info);
+      }
+      return absl::OkStatus();
+    };
     size_t converted_bytes = 0;
+    using UploadBatch = typename ml_drift_runner_internal::
+        ConstTensorUploadBatchOrNoOp<Backend>::Type;
+    UploadBatch raw_upload_batch(env_ptr_);
     // Every batch is non-empty: `GpuWeightConversionBatchEnd` > `begin`.
     for (size_t begin = 0; begin < to_convert.size();) {
       const size_t end = ml_drift_runner_internal::GpuWeightConversionBatchEnd(
@@ -1377,11 +1690,18 @@ class CompiledMlDriftModelRunner {
             ml_drift_runner_internal::RawWeightsDescriptor(conversion.model,
                                                            upload));
         auto tensor = std::make_unique<BackendTensor>();
-        LRT_TENSOR_RETURN_IF_ERROR(
-            Backend::CreateConstTensor(env_ptr_, raw_desc, tensor.get()));
+        if constexpr (ml_drift_runner_internal::HasConstTensorUploadBatch<
+                          Backend>::value) {
+          LRT_TENSOR_RETURN_IF_ERROR(Backend::CreateConstTensor(
+              env_ptr_, raw_desc, tensor.get(), &raw_upload_batch));
+        } else {
+          LRT_TENSOR_RETURN_IF_ERROR(
+              Backend::CreateConstTensor(env_ptr_, raw_desc, tensor.get()));
+        }
         conversion_tensors.immutable_tensors[upload.input_id] = tensor.get();
         raw_tensors.push_back(std::move(tensor));
       }
+      LRT_TENSOR_RETURN_IF_ERROR(raw_upload_batch.Flush());
       for (const auto& [conversion_id, main_id] : conversion.io_mapping) {
         auto it = dst_tensors.find(main_id);
         if (it == dst_tensors.end()) {
@@ -1397,37 +1717,13 @@ class CompiledMlDriftModelRunner {
       LRT_TENSOR_RETURN_IF_ERROR(
           Backend::AddToQueue(&conversion_context, env_ptr_));
       LRT_TENSOR_RETURN_IF_ERROR(Backend::WaitForCompletion(env_ptr_));
+      for (size_t i = begin; i < end; ++i) {
+        LRT_TENSOR_RETURN_IF_ERROR(bind(to_convert[i], /*converted=*/true));
+      }
+      dst_tensors.clear();
       begin = end;
     }
-    // Bind the converted (or cached) tensors to the model and drop the host
-    // weights. Only the `to_convert` weights have tensors in `dst_tensors`;
-    // the `in_cache` ones bind the tensors of the `SharedWeightsCache`.
-    const auto bind = [&](GpuWeightConversion& c,
-                          bool converted) -> absl::Status {
-      const auto take = [&](const ml_drift::GpuModelBuilder::TensorHandle& h)
-          -> std::unique_ptr<BackendTensor> {
-        if (!converted) return nullptr;
-        return std::move(dst_tensors.at(h.id));
-      };
-      LRT_TENSOR_RETURN_IF_ERROR(BindConvertedWeights(
-          c.name, c.handle, take(c.handle), external_tensors));
-      if (c.sum_i.has_value()) {
-        LRT_TENSOR_RETURN_IF_ERROR(
-            BindConvertedWeights(WeightsSumIName(c.name), *c.sum_i,
-                                 take(*c.sum_i), external_tensors));
-      }
-      c.raw = LockedBufferSpan<const int8_t>::Empty();
-      c.buffer.reset();
-      if (absl::StatusOr<graph::TensorInformation&> info =
-              graph::GetInfo(c.weights_tensor);
-          info.ok()) {
-        MaybeReleaseFusedHostBuffer(c.weights_tensor, *info);
-      }
-      return absl::OkStatus();
-    };
-    for (GpuWeightConversion& c : to_convert) {
-      LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/true));
-    }
+    LRT_TENSOR_RETURN_IF_ERROR(raw_upload_batch.Finish());
     for (GpuWeightConversion& c : in_cache) {
       LRT_TENSOR_RETURN_IF_ERROR(bind(c, /*converted=*/false));
     }

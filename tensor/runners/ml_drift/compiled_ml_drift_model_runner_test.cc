@@ -1240,5 +1240,142 @@ TEST(CompiledMlDriftModelRunnerTest,
   }
 }
 
+// Verifies that `MlDriftClBackend::ConstTensorUploadBatch` produces exact
+// results across multi-tensor coalesced staging, multi-chunk uploads of a
+// tensor larger than the staging buffer, and async host-data writes for small
+// tensors (< 64 KiB).
+TEST(CompiledMlDriftModelRunnerTest,
+     BatchedStagingAndAsyncHostDataUploadMatchesReference) {
+  MlDriftClBackend::Environment env;
+  ASSERT_THAT(MlDriftClBackend::InitEnvironment(&env), IsOk());
+
+  constexpr int kTokens = 2;
+  constexpr int kDim = 256;
+  constexpr int kBigOut = 256;  // 256*256*4 = 256 KiB (>= 64 KiB staging).
+  constexpr int kSmallOut = 32;  // 32*256*4 = 32 KiB (< 64 KiB async path).
+
+  std::vector<float> w1_data(kBigOut * kDim);
+  std::vector<float> w2_data(kBigOut * kDim);
+  std::vector<float> w3_data(kSmallOut * kDim);
+  for (size_t i = 0; i < w1_data.size(); ++i) {
+    w1_data[i] =
+        0.01f * static_cast<float>(static_cast<int>((i * 7 + 3) % 19) - 9);
+    w2_data[i] =
+        0.01f * static_cast<float>(static_cast<int>((i * 11 + 5) % 17) - 8);
+  }
+  for (size_t i = 0; i < w3_data.size(); ++i) {
+    w3_data[i] =
+        0.02f * static_cast<float>(static_cast<int>((i * 5 + 1) % 13) - 6);
+  }
+
+  auto make_graph = [&]() {
+    TensorMLD x(
+        {.name = "x", .type = Type::kFP32, .shape = {1, kTokens, kDim}});
+    TensorMLD w1({.name = "fc1.weight",
+                  .type = Type::kFP32,
+                  .shape = {kBigOut, kDim},
+                  .buffer = w1_data});
+    TensorMLD w2({.name = "fc2.weight",
+                  .type = Type::kFP32,
+                  .shape = {kBigOut, kDim},
+                  .buffer = w2_data});
+    TensorMLD w3({.name = "fc3.weight",
+                  .type = Type::kFP32,
+                  .shape = {kSmallOut, kDim},
+                  .buffer = w3_data});
+    TensorMLD y = FullyConnected(FullyConnected(FullyConnected(x, w1), w2), w3);
+    y.SetName("y");
+    return std::make_pair(x, y);
+  };
+
+  std::vector<float> x_data(kTokens * kDim);
+  for (size_t i = 0; i < x_data.size(); ++i) {
+    x_data[i] = 0.1f * static_cast<float>(static_cast<int>(i % 11) - 5);
+  }
+  auto run_once = [&](Runner& runner) -> absl::StatusOr<std::vector<float>> {
+    TensorMLD fed({.name = "x",
+                   .type = Type::kFP32,
+                   .shape = {1, kTokens, kDim},
+                   .buffer = x_data});
+    LRT_TENSOR_RETURN_IF_ERROR(runner.SetInput("x", fed));
+    LRT_TENSOR_RETURN_IF_ERROR(runner.Run());
+    return runner.GetFloatOutput("y");
+  };
+
+  // Reference build capturing packed weights for all three layers.
+  Runner::SharedWeightsCache ref_weights;
+  absl::flat_hash_map<std::string, ml_drift::TensorDescriptor> packed;
+  ref_weights.on_upload = [&](const std::string& name,
+                              const ml_drift::TensorDescriptor& desc) {
+    packed.insert_or_assign(name, desc);
+  };
+  auto [ref_x, ref_y] = make_graph();
+  Runner ref_runner({ref_x}, {ref_y}, ml_drift::CalculationsPrecision::kF32,
+                    &env, &ref_weights);
+  ASSERT_THAT(ref_runner.BuildModel(), IsOk());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<float> expected,
+                                  run_once(ref_runner));
+  ASSERT_EQ(packed.size(), 3u);
+  ASSERT_TRUE(
+      absl::c_all_of(expected, [](float v) { return std::isfinite(v); }));
+
+  // Warm-cache host_data build (exercises batched staging + async upload).
+  Runner::SharedWeightsCache host_weights;
+  host_weights.zero_copy_host_data = false;
+  for (const auto& [name, desc] : packed) {
+    auto bytes = std::make_shared<std::vector<uint8_t>>(desc.GetData().begin(),
+                                                        desc.GetData().end());
+    host_weights.descriptors.emplace(name, CopyDescriptorWithoutData(desc));
+    host_weights.host_data.emplace(
+        name, Runner::SharedWeightsCache::HostData{
+                  .data = absl::MakeConstSpan(*bytes), .owner = bytes});
+  }
+  auto [warm_x, warm_y] = make_graph();
+  Runner warm_runner({warm_x}, {warm_y}, ml_drift::CalculationsPrecision::kF32,
+                     &env, &host_weights);
+  ASSERT_THAT(warm_runner.BuildModel(), IsOk());
+  EXPECT_TRUE(host_weights.host_data.empty());
+  LRT_TENSOR_ASSERT_OK_AND_ASSIGN(const std::vector<float> actual,
+                                  run_once(warm_runner));
+  EXPECT_THAT(actual, testing::ElementsAreArray(expected));
+
+  // Directly verify multi-chunk staging (`StageBufferCopy` + `Flush` +
+  // `Finish`) when a single tensor exceeds the staging buffer capacity
+  // (64 KiB capacity for a 256 KiB tensor), independent of GPU vendor defaults.
+  const ml_drift::TensorDescriptor& big_desc = packed.at("fc1.weight");
+  ASSERT_GT(big_desc.GetMemorySizeInBytes(), 64u * 1024u);
+  MlDriftClBackend::Tensor chunked_tensor;
+  auto big_bytes = std::make_shared<std::vector<uint8_t>>(
+      big_desc.GetData().begin(), big_desc.GetData().end());
+  MlDriftClBackend::ConstTensorUploadBatch tiny_batch(
+      &env, /*staging_capacity_bytes=*/64 * 1024);
+  if (big_desc.GetStorageType() == ml_drift::TensorStorageType::kBuffer ||
+      big_desc.GetStorageType() == ml_drift::TensorStorageType::kImageBuffer) {
+    ASSERT_THAT(chunked_tensor.CreateFromDescriptor(
+                    CopyDescriptorWithoutData(big_desc), env.context()),
+                IsOk());
+    ASSERT_THAT(tiny_batch.StageBufferCopy(
+                    chunked_tensor.GetMemoryPtrForWriting(), big_bytes->data(),
+                    big_desc.GetMemorySizeInBytes()),
+                IsOk());
+    ASSERT_THAT(tiny_batch.Flush(), IsOk());
+  } else {
+    std::shared_ptr<const void> keep_alive;
+    ASSERT_THAT(MlDriftClBackend::CreateConstTensorFromHostData(
+                    &env, CopyDescriptorWithoutData(big_desc),
+                    absl::MakeConstSpan(*big_bytes), /*zero_copy=*/false,
+                    &chunked_tensor, &keep_alive, big_bytes, &tiny_batch),
+                IsOk());
+  }
+  ASSERT_THAT(tiny_batch.Finish(), IsOk());
+  ml_drift::TensorDescriptor readback;
+  ASSERT_THAT(
+      MlDriftClBackend::TensorToDescriptor(&chunked_tensor, &env, &readback),
+      IsOk());
+  EXPECT_THAT(readback.GetData(), testing::ElementsAreArray(
+                                      absl::MakeConstSpan(*big_bytes).first(
+                                          big_desc.GetMemorySizeInBytes())));
+}
+
 }  // namespace
 }  // namespace litert::tensor
