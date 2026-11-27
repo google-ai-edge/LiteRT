@@ -86,26 +86,87 @@ litert::Expected<void> AdapterOdc::LoadSymbols() {
   return {};
 }
 
-// Create EdgeTpuCompilerOptions from the opaque options.
+namespace {
+
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptions;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptionsShardingIntensity;
+using ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
+    GoogleTensorOptionsTruncationType;
+
+EdgeTpuCompilerOptions::FloatTruncationType ToEdgeTpuFloatTruncationType(
+    GoogleTensorOptionsTruncationType truncation_type) {
+  switch (truncation_type) {
+    case GoogleTensorOptionsTruncationType::
+        FLOAT_TRUNCATION_TYPE_NO_TRUNCATION:
+      return EdgeTpuCompilerOptions::FLOAT_TRUNCATION_TYPE_NO_TRUNCATION;
+    case GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_BFLOAT16:
+      return EdgeTpuCompilerOptions::FLOAT_TRUNCATION_TYPE_BFLOAT16;
+    case GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_HALF:
+      return EdgeTpuCompilerOptions::FLOAT_TRUNCATION_TYPE_HALF;
+    case GoogleTensorOptionsTruncationType::FLOAT_TRUNCATION_TYPE_AUTO:
+    default:
+      return EdgeTpuCompilerOptions::FLOAT_TRUNCATION_TYPE_AUTO;
+  }
+}
+
+EdgeTpuCompilerOptions::ShardingIntensity ToEdgeTpuShardingIntensity(
+    GoogleTensorOptionsShardingIntensity intensity) {
+  switch (intensity) {
+    case GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MINIMAL:
+      return EdgeTpuCompilerOptions::SHARDING_INTENSITY_MINIMAL;
+    case GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MODERATE:
+      return EdgeTpuCompilerOptions::SHARDING_INTENSITY_MODERATE;
+    case GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_EXTENSIVE:
+      return EdgeTpuCompilerOptions::SHARDING_INTENSITY_EXTENSIVE;
+    case GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_MAXIMUM:
+      return EdgeTpuCompilerOptions::SHARDING_INTENSITY_MAXIMUM;
+    case GoogleTensorOptionsShardingIntensity::SHARDING_INTENSITY_UNSPECIFIED:
+    default:
+      return EdgeTpuCompilerOptions::SHARDING_INTENSITY_UNSPECIFIED;
+  }
+}
+
+}  // namespace
+
 Expected<EdgeTpuCompilerOptions> CreateEdgeTpuCompilerOptions(
     const char* options, size_t options_size) {
-  if (options == nullptr || options_size == 0) {
-    return Unexpected(kLiteRtStatusErrorInvalidArgument,
-                      "Options cannot be null or empty");
+  EdgeTpuCompilerOptions edgetpu_compiler_options;
+  if (options_size == 0) {
+    return edgetpu_compiler_options;
   }
-  // TODO(b/568255926): Pass ODC opaque options here instead of the AOT
-  // `GoogleTensorOptions` proto and populate `EdgeTpuCompilerOptions` from
-  // them.
-  ::third_party::odml::litert::litert::vendors::google_tensor::compiler::
-      GoogleTensorOptions google_tensor_options;
+  if (options == nullptr) {
+    return Unexpected(kLiteRtStatusErrorInvalidArgument,
+                      "Options pointer cannot be null when options_size > 0");
+  }
+
+  GoogleTensorOptions google_tensor_options;
   if (!google_tensor_options.ParseFromString(
           absl::string_view(options, options_size))) {
     return Unexpected(kLiteRtStatusErrorInvalidArgument,
                       "Failed to parse GoogleTensorOptions");
   }
-  EdgeTpuCompilerOptions edgetpu_compiler_options;
+
+  if (google_tensor_options.enable_large_model_support()) {
+    LITERT_LOG(LITERT_WARNING, "%s",
+               "enable_large_model_support is not supported for single-buffer "
+               "on-device compilation; ignoring.");
+  }
+
   edgetpu_compiler_options.set_litert_version(
       google_tensor_options.compiler_config().litert_version());
+  edgetpu_compiler_options.set_float_truncation_type(
+      ToEdgeTpuFloatTruncationType(
+          google_tensor_options.float_truncation_type()));
+  edgetpu_compiler_options.set_int64_to_int32_truncation(
+      google_tensor_options.int64_to_int32_truncation());
+  edgetpu_compiler_options.set_sharding_intensity(
+      ToEdgeTpuShardingIntensity(google_tensor_options.sharding_intensity()));
+  edgetpu_compiler_options.set_enable_four_bit_compilation(
+      google_tensor_options.enable_four_bit_compilation());
+  edgetpu_compiler_options.set_enable_dynamic_range_quantization(
+      google_tensor_options.enable_dynamic_range_quantization());
   return edgetpu_compiler_options;
 }
 
