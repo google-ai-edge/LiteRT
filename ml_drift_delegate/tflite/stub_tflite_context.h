@@ -38,7 +38,7 @@ class StubTfLiteContext : public TfLiteContext {
                     const std::vector<int>& shape)
       : TfLiteContext({0}) {
     // Stub execution plan
-    exec_plan_ = TfLiteIntArrayCreate(3);
+    exec_plan_ = ::TfLiteIntArrayCreate(3);
     for (int i = 0; i < 3; ++i) exec_plan_->data[i] = i;
 
     int tensor_no = 0;
@@ -46,29 +46,29 @@ class StubTfLiteContext : public TfLiteContext {
     std::memset(registrations_, 0, sizeof(registrations_));
 
     // Node 0, dummyAdd
-    nodes_[0].inputs = TfLiteIntArrayCreate(1);
+    nodes_[0].inputs = ::TfLiteIntArrayCreate(1);
     nodes_[0].inputs->data[0] = tensor_no++;
-    nodes_[0].outputs = TfLiteIntArrayCreate(1);
+    nodes_[0].outputs = ::TfLiteIntArrayCreate(1);
     nodes_[0].outputs->data[0] = tensor_no;
     nodes_[0].builtin_data = nullptr;
 
     // Node 1, target op
-    nodes_[1].inputs = TfLiteIntArrayCreate(num_inputs + input_offset);
+    nodes_[1].inputs = ::TfLiteIntArrayCreate(num_inputs + input_offset);
     for (int i = 0; i < input_offset; ++i) {
       nodes_[1].inputs->data[i] = -1;
     }
     for (int i = 0; i < num_inputs; ++i) {
       nodes_[1].inputs->data[i + input_offset] = tensor_no++;
     }
-    nodes_[1].outputs = TfLiteIntArrayCreate(1);
+    nodes_[1].outputs = ::TfLiteIntArrayCreate(1);
     nodes_[1].outputs->data[0] = tensor_no;
     nodes_[1].builtin_data = operator new(1024);
     std::memset(nodes_[1].builtin_data, 0, 1024);
 
     // Node 2, dummyAdd
-    nodes_[2].inputs = TfLiteIntArrayCreate(1);
+    nodes_[2].inputs = ::TfLiteIntArrayCreate(1);
     nodes_[2].inputs->data[0] = tensor_no++;
-    nodes_[2].outputs = TfLiteIntArrayCreate(1);
+    nodes_[2].outputs = ::TfLiteIntArrayCreate(1);
     nodes_[2].outputs->data[0] = tensor_no++;
     nodes_[2].builtin_data = nullptr;
 
@@ -132,7 +132,7 @@ class StubTfLiteContext : public TfLiteContext {
     int data_size = std::accumulate(shape.begin(), shape.end(), 1,
                                     std::multiplies<int>());
 
-    TfLiteIntArrayFree(tensors_[id].dims);
+    ::TfLiteIntArrayFree(tensors_[id].dims);
     delete[] tensors_[id].data.f;
     tensors_[id].dims = tflite::ConvertVectorToTfLiteIntArray(shape);
     tensors_[id].data.f = new float[data_size]();
@@ -145,7 +145,7 @@ class StubTfLiteContext : public TfLiteContext {
     TfLiteAffineQuantization* quant_params = new TfLiteAffineQuantization();
     quant_params->scale = TfLiteFloatArrayCreate(1);
     quant_params->scale->data[0] = 1.0f;
-    quant_params->zero_point = TfLiteIntArrayCreate(1);
+    quant_params->zero_point = ::TfLiteIntArrayCreate(1);
     quant_params->zero_point->data[0] = 0;
     tensors_[id].quantization.params = reinterpret_cast<void*>(quant_params);
   }
@@ -165,14 +165,14 @@ class StubTfLiteContext : public TfLiteContext {
 
   ~StubTfLiteContext() {
     for (auto& node : nodes_) {
-      TfLiteIntArrayFree(node.inputs);
-      TfLiteIntArrayFree(node.outputs);
+      ::TfLiteIntArrayFree(node.inputs);
+      ::TfLiteIntArrayFree(node.outputs);
       if (node.builtin_data) {
         operator delete(node.builtin_data);
       }
     }
     for (auto& tensor : tensors_) {
-      TfLiteIntArrayFree(tensor.dims);
+      ::TfLiteIntArrayFree(tensor.dims);
       delete[] tensor.data.f;
       if (tensor.quantization.params) {
         if (tensor.quantization.type == kTfLiteAffineQuantization) {
@@ -180,7 +180,7 @@ class StubTfLiteContext : public TfLiteContext {
               reinterpret_cast<TfLiteAffineQuantization*>(
                   tensor.quantization.params);
           TfLiteFloatArrayFree(quant_params->scale);
-          TfLiteIntArrayFree(quant_params->zero_point);
+          ::TfLiteIntArrayFree(quant_params->zero_point);
           delete quant_params;
         } else if (tensor.quantization.type == kTfLiteBlockwiseQuantization) {
           TfLiteBlockwiseQuantization* quant_params =
@@ -194,7 +194,7 @@ class StubTfLiteContext : public TfLiteContext {
         }
       }
     }
-    TfLiteIntArrayFree(exec_plan_);
+    ::TfLiteIntArrayFree(exec_plan_);
   }
 
   TfLiteIntArray* exec_plan() const { return exec_plan_; }

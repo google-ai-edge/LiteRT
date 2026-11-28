@@ -28,11 +28,12 @@
 #include <variant>
 #include <vector>
 
-#include "testing/base/public/gmock.h"
-#include "testing/base/public/gunit.h"
+#include <gmock/gmock.h>  // copybara:comment_replace(gmock) #include "testing/base/public/gmock.h"
+#include <gtest/gtest.h>  // copybara:comment_replace(gunit) #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -51,6 +52,14 @@
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/subgraph.h"
 #include "tflite/interpreter.h"
+
+// The open-source gtest/gmock don't provide these status macros.
+#if !defined(EXPECT_OK)
+#define EXPECT_OK(status) EXPECT_THAT(status, ::absl_testing::IsOk())
+#endif  // !defined(EXPECT_OK)
+#if !defined(ASSERT_OK)
+#define ASSERT_OK(status) ASSERT_THAT(status, ::absl_testing::IsOk())
+#endif  // !defined(ASSERT_OK)
 
 namespace litert::ml_drift {
 namespace {
@@ -3440,6 +3449,64 @@ TEST_F(FullyConnectedOperationParserTest, ParseSrc3dDst2d) {
   ASSERT_EQ(fc_output->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 8));
   ASSERT_EQ(graph_.inputs()[0]->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 4));
   ASSERT_EQ(graph_.outputs()[0]->tensor.shape, ::ml_drift::BHWC(16, 1, 1, 8));
+}
+
+// Regression test: an int8-weight FULLY_CONNECTED on a rank-3 input with
+// keep_num_dims=false folds the leading dims into the batch dim of the output.
+// The parser must insert a reshape after the FC node, as it does for float
+// weights; otherwise the FC node's output is bound directly to a tensor with a
+// different shape and ML Drift fails to compile the kernel.
+TEST_F(FullyConnectedOperationParserTest, ParseConstInt8WeightsSrc3dDst2d) {
+  context_->ChangeTensorShape(1, std::vector<int>({1, 16, 4}));
+  context_->ChangeTensorShape(2, std::vector<int>({8, 1, 1, 4}));
+  context_->ChangeTensorShape(3, std::vector<int>({16, 8}));
+  context_->QuantizeTensor(2, kTfLiteInt8);
+  context_->SetTensorType(2, kTfLiteInt8, kTfLiteMmapRo);
+
+  ObjectReader reader(&graph_, context_.get(), context_->node(),
+                      &tensor_to_value_,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser_->Parse(context_->node(), context_->registration(), &graph_, &reader);
+
+  ASSERT_EQ(graph_.nodes().size(), 2);  // added reshape node for output
+  ASSERT_EQ(
+      ::ml_drift::OperationTypeFromString(graph_.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kFullyConnectedInt8);
+  ASSERT_EQ(
+      ::ml_drift::OperationTypeFromString(graph_.nodes()[1]->operation.type),
+      ::ml_drift::OperationType::kReshape);
+  auto fc_input = graph_.FindInputs(graph_.nodes()[0]->id)[0];
+  ASSERT_EQ(fc_input->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 4));
+  auto fc_output = graph_.FindOutputs(graph_.nodes()[0]->id)[0];
+  ASSERT_EQ(fc_output->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 8));
+  ASSERT_EQ(graph_.inputs()[0]->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 4));
+  ASSERT_EQ(graph_.outputs()[0]->tensor.shape, ::ml_drift::BHWC(16, 1, 1, 8));
+}
+
+// Control for the test above: when the output shape already matches the FC
+// node's natural output shape (keep_num_dims=true), no reshape is added.
+TEST_F(FullyConnectedOperationParserTest,
+       ParseConstInt8WeightsSrc3dDst3dNoReshape) {
+  context_->ChangeTensorShape(1, std::vector<int>({1, 16, 4}));
+  context_->ChangeTensorShape(2, std::vector<int>({8, 1, 1, 4}));
+  context_->ChangeTensorShape(3, std::vector<int>({1, 16, 8}));
+  context_->QuantizeTensor(2, kTfLiteInt8);
+  context_->SetTensorType(2, kTfLiteInt8, kTfLiteMmapRo);
+
+  ObjectReader reader(&graph_, context_.get(), context_->node(),
+                      &tensor_to_value_,
+                      /*quant_conversion_map=*/nullptr,
+                      /*tensor_to_buffer_id_map=*/nullptr,
+                      /*shared_tensor_map=*/nullptr);
+  parser_->Parse(context_->node(), context_->registration(), &graph_, &reader);
+
+  ASSERT_EQ(graph_.nodes().size(), 1);
+  ASSERT_EQ(
+      ::ml_drift::OperationTypeFromString(graph_.nodes()[0]->operation.type),
+      ::ml_drift::OperationType::kFullyConnectedInt8);
+  ASSERT_EQ(graph_.outputs()[0]->tensor.shape, ::ml_drift::BHWC(1, 1, 16, 8));
 }
 
 TEST(GatherOperationParserTest, TestNumInputs) {
