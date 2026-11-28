@@ -50,6 +50,7 @@
 #include "litert/cc/litert_opaque_options.h"
 #include "litert/core/dispatch_op_schema.h"
 #include "litert/runtime/dispatch/dispatch_opaque_options.h"
+#include "litert/runtime/event.h"
 #include "litert/runtime/external_litert_buffer_context.h"
 #include "litert/runtime/tensor_buffer.h"
 #include "litert/runtime/tensor_buffer_requirements.h"
@@ -61,6 +62,27 @@
 #include "tflite/core/c/c_api_opaque.h"
 
 namespace litert::internal {
+
+namespace {
+
+// Attaching an input event to an invocation can be expensive: on Google Tensor,
+// an attached sync fence is sent to the TPU service over binder on every
+// invocation. So asynchronous executions only attach events that haven't
+// signaled yet, and synchronous executions, which have to wait for the inputs
+// anyway, wait for them on the CPU.
+
+// Whether `event` has already signaled. False if the state is unknown (e.g.
+// unsupported).
+bool IsSignaled(const LiteRtEventT& event) {
+  Expected<bool> signaled = event.IsSignaled();
+  return signaled.HasValue() && *signaled;
+}
+
+// How long a synchronous execution waits for an input event on the CPU before
+// it attaches the event to the invocation instead.
+constexpr int64_t kSyncInputEventWaitTimeoutMs = 1000;
+
+}  // namespace
 
 Expected<LiteRtMemBuffer> BuildExecutableBytecodeBuffer(
     const DispatchOpOptions& dispatch_options, const void* alloc_base,
@@ -1322,8 +1344,10 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
       if (tensor_buffer_info.tensor_buffer->HasEvent()) {
         LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event,
                                 tensor_buffer_info.tensor_buffer->GetEvent());
-        LITERT_RETURN_IF_ERROR(
-            LiteRtDispatchAttachInputEvent(invocation_context, i, event));
+        if (!IsSignaled(*event)) {
+          LITERT_RETURN_IF_ERROR(
+              LiteRtDispatchAttachInputEvent(invocation_context, i, event));
+        }
       }
     }
 
@@ -1340,9 +1364,8 @@ Expected<void> DispatchDelegateKernel::ScheduleAsyncExecution(
           status != kLiteRtStatusErrorUnsupported) {
         return Unexpected(
             status,
-            absl::StrCat(
-                "Failed to set dispatch invocation options for node ",
-                node_idx, ": ", status));
+            absl::StrCat("Failed to set dispatch invocation options for node ",
+                         node_idx, ": ", status));
       }
     }
 
@@ -1371,11 +1394,13 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
     if (tensor_buffer_info.tensor_buffer->HasEvent()) {
       LITERT_ASSIGN_OR_RETURN(LiteRtEventT * event,
                               tensor_buffer_info.tensor_buffer->GetEvent());
-
-      // If the HW supports async dispatch, then we can simply pass those events
-      // to the HW. Otherwise, we'll need to wait on those events here, on the
-      // main CPU, before we can dispatch the HW, which may lead to deadlocks,
-      // based on how the user code is written.
+      // Wait on the CPU (returns at once if the event has signaled). If that
+      // fails (e.g. unsupported event type) or times out, pass the event to the
+      // HW if it supports async dispatch; otherwise, wait without a timeout,
+      // which may lead to deadlocks, based on how the user code is written.
+      if (event->Wait(kSyncInputEventWaitTimeoutMs).HasValue()) {
+        continue;
+      }
       if (async_dispatch_) {
         const auto& port_connections =
             io_tensors_port_connections_.find(tensor_id)->second;
@@ -1408,8 +1433,8 @@ Expected<void> DispatchDelegateKernel::ScheduleSyncExecution(
         invocation_context, run_options);
     if (status != kLiteRtStatusOk && status != kLiteRtStatusErrorUnsupported) {
       return Unexpected(
-          status, absl::StrCat(
-                      "Failed to set dispatch invocation options: ", status));
+          status,
+          absl::StrCat("Failed to set dispatch invocation options: ", status));
     }
     LITERT_RETURN_IF_ERROR(LiteRtDispatchInvoke(invocation_context));
   }
