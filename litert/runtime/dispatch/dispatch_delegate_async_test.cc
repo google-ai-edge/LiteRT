@@ -30,6 +30,7 @@
 #include "litert/cc/litert_compiled_model.h"
 #include "litert/cc/litert_environment.h"
 #include "litert/cc/litert_environment_options.h"
+#include "litert/cc/litert_event.h"
 #include "litert/cc/litert_expected.h"
 #include "litert/cc/litert_macros.h"
 #include "litert/cc/litert_options.h"
@@ -40,6 +41,7 @@
 
 #if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
 #include <dlfcn.h>
+#include <unistd.h>
 #endif  // !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
 
 namespace litert {
@@ -96,6 +98,8 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
         mock_lib_handle_, "LiteRtDispatch_MockDispatchNumDetaches");
     mock_fail_next_registration_ = (void (*)())dlsym(
         mock_lib_handle_, "LiteRtDispatch_MockDispatchFailNextRegistration");
+    mock_num_input_event_attaches_ = (int (*)())dlsym(
+        mock_lib_handle_, "LiteRtDispatch_MockDispatchNumInputEventAttaches");
 
     ASSERT_NE(mock_set_env_, nullptr);
     ASSERT_NE(mock_set_multi_inflight_async_, nullptr);
@@ -106,6 +110,7 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
     ASSERT_NE(mock_num_unregistrations_, nullptr);
     ASSERT_NE(mock_num_detaches_, nullptr);
     ASSERT_NE(mock_fail_next_registration_, nullptr);
+    ASSERT_NE(mock_num_input_event_attaches_, nullptr);
 
     mock_set_env_(env_->GetHolder().handle);
 #endif  // defined(LITERT_WINDOWS_OS) || defined(__APPLE__)
@@ -136,6 +141,9 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
   int NumDetaches() const { return mock_num_detaches_(); }
   // Makes the next Dispatch API registration fail.
   void FailNextRegistration() { mock_fail_next_registration_(); }
+  // Number of input events attached to Dispatch API invocations so far in this
+  // process.
+  int NumInputEventAttaches() const { return mock_num_input_event_attaches_(); }
 
   // Compiles one_mul.tflite (output = input0 * input1) for the mock NPU.
   Expected<CompiledModel> CreateOneMulModel() {
@@ -157,6 +165,7 @@ class DispatchDelegateAsyncTest : public ::testing::Test {
   int (*mock_num_unregistrations_)() = nullptr;
   int (*mock_num_detaches_)() = nullptr;
   void (*mock_fail_next_registration_)() = nullptr;
+  int (*mock_num_input_event_attaches_)() = nullptr;
 
   std::unique_ptr<Environment> env_;
 };
@@ -640,6 +649,92 @@ TEST_F(DispatchDelegateAsyncTest, FailedRegistrationsAreNotRetried) {
   LITERT_ASSERT_OK_AND_ASSIGN(auto output, ReadAll(outputs[0]));
   EXPECT_THAT(output, ::testing::Each(::testing::FloatEq(6.0f)));
 }
+
+#if !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
+
+// Signals a sync fence event set by `SetInputEvent()` when `Signal()` is
+// called or when destroyed.
+class EventSignaler {
+ public:
+  explicit EventSignaler(int fd) : fd_(fd) {}
+  EventSignaler(EventSignaler&& other) : fd_(std::exchange(other.fd_, -1)) {}
+  ~EventSignaler() { Signal(); }
+
+  void Signal() {
+    if (fd_ < 0) return;
+    const char dummy = 1;
+    (void)write(fd_, &dummy, 1);
+    close(std::exchange(fd_, -1));
+  }
+
+ private:
+  int fd_;
+};
+
+// Sets an unsignaled sync fence event on `buffer`.
+Expected<EventSignaler> SetInputEvent(const Environment& env,
+                                      TensorBuffer& buffer) {
+  int fds[2];
+  if (pipe(fds) != 0) {
+    return Unexpected(kLiteRtStatusErrorRuntimeFailure, "pipe() failed");
+  }
+  EventSignaler signaler(fds[1]);
+  LITERT_ASSIGN_OR_RETURN(
+      auto event, Event::CreateFromSyncFenceFd(env, fds[0], /*owns_fd=*/true));
+  LITERT_RETURN_IF_ERROR(buffer.SetEvent(std::move(event)));
+  return signaler;
+}
+
+TEST_F(DispatchDelegateAsyncTest, SyncRunsWaitForInputEventsOnTheCpu) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model, CreateOneMulModel());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffers,
+                              CreateOneMulBuffers(compiled_model));
+  auto& [inputs, outputs] = buffers;
+  LITERT_ASSERT_OK(Fill(inputs[0], 2.0f));
+  LITERT_ASSERT_OK(Fill(inputs[1], 3.0f));
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signaler, SetInputEvent(*env_, inputs[0]));
+
+  // The run waits for the input event, which signals later, instead of
+  // attaching it to the invocation.
+  const int num_attaches = NumInputEventAttaches();
+  std::atomic<bool> signaled{false};
+  std::thread signal_thread([&signaler, &signaled]() {
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    signaled.store(true, std::memory_order_release);
+    signaler.Signal();
+  });
+  LITERT_ASSERT_OK(compiled_model.Run(inputs, outputs));
+  EXPECT_TRUE(signaled.load(std::memory_order_acquire));
+  signal_thread.join();
+  EXPECT_EQ(NumInputEventAttaches(), num_attaches);
+  LITERT_ASSERT_OK_AND_ASSIGN(auto output, ReadAll(outputs[0]));
+  EXPECT_THAT(output, ::testing::Each(::testing::FloatEq(6.0f)));
+}
+
+TEST_F(DispatchDelegateAsyncTest, AsyncRunsOnlyAttachUnsignaledInputEvents) {
+  LITERT_ASSERT_OK_AND_ASSIGN(auto compiled_model, CreateOneMulModel());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto buffers,
+                              CreateOneMulBuffers(compiled_model));
+  auto& [inputs, outputs] = buffers;
+  bool async = true;
+
+  // An unsignaled input event is attached to the invocation...
+  const int num_attaches = NumInputEventAttaches();
+  LITERT_ASSERT_OK_AND_ASSIGN(auto unsignaled, SetInputEvent(*env_, inputs[0]));
+  LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs, async, nullptr));
+  EXPECT_TRUE(outputs[0].HasEvent());
+  EXPECT_EQ(NumInputEventAttaches(), num_attaches + 1);
+
+  // ... unlike a signaled one.
+  LITERT_ASSERT_OK(outputs[0].ClearEvent());
+  LITERT_ASSERT_OK_AND_ASSIGN(auto signaled, SetInputEvent(*env_, inputs[0]));
+  signaled.Signal();
+  LITERT_ASSERT_OK(compiled_model.RunAsync(inputs, outputs, async, nullptr));
+  EXPECT_TRUE(outputs[0].HasEvent());
+  EXPECT_EQ(NumInputEventAttaches(), num_attaches + 1);
+}
+
+#endif  // !defined(LITERT_WINDOWS_OS) && !defined(__APPLE__)
 
 }  // namespace
 }  // namespace litert
