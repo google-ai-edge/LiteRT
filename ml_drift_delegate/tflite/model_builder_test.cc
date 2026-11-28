@@ -28,11 +28,12 @@
 #include <variant>
 #include <vector>
 
-#include "testing/base/public/gmock.h"
-#include "testing/base/public/gunit.h"
+#include <gmock/gmock.h>  // copybara:comment_replace(gmock) #include "testing/base/public/gmock.h"
+#include <gtest/gtest.h>  // copybara:comment_replace(gunit) #include "testing/base/public/gunit.h"
 #include "absl/container/flat_hash_map.h"  // from @com_google_absl
 #include "absl/container/flat_hash_set.h"  // from @com_google_absl
 #include "absl/status/status.h"  // from @com_google_absl
+#include "absl/status/status_matchers.h"  // from @com_google_absl
 #include "absl/types/span.h"  // from @com_google_absl
 #include "flatbuffers/flexbuffers.h"  // from @flatbuffers
 #include "ml_drift/common/data_type.h"  // from @ml_drift
@@ -51,6 +52,14 @@
 #include "tflite/core/c/builtin_op_data.h"
 #include "tflite/core/subgraph.h"
 #include "tflite/interpreter.h"
+
+// The open-source gtest/gmock don't provide these status macros.
+#if !defined(EXPECT_OK)
+#define EXPECT_OK(status) EXPECT_THAT(status, ::absl_testing::IsOk())
+#endif  // !defined(EXPECT_OK)
+#if !defined(ASSERT_OK)
+#define ASSERT_OK(status) ASSERT_THAT(status, ::absl_testing::IsOk())
+#endif  // !defined(ASSERT_OK)
 
 namespace litert::ml_drift {
 namespace {
