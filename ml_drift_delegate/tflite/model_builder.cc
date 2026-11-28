@@ -353,6 +353,23 @@ void ReshapeFullyConnectedOutput(const TfLiteTensor* src_tensor,
   reader->AddOutputs(node_reshape);
 }
 
+// Binds the TFLite output of a FULLY_CONNECTED node to `node`, inserting a
+// reshape if the TFLite output shape differs from the node's natural output
+// shape (e.g. keep_num_dims=false on an input of rank > 2, where the leading
+// dims are folded into the batch dim).
+void AddFullyConnectedOutputs(const TfLiteTensor* src_tensor,
+                              const TfLiteTensor* weights_tensor,
+                              ::ml_drift::GraphFloat32* graph,
+                              ObjectReader* reader, ::ml_drift::Node* node) {
+  if (IsFullyConnectedOutputReshapeNeeded(src_tensor, weights_tensor,
+                                          reader)) {
+    ReshapeFullyConnectedOutput(src_tensor, weights_tensor, graph, reader,
+                                node);
+  } else {
+    reader->AddOutputs(node);
+  }
+}
+
 void ConfigSharedWeightFullyConnectedNode(
     const int tflite_weights_tensor_index,
     const TfLiteTensor* const weights_tensor, ObjectReader* reader,
@@ -3879,7 +3896,8 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
         // TODO: b/378522761 - add support for int2/int4 quantized weights.
         node->operation.type =
             ToString(::ml_drift::OperationType::kFullyConnectedInt8);
-        reader->AddOutputs(node);
+        AddFullyConnectedOutputs(src_tensor, weights_tensor, graph, reader,
+                                 node);
         HandleFusedActivation(params->activation, graph, node);
         return;
       }
@@ -3896,7 +3914,8 @@ class FullyConnectedOperationParser : public TFLiteOperationParser {
             /*copy_weights=*/!options_.enable_raw_weights_propagation);
         node->operation.type =
             ToString(::ml_drift::OperationType::kFullyConnectedInt4);
-        reader->AddOutputs(node);
+        AddFullyConnectedOutputs(src_tensor, weights_tensor, graph, reader,
+                                 node);
         HandleFusedActivation(params->activation, graph, node);
         return;
       }
